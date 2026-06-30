@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
-import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft, ScrollText } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Package, Box, Wrench, Camera, X, Grid3x3, List, ArrowRightLeft, ScrollText, Undo2 } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
@@ -295,6 +295,7 @@ export default function ItemsPage() {
   } | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [includeInactive, setIncludeInactive] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [filterType, setFilterType] = useState<string>('ALL')
   const [filterCategory, setFilterCategory] = useState<string>('')
@@ -496,7 +497,7 @@ export default function ItemsPage() {
 
   useEffect(() => {
     setListPage(1)
-  }, [debouncedSearch, pageSize, filterType, filterCategory])
+  }, [debouncedSearch, pageSize, filterType, filterCategory, includeInactive])
 
   useEffect(() => {
     if (showModal) void loadCategoryOptions()
@@ -878,7 +879,7 @@ export default function ItemsPage() {
         q: debouncedSearch,
         sort: 'id',
         dir: 'asc',
-        extra: { ...itemTypeExtra, ...categoryExtra },
+        extra: { ...itemTypeExtra, ...categoryExtra, include_inactive: includeInactive ? 'true' : undefined },
       })
       const response = await api.get('/items/', {
         headers: { Authorization: `Bearer ${token}` },
@@ -932,7 +933,7 @@ export default function ItemsPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, filterType, filterCategory, listPage, pageSize, toast])
+  }, [debouncedSearch, filterType, filterCategory, includeInactive, listPage, pageSize, toast])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -1283,7 +1284,7 @@ export default function ItemsPage() {
   const handleDelete = async (id: number) => {
     if (
       !confirm(
-        'Delete this item? If it is linked to fuel tanks or nozzles, the server will block the delete and nothing is removed. This cannot be undone.'
+        'Deactivate this item? It will be hidden from lists and POS. You can restore it later from inactive items. If it is linked to fuel tanks or nozzles, delete is blocked.'
       )
     ) {
       return
@@ -1296,13 +1297,28 @@ export default function ItemsPage() {
       })
 
       if (response.status === 204 || response.status === 200) {
-        toast.success(it('itemDeleted'))
+        toast.success(it('itemDeleted') + ' Enable "Include inactive" to restore.')
         fetchItems()
       }
     } catch (error: any) {
       console.error('Error deleting item:', error)
       const errorMessage = extractErrorMessage(error, 'Failed to delete item')
       toast.error(errorMessage)
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    try {
+      const token = localStorage.getItem('access_token')
+      await api.put(
+        `/items/${id}/`,
+        { is_active: true },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      toast.success('Item restored to active.')
+      fetchItems()
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, 'Failed to restore item'))
     }
   }
 
@@ -1555,14 +1571,14 @@ export default function ItemsPage() {
     const typeUpper = type.toUpperCase()
     switch (typeUpper) {
       case 'INVENTORY':
-        return 'bg-blue-100 text-blue-600'
+        return 'bg-blue-100 text-primary'
       case 'NON_INVENTORY':
       case 'NONINVENTORY':
         return 'bg-purple-100 text-purple-600'
       case 'SERVICE':
-        return 'bg-green-100 text-green-600'
+        return 'bg-success/15 text-success'
       default:
-        return 'bg-gray-100 text-gray-600'
+        return 'bg-muted text-muted-foreground'
     }
   }
 
@@ -1763,7 +1779,7 @@ export default function ItemsPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         titleId="items-title"
@@ -1841,12 +1857,12 @@ export default function ItemsPage() {
       >
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
-            <label className="shrink-0 text-sm text-gray-600">
+            <label className="shrink-0 text-sm text-muted-foreground">
               Item type
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="ml-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                className="ml-2 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground focus:border-ring focus:ring-2 focus:ring-ring"
               >
                 {(['ALL', 'INVENTORY', 'NON_INVENTORY', 'SERVICE'] as const).map((type) => (
                   <option key={type} value={type}>
@@ -1855,7 +1871,7 @@ export default function ItemsPage() {
                 ))}
               </select>
             </label>
-            <label className="shrink-0 text-sm text-gray-600">
+            <label className="shrink-0 text-sm text-muted-foreground">
               Report category
               <StringReferenceCombobox
                 value={filterCategory}
@@ -1867,29 +1883,41 @@ export default function ItemsPage() {
                   label: `All report categories (${listStats?.catalog_total ?? totalCount})`,
                 }}
                 placeholder="Search report category…"
-                className="ml-2 min-w-[16rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                className="ml-2 min-w-[16rem] rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground focus:border-ring focus:ring-2 focus:ring-ring"
               />
             </label>
             {!loading && filterCategory.trim() ? (
-              <span className="text-xs text-gray-500 tabular-nums">
+              <span className="text-xs text-muted-foreground tabular-nums">
                 {totalCount} item{totalCount === 1 ? '' : 's'} in {filterCategory.trim()}
               </span>
             ) : null}
             <div className="relative min-w-[200px] flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-muted-foreground/70" />
               <input
                 type="text"
                 placeholder={it('searchItems')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-border py-2 pl-10 pr-4 focus:border-ring focus:ring-2 focus:ring-ring"
               />
             </div>
+            <label className="inline-flex shrink-0 items-center gap-2 text-sm text-foreground/85">
+              <input
+                type="checkbox"
+                checked={includeInactive}
+                onChange={(e) => {
+                  setIncludeInactive(e.target.checked)
+                  setListPage(1)
+                }}
+                className="h-4 w-4 rounded border-border text-primary"
+              />
+              Include inactive
+            </label>
           </div>
 
           <div className="flex items-center space-x-3">
             {/* View Toggle */}
-            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            <div className="flex items-center bg-muted rounded-lg p-1">
               <button
                 onClick={() => {
                   setViewMode('card')
@@ -1897,8 +1925,8 @@ export default function ItemsPage() {
                 }}
                 className={`p-2 rounded transition-colors ${
                   viewMode === 'card'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title="Card View"
               >
@@ -1911,8 +1939,8 @@ export default function ItemsPage() {
                 }}
                 className={`p-2 rounded transition-colors ${
                   viewMode === 'list'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
                 title="List View"
               >
@@ -1928,7 +1956,7 @@ export default function ItemsPage() {
                 setCreateItemCodeNonce((n) => n + 1)
                 setShowModal(true)
               }}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="erp-btn-primary flex items-center space-x-2 transition-colors"
             >
               <Plus className="h-5 w-5" />
               <span>{it('addItem')}</span>
@@ -1938,13 +1966,13 @@ export default function ItemsPage() {
 
         {loading ? (
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="erp-loading-spinner h-12 w-12"></div>
           </div>
         ) : items.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No items found</h3>
-            <p className="text-gray-600 mb-4">Get started by creating your first product or service</p>
+          <div className="erp-empty-state">
+            <Package className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No items found</h3>
+            <p className="text-muted-foreground mb-4">Get started by creating your first product or service</p>
             <button
               type="button"
               onClick={() => {
@@ -1953,7 +1981,7 @@ export default function ItemsPage() {
                 setCreateItemCodeNonce((n) => n + 1)
                 setShowModal(true)
               }}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>{it('addItem')}</span>
@@ -1965,19 +1993,19 @@ export default function ItemsPage() {
           // Card View
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {items.map((item) => (
-              <div key={item.id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6">
+              <div key={item.id} className="erp-surface-interactive p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <div className={`p-3 rounded-lg ${getItemColor(item.item_type)}`}>
                       {getItemIcon(item.item_type)}
                     </div>
                     <div>
-                      <h3 className="font-bold text-lg text-gray-900">{item.name}</h3>
-                      <p className="text-sm text-gray-500">{item.item_number}</p>
+                      <h3 className="font-bold text-lg text-foreground">{item.name}</h3>
+                      <p className="text-sm text-muted-foreground">{item.item_number}</p>
                     </div>
                   </div>
                   <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                    item.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    item.is_active ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
                   }`}>
                     {item.is_active ? 'Active' : 'Inactive'}
                   </span>
@@ -1994,7 +2022,7 @@ export default function ItemsPage() {
                         return `${baseUrl}${item.image_url}`
                       })()}
                       alt={item.name}
-                      className="h-32 w-32 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                      className="h-32 w-32 object-contain rounded-lg border border-border bg-muted/40"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none'
                       }}
@@ -2003,58 +2031,58 @@ export default function ItemsPage() {
                 )}
 
                 {item.description && (
-                  <p className="text-sm text-gray-600 mb-4 line-clamp-2">{item.description}</p>
+                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{item.description}</p>
                 )}
 
                 <div className="space-y-2 mb-4 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Report category:</span>
-                    <span className="font-medium text-amber-800 text-right max-w-[55%] truncate" title={item.category || 'General'}>
+                    <span className="text-muted-foreground">Report category:</span>
+                    <span className="font-medium text-warning-foreground text-right max-w-[55%] truncate" title={item.category || 'General'}>
                       {item.category || 'General'}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Type:</span>
-                    <span className="font-medium text-gray-900">
+                    <span className="text-muted-foreground">Type:</span>
+                    <span className="font-medium text-foreground">
                       {item.item_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">
+                    <span className="text-muted-foreground">
                       {(item.pos_category || '').toLowerCase() === 'feed'
                         ? 'Selling price (BDT per sack):'
                         : `Selling price (${item.unit || 'unit'}):`}
                     </span>
-                    <span className="font-medium text-green-600">{currencySymbol}{formatNumber(Number(item.unit_price || 0))}</span>
+                    <span className="font-medium text-success">{currencySymbol}{formatNumber(Number(item.unit_price || 0))}</span>
                   </div>
                   {(item.pos_category || '').toLowerCase() === 'feed' &&
                     item.content_weight_kg != null &&
                     item.content_weight_kg !== '' &&
                     Number(item.content_weight_kg) > 0 && (
-                      <div className="flex justify-between text-xs text-teal-800">
+                      <div className="flex justify-between text-xs text-primary">
                         <span>Kg per sack (weight):</span>
                         <span className="font-medium tabular-nums">{Number(item.content_weight_kg)} kg</span>
                       </div>
                     )}
                   <div className="flex justify-between">
-                    <span className="text-gray-500">
+                    <span className="text-muted-foreground">
                       {(item.pos_category || '').toLowerCase() === 'feed'
                         ? 'Cost (BDT per sack):'
                         : 'Cost:'}
                     </span>
-                    <span className="font-medium text-gray-900">{currencySymbol}{formatNumber(Number(item.cost || 0))}</span>
+                    <span className="font-medium text-foreground">{currencySymbol}{formatNumber(Number(item.cost || 0))}</span>
                   </div>
                   {(item.item_type.toUpperCase() === 'INVENTORY' || item.item_type.toLowerCase() === 'inventory') && (
                     <div className="flex justify-between items-start gap-2">
-                      <span className="text-gray-500 shrink-0">
+                      <span className="text-muted-foreground shrink-0">
                         {(item.pos_category || '').toLowerCase() === 'feed' ? 'Sacks on hand:' : 'On Hand:'}
                       </span>
-                      <span className="font-medium text-gray-900 text-right">
+                      <span className="font-medium text-foreground text-right">
                         {(item.pos_category || '').toLowerCase() === 'feed'
                           ? formatFeedSackQuantityLabel(parseInventoryQty(item.quantity_on_hand))
                           : `${formatNumber(parseInventoryQty(item.quantity_on_hand))} ${item.unit}`}
                         {feedApproxTotalKg(item) != null && (
-                          <span className="block text-xs font-normal text-teal-700 mt-0.5">
+                          <span className="block text-xs font-normal text-primary mt-0.5">
                             ≈ {feedApproxTotalKg(item)!.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
                             total
                           </span>
@@ -2067,7 +2095,7 @@ export default function ItemsPage() {
                 <div className="flex items-center justify-end space-x-2 pt-4 border-t">
                   <Link
                     href={`/items/${item.id}/ledger`}
-                    className="p-2 text-slate-600 hover:bg-slate-100 rounded"
+                    className="p-2 text-muted-foreground hover:bg-muted rounded"
                     title="View stock ledger (in / out)"
                   >
                     <ScrollText className="h-4 w-4" />
@@ -2075,7 +2103,7 @@ export default function ItemsPage() {
                   {itemHasPerStationShopStock(item) && (
                     <Link
                       href={`/inventory?tab=lookup&item_id=${item.id}`}
-                      className="p-2 text-teal-600 hover:bg-teal-50 rounded"
+                      className="p-2 text-primary hover:bg-accent rounded"
                       title="Stock by station"
                     >
                       <ArrowRightLeft className="h-4 w-4" />
@@ -2083,18 +2111,28 @@ export default function ItemsPage() {
                   )}
                   <button
                     onClick={() => handleEdit(item)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                    className="erp-icon-btn-primary"
                     title="Edit Item"
                   >
                     <Edit className="h-4 w-4" />
                   </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded"
-                    title="Delete Item"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {item.is_active ? (
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="erp-icon-btn-danger"
+                      title="Deactivate Item"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleRestore(item.id)}
+                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded"
+                      title="Restore Item"
+                    >
+                      <Undo2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -2102,42 +2140,42 @@ export default function ItemsPage() {
             ) : (
           // List View
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Image
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Item
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Report category
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Type
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Selling price
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Cost
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     On Hand
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     On-hand value
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-border">
                 {items.map((item) => {
                   const isInventory =
                     item.item_type.toUpperCase() === 'INVENTORY' ||
@@ -2145,7 +2183,7 @@ export default function ItemsPage() {
                   const onHandQty = parseInventoryQty(item.quantity_on_hand)
                   const onHandValue = isInventory ? onHandQty * (Number(item.cost) || 0) : 0
                   return (
-                  <tr key={item.id} className="hover:bg-gray-50">
+                  <tr key={item.id} className="hover:bg-muted/40">
                     <td className="px-6 py-4 whitespace-nowrap">
                       {item.image_url ? (
                         <img
@@ -2156,7 +2194,7 @@ export default function ItemsPage() {
                             return `${baseUrl}${item.image_url}`
                           })()}
                           alt={item.name}
-                          className="h-16 w-16 object-contain rounded border border-gray-200 bg-gray-50"
+                          className="h-16 w-16 object-contain rounded border border-border bg-muted/40"
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = 'none'
                           }}
@@ -2169,14 +2207,14 @@ export default function ItemsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div>
-                        <div className="text-sm font-semibold text-gray-900">{item.name}</div>
-                        <div className="text-sm text-gray-500">{item.item_number}</div>
+                        <div className="text-sm font-semibold text-foreground">{item.name}</div>
+                        <div className="text-sm text-muted-foreground">{item.item_number}</div>
                         {item.description && (
-                          <div className="text-xs text-gray-400 mt-1 line-clamp-1">{item.description}</div>
+                          <div className="text-xs text-muted-foreground/70 mt-1 line-clamp-1">{item.description}</div>
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-amber-900 max-w-[140px]">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-warning-foreground max-w-[140px]">
                       <span className="line-clamp-2" title={item.category || 'General'}>
                         {item.category || 'General'}
                       </span>
@@ -2186,49 +2224,49 @@ export default function ItemsPage() {
                         {item.item_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-green-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-success">
                       <span className="block">{currencySymbol}{formatNumber(Number(item.unit_price || 0))}</span>
                       {(item.pos_category || '').toLowerCase() === 'feed' &&
                         item.content_weight_kg != null &&
                         item.content_weight_kg !== '' &&
                         Number(item.content_weight_kg) > 0 && (
-                          <span className="block text-xs font-normal text-teal-800">
+                          <span className="block text-xs font-normal text-primary">
                             {Number(item.content_weight_kg)} kg per {item.unit || 'sack'}
                           </span>
                         )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {currencySymbol}{formatNumber(Number(item.cost || 0))}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {isInventory ? (
                         <span>
                           {(item.pos_category || '').toLowerCase() === 'feed'
                             ? formatFeedSackQuantityLabel(onHandQty)
                             : `${formatNumber(onHandQty, 2)} ${item.unit}`}
                           {feedApproxTotalKg(item) != null && (
-                            <span className="block text-xs text-teal-700 mt-0.5">
+                            <span className="block text-xs text-primary mt-0.5">
                               ≈ {feedApproxTotalKg(item)!.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
                             </span>
                           )}
                         </span>
                       ) : (
-                        <span className="text-gray-400">-</span>
+                        <span className="text-muted-foreground/70">-</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right tabular-nums text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right tabular-nums text-foreground">
                       {isInventory && onHandValue > 0 ? (
                         <>
                           {currencySymbol}
                           {formatNumber(onHandValue, 2)}
                         </>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground/70">—</span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        item.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        item.is_active ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
                       }`}>
                         {item.is_active ? 'Active' : 'Inactive'}
                       </span>
@@ -2237,7 +2275,7 @@ export default function ItemsPage() {
                       <div className="flex items-center justify-end space-x-2">
                         <Link
                           href={`/items/${item.id}/ledger`}
-                          className="p-2 text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                          className="p-2 text-muted-foreground hover:bg-muted rounded transition-colors"
                           title="View stock ledger (in / out)"
                         >
                           <ScrollText className="h-4 w-4" />
@@ -2245,7 +2283,7 @@ export default function ItemsPage() {
                         {itemHasPerStationShopStock(item) && (
                           <Link
                             href={`/inventory?tab=lookup&item_id=${item.id}`}
-                            className="p-2 text-teal-600 hover:bg-teal-50 rounded transition-colors"
+                            className="p-2 text-primary hover:bg-accent rounded transition-colors"
                             title="Stock by station"
                           >
                             <ArrowRightLeft className="h-4 w-4" />
@@ -2253,27 +2291,37 @@ export default function ItemsPage() {
                         )}
                         <button
                           onClick={() => handleEdit(item)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          className="p-2 text-primary hover:bg-accent rounded transition-colors"
                           title="Edit Item"
                         >
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          title="Delete Item"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {item.is_active ? (
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="p-2 text-destructive hover:bg-destructive/5 rounded transition-colors"
+                            title="Deactivate Item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleRestore(item.id)}
+                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                            title="Restore Item"
+                          >
+                            <Undo2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                   )
                 })}
               </tbody>
-              <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+              <tfoot className="bg-muted/40 border-t-2 border-border">
                 <tr>
-                  <td className="px-6 py-3 text-sm font-semibold text-gray-900" colSpan={7}>
+                  <td className="px-6 py-3 text-sm font-semibold text-foreground" colSpan={7}>
                     Total on-hand value ({totalCount} matching item{totalCount === 1 ? '' : 's'})
                   </td>
                   <td className="px-6 py-3 text-sm font-semibold text-right tabular-nums text-emerald-900">
@@ -2287,7 +2335,7 @@ export default function ItemsPage() {
           </div>
             )}
             {totalCount > 0 && (
-              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3">
                 <OffsetPaginationControls
                   page={listPage}
                   pageSize={pageSize}
@@ -2308,7 +2356,7 @@ export default function ItemsPage() {
         {showModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-bold mb-6">
+              <h2 className="mb-6 text-2xl font-bold text-foreground">
                 {editingId ? 'Edit Item' : 'Add New Item'}
               </h2>
               <form noValidate onSubmit={handleSubmit}>
@@ -2335,7 +2383,7 @@ export default function ItemsPage() {
                 )}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Item Name *
                     </label>
                     <input
@@ -2343,19 +2391,19 @@ export default function ItemsPage() {
                       required
                       value={formData.name}
                       onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="e.g., Premium Diesel"
                     />
                   </div>
 
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Description
                     </label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="Optional description"
                       rows={3}
                     />
@@ -2363,7 +2411,7 @@ export default function ItemsPage() {
 
                   {/* Product Image Upload */}
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Product Image (Optional)
                     </label>
                     <div className="space-y-3">
@@ -2372,20 +2420,20 @@ export default function ItemsPage() {
                           <img
                             src={imagePreview}
                             alt="Product preview"
-                            className="w-32 h-32 object-contain border border-gray-300 rounded-lg bg-gray-50"
+                            className="w-32 h-32 object-contain border border-border rounded-lg bg-muted/40"
                           />
                           <button
                             type="button"
                             onClick={handleRemoveImage}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 text-xs"
+                            className="absolute -top-2 -right-2 bg-destructive/50 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-destructive text-xs"
                             title="Remove image"
                           >
                             ×
                           </button>
                         </div>
                       ) : (
-                        <div className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50">
-                          <span className="text-gray-400 text-xs text-center px-2">No image</span>
+                        <div className="w-32 h-32 border-2 border-dashed border-border rounded-lg flex items-center justify-center bg-muted/40">
+                          <span className="text-muted-foreground/70 text-xs text-center px-2">No image</span>
                         </div>
                       )}
                       <div className="flex flex-wrap gap-2">
@@ -2399,20 +2447,20 @@ export default function ItemsPage() {
                         />
                         <label
                           htmlFor="image-upload"
-                          className={`inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg cursor-pointer ${
+                          className={`inline-flex items-center px-4 py-2 border border-border rounded-lg cursor-pointer ${
                             uploadingImage || showCamera
-                              ? 'bg-gray-100 cursor-not-allowed text-gray-400'
-                              : 'bg-white hover:bg-gray-50'
+                              ? 'bg-muted cursor-not-allowed text-muted-foreground/70'
+                              : 'bg-white hover:bg-muted/40'
                           }`}
                         >
                           {uploadingImage ? (
                             <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-                              <span className="text-sm text-gray-600">Uploading...</span>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2"></div>
+                              <span className="text-sm text-muted-foreground">Uploading...</span>
                             </>
                           ) : (
                             <>
-                              <span className="text-sm text-gray-700">📁 Upload from Device</span>
+                              <span className="text-sm text-foreground/85">📁 Upload from Device</span>
                             </>
                           )}
                         </label>
@@ -2422,14 +2470,14 @@ export default function ItemsPage() {
                           disabled={uploadingImage || showCamera}
                           className={`inline-flex items-center px-4 py-2 border rounded-lg ${
                             uploadingImage || showCamera
-                              ? 'bg-gray-100 cursor-not-allowed text-gray-400 border-gray-300'
-                              : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300'
+                              ? 'bg-muted cursor-not-allowed text-muted-foreground/70 border-border'
+                              : 'bg-blue-50 hover:bg-blue-100 text-primary border-blue-300'
                           }`}
                         >
                           <Camera className="h-4 w-4 mr-2" />
                           <span className="text-sm font-medium">📷 Capture Photo</span>
                         </button>
-                        <p className="w-full mt-1 text-xs text-gray-500">
+                        <p className="w-full mt-1 text-xs text-muted-foreground">
                           Image will be automatically resized to fit (max 800x800px). JPG, PNG, GIF, WebP supported.
                         </p>
                       </div>
@@ -2437,7 +2485,7 @@ export default function ItemsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Item Type *
                     </label>
                     <select
@@ -2449,7 +2497,7 @@ export default function ItemsPage() {
                           mergeItemGlSuggestions({ ...prev, item_type }, { ...itemGlCtx, item_type })
                         )
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     >
                       <option value="inventory">Inventory</option>
                       <option value="non_inventory">Non-Inventory</option>
@@ -2458,14 +2506,14 @@ export default function ItemsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Unit of Measure *
                     </label>
                     <select
                       required
                       value={formData.unit}
                       onChange={(e) => setFormData((prev) => ({ ...prev, unit: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     >
                       <option value="piece">Piece</option>
                       <option value="liter">Liter (L)</option>
@@ -2487,7 +2535,7 @@ export default function ItemsPage() {
                       <option value="year">Year</option>
                       <option value="service">Service</option>
                     </select>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {isFeedItemForm
                         ? 'For sack-packed feed, choose Sack — stock and POS quantity are counted in sacks.'
                         : isMedicineItemForm
@@ -2499,7 +2547,7 @@ export default function ItemsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       POS Category
                     </label>
                     <select
@@ -2522,7 +2570,7 @@ export default function ItemsPage() {
                           return mergeItemGlSuggestions(next, { ...itemGlCtx, pos_category: v })
                         })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     >
                       <option value="general">General (For POS General Items Tab)</option>
                       <option value="feed">Feed (sack sales — General POS tab)</option>
@@ -2539,7 +2587,7 @@ export default function ItemsPage() {
                         Non-POS (aquaculture hatchery / pond stock — not shop or Cashier)
                       </option>
                     </select>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       General, feed, and medicine items appear in the Cashier retail catalog. Fuel items use the Fuel tab
                       and tanks.
                       Fish Type and Non-POS items are excluded from Cashier and per-station shop stock; use vendor bills to
@@ -2625,7 +2673,7 @@ export default function ItemsPage() {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-emerald-950 mb-1">
-                          Kg per sack (weight on label — not BDT) <span className="text-red-600">*</span>
+                          Kg per sack (weight on label — not BDT) <span className="text-destructive">*</span>
                         </label>
                         <input
                           type="number"
@@ -2712,7 +2760,7 @@ export default function ItemsPage() {
                   <div>
                     <label
                       htmlFor="item-unit-price"
-                      className="block text-sm font-medium text-gray-700 mb-2"
+                      className="mb-2 block text-sm font-medium text-foreground"
                     >
                       {isFeedItemForm ? (
                         <>Selling price (BDT per sack{feedSackPriceLabelSuffix(formData.content_weight_kg)}) *</>
@@ -2732,17 +2780,17 @@ export default function ItemsPage() {
                         const v = normalizeMoneyTyping(e.target.value)
                         setFormData((prev) => ({ ...prev, unit_price: v }))
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                     {isFeedItemForm && (
-                      <p className="mt-1 text-xs text-amber-800/90">
+                      <p className="mt-1 text-xs text-warning-foreground/90">
                         Enter the full sack price in BDT here (e.g. 1900). Sack weight in kg belongs only in the green
                         &quot;Kg per sack&quot; section above — not in this field.
                       </p>
                     )}
                     {feedSellingPriceSuspicion && (
                       <p
-                        className="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
+                        className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-red-900"
                         role="alert"
                       >
                         {feedSellingPriceSuspicion}
@@ -2751,7 +2799,7 @@ export default function ItemsPage() {
                   </div>
 
                   <div>
-                    <label htmlFor="item-cost" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="item-cost" className="mb-2 block text-sm font-medium text-foreground">
                       {isFeedItemForm ? (
                         <>Cost (BDT per sack{feedSackPriceLabelSuffix(formData.content_weight_kg)}) *</>
                       ) : (
@@ -2770,15 +2818,15 @@ export default function ItemsPage() {
                         const v = normalizeMoneyTyping(e.target.value)
                         setFormData((prev) => ({ ...prev, cost: v }))
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                     {isFeedItemForm && (
-                      <p className="mt-1 text-xs text-amber-800/90">
+                      <p className="mt-1 text-xs text-warning-foreground/90">
                         Enter BDT for one full sack of feed (same sack size as &quot;Kg per sack&quot; above).
                       </p>
                     )}
                     {formData.item_type === 'inventory' && !isFeedItemForm && (
-                      <p className="mt-1 text-xs text-slate-600">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Unit cost drives automatic COGS on sales (Dr COGS / Cr inventory). If this is 0, P&amp;L COGS
                         stays zero until you enter cost or post sales with a price the system can use.
                       </p>
@@ -2789,7 +2837,7 @@ export default function ItemsPage() {
                     <div className="space-y-2">
                       {isFishItemForm && fishPondRows.length > 1 && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Pond (quantity applies here)
                           </label>
                           <StringReferenceCombobox
@@ -2813,31 +2861,31 @@ export default function ItemsPage() {
                             groupLabel="Ponds"
                             emptyOption={null}
                             placeholder="Search pond…"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                           />
-                          <p className="mt-1 text-xs text-gray-500">
+                          <p className="mt-1 text-xs text-muted-foreground">
                             Fish SKUs are not stored in shop station bins. Pick the pond whose on-hand amount you are
                             editing; the item card shows the total across ponds.
                           </p>
                         </div>
                       )}
                       {isFishItemForm && fishPondRows.length === 1 && (
-                        <p className="text-xs text-gray-600">
-                          Pond: <span className="font-medium text-gray-900">{fishPondRows[0].pond_name}</span>
+                        <p className="text-xs text-muted-foreground">
+                          Pond: <span className="font-medium text-foreground">{fishPondRows[0].pond_name}</span>
                         </p>
                       )}
                       {isFishItemForm &&
                         formData.item_type === 'inventory' &&
                         fishPondRows.length === 0 &&
                         !fishPondLoading && (
-                          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                          <p className="text-xs text-warning-foreground bg-warning/10 border border-warning/30 rounded-md px-3 py-2">
                             No active ponds loaded (Aquaculture may be off or you have no ponds yet). Quantity stays
                             company-wide until ponds exist — then stock can be split per pond here.
                           </p>
                         )}
                       {shopStationRows.length > 1 && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             {isFeedItemForm
                               ? 'Shop location (sack count applies here)'
                               : 'Shop location (quantity applies here)'}
@@ -2868,9 +2916,9 @@ export default function ItemsPage() {
                             groupLabel="Shop locations"
                             emptyOption={null}
                             placeholder="Search shop location…"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                           />
-                          <p className="mt-1 text-xs text-gray-500">
+                          <p className="mt-1 text-xs text-muted-foreground">
                             Stock is saved for the location you select (when you reopen, the form opens on the site that
                             already has quantity). Products appear in Cashier even when stock is zero at a site; the
                             cashier sees &ldquo;Out of stock at this site&rdquo; until quantity is received here. To
@@ -2881,7 +2929,7 @@ export default function ItemsPage() {
                               r.station_id !== selectedShopStationId &&
                               Number(r.quantity) > 0
                           ) && (
-                            <label className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                            <label className="mt-2 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                               <input
                                 type="checkbox"
                                 className="mt-0.5 rounded border-amber-400"
@@ -2898,7 +2946,7 @@ export default function ItemsPage() {
                       )}
                       {fuelTanksForProduct.length > 1 && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Fuel tank (quantity applies here)
                           </label>
                           <StringReferenceCombobox
@@ -2914,12 +2962,12 @@ export default function ItemsPage() {
                             groupLabel="Fuel tanks"
                             emptyOption={null}
                             placeholder="Search fuel tank…"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            className="erp-field"
                           />
                         </div>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           {isFeedItemForm ? 'Sacks on hand' : 'Quantity on Hand'}
                         </label>
                         <input
@@ -2936,9 +2984,9 @@ export default function ItemsPage() {
                               quantity_on_hand: Number.isFinite(value) ? value : prev.quantity_on_hand,
                             }))
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="erp-field"
                         />
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {fuelTanksForProduct.length > 0
                             ? `Fuel stock is stored in tank(s); list view shows total across tanks. ${
                                 fuelTanksForProduct.length === 1
@@ -2960,10 +3008,10 @@ export default function ItemsPage() {
                   )}
 
                   <div className="col-span-2 space-y-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Reporting category <span className="text-red-500">*</span>
                     </label>
-                    <p className="text-xs text-gray-500 mb-2">
+                    <p className="text-xs text-muted-foreground mb-2">
                       Used for business reports (by category and by item). This is separate from the POS tab (Fuel / General) above.
                       For hatchery fish fry and pond stock, use <strong className="font-medium">Aquaculture</strong> (or Fish buying and selling when appropriate).
                     </p>
@@ -2979,14 +3027,14 @@ export default function ItemsPage() {
                         label: 'Apply a common category to the field below…',
                       }}
                       placeholder="Search reporting category…"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                     />
                     <input
                       type="text"
                       required
                       value={formData.category}
                       onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="e.g. Poultry feed, General, Medicine — or pick from the list above"
                       list="item-reporting-categories"
                       autoComplete="off"
@@ -3006,20 +3054,20 @@ export default function ItemsPage() {
                     </datalist>
                   </div>
 
-                  <div className="col-span-2 border-t border-gray-200 pt-4 mt-2">
-                    <h3 className="text-sm font-semibold text-gray-800 mb-1">Chart of accounts (optional)</h3>
-                    <p className="mb-3 text-xs text-gray-500">
+                  <div className="col-span-2 border-t border-border pt-4 mt-2">
+                    <h3 className="text-sm font-semibold text-foreground mb-1">Chart of accounts (optional)</h3>
+                    <p className="mb-3 text-xs text-muted-foreground">
                       Template accounts (5100, 5120, 4100, etc.) are <strong>filled in automatically</strong> when
                       empty. Change item type or POS category to refresh suggestions, or pick any account to override.
                     </p>
-                    <p className="text-xs text-gray-500 mb-3">
+                    <p className="text-xs text-muted-foreground mb-3">
                       Recommended accounts update when you change <strong className="font-medium">POS category</strong> or{' '}
                       <strong className="font-medium">item type</strong> (fuel → 4100/5100/1200, shop → 4200/5120/1220,
                       fish → 424x/1581). Leave on the recommended row to use the template; pick another account to override.
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Revenue (sales)</label>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Revenue (sales)</label>
                         <CoaAccountCombobox
                           value={formData.revenue_account_id}
                           onChange={(accountId) => {
@@ -3035,12 +3083,12 @@ export default function ItemsPage() {
                             suggestedRevenueCoaCode(itemGlCtx),
                             coaAccounts
                           )}
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          className="w-full px-2 py-2 text-sm border border-border rounded-lg"
                           placeholder="Search revenue accounts…"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">COGS</label>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">COGS</label>
                         <CoaAccountCombobox
                           value={formData.cogs_account_id}
                           onChange={(accountId) => {
@@ -3053,11 +3101,11 @@ export default function ItemsPage() {
                           }}
                           accounts={cogsCoaOptions}
                           emptyLabel={templateDefaultOptionLabel(suggestedCogsCoaCode(itemGlCtx), coaAccounts)}
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          className="w-full px-2 py-2 text-sm border border-border rounded-lg"
                           placeholder="Search COGS accounts…"
                         />
                         {formData.item_type === 'inventory' && (
-                          <p className="mt-1 text-xs text-slate-600">
+                          <p className="mt-1 text-xs text-muted-foreground">
                             COGS on Profit &amp; Loss posts when you <strong>sell</strong> this SKU (POS / invoice), not
                             when you save the item. Set <strong>Cost</strong> below; P&amp;L uses cost × quantity
                             (falls back to selling price only if cost is blank).
@@ -3065,7 +3113,7 @@ export default function ItemsPage() {
                         )}
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Inventory asset</label>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Inventory asset</label>
                         <CoaAccountCombobox
                           value={formData.inventory_account_id}
                           onChange={(accountId) => {
@@ -3081,12 +3129,12 @@ export default function ItemsPage() {
                             suggestedInventoryCoaCode(itemGlCtx),
                             coaAccounts
                           )}
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          className="w-full px-2 py-2 text-sm border border-border rounded-lg"
                           placeholder="Search inventory accounts…"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">
                           Expense (non-inventory bills)
                         </label>
                         <CoaAccountCombobox
@@ -3104,7 +3152,7 @@ export default function ItemsPage() {
                             suggestedExpenseCoaCode(itemGlCtx),
                             coaAccounts
                           )}
-                          className="w-full px-2 py-2 text-sm border border-gray-300 rounded-lg"
+                          className="w-full px-2 py-2 text-sm border border-border rounded-lg"
                           placeholder="Search expense accounts…"
                         />
                       </div>
@@ -3112,14 +3160,14 @@ export default function ItemsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Barcode (Optional)
                     </label>
                     <input
                       type="text"
                       value={formData.barcode}
                       onChange={(e) => setFormData((prev) => ({ ...prev, barcode: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="Scan or enter barcode"
                     />
                   </div>
@@ -3136,17 +3184,17 @@ export default function ItemsPage() {
                           }
                           disabled={isNonPosForm || isFishItemForm}
                           onChange={(e) => setFormData((prev) => ({ ...prev, is_pos_available: e.target.checked }))}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-input text-primary focus:ring-ring"
                         />
-                        <span className="text-sm font-medium text-gray-700">Available in POS</span>
+                        <span className="text-sm font-medium text-foreground/85">Available in POS</span>
                       </label>
                       {isNonPosForm && (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           Off for Non-POS (Cashier cannot sell this SKU).
                         </span>
                       )}
                       {isFishItemForm && (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-muted-foreground">
                           Off for Fish Type (Cashier cannot sell this SKU).
                         </span>
                       )}
@@ -3155,25 +3203,25 @@ export default function ItemsPage() {
                           type="checkbox"
                           checked={formData.is_taxable}
                           onChange={(e) => setFormData((prev) => ({ ...prev, is_taxable: e.target.checked }))}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-input text-primary focus:ring-ring"
                         />
-                        <span className="text-sm font-medium text-gray-700">Taxable</span>
+                        <span className="text-sm font-medium text-foreground/85">Taxable</span>
                       </label>
                       <label className="flex items-center space-x-2">
                         <input
                           type="checkbox"
                           checked={formData.is_active}
                           onChange={(e) => setFormData((prev) => ({ ...prev, is_active: e.target.checked }))}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-input text-primary focus:ring-ring"
                         />
-                        <span className="text-sm font-medium text-gray-700">Active</span>
+                        <span className="text-sm font-medium text-foreground/85">Active</span>
                       </label>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <p className="text-sm text-blue-800">
+                <div className="bg-blue-50 border border-primary/25 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-primary">
                     <strong>Item Types:</strong><br />
                     <strong>Inventory:</strong> Track quantities (fuel products)<br />
                     <strong>Non-Inventory:</strong> Don't track quantities (consumables)<br />
@@ -3188,13 +3236,13 @@ export default function ItemsPage() {
                       setShowModal(false)
                       resetForm()
                     }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="erp-btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="erp-btn-primary"
                   >
                     {editingId ? 'Update Item' : 'Add Item'}
                   </button>
@@ -3213,7 +3261,7 @@ export default function ItemsPage() {
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="text-white hover:text-gray-300"
+                  className="text-white hover:text-muted-foreground/40"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -3237,10 +3285,10 @@ export default function ItemsPage() {
                   <button
                     type="button"
                     onClick={capturePhoto}
-                    className="w-16 h-16 rounded-full bg-white border-4 border-gray-300 hover:bg-gray-100 flex items-center justify-center shadow-lg"
+                    className="w-16 h-16 rounded-full bg-white border-4 border-border hover:bg-muted flex items-center justify-center shadow-lg"
                     title="Capture Photo"
                   >
-                    <div className="w-12 h-12 rounded-full bg-white border-2 border-gray-400"></div>
+                    <div className="w-12 h-12 rounded-full bg-white border-2 border-border"></div>
                   </button>
                 </div>
               </div>
@@ -3249,20 +3297,20 @@ export default function ItemsPage() {
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  className="px-4 py-2 bg-muted-foreground text-white rounded-lg hover:bg-muted-foreground"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={capturePhoto}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="erp-btn-primary"
                 >
                   Capture Photo
                 </button>
               </div>
               
-              <p className="text-white text-xs text-center mt-4 text-gray-400">
+              <p className="text-white text-xs text-center mt-4 text-muted-foreground/70">
                 Position the product in the frame and tap the capture button
               </p>
             </div>

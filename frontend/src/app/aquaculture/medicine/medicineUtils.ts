@@ -6,6 +6,7 @@ import {
   quantityPlaceholderForUnit,
   suggestMedicineStockUnit,
 } from '@/lib/aquacultureMedicineUnits'
+import { formatQuantityPlain } from '@/utils/quantity'
 
 export {
   formatStockUnit,
@@ -202,12 +203,7 @@ function parseDoseToFields(dose: string): { doseAmount: string; doseUnit: DoseUn
     const haRate = Number.parseFloat(legacyHa[1].replace(/,/g, ''))
     if (Number.isFinite(haRate) && haRate > 0) {
       const perDec = haRate * LEGACY_HA_TO_DECIMAL
-      const doseAmount =
-        perDec >= 10
-          ? String(Math.round(perDec))
-          : perDec >= 1
-            ? perDec.toFixed(2)
-            : perDec.toFixed(3)
+      const doseAmount = formatQuantityPlain(perDec)
       return { doseAmount, doseUnit: 'kg_decimal' }
     }
   }

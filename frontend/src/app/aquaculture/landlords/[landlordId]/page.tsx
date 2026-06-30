@@ -230,8 +230,8 @@ export default function LandlordDetailPage() {
 
   if (loading && !detail) {
     return (
-      <div className="px-4 py-12 text-center text-slate-600">
-        <RefreshCw className="mx-auto h-6 w-6 animate-spin text-teal-700" aria-hidden />
+      <div className="px-4 py-12 text-center text-muted-foreground">
+        <RefreshCw className="mx-auto h-6 w-6 animate-spin text-primary" aria-hidden />
         <p className="mt-2 text-sm">Loading…</p>
       </div>
     )
@@ -240,8 +240,8 @@ export default function LandlordDetailPage() {
   if (!detail) {
     return (
       <div className="px-4 py-12 text-center">
-        <p className="text-slate-600">Landlord not found.</p>
-        <Link href="/aquaculture/landlords" className="mt-2 inline-block text-teal-800 underline">
+        <p className="text-muted-foreground">Landlord not found.</p>
+        <Link href="/aquaculture/landlords" className="mt-2 inline-block text-primary underline">
           Back to list
         </Link>
       </div>
@@ -255,27 +255,27 @@ export default function LandlordDetailPage() {
       <div className="mb-6">
         <Link
           href="/aquaculture/landlords"
-          className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-teal-950"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           All landlords
         </Link>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4 rounded-xl border border-border bg-white p-5 shadow-sm">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="flex items-center gap-2 text-2xl font-semibold text-slate-900">
-              <Landmark className="h-7 w-7 shrink-0 text-teal-700" aria-hidden />
+            <h1 className="flex items-center gap-2 text-2xl font-semibold text-foreground">
+              <Landmark className="h-7 w-7 shrink-0 text-primary" aria-hidden />
               {detail.name || pageMeta.title}
             </h1>
             {detail.code ? (
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-sm text-slate-700">
+              <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-sm text-foreground/85">
                 {detail.code}
               </span>
             ) : null}
             {!detail.is_active ? (
-              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground/85">
                 Inactive
               </span>
             ) : null}
@@ -285,25 +285,25 @@ export default function LandlordDetailPage() {
               {statusLabel(detail.balance_status)}
             </span>
           </div>
-          <p className="mt-2 text-lg font-semibold tabular-nums text-slate-900">
+          <p className="mt-2 text-lg font-semibold tabular-nums text-foreground">
             Ledger balance: {sym}
             {formatNumber(balanceNum, 2)}
           </p>
-          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
             {detail.phone ? (
               <div>
-                <dt className="inline font-medium text-slate-700">Phone </dt>
+                <dt className="inline font-medium text-foreground/85">Phone </dt>
                 <dd className="inline">{detail.phone}</dd>
               </div>
             ) : null}
             {detail.email ? (
               <div>
-                <dt className="inline font-medium text-slate-700">Email </dt>
+                <dt className="inline font-medium text-foreground/85">Email </dt>
                 <dd className="inline">{detail.email}</dd>
               </div>
             ) : null}
             <div>
-              <dt className="inline font-medium text-slate-700">Pond shares </dt>
+              <dt className="inline font-medium text-foreground/85">Pond shares </dt>
               <dd className="inline">{detail.pond_shares?.length ?? 0}</dd>
             </div>
           </dl>
@@ -312,24 +312,24 @@ export default function LandlordDetailPage() {
               {detail.pond_shares.map((sh) => (
                 <li
                   key={sh.id ?? `${sh.pond_id}-${sh.land_area_decimal}`}
-                  className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 text-xs text-slate-700"
+                  className="rounded-lg border border-border/70 bg-muted/40 px-2.5 py-1 text-xs text-foreground/85"
                 >
                   <span className="font-medium">{sh.pond_name || `Pond #${sh.pond_id}`}</span>
-                  <span className="text-slate-500"> · </span>
+                  <span className="text-muted-foreground"> · </span>
                   {formatNumber(Number(String(sh.land_area_decimal).replace(/,/g, '')), 4)} dec
                 </li>
               ))}
             </ul>
           ) : null}
           {detail.notes?.trim() ? (
-            <p className="mt-3 max-w-2xl text-sm text-slate-600">{detail.notes.trim()}</p>
+            <p className="mt-3 max-w-2xl text-sm text-muted-foreground">{detail.notes.trim()}</p>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setEditOpen(true)}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
           >
             <Pencil className="h-4 w-4" aria-hidden />
             Edit
@@ -337,7 +337,7 @@ export default function LandlordDetailPage() {
           <button
             type="button"
             onClick={() => setLedgerModal('payment')}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90"
           >
             <Wallet className="h-4 w-4" aria-hidden />
             Record payment
@@ -345,7 +345,7 @@ export default function LandlordDetailPage() {
           <button
             type="button"
             onClick={() => setLedgerModal('rent_charge')}
-            className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100"
+            className="inline-flex items-center gap-1 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-sm font-medium text-primary hover:bg-teal-100"
           >
             <Receipt className="h-4 w-4" aria-hidden />
             Rent charge
@@ -353,7 +353,7 @@ export default function LandlordDetailPage() {
           <button
             type="button"
             onClick={() => setLedgerModal('adjustment')}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Adjustment
@@ -361,7 +361,7 @@ export default function LandlordDetailPage() {
           <button
             type="button"
             onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-2 text-sm shadow-sm hover:bg-muted/40"
             title="Refresh"
           >
             <RefreshCw className="h-4 w-4" aria-hidden />
@@ -369,7 +369,7 @@ export default function LandlordDetailPage() {
           <button
             type="button"
             onClick={() => void removeLandlord()}
-            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 hover:bg-red-100"
+            className="inline-flex items-center gap-1 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm font-medium text-red-900 hover:bg-destructive/10"
           >
             <Trash2 className="h-4 w-4" aria-hidden />
             Delete
@@ -377,16 +377,16 @@ export default function LandlordDetailPage() {
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
-          <h2 className="text-sm font-semibold text-slate-900">Ledger</h2>
-          <p className="text-xs text-slate-500">
+      <section className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-5 py-3">
+          <h2 className="text-sm font-semibold text-foreground">Ledger</h2>
+          <p className="text-xs text-muted-foreground">
             Positive balance = we owe the landlord. Payments and credits reduce the balance.
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="px-4 py-2.5 font-medium">Date</th>
                 <th className="px-4 py-2.5 font-medium">Kind</th>
@@ -403,7 +403,7 @@ export default function LandlordDetailPage() {
             <tbody>
               {(detail.ledger || []).length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
                     No ledger entries yet. Record a payment or post a rent charge to get started.
                   </td>
                 </tr>
@@ -418,7 +418,7 @@ export default function LandlordDetailPage() {
                       ? Number(String(e.payment_display).replace(/,/g, ''))
                       : null
                   return (
-                    <tr key={e.id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                    <tr key={e.id} className="border-t border-border/70 hover:bg-muted/40/60">
                       <td className="whitespace-nowrap px-4 py-2.5">{formatDateOnly(e.entry_date)}</td>
                       <td className="px-4 py-2.5">{kindLabel(e.kind)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
@@ -427,7 +427,7 @@ export default function LandlordDetailPage() {
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         {pay != null && Number.isFinite(pay) ? `${sym}${formatNumber(pay, 2)}` : '—'}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
                         {sym}
                         {formatNumber(Number(String(e.amount_signed).replace(/,/g, '')), 2)}
                       </td>
@@ -435,8 +435,8 @@ export default function LandlordDetailPage() {
                         {sym}
                         {formatNumber(Number(String(e.running_balance).replace(/,/g, '')), 2)}
                       </td>
-                      <td className="px-4 py-2.5 text-slate-700">{e.pond_name || '—'}</td>
-                      <td className="max-w-[200px] truncate px-4 py-2.5 text-slate-600">
+                      <td className="px-4 py-2.5 text-foreground/85">{e.pond_name || '—'}</td>
+                      <td className="max-w-[200px] truncate px-4 py-2.5 text-muted-foreground">
                         {e.memo || e.reference || '—'}
                       </td>
                       <td className="max-w-[120px] truncate px-4 py-2.5 font-mono text-xs">
@@ -447,7 +447,7 @@ export default function LandlordDetailPage() {
                           <button
                             type="button"
                             onClick={() => openLedgerEdit(e)}
-                            className="rounded p-1 text-slate-600 hover:bg-slate-100"
+                            className="rounded p-1 text-muted-foreground hover:bg-muted"
                             title="Edit entry"
                           >
                             <Pencil className="h-4 w-4" aria-hidden />
@@ -455,7 +455,7 @@ export default function LandlordDetailPage() {
                           <button
                             type="button"
                             onClick={() => void removeLedger(e.id)}
-                            className="rounded p-1 text-red-700 hover:bg-red-50"
+                            className="rounded p-1 text-destructive hover:bg-destructive/5"
                             title="Delete entry"
                           >
                             <Trash2 className="h-4 w-4" aria-hidden />
@@ -510,13 +510,13 @@ export default function LandlordDetailPage() {
 
       {ledgerEdit ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-900">Edit ledger entry</h3>
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-foreground">Edit ledger entry</h3>
             <div className="mt-4 grid gap-3 text-sm">
-              <label className="font-medium text-slate-700">
+              <label className="font-medium text-foreground/85">
                 Kind
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                   value={editKind}
                   onChange={(ev) => setEditKind(ev.target.value as typeof editKind)}
                 >
@@ -525,27 +525,27 @@ export default function LandlordDetailPage() {
                   <option value="adjustment">Adjustment</option>
                 </select>
               </label>
-              <label className="font-medium text-slate-700">
+              <label className="font-medium text-foreground/85">
                 Date
                 <input
                   type="date"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                   value={editDate}
                   onChange={(ev) => setEditDate(ev.target.value)}
                 />
               </label>
-              <label className="font-medium text-slate-700">
+              <label className="font-medium text-foreground/85">
                 {editKind === 'adjustment' ? 'Signed amount' : 'Amount (positive)'}
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 tabular-nums"
+                  className="mt-1 w-full rounded-lg border border-border px-2 py-2 tabular-nums"
                   value={editAmount}
                   onChange={(ev) => setEditAmount(ev.target.value)}
                 />
               </label>
-              <label className="font-medium text-slate-700">
+              <label className="font-medium text-foreground/85">
                 Pond
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                   value={editPond}
                   onChange={(ev) => setEditPond(ev.target.value)}
                 >
@@ -558,7 +558,7 @@ export default function LandlordDetailPage() {
                 </select>
               </label>
               {editKind === 'payment' && editPond ? (
-                <label className="flex items-center gap-2 text-slate-700">
+                <label className="flex items-center gap-2 text-foreground/85">
                   <input
                     type="checkbox"
                     checked={editApplyPaid}
@@ -567,28 +567,28 @@ export default function LandlordDetailPage() {
                   Update pond paid
                 </label>
               ) : null}
-              <label className="font-medium text-slate-700">
+              <label className="font-medium text-foreground/85">
                 Memo
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                   value={editMemo}
                   onChange={(ev) => setEditMemo(ev.target.value)}
                 />
               </label>
-              <label className="font-medium text-slate-700">
+              <label className="font-medium text-foreground/85">
                 Reference
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                   value={editRef}
                   onChange={(ev) => setEditRef(ev.target.value)}
                 />
               </label>
               {editKind === 'payment' ? (
                 <>
-                  <label className="font-medium text-slate-700">
+                  <label className="font-medium text-foreground/85">
                     Bank register
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                      className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                       value={editBankId}
                       onChange={(ev) => setEditBankId(ev.target.value)}
                     >
@@ -600,10 +600,10 @@ export default function LandlordDetailPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="font-medium text-slate-700">
+                  <label className="font-medium text-foreground/85">
                     Site
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                      className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                       value={editStationId}
                       onChange={(ev) => setEditStationId(ev.target.value)}
                     >
@@ -622,14 +622,14 @@ export default function LandlordDetailPage() {
               <button
                 type="button"
                 onClick={() => setLedgerEdit(null)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium"
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => void saveLedgerEdit()}
-                className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800"
+                className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90"
               >
                 Save
               </button>

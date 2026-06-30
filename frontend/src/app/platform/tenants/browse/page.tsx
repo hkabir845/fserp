@@ -25,13 +25,13 @@ interface Tenant {
 
 function subscriptionBadgeClass(status: string) {
   const colors: Record<string, string> = {
-    active: 'bg-green-100 text-green-800',
-    trial: 'bg-blue-100 text-blue-800',
+    active: 'bg-success/15 text-success',
+    trial: 'bg-blue-100 text-primary',
     suspended: 'bg-yellow-100 text-yellow-800',
-    cancelled: 'bg-red-100 text-red-800',
-    expired: 'bg-gray-100 text-gray-800',
+    cancelled: 'bg-destructive/10 text-destructive',
+    expired: 'bg-muted text-foreground',
   }
-  return colors[status] || 'bg-gray-100 text-gray-800'
+  return colors[status] || 'bg-muted text-foreground'
 }
 
 export default function PlatformTenantsBrowsePage() {
@@ -97,8 +97,8 @@ export default function PlatformTenantsBrowsePage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">All tenants</h1>
-              <p className="mt-1 text-sm text-gray-600">
+              <h1 className="text-2xl font-bold text-foreground">All tenants</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Directory from the platform API. Use “Open in ERP” to work inside a tenant context.
               </p>
             </div>
@@ -107,7 +107,7 @@ export default function PlatformTenantsBrowsePage() {
                 type="button"
                 onClick={() => refetch()}
                 disabled={isFetching}
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                className="inline-flex items-center rounded-md border border-border bg-white px-4 py-2 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40 disabled:opacity-50"
               >
                 {isFetching ? 'Refreshing…' : 'Refresh'}
               </button>
@@ -121,8 +121,8 @@ export default function PlatformTenantsBrowsePage() {
           </div>
 
           {platformUser && (
-            <p className="mb-4 text-xs text-gray-500">
-              Signed in as <span className="font-mono text-gray-700">{platformUser.email}</span>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Signed in as <span className="font-mono text-foreground/85">{platformUser.email}</span>
             </p>
           )}
 
@@ -136,16 +136,16 @@ export default function PlatformTenantsBrowsePage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, domain, or ID…"
-              className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              className="w-full max-w-md rounded-md border border-border px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
             />
           </div>
 
           {isLoading && (
-            <div className="rounded-lg border border-gray-200 bg-white p-12 text-center text-gray-500">Loading tenants…</div>
+            <div className="rounded-lg border border-border bg-white p-12 text-center text-muted-foreground">Loading tenants…</div>
           )}
 
           {isError && !isLoading && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">
               <p className="font-medium">Could not load tenants</p>
               <p className="mt-1">{errDetail || 'Request failed. Check that you are logged in with platform or superadmin access.'}</p>
               <button
@@ -159,9 +159,9 @@ export default function PlatformTenantsBrowsePage() {
           )}
 
           {!isLoading && !isError && filtered.length === 0 && tenants.length === 0 && (
-            <div className="rounded-lg border border-gray-200 bg-white p-12 text-center">
-              <h3 className="text-lg font-medium text-gray-900">No tenants in database</h3>
-              <p className="mt-2 text-gray-500">Create a tenant or run your seed scripts.</p>
+            <div className="rounded-lg border border-border bg-white p-12 text-center">
+              <h3 className="text-lg font-medium text-foreground">No tenants in database</h3>
+              <p className="mt-2 text-muted-foreground">Create a tenant or run your seed scripts.</p>
               <Link
                 href="/platform/tenants/new"
                 className="mt-4 inline-flex rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
@@ -172,53 +172,53 @@ export default function PlatformTenantsBrowsePage() {
           )}
 
           {!isLoading && !isError && filtered.length === 0 && tenants.length > 0 && (
-            <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-600">
+            <div className="rounded-lg border border-border bg-white p-8 text-center text-muted-foreground">
               No tenants match “{search}”.
             </div>
           )}
 
           {!isLoading && !isError && filtered.length > 0 && (
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow">
+            <div className="overflow-hidden rounded-lg border border-border bg-white shadow">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Tenant
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Domain
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Subscription
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Users
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Status
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-border bg-white">
                     {filtered.map((tenant) => (
-                      <tr key={tenant.id} className="hover:bg-gray-50">
+                      <tr key={tenant.id} className="hover:bg-muted/40">
                         <td className="whitespace-nowrap px-4 py-3">
-                          <div className="text-sm font-medium text-gray-900">{tenant.name}</div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-sm font-medium text-foreground">{tenant.name}</div>
+                          <div className="text-xs text-muted-foreground">
                             ID {tenant.id} · {formatDateOnly(tenant.created_at)}
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-foreground">
                           <span className="font-mono">{tenant.domain}</span>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">
                           {tenant.subscription ? (
                             <div>
-                              <div className="text-sm text-gray-900">{tenant.subscription.plan_name || '—'}</div>
+                              <div className="text-sm text-foreground">{tenant.subscription.plan_name || '—'}</div>
                               <span
                                 className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${subscriptionBadgeClass(
                                   tenant.subscription.status
@@ -228,14 +228,14 @@ export default function PlatformTenantsBrowsePage() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-sm text-gray-400">—</span>
+                            <span className="text-sm text-muted-foreground/70">—</span>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">{tenant.user_count ?? 0}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-foreground">{tenant.user_count ?? 0}</td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <span
                             className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
-                              tenant.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                              tenant.is_active ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
                             }`}
                           >
                             {tenant.is_active ? 'Active' : 'Inactive'}
@@ -245,7 +245,7 @@ export default function PlatformTenantsBrowsePage() {
                           <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end sm:gap-3">
                             <Link
                               href={`/platform/tenants/${tenant.id}/backup`}
-                              className="font-medium text-gray-700 hover:text-gray-900"
+                              className="font-medium text-foreground/85 hover:text-foreground"
                             >
                               Backup
                             </Link>
@@ -263,7 +263,7 @@ export default function PlatformTenantsBrowsePage() {
                   </tbody>
                 </table>
               </div>
-              <div className="border-t border-gray-100 bg-gray-50 px-4 py-2 text-xs text-gray-500">
+              <div className="border-t border-border/70 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
                 Showing {filtered.length} of {tenants.length} tenant{tenants.length === 1 ? '' : 's'}
               </div>
             </div>

@@ -230,8 +230,8 @@ export function BillLineItemSelect({
   /** Long labels (items, expense COA); widen list beyond the line column. */
   const listboxLayoutClass =
     mode === 'expense' || mode === 'item'
-      ? 'left-0 z-50 mt-1 max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg'
-      : 'z-50 mt-1 max-h-56 w-full min-w-[16rem] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg'
+      ? 'left-0 z-50 mt-1 max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-border bg-white py-1 text-sm shadow-lg'
+      : 'z-50 mt-1 max-h-56 w-full min-w-[16rem] overflow-auto rounded-md border border-border bg-white py-1 text-sm shadow-lg'
 
   return (
     <div className="relative min-w-0" ref={rootRef}>
@@ -287,7 +287,7 @@ export function BillLineItemSelect({
           type="button"
           tabIndex={-1}
           aria-label="Show options"
-          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground/70 hover:text-muted-foreground"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             if (open) {
@@ -311,11 +311,11 @@ export function BillLineItemSelect({
           className={`absolute ${listboxLayoutClass}`}
         >
           {flatOptions.length === 0 ? (
-            <li className="px-3 py-2 text-gray-500">No matches. Try another word from the name or number.</li>
+            <li className="px-3 py-2 text-muted-foreground">No matches. Try another word from the name or number.</li>
           ) : (
             <>
               {itemOptions.length > 0 && (
-                <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
                   Items
                   {itemsTruncated ? ` (first ${MAX_PER_GROUP} — type to narrow)` : ''}
                 </li>
@@ -334,7 +334,7 @@ export function BillLineItemSelect({
                     aria-selected={active}
                     title={title}
                     className={`cursor-pointer px-3 py-2 ${
-                      active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'
+                      active ? 'bg-blue-50 text-blue-900' : 'text-foreground hover:bg-muted/40'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
@@ -345,12 +345,12 @@ export function BillLineItemSelect({
                         <>
                           <span className="font-medium">{item.name}</span>
                           {item.item_number ? (
-                            <span className="ml-1.5 font-mono text-xs text-gray-500 tabular-nums">
+                            <span className="ml-1.5 font-mono text-xs text-muted-foreground tabular-nums">
                               {item.item_number}
                             </span>
                           ) : null}
                           {isFishTypeItem(item) && itemPiecesPerKg(item) != null ? (
-                            <span className="ml-1.5 text-xs text-gray-600">
+                            <span className="ml-1.5 text-xs text-muted-foreground">
                               · Line {formatNumber(itemPiecesPerKg(item)!)} pcs/kg
                             </span>
                           ) : null}
@@ -360,12 +360,12 @@ export function BillLineItemSelect({
                       )}
                     </span>
                     {desc ? (
-                      <span className="mt-0.5 block text-xs leading-snug text-gray-600 whitespace-normal">
+                      <span className="mt-0.5 block text-xs leading-snug text-muted-foreground whitespace-normal">
                         {desc}
                       </span>
                     ) : null}
                     {meta ? (
-                      <span className="mt-0.5 block text-[11px] leading-tight text-gray-500 capitalize whitespace-normal">
+                      <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground capitalize whitespace-normal">
                         {meta}
                       </span>
                     ) : null}
@@ -373,7 +373,7 @@ export function BillLineItemSelect({
                 )
               })}
               {accountOptions.length > 0 && (
-                <li className="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <li className="mt-1 border-t border-border/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
                   Expense accounts
                   {accountsTruncated ? ` (first ${MAX_PER_GROUP} — type to narrow)` : ''}
                 </li>
@@ -397,7 +397,7 @@ export function BillLineItemSelect({
                     aria-selected={active}
                     title={opt.label}
                     className={`cursor-pointer px-3 py-2 ${
-                      active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'
+                      active ? 'bg-blue-50 text-blue-900' : 'text-foreground hover:bg-muted/40'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
@@ -414,7 +414,7 @@ export function BillLineItemSelect({
                       )}
                     </span>
                     {meta ? (
-                      <span className="mt-0.5 block text-[11px] leading-tight text-gray-500 capitalize">
+                      <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground capitalize">
                         {meta}
                       </span>
                     ) : null}
@@ -468,11 +468,11 @@ export function BillLineTypePicker({
       <div
         role="tablist"
         aria-label="Line type"
-        className="relative mb-1 flex rounded-md border border-gray-200 bg-gray-50 p-0.5"
+        className="relative mb-1 flex rounded-md border border-border bg-muted/40 p-0.5"
       >
         <span
           aria-hidden
-          className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded bg-blue-600 shadow-sm transition-transform duration-200 ease-out ${
+          className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded bg-primary shadow-sm transition-transform duration-200 ease-out ${
             isItem ? 'translate-x-0' : 'translate-x-full'
           }`}
         />
@@ -482,7 +482,7 @@ export function BillLineTypePicker({
           aria-selected={isItem}
           onClick={() => !isItem && onChangeKind('item')}
           className={`${baseBtn} rounded ${
-            isItem ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+            isItem ? 'text-white' : 'text-muted-foreground hover:text-foreground/85'
           }`}
         >
           <Package className="h-3.5 w-3.5" />
@@ -494,7 +494,7 @@ export function BillLineTypePicker({
           aria-selected={!isItem}
           onClick={() => isItem && onChangeKind('expense')}
           className={`${baseBtn} rounded ${
-            !isItem ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+            !isItem ? 'text-white' : 'text-muted-foreground hover:text-foreground/85'
           }`}
         >
           <Receipt className="h-3.5 w-3.5" />

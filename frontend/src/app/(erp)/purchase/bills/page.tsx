@@ -107,8 +107,8 @@ export default function PurchaseBillsPage() {
       <ReportingHubBreadcrumb current="Vendor bills" />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Vendor bills</h1>
-          <p className="text-sm text-gray-600 mt-0.5">
+          <h1 className="text-2xl font-bold text-foreground">Vendor bills</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
             Accounts payable invoices from suppliers. Posting uses Inventory (or GRNI if linked to a GRN) vs Accounts Payable.
           </p>
         </div>
@@ -116,7 +116,7 @@ export default function PurchaseBillsPage() {
           <button
             type="button"
             onClick={() => refetch()}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
           >
             Refresh
           </button>
@@ -124,14 +124,14 @@ export default function PurchaseBillsPage() {
             type="button"
             onClick={() => seedMutation.mutate()}
             disabled={seedMutation.isPending}
-            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            className="rounded-md border border-amber-300 bg-warning/10 px-3 py-2 text-sm font-medium text-warning-foreground hover:bg-amber-100 disabled:opacity-50"
           >
             {seedMutation.isPending ? 'Creating…' : 'Create sample bills (3)'}
           </button>
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90"
           >
             New vendor bill
           </button>
@@ -139,66 +139,66 @@ export default function PurchaseBillsPage() {
       </div>
 
       {seedMutation.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
           {(seedMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
             'Could not create sample bills. Ensure GL accounts (AP, Inventory) and at least one supplier + item exist.'}
         </div>
       )}
 
       {(isError || createMutation.isError) && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">
           {(error as Error)?.message ||
             (createMutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
             'Request failed'}
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-muted/40">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Bill #</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Supplier</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase text-gray-500">Lines</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">GRN</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Bill #</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Supplier</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase text-muted-foreground">Lines</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">GRN</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-white">
+            <tbody className="divide-y divide-border bg-white">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     Loading…
                   </td>
                 </tr>
               ) : bills.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
                     No vendor bills yet. Use <strong>Create sample bills (3)</strong> or <strong>New vendor bill</strong>.
                   </td>
                 </tr>
               ) : (
                 bills.map((b) => (
-                  <tr key={b.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-mono text-gray-900">{b.bill_number}</td>
-                    <td className="px-4 py-3 text-sm text-gray-800">{b.supplier_name || supplierMap[b.supplier_id] || '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
+                  <tr key={b.id} className="hover:bg-muted/40">
+                    <td className="px-4 py-3 text-sm font-mono text-foreground">{b.bill_number}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">{b.supplier_name || supplierMap[b.supplier_id] || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
                       {b.bill_date ? formatDateOnly(b.bill_date) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                    <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                       {b.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-600">{b.line_count}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{b.ref_grn_id ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm text-center text-muted-foreground">{b.line_count}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{b.ref_grn_id ?? '—'}</td>
                     <td className="px-4 py-3 text-sm">
                       <span
                         className={
                           b.status === 'posted'
-                            ? 'rounded-full bg-green-100 px-2 py-0.5 text-green-800'
-                            : 'rounded-full bg-gray-100 px-2 py-0.5 text-gray-800'
+                            ? 'rounded-full bg-success/15 px-2 py-0.5 text-success'
+                            : 'rounded-full bg-muted px-2 py-0.5 text-foreground'
                         }
                       >
                         {b.status}
@@ -215,15 +215,15 @@ export default function PurchaseBillsPage() {
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold text-gray-900">New vendor bill</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <h2 className="text-lg font-semibold text-foreground">New vendor bill</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               Direct expense to Inventory (no GRN). Requires GL accounts from accounting seed.
             </p>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Supplier</label>
+                <label className="block text-sm font-medium text-foreground/85">Supplier</label>
                 <select
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
                   value={form.supplier_id === '' ? '' : form.supplier_id}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, supplier_id: e.target.value ? Number(e.target.value) : '' }))
@@ -239,33 +239,33 @@ export default function PurchaseBillsPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Bill date</label>
+                  <label className="block text-sm font-medium text-foreground/85">Bill date</label>
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
                     value={form.bill_date}
                     onChange={(e) => setForm((f) => ({ ...f, bill_date: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Due date (optional)</label>
+                  <label className="block text-sm font-medium text-foreground/85">Due date (optional)</label>
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
                     value={form.due_date}
                     onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Lines</label>
+                <label className="block text-sm font-medium text-foreground/85">Lines</label>
                 <div className="mt-2 space-y-2">
                   {form.lines.map((line, idx) => (
                     <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                       <div className="col-span-5">
-                        {idx === 0 && <span className="text-xs text-gray-500">Item</span>}
+                        {idx === 0 && <span className="text-xs text-muted-foreground">Item</span>}
                         <select
-                          className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                          className="mt-0.5 w-full rounded-md border border-border px-2 py-1.5 text-xs"
                           value={line.item_id === '' ? '' : line.item_id}
                           onChange={(e) => {
                             const v = e.target.value ? Number(e.target.value) : ''
@@ -285,9 +285,9 @@ export default function PurchaseBillsPage() {
                         </select>
                       </div>
                       <div className="col-span-3">
-                        {idx === 0 && <span className="text-xs text-gray-500">Qty</span>}
+                        {idx === 0 && <span className="text-xs text-muted-foreground">Qty</span>}
                         <input
-                          className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                          className="mt-0.5 w-full rounded-md border border-border px-2 py-1.5 text-xs"
                           inputMode="decimal"
                           value={line.qty}
                           onChange={(e) => {
@@ -301,9 +301,9 @@ export default function PurchaseBillsPage() {
                         />
                       </div>
                       <div className="col-span-3">
-                        {idx === 0 && <span className="text-xs text-gray-500">Unit price</span>}
+                        {idx === 0 && <span className="text-xs text-muted-foreground">Unit price</span>}
                         <input
-                          className="mt-0.5 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                          className="mt-0.5 w-full rounded-md border border-border px-2 py-1.5 text-xs"
                           inputMode="decimal"
                           value={line.unit_price}
                           onChange={(e) => {
@@ -320,7 +320,7 @@ export default function PurchaseBillsPage() {
                         {form.lines.length > 1 && (
                           <button
                             type="button"
-                            className="text-xs text-red-600"
+                            className="text-xs text-destructive"
                             onClick={() =>
                               setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }))
                             }
@@ -334,7 +334,7 @@ export default function PurchaseBillsPage() {
                 </div>
                 <button
                   type="button"
-                  className="mt-2 text-sm text-indigo-600"
+                  className="mt-2 text-sm text-primary"
                   onClick={() =>
                     setForm((f) => ({
                       ...f,
@@ -349,7 +349,7 @@ export default function PurchaseBillsPage() {
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm"
+                className="rounded-md border border-border px-4 py-2 text-sm"
                 onClick={() => setShowCreate(false)}
               >
                 Cancel
@@ -357,7 +357,7 @@ export default function PurchaseBillsPage() {
               <button
                 type="button"
                 disabled={createMutation.isPending}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
                 onClick={submitCreate}
               >
                 {createMutation.isPending ? 'Saving…' : 'Create & post'}

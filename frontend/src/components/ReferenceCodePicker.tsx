@@ -91,16 +91,16 @@ export function ReferenceCodePicker({
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-2">
-        {label} <span className="text-gray-400 font-normal">(auto)</span>
+      <label htmlFor={id} className="mb-2 block text-sm font-medium text-foreground">
+        {label} <span className="text-muted-foreground/70 font-normal">(auto)</span>
       </label>
       {err && (
-        <p id={errId} className="text-sm text-amber-800 mb-2" role="status">
+        <p id={errId} className="text-sm text-warning-foreground mb-2" role="status">
           {err}
           <button
             type="button"
             onClick={() => load()}
-            className="ml-2 text-blue-600 hover:underline font-medium"
+            className="ml-2 text-primary hover:underline font-medium"
           >
             Retry
           </button>
@@ -110,14 +110,14 @@ export function ReferenceCodePicker({
         id={id}
         type="text"
         name={id}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 font-mono"
+        className="w-full px-3 py-2 border border-border rounded-lg bg-muted/40 text-foreground/85 font-mono"
         value={loading && !displayValue ? 'Loading…' : displayValue}
         readOnly
         aria-busy={loading}
         aria-readonly="true"
         aria-describedby={err ? errId : helpId}
       />
-      <p id={helpId} className="mt-1.5 text-xs text-gray-500">
+      <p id={helpId} className="mt-1.5 text-xs text-muted-foreground">
         {hint}
       </p>
     </div>

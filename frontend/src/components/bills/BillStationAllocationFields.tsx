@@ -36,7 +36,7 @@ export function BillStationAllocationFields({
   billFuelCategories,
   expenseAccounts,
   onFieldChange,
-  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500',
+  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring',
   showCategoryBlock = true,
 }: {
   line: StationLineShape
@@ -63,12 +63,12 @@ export function BillStationAllocationFields({
   }
 
   return (
-    <div className="mt-2 space-y-2 border-t border-dashed border-indigo-200 pt-2">
-      <fieldset className="w-full rounded-lg border border-indigo-100 bg-indigo-50/30 p-2 space-y-1">
-        <legend className="px-1 text-xs font-medium uppercase tracking-wide text-indigo-900">
+    <div className="mt-2 space-y-2 border-t border-dashed border-primary/25 pt-2">
+      <fieldset className="w-full rounded-lg border border-primary/15 bg-accent/30 p-2 space-y-1">
+        <legend className="px-1 text-xs font-medium uppercase tracking-wide text-foreground/85">
           Station cost allocation
         </legend>
-        <label className="flex items-center gap-2 text-sm text-gray-800">
+        <label className="flex items-center gap-2 text-sm text-foreground">
           <input
             type="radio"
             name={`station_cost_mode_${index}`}
@@ -77,7 +77,7 @@ export function BillStationAllocationFields({
           />
           One station (or use bill header)
         </label>
-        <label className="flex items-center gap-2 text-sm text-gray-800">
+        <label className="flex items-center gap-2 text-sm text-foreground">
           <input
             type="radio"
             name={`station_cost_mode_${index}`}
@@ -86,7 +86,7 @@ export function BillStationAllocationFields({
           />
           Shared — equal split
         </label>
-        <label className="flex items-center gap-2 text-sm text-gray-800">
+        <label className="flex items-center gap-2 text-sm text-foreground">
           <input
             type="radio"
             name={`station_cost_mode_${index}`}
@@ -100,7 +100,7 @@ export function BillStationAllocationFields({
       {mode === 'direct' ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[10rem] flex-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Line station (optional)</label>
+            <label className="block text-xs font-medium text-foreground/85 mb-1">Line station (optional)</label>
             <select
               value={lineSt === '' ? '' : String(lineSt)}
               onChange={(e) => {
@@ -120,14 +120,14 @@ export function BillStationAllocationFields({
           </div>
         </div>
       ) : mode === 'shared_equal' ? (
-        <div className="rounded-lg border border-indigo-100 bg-white p-3">
+        <div className="rounded-lg border border-primary/15 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-indigo-900">
+            <p className="text-xs font-medium text-foreground/85">
               Select at least two stations (equal split of line amount)
             </p>
             <button
               type="button"
-              className="text-xs font-medium text-indigo-700 hover:text-indigo-900 underline"
+              className="text-xs font-medium text-primary hover:text-foreground/85 underline"
               onClick={() =>
                 onFieldChange(
                   index,
@@ -145,7 +145,7 @@ export function BillStationAllocationFields({
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    className="rounded border-gray-300"
+                    className="rounded border-border"
                     checked={sharedIds.includes(s.id)}
                     onChange={() => toggleShared(s.id)}
                   />
@@ -156,14 +156,14 @@ export function BillStationAllocationFields({
           </ul>
         </div>
       ) : (
-        <div className="space-y-2 rounded-lg border border-indigo-100 bg-white p-3">
-          <p className="text-xs text-gray-600">
+        <div className="space-y-2 rounded-lg border border-primary/15 bg-white p-3">
+          <p className="text-xs text-muted-foreground">
             Each row: station and amount (≥2 rows; amounts must sum to the line amount)
           </p>
           {manualShares.map((row, sidx) => (
             <div key={sidx} className="flex flex-wrap gap-2 items-center">
               <select
-                className="min-w-[8rem] flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                className="min-w-[8rem] flex-1 rounded border border-border px-2 py-1 text-sm"
                 value={row.station_id === '' ? '' : String(row.station_id)}
                 onChange={(e) => {
                   const next = [...manualShares]
@@ -186,7 +186,7 @@ export function BillStationAllocationFields({
                 min="0"
                 step="0.01"
                 placeholder="Amount"
-                className="w-28 rounded border border-gray-300 px-2 py-1 text-sm tabular-nums"
+                className="w-28 rounded border border-border px-2 py-1 text-sm tabular-nums"
                 value={row.amount === 0 ? '' : row.amount}
                 onChange={(e) => {
                   const next = [...manualShares]
@@ -197,7 +197,7 @@ export function BillStationAllocationFields({
               {manualShares.length > 2 ? (
                 <button
                   type="button"
-                  className="text-xs text-red-600 hover:underline"
+                  className="text-xs text-destructive hover:underline"
                   onClick={() => {
                     const next = manualShares.filter((_, i) => i !== sidx)
                     onFieldChange(index, 'station_shares', next)
@@ -210,7 +210,7 @@ export function BillStationAllocationFields({
           ))}
           <button
             type="button"
-            className="text-xs font-medium text-indigo-700 hover:underline"
+            className="text-xs font-medium text-primary hover:underline"
             onClick={() =>
               onFieldChange(index, 'station_shares', [...manualShares, { station_id: '', amount: 0 }])
             }
@@ -222,18 +222,18 @@ export function BillStationAllocationFields({
 
       {showCategoryBlock && !line.item_id ? (
         <div className="min-w-[11rem] max-w-md">
-          <label className="block text-xs font-medium text-indigo-900 mb-1">Station cost type *</label>
+          <label className="block text-xs font-medium text-foreground/85 mb-1">Station cost type *</label>
           <select
             required
             value={line.fuel_station_expense_category || ''}
             onChange={(e) => onFieldChange(index, 'fuel_station_expense_category', e.target.value)}
-            className="w-full min-w-0 px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500 bg-indigo-50/40"
+            className="w-full min-w-0 px-2 py-1 text-sm border border-primary/30 rounded focus:ring-1 focus:ring-ring bg-accent/60"
           >
             <option value="">Select category…</option>
             <ReportingCategorySelectOptions categories={billFuelCategories} />
           </select>
           {line.expense_account_id ? (
-            <p className="mt-0.5 text-[11px] text-indigo-800">
+            <p className="mt-0.5 text-[11px] text-primary">
               GL:{' '}
               {formatCoaOptionLabel(
                 expenseAccounts.find((a) => a.id === line.expense_account_id) || {
@@ -248,7 +248,7 @@ export function BillStationAllocationFields({
         </div>
       ) : null}
 
-      <p className="text-xs text-gray-500 pb-1">
+      <p className="text-xs text-muted-foreground pb-1">
         {mode === 'direct'
           ? 'Tags station P&L when the bill posts. Shop-only sites work the same as fuel stations.'
           : 'On save, expands to one line per station with split amounts (shared rent, generator, etc.).'}

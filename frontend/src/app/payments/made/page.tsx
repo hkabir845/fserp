@@ -379,16 +379,16 @@ export default function PaymentMadePage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-border border-t-blue-600" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -406,7 +406,7 @@ export default function PaymentMadePage() {
             />
             <Link
               href="/payments/made/new"
-              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>New Payment</span>
@@ -440,16 +440,16 @@ export default function PaymentMadePage() {
 
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <div className="flex items-center space-x-2 mb-4">
-              <Filter className="h-5 w-5 text-gray-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+              <Filter className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold text-foreground">Filters</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Status</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as PaymentFilter)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="all">All</option>
                   <option value="made">Payment Made</option>
@@ -457,40 +457,40 @@ export default function PaymentMadePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Search (all dates)</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Search (all dates)</label>
                 <input
                   type="search"
                   value={searchQ}
                   onChange={(e) => setSearchQ(e.target.value)}
                   placeholder="Reference, memo, vendor…"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Min amount</label>
-                <input type="number" min="0" step="0.01" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Min amount</label>
+                <input type="number" min="0" step="0.01" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Max amount</label>
-                <input type="number" min="0" step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Max amount</label>
+                <input type="number" min="0" step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md" />
               </div>
               <div className="flex items-end gap-2">
                 <button
@@ -503,7 +503,7 @@ export default function PaymentMadePage() {
                     setMaxAmount('')
                     setFilterStatus('all')
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  className="flex-1 px-4 py-2 border border-border rounded-md text-foreground/85 hover:bg-muted/40"
                 >
                   Clear Filters
                 </button>
@@ -513,7 +513,7 @@ export default function PaymentMadePage() {
                     fetchPaymentsMade()
                     fetchAllOutstandingBills()
                   }}
-                  className="flex-1 px-4 py-2 border border-blue-300 rounded-md text-blue-700 hover:bg-blue-50"
+                  className="flex-1 px-4 py-2 border border-blue-300 rounded-md text-primary hover:bg-accent"
                 >
                   Refresh
                 </button>
@@ -521,7 +521,7 @@ export default function PaymentMadePage() {
             </div>
           </div>
 
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-md p-6 mb-6 text-white">
+          <div className="bg-gradient-to-r from-accent0 to-blue-600 rounded-lg shadow-md p-6 mb-6 text-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <DollarSign className="h-8 w-8" />
@@ -548,42 +548,42 @@ export default function PaymentMadePage() {
               <div className="p-6">
                 <div className="mb-3">
                   <h2 className="text-xl font-semibold">Payments Made</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    <strong className="text-gray-700">Pencil / Trash</strong> use the same rollback path as the
+                  <p className="text-sm text-muted-foreground mt-1">
+                    <strong className="text-foreground/85">Pencil / Trash</strong> use the same rollback path as the
                     payment register: one transaction reverses AUTO-PAY, restores A/P, and updates bill status.
                   </p>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-border">
+                    <thead className="bg-muted/40">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Payment #
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Date
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Vendor
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Method
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Reference
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Amount
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Memo
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-border">
                       {displayedData.payments.map((payment) => {
                         const vendor = vendors.find((v) => v.id === payment.vendor_id)
                         const vendorName =
@@ -594,25 +594,25 @@ export default function PaymentMadePage() {
                         const canMutate = payment.can_delete === true
 
                         return (
-                          <tr key={payment.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          <tr key={payment.id} className="hover:bg-muted/40">
+                            <td className="px-4 py-3 text-sm font-medium text-foreground">
                               {payment.payment_number ?? `PAY-${payment.id}`}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               {formatDateOnly(payment.payment_date)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{vendorName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600 capitalize">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{vendorName}</td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground capitalize">
                               {(payment.payment_method ?? 'unspecified').replace(/_/g, ' ')}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               {payment.reference_number ?? payment.reference ?? '-'}
                             </td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                            <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                               {currencySymbol}
                               {formatNumber(Number(payment.amount) || 0)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 max-w-[12rem] truncate" title={payment.memo || ''}>
+                            <td className="px-4 py-3 text-sm text-muted-foreground max-w-[12rem] truncate" title={payment.memo || ''}>
                               {payment.memo || '-'}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -626,7 +626,7 @@ export default function PaymentMadePage() {
                                       ? 'Edit (reverses & reposts GL)'
                                       : payment.immutable_reason || 'Cannot edit'
                                   }
-                                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Edit ${payment.payment_number}`}
                                 >
                                   <Pencil className="h-4 w-4" aria-hidden />
@@ -640,7 +640,7 @@ export default function PaymentMadePage() {
                                       ? 'Delete with rollback'
                                       : payment.immutable_reason || 'Cannot delete'
                                   }
-                                  className="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Delete ${payment.payment_number}`}
                                 >
                                   <Trash2 className="h-4 w-4" aria-hidden />
@@ -653,7 +653,7 @@ export default function PaymentMadePage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="border-t border-gray-100 px-4 py-3">
+                <div className="border-t border-border/70 px-4 py-3">
                   <OffsetPaginationControls
                     page={listPage}
                     pageSize={pageSize}
@@ -672,51 +672,51 @@ export default function PaymentMadePage() {
               <div
                 className={`p-6 ${
                   displayedData.payments.length > 0 && filterStatus === 'all'
-                    ? 'border-t border-gray-200'
+                    ? 'border-t border-border'
                     : ''
                 }`}
               >
                 <div className="mb-3">
                   <h2 className="text-xl font-semibold">Payment Outstanding</h2>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     Use{' '}
-                    <Link href="/payments/made/new" className="text-blue-700 font-medium underline">
+                    <Link href="/payments/made/new" className="text-primary font-medium underline">
                       New Payment
                     </Link>{' '}
                     to record a payment against these bills.
                   </p>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-border">
+                    <thead className="bg-muted/40">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Bill #
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Date
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Due Date
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Vendor
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[9rem]">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase min-w-[9rem]">
                           Contact A/P
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Total
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Paid
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Balance Due
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-border">
                       {displayedData.bills.map((bill) => {
                         const vend = vendors.find((v) => v.id === bill.vendor_id)
                         return (
@@ -724,33 +724,33 @@ export default function PaymentMadePage() {
                           key={bill.synthetic ? `oa-v-${bill.vendor_id}` : bill.id}
                           className={
                             !bill.synthetic && bill.days_overdue && bill.days_overdue > 0
-                              ? 'bg-red-50'
-                              : 'hover:bg-gray-50'
+                              ? 'bg-destructive/5'
+                              : 'hover:bg-muted/40'
                           }
                         >
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          <td className="px-4 py-3 text-sm font-medium text-foreground">
                             {bill.bill_number}
                             {bill.synthetic ? (
-                              <span className="ml-1 text-xs font-normal text-gray-500">
+                              <span className="ml-1 text-xs font-normal text-muted-foreground">
                                 (A/P not on a bill)
                               </span>
                             ) : null}
                             {!bill.synthetic &&
                               bill.days_overdue &&
                               bill.days_overdue > 0 && (
-                              <span className="ml-2 text-xs text-red-600">
+                              <span className="ml-2 text-xs text-destructive">
                                 ({bill.days_overdue}d overdue)
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
                             {formatDateOnly(bill.bill_date)}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
+                          <td className="px-4 py-3 text-sm text-muted-foreground">
                             {bill.due_date ? formatDateOnly(bill.due_date) : '—'}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{vendorDisplayForBill(bill)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 align-top">
+                          <td className="px-4 py-3 text-sm text-muted-foreground">{vendorDisplayForBill(bill)}</td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground align-top">
                             {vend ? (
                               <ContactArApBalances
                                 role="vendor"
@@ -764,7 +764,7 @@ export default function PaymentMadePage() {
                               '—'
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-right text-gray-900">
+                          <td className="px-4 py-3 text-sm text-right text-foreground">
                             {bill.synthetic ? (
                               '—'
                             ) : (
@@ -774,7 +774,7 @@ export default function PaymentMadePage() {
                               </>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-right text-gray-600">
+                          <td className="px-4 py-3 text-sm text-right text-muted-foreground">
                             {bill.synthetic ? (
                               '—'
                             ) : (
@@ -784,7 +784,7 @@ export default function PaymentMadePage() {
                               </>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                          <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                             {currencySymbol}
                             {formatNumber(parseNum(bill.balance_due))}
                           </td>
@@ -800,7 +800,7 @@ export default function PaymentMadePage() {
             {(!displayedData.payments || displayedData.payments.length === 0) &&
               (!displayedData.bills || displayedData.bills.length === 0) && (
                 <div className="p-12 text-center">
-                  <p className="text-gray-500">
+                  <p className="text-muted-foreground">
                     {filterStatus === 'all'
                       ? 'No payments or outstanding bills found. Try clearing date filters to see all records.'
                       : filterStatus === 'made'
@@ -808,12 +808,12 @@ export default function PaymentMadePage() {
                         : 'No outstanding bills found.'}
                   </p>
                   {paymentsMade.length > 0 && (filterStatus === 'all' || filterStatus === 'made') && (
-                    <p className="text-sm text-gray-400 mt-2">
+                    <p className="text-sm text-muted-foreground/70 mt-2">
                       Note: {paymentsMade.length} payment(s) exist but may be filtered by date range.
                     </p>
                   )}
-                  <p className="text-sm text-gray-500 mt-4">
-                    <Link href="/payments/made/new" className="text-blue-700 font-medium underline">
+                  <p className="text-sm text-muted-foreground mt-4">
+                    <Link href="/payments/made/new" className="text-primary font-medium underline">
                       Record a new vendor payment
                     </Link>
                   </p>

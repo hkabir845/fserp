@@ -78,20 +78,20 @@ export default function NewPurchaseRequisitionPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <div className="mb-6">
-        <Link href="/purchase/requisitions" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+        <Link href="/purchase/requisitions" className="text-sm font-medium text-primary hover:text-primary">
           ← Purchase requisitions
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold text-gray-900">New purchase requisition</h1>
-        <p className="mt-1 text-sm text-gray-600">Save as draft, then submit for procurement head and executive approval.</p>
+        <h1 className="mt-2 text-2xl font-semibold text-foreground">New purchase requisition</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Save as draft, then submit for procurement head and executive approval.</p>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="space-y-4 rounded-xl border border-border bg-white p-6 shadow-sm">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Supplier (optional at draft)</label>
+          <label className="block text-sm font-medium text-foreground/85">Supplier (optional at draft)</label>
           <select
             value={supplierId}
             onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm"
+            className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm"
           >
             <option value="">— Select later —</option>
             {suppliers.map((s) => (
@@ -102,11 +102,11 @@ export default function NewPurchaseRequisitionPage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Warehouse (optional)</label>
+          <label className="block text-sm font-medium text-foreground/85">Warehouse (optional)</label>
           <select
             value={warehouseId}
             onChange={(e) => setWarehouseId(e.target.value ? Number(e.target.value) : '')}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm"
+            className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm"
           >
             <option value="">—</option>
             {warehouses.map((w) => (
@@ -117,17 +117,17 @@ export default function NewPurchaseRequisitionPage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700">Purpose / notes</label>
+          <label className="block text-sm font-medium text-foreground/85">Purpose / notes</label>
           <textarea
             value={purpose}
             onChange={(e) => setPurpose(e.target.value)}
             rows={2}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm"
+            className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm"
           />
         </div>
 
-        <div className="border-t border-gray-100 pt-4">
-          <h3 className="text-sm font-semibold text-gray-900">Lines</h3>
+        <div className="border-t border-border/70 pt-4">
+          <h3 className="text-sm font-semibold text-foreground">Lines</h3>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="min-w-0 flex-1">
               <PurchaseItemCombobox items={purchasableItems} value={draftItemId} onChange={setDraftItemId} />
@@ -139,7 +139,7 @@ export default function NewPurchaseRequisitionPage() {
               value={draftQty}
               onChange={(e) => setDraftQty(e.target.value)}
               placeholder="Qty"
-              className="w-28 rounded-md border border-gray-300 px-2 py-2 text-sm"
+              className="w-28 rounded-md border border-border px-2 py-2 text-sm"
             />
             <input
               type="number"
@@ -148,28 +148,28 @@ export default function NewPurchaseRequisitionPage() {
               value={draftPrice}
               onChange={(e) => setDraftPrice(e.target.value)}
               placeholder="Est. price"
-              className="w-32 rounded-md border border-gray-300 px-2 py-2 text-sm"
+              className="w-32 rounded-md border border-border px-2 py-2 text-sm"
             />
             <button
               type="button"
               onClick={addLine}
-              className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+              className="rounded-md bg-muted px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
             >
               Add line
             </button>
           </div>
-          <ul className="mt-3 space-y-1 text-sm text-gray-700">
+          <ul className="mt-3 space-y-1 text-sm text-foreground/85">
             {lines.map((l) => {
               const it = purchasableItems.find((x) => x.id === l.item_id)
               return (
-                <li key={l.item_id} className="flex justify-between rounded bg-gray-50 px-2 py-1">
+                <li key={l.item_id} className="flex justify-between rounded bg-muted/40 px-2 py-1">
                   <span>{it?.name || `Item #${l.item_id}`}</span>
                   <span>
                     {l.qty} × {l.est_unit_price}
                   </span>
                   <button
                     type="button"
-                    className="text-red-600 hover:underline"
+                    className="text-destructive hover:underline"
                     onClick={() => setLines((prev) => prev.filter((x) => x.item_id !== l.item_id))}
                   >
                     Remove
@@ -181,7 +181,7 @@ export default function NewPurchaseRequisitionPage() {
         </div>
 
         {createMut.isError && (
-          <p className="text-sm text-red-600">
+          <p className="text-sm text-destructive">
             {(createMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Could not save'}
           </p>
         )}
@@ -189,7 +189,7 @@ export default function NewPurchaseRequisitionPage() {
         <div className="flex justify-end gap-2 pt-2">
           <Link
             href="/purchase/requisitions"
-            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
           >
             Cancel
           </Link>
@@ -197,7 +197,7 @@ export default function NewPurchaseRequisitionPage() {
             type="button"
             disabled={lines.length === 0 || createMut.isPending}
             onClick={() => createMut.mutate()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-accent0 disabled:opacity-50"
           >
             {createMut.isPending ? 'Saving…' : 'Create draft'}
           </button>

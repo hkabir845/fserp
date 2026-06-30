@@ -29,14 +29,14 @@ export default async function PublicCardPage({ params }: Props) {
   const pay = data.payment as { enrolled?: boolean; card_hint?: string; notes?: string } | undefined
 
   const theme =
-    biz?.theme === 'emerald' ? 'from-emerald-800 to-slate-900' : 'from-slate-800 to-slate-950'
+    biz?.theme === 'emerald' ? 'from-emerald-800 to-[hsl(var(--hero-from))]' : 'from-slate-800 to-slate-950'
 
   return (
     <div className={`min-h-screen bg-gradient-to-br ${theme} px-4 py-10 text-white`}>
       <div className="mx-auto max-w-lg space-y-6">
         <header className="text-center">
           <p className="text-xs uppercase tracking-widest text-emerald-200/90">Digital employee profile</p>
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-muted-foreground/70">
             NFC / QR ·{' '}
             {Object.entries(data.roles)
               .filter(([, v]) => v)
@@ -50,12 +50,12 @@ export default async function PublicCardPage({ params }: Props) {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Business card</h2>
             <h1 className="mt-2 text-2xl font-bold">{biz.display_name}</h1>
             {biz.title ? <p className="text-emerald-100">{biz.title}</p> : null}
-            {biz.department ? <p className="text-sm text-slate-300">{biz.department}</p> : null}
-            {biz.bio ? <p className="mt-4 text-sm leading-relaxed text-slate-200">{biz.bio}</p> : null}
+            {biz.department ? <p className="text-sm text-muted-foreground/40">{biz.department}</p> : null}
+            {biz.bio ? <p className="mt-4 text-sm leading-relaxed text-white/85">{biz.bio}</p> : null}
             <dl className="mt-4 space-y-2 text-sm">
               {biz.phone ? (
                 <div>
-                  <dt className="text-slate-400">Phone</dt>
+                  <dt className="text-muted-foreground/70">Phone</dt>
                   <dd>
                     <a href={`tel:${biz.phone}`} className="text-white underline">
                       {biz.phone}
@@ -65,7 +65,7 @@ export default async function PublicCardPage({ params }: Props) {
               ) : null}
               {biz.email ? (
                 <div>
-                  <dt className="text-slate-400">Email</dt>
+                  <dt className="text-muted-foreground/70">Email</dt>
                   <dd>
                     <a href={`mailto:${biz.email}`} className="text-white underline">
                       {biz.email}
@@ -75,7 +75,7 @@ export default async function PublicCardPage({ params }: Props) {
               ) : null}
               {biz.website ? (
                 <div>
-                  <dt className="text-slate-400">Web</dt>
+                  <dt className="text-muted-foreground/70">Web</dt>
                   <dd>
                     <a href={biz.website} target="_blank" rel="noreferrer" className="text-emerald-200 underline">
                       {biz.website}
@@ -85,8 +85,8 @@ export default async function PublicCardPage({ params }: Props) {
               ) : null}
               {biz.address ? (
                 <div>
-                  <dt className="text-slate-400">Address</dt>
-                  <dd className="whitespace-pre-line text-slate-200">{biz.address}</dd>
+                  <dt className="text-muted-foreground/70">Address</dt>
+                  <dd className="whitespace-pre-line text-white/85">{biz.address}</dd>
                 </div>
               ) : null}
             </dl>
@@ -105,7 +105,7 @@ export default async function PublicCardPage({ params }: Props) {
                   className="h-24 w-24 rounded-lg object-cover ring-2 ring-white/20"
                 />
               ) : (
-                <div className="flex h-24 w-24 items-center justify-center rounded-lg bg-white/10 text-3xl text-slate-400">
+                <div className="flex h-24 w-24 items-center justify-center rounded-lg bg-white/10 text-3xl text-muted-foreground/70">
                   ID
                 </div>
               )}
@@ -114,12 +114,12 @@ export default async function PublicCardPage({ params }: Props) {
                 {idn.employee_code ? (
                   <div className="mt-1 font-mono text-amber-100">#{idn.employee_code}</div>
                 ) : null}
-                {idn.title ? <div className="text-slate-300">{idn.title}</div> : null}
-                {idn.department ? <div className="text-slate-400">{idn.department}</div> : null}
-                {idn.join_date ? <div className="mt-2 text-xs text-slate-500">Joined {idn.join_date}</div> : null}
-                {idn.blood_group ? <div className="text-xs text-slate-400">Blood {idn.blood_group}</div> : null}
+                {idn.title ? <div className="text-muted-foreground/40">{idn.title}</div> : null}
+                {idn.department ? <div className="text-muted-foreground/70">{idn.department}</div> : null}
+                {idn.join_date ? <div className="mt-2 text-xs text-muted-foreground">Joined {idn.join_date}</div> : null}
+                {idn.blood_group ? <div className="text-xs text-muted-foreground/70">Blood {idn.blood_group}</div> : null}
                 {idn.emergency_contact_name || idn.emergency_contact_phone ? (
-                  <div className="mt-2 border-t border-white/10 pt-2 text-xs text-slate-400">
+                  <div className="mt-2 border-t border-white/10 pt-2 text-xs text-muted-foreground/70">
                     Emergency: {idn.emergency_contact_name} {idn.emergency_contact_phone}
                   </div>
                 ) : null}
@@ -141,7 +141,7 @@ export default async function PublicCardPage({ params }: Props) {
                 Valid {acc.valid_from || '—'} → {acc.valid_to || '—'}
               </p>
             ) : null}
-            {acc.notes ? <p className="mt-2 text-xs text-slate-400">{acc.notes}</p> : null}
+            {acc.notes ? <p className="mt-2 text-xs text-muted-foreground/70">{acc.notes}</p> : null}
           </section>
         ) : null}
 
@@ -152,14 +152,14 @@ export default async function PublicCardPage({ params }: Props) {
               {pay.enrolled ? 'Enrolled' : 'Not enrolled'}
               {pay.card_hint ? ` · ${pay.card_hint}` : ''}
             </p>
-            {pay.notes ? <p className="mt-2 text-xs text-slate-400">{pay.notes}</p> : null}
-            <p className="mt-3 text-xs text-slate-500">
+            {pay.notes ? <p className="mt-2 text-xs text-muted-foreground/70">{pay.notes}</p> : null}
+            <p className="mt-3 text-xs text-muted-foreground">
               Card numbers are never stored here — only masked hints and provider tokens for integrations.
             </p>
           </section>
         ) : null}
 
-        <p className="text-center text-xs text-slate-500">FMERP · multi-role NFC profile</p>
+        <p className="text-center text-xs text-muted-foreground">FMERP · multi-role NFC profile</p>
       </div>
     </div>
   )

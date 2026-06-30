@@ -55,18 +55,18 @@ export function AquaculturePageShell({
       {showBackLink ? (
         <Link
           href={backHref}
-          className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           {back}
         </Link>
       ) : null}
 
-      <header className={`${showBackLink ? 'mt-4' : ''} overflow-hidden rounded-2xl border border-teal-200/60 bg-gradient-to-br from-slate-900 via-teal-950 to-emerald-950 p-5 text-white shadow-xl sm:p-6`}>
+      <header className={`erp-page-hero ${showBackLink ? 'mt-4' : ''}`}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             {eyebrow ? (
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-teal-200">
+              <p className="erp-page-hero-eyebrow">
                 {EyebrowIcon ? <EyebrowIcon className="h-3.5 w-3.5" aria-hidden /> : null}
                 {eyebrow}
               </p>
@@ -75,11 +75,11 @@ export function AquaculturePageShell({
               id={titleId}
               className={`${eyebrow ? 'mt-1' : ''} flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl`}
             >
-              {TitleIcon ? <TitleIcon className="h-7 w-7 text-teal-300" strokeWidth={1.75} aria-hidden /> : null}
+              {TitleIcon ? <TitleIcon className="erp-page-hero-title-icon h-7 w-7" strokeWidth={1.75} aria-hidden /> : null}
               {title}
             </h1>
             {description ? (
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-teal-100/90">{description}</p>
+              <p className="erp-page-hero-description">{description}</p>
             ) : null}
           </div>
           {actions ? <div className="flex flex-wrap items-end gap-2">{actions}</div> : null}

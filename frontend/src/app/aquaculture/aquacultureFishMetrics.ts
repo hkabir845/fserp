@@ -1,5 +1,7 @@
 /** Shared fish stock metrics: pcs/kg, load per decimal, partial harvest hints. */
 
+import { formatQuantity } from '@/utils/quantity'
+
 export type StockMetricsRow = {
   pond_id?: number
   pond_name?: string
@@ -49,9 +51,9 @@ export type FcrBlock = {
 const LOAD_BADGE: Record<string, string> = {
   understocked: 'bg-sky-50 text-sky-900 border-sky-200',
   moderate: 'bg-emerald-50 text-emerald-900 border-emerald-200',
-  full: 'bg-amber-50 text-amber-900 border-amber-200',
+  full: 'bg-warning/10 text-warning-foreground border-warning/30',
   high_risk: 'bg-rose-50 text-rose-900 border-rose-200',
-  unknown: 'bg-slate-50 text-slate-700 border-slate-200',
+  unknown: 'bg-muted/40 text-foreground/85 border-border',
 }
 
 export function loadLevelBadgeClass(level: string | undefined): string {
@@ -62,12 +64,12 @@ export function formatKgPerDecimal(row: StockMetricsRow): string | null {
   const v = row.stock_density_kg_per_decimal
   if (v == null || v === '') return null
   const n = Number(v)
-  return Number.isFinite(n) ? `${n.toFixed(2)} kg/dec` : null
+  return Number.isFinite(n) ? `${formatQuantity(n)} kg/dec` : null
 }
 
 export function formatPcsPerKg(row: StockMetricsRow): string | null {
   const v = row.current_fish_per_kg
   if (v == null || v === '') return null
   const n = Number(v)
-  return Number.isFinite(n) ? `${n.toLocaleString(undefined, { maximumFractionDigits: 1 })} pcs/kg` : null
+  return Number.isFinite(n) ? `${formatQuantity(n)} pcs/kg` : null
 }

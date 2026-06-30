@@ -12,10 +12,10 @@ export function BillPurposeSection({
   showPondOption: boolean
 }) {
   return (
-    <fieldset className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-      <legend className="px-1 text-sm font-semibold text-slate-900">What is this bill mainly for?</legend>
+    <fieldset className="mb-4 rounded-lg border border-border bg-muted/50 p-3">
+      <legend className="px-1 text-sm font-semibold text-foreground">What is this bill mainly for?</legend>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-4">
-        <label className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input
             type="radio"
             name="bill_purpose"
@@ -25,7 +25,7 @@ export function BillPurposeSection({
           Station / shop (fuel, stock, site costs)
         </label>
         {showPondOption ? (
-          <label className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
             <input
               type="radio"
               name="bill_purpose"
@@ -35,7 +35,7 @@ export function BillPurposeSection({
             Ponds / aquaculture
           </label>
         ) : null}
-        <label className="flex items-center gap-2 text-sm text-slate-800 cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
           <input
             type="radio"
             name="bill_purpose"
@@ -45,7 +45,7 @@ export function BillPurposeSection({
           Head office / general
         </label>
       </div>
-      <p className="mt-2 text-xs text-slate-600">
+      <p className="mt-2 text-xs text-muted-foreground">
         {value === 'station'
           ? 'Use tanks for fuel, header station for shop stock, and station cost type for utilities and maintenance. Each line can also pick its own entity below.'
           : value === 'pond'

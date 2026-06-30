@@ -33,19 +33,19 @@ export function ModuleHub({
   const inner = (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-gray-600">{subtitle}</p> : null}
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+        {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {links.map((l) => (
           <Link
             key={l.href}
             href={l.href}
-            className="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md"
+            className="block rounded-xl border border-border bg-white p-5 shadow-sm transition hover:border-primary/30 hover:shadow-md"
           >
             <div className="mb-2 text-2xl">{l.icon}</div>
-            <div className="font-medium text-gray-900">{l.title}</div>
-            {l.description ? <p className="mt-1 text-sm text-gray-500">{l.description}</p> : null}
+            <div className="font-medium text-foreground">{l.title}</div>
+            {l.description ? <p className="mt-1 text-sm text-muted-foreground">{l.description}</p> : null}
           </Link>
         ))}
       </div>

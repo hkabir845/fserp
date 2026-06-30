@@ -596,8 +596,8 @@ export default function ShiftManagementPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
-        <div className="flex min-h-[50vh] items-center justify-center text-gray-600">
+      <PageLayout>
+        <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">
           Loading shift management…
         </div>
       </PageLayout>
@@ -605,7 +605,7 @@ export default function ShiftManagementPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -625,7 +625,7 @@ export default function ShiftManagementPage() {
                   <h2 className="text-xl font-bold text-green-900">Shift active</h2>
                   {openSessions.length > 1 && (
                     <div className="mt-2">
-                      <label className="block text-xs font-medium text-green-800 mb-1">Close which shift?</label>
+                      <label className="block text-xs font-medium text-success mb-1">Close which shift?</label>
                       <select
                         value={closingSession.id}
                         onChange={(e) => setClosingSessionId(Number(e.target.value))}
@@ -639,7 +639,7 @@ export default function ShiftManagementPage() {
                       </select>
                     </div>
                   )}
-                  <p className="text-green-700 text-sm">
+                  <p className="text-success text-sm">
                     Opened {formatDate(closingSession.opened_at, true)}
                     {closingSession.template_id != null && (
                       <>
@@ -662,32 +662,32 @@ export default function ShiftManagementPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-white rounded-lg p-4 shadow">
-                <div className="text-sm text-gray-600 mb-1">Total sales</div>
-                <div className="text-2xl font-bold text-gray-900">
+                <div className="text-sm text-muted-foreground mb-1">Total sales</div>
+                <div className="text-2xl font-bold text-foreground">
                   {formatCurrency(Number(closingSession.total_sales_amount || 0))}
                 </div>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
-                <div className="text-sm text-gray-600 mb-1">Transactions</div>
-                <div className="text-2xl font-bold text-indigo-600">{closingSession.sale_transaction_count ?? 0}</div>
+                <div className="text-sm text-muted-foreground mb-1">Transactions</div>
+                <div className="text-2xl font-bold text-primary">{closingSession.sale_transaction_count ?? 0}</div>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
-                <div className="text-sm text-gray-600 mb-1">Opening float</div>
-                <div className="text-2xl font-bold text-gray-900">{formatCurrency(openingFloat)}</div>
+                <div className="text-sm text-muted-foreground mb-1">Opening float</div>
+                <div className="text-2xl font-bold text-foreground">{formatCurrency(openingFloat)}</div>
               </div>
               <div className="bg-white rounded-lg p-4 shadow">
-                <div className="text-sm text-gray-600 mb-1">Expected cash in drawer</div>
-                <div className="text-2xl font-bold text-blue-600">{formatCurrency(expectedInDrawer)}</div>
+                <div className="text-sm text-muted-foreground mb-1">Expected cash in drawer</div>
+                <div className="text-2xl erp-stat-highlight">{formatCurrency(expectedInDrawer)}</div>
               </div>
             </div>
 
             {Array.isArray(closingSession.opening_meters) && closingSession.opening_meters.length > 0 && (
               <div className="bg-white rounded-lg p-4 shadow mb-6">
-                <h3 className="text-sm font-bold text-gray-900 mb-2">Opening meter snapshot</h3>
+                <h3 className="text-sm font-bold text-foreground mb-2">Opening meter snapshot</h3>
                 <div className="overflow-x-auto text-sm">
                   <table className="min-w-full text-left">
                     <thead>
-                      <tr className="border-b text-gray-600">
+                      <tr className="border-b text-muted-foreground">
                         <th className="py-1.5 pr-2">Meter</th>
                         <th className="py-1.5 pr-2">Dispenser</th>
                         <th className="py-1.5 pr-2">Previous</th>
@@ -696,11 +696,11 @@ export default function ShiftManagementPage() {
                     </thead>
                     <tbody>
                       {closingSession.opening_meters.map((om) => (
-                        <tr key={om.meter_id} className="border-b border-gray-100">
+                        <tr key={om.meter_id} className="border-b border-border/70">
                           <td className="py-1.5 pr-2">{om.meter_name}</td>
-                          <td className="py-1.5 pr-2 text-gray-600">{om.dispenser_name || '—'}</td>
+                          <td className="py-1.5 pr-2 text-muted-foreground">{om.dispenser_name || '—'}</td>
                           <td className="py-1.5 pr-2">{om.previous_reading}</td>
-                          <td className="py-1.5 font-medium text-gray-900">{om.reading}</td>
+                          <td className="py-1.5 font-medium text-foreground">{om.reading}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -711,11 +711,11 @@ export default function ShiftManagementPage() {
 
             {Array.isArray(closingSession.employee_schedule) && closingSession.employee_schedule.length > 0 && (
               <div className="bg-white rounded-lg p-4 shadow mb-6">
-                <h3 className="text-sm font-bold text-gray-900 mb-2">Planned team (this shift)</h3>
+                <h3 className="text-sm font-bold text-foreground mb-2">Planned team (this shift)</h3>
                 <div className="overflow-x-auto text-sm">
                   <table className="min-w-full text-left">
                     <thead>
-                      <tr className="border-b text-gray-600">
+                      <tr className="border-b text-muted-foreground">
                         <th className="py-1.5 pr-2">Name</th>
                         <th className="py-1.5 pr-2">Start</th>
                         <th className="py-1.5 pr-2">End</th>
@@ -726,22 +726,22 @@ export default function ShiftManagementPage() {
                       {closingSession.employee_schedule.map((row) => (
                         <tr
                           key={`${row.employee_id}-${row.scheduled_start}-${row.scheduled_end}`}
-                          className="border-b border-gray-100"
+                          className="border-b border-border/70"
                         >
                           <td className="py-1.5 pr-2">
                             {row.first_name} {row.last_name}
                           </td>
-                          <td className="py-1.5 pr-2 text-gray-700">
+                          <td className="py-1.5 pr-2 text-foreground/85">
                             {row.scheduled_start
                               ? formatWallClockTime(row.scheduled_start, timeFormat)
                               : '—'}
                           </td>
-                          <td className="py-1.5 pr-2 text-gray-700">
+                          <td className="py-1.5 pr-2 text-foreground/85">
                             {row.scheduled_end
                               ? formatWallClockTime(row.scheduled_end, timeFormat)
                               : '—'}
                           </td>
-                          <td className="py-1.5 text-gray-600">{row.notes || '—'}</td>
+                          <td className="py-1.5 text-muted-foreground">{row.notes || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -751,43 +751,43 @@ export default function ShiftManagementPage() {
             )}
 
             <div className="bg-white rounded-lg p-6 shadow">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Close shift</h3>
+              <h3 className="text-lg font-bold text-foreground mb-4">Close shift</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Closing cash (counted) *</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Closing cash (counted) *</label>
                   <input
                     type="number"
                     step="0.01"
                     value={closingCash}
                     onChange={(e) => setClosingCash(e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Cash variance (preview)</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Cash variance (preview)</label>
                   <div
-                    className={`text-2xl font-bold ${variancePreview >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                    className={`text-2xl font-bold ${variancePreview >= 0 ? 'text-success' : 'text-destructive'}`}
                   >
                     {formatCurrency(variancePreview)}
                   </div>
                 </div>
               </div>
               {closingStationMeters.length > 0 && (
-                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                  <h4 className="text-sm font-bold text-gray-900 mb-2">Closing meter readings</h4>
-                  <p className="text-xs text-gray-600 mb-3">
+                <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
+                  <h4 className="text-sm font-bold text-foreground mb-2">Closing meter readings</h4>
+                  <p className="text-xs text-muted-foreground mb-3">
                     Record the physical meter total at shift end for reconciliation with POS liters sold.
                   </p>
                   <div className="space-y-3">
                     {closingStationMeters.map((m) => (
                       <div key={m.id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
                         <div className="md:col-span-2 text-sm">
-                          <div className="font-medium text-gray-900">{m.meter_name}</div>
-                          <div className="text-gray-500">{m.dispenser_name || '—'}</div>
+                          <div className="font-medium text-foreground">{m.meter_name}</div>
+                          <div className="text-muted-foreground">{m.dispenser_name || '—'}</div>
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Reading at close</label>
+                          <label className="block text-xs text-muted-foreground mb-1">Reading at close</label>
                           <input
                             type="number"
                             step="0.001"
@@ -805,19 +805,19 @@ export default function ShiftManagementPage() {
                 </div>
               )}
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
+                <label className="mb-2 block text-sm font-medium text-foreground">Notes (optional)</label>
                 <textarea
                   value={closingNotes}
                   onChange={(e) => setClosingNotes(e.target.value)}
                   rows={3}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="Optional notes for your records (not saved to the server yet)"
                 />
               </div>
               <button
                 type="button"
                 onClick={handleCloseShift}
-                className="mt-4 w-full bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 flex items-center justify-center space-x-2"
+                className="mt-4 w-full bg-destructive text-white px-6 py-3 rounded-lg hover:bg-destructive/90 flex items-center justify-center space-x-2"
               >
                 <StopCircle className="h-5 w-5" />
                 <span>Close shift</span>
@@ -834,25 +834,25 @@ export default function ShiftManagementPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-blue-900">Open shift</h2>
-                <p className="text-blue-700 text-sm">Choose a template and station, then enter opening float</p>
+                <p className="text-primary text-sm">Choose a template and station, then enter opening float</p>
               </div>
             </div>
 
             <div className="bg-white rounded-lg p-6 shadow">
               {templates.length === 0 && (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="erp-alert-warning mb-4">
                   No shift templates yet. Create one below (or ask an admin) so this dropdown can be used.
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Shift template *</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Shift template *</label>
                   <select
                     value={selectedTemplate ?? ''}
                     onChange={(e) =>
                       setSelectedTemplate(e.target.value === '' ? null : Number(e.target.value))
                     }
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   >
                     <option value="">Select shift template…</option>
@@ -870,13 +870,13 @@ export default function ShiftManagementPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Station *</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Station *</label>
                   <select
                     value={selectedStation ?? ''}
                     onChange={(e) =>
                       setSelectedStation(e.target.value === '' ? null : Number(e.target.value))
                     }
-                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   >
                     <option value="">Select station…</option>
@@ -891,16 +891,16 @@ export default function ShiftManagementPage() {
                   </select>
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Opening cash float *</label>
-                  <p className="text-xs text-gray-500 mb-2">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Opening cash float *</label>
+                  <p className="text-xs text-muted-foreground mb-2">
                     Cash in the drawer at shift start. Prefilled from the last closed shift at this station when
                     available.
                   </p>
-                  <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                  <div className="border border-border rounded-lg p-3 bg-muted/40">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
                       <div>
-                        <div className="font-medium text-gray-900">Cash drawer float</div>
-                        <div className="text-xs text-gray-500">
+                        <div className="font-medium text-foreground">Cash drawer float</div>
+                        <div className="text-xs text-muted-foreground">
                           {selectedStation == null ? (
                             <>Select a station to see the previous amount.</>
                           ) : lastCashFloatForStation != null ? (
@@ -924,14 +924,14 @@ export default function ShiftManagementPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-600">Opening amount *</label>
+                        <label className="text-xs text-muted-foreground">Opening amount *</label>
                         <input
                           type="number"
                           step="0.01"
                           min="0"
                           value={openingCash}
                           onChange={(e) => setOpeningCash(e.target.value)}
-                          className="w-full mt-0.5 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          className="w-full mt-0.5 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-white"
                           placeholder="0.00"
                           required
                         />
@@ -941,8 +941,8 @@ export default function ShiftManagementPage() {
                 </div>
                 {stationMeters.length > 0 && (
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Latest meter readings</label>
-                    <p className="text-xs text-gray-500 mb-2">
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Latest meter readings</label>
+                    <p className="text-xs text-muted-foreground mb-2">
                       Record the counter at shift start for each pump meter at this station. Values are saved to the
                       system as the new current reading.
                     </p>
@@ -950,11 +950,11 @@ export default function ShiftManagementPage() {
                       {stationMeters.map((m) => (
                         <div
                           key={m.id}
-                          className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center border border-gray-200 rounded-lg p-3 bg-gray-50"
+                          className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center border border-border rounded-lg p-3 bg-muted/40"
                         >
                           <div>
-                            <div className="font-medium text-gray-900">{m.meter_name}</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="font-medium text-foreground">{m.meter_name}</div>
+                            <div className="text-xs text-muted-foreground">
                               Dispenser: {m.dispenser_name || '—'}
                               {m.current_reading != null && m.current_reading !== '' && (
                                 <> · Last: {m.current_reading}</>
@@ -962,7 +962,7 @@ export default function ShiftManagementPage() {
                             </div>
                           </div>
                           <div>
-                            <label className="text-xs text-gray-600">Reading *</label>
+                            <label className="text-xs text-muted-foreground">Reading *</label>
                             <input
                               type="number"
                               min="0"
@@ -974,7 +974,7 @@ export default function ShiftManagementPage() {
                                   [m.id]: e.target.value,
                                 }))
                               }
-                              className="w-full mt-0.5 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full mt-0.5 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                             />
                           </div>
                         </div>
@@ -984,22 +984,22 @@ export default function ShiftManagementPage() {
                 )}
                 <div className="md:col-span-2">
                   <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-                    <label className="block text-sm font-medium text-gray-700">Employee schedule</label>
+                    <label className="block text-sm font-medium text-foreground/85">Employee schedule</label>
                     <button
                       type="button"
                       onClick={addScheduleRow}
-                      className="inline-flex items-center gap-1.5 text-sm text-blue-700 font-medium hover:text-blue-900"
+                      className="inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:text-blue-900"
                     >
                       <Plus className="h-4 w-4" />
                       Add person
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="text-xs text-muted-foreground mb-2">
                     Optional. Who is on this shift. New rows use the selected template’s start/end; change a row only if
                     someone’s planned hours differ (e.g. partial or staggered coverage).
                   </p>
                   {scheduleRows.length === 0 ? (
-                    <p className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-lg p-3">
+                    <p className="text-sm text-muted-foreground border border-dashed border-border rounded-lg p-3">
                       No rows yet — add team members with “Add person”.
                     </p>
                   ) : (
@@ -1007,10 +1007,10 @@ export default function ShiftManagementPage() {
                       {scheduleRows.map((row) => (
                         <div
                           key={row.rowKey}
-                          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 p-3 border border-gray-200 rounded-lg bg-white"
+                          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 p-3 border border-border rounded-lg bg-white"
                         >
                           <div className="sm:col-span-2 lg:col-span-1">
-                            <label className="text-xs text-gray-600">Employee *</label>
+                            <label className="text-xs text-muted-foreground">Employee *</label>
                             <select
                               value={row.employee_id}
                               onChange={(e) => updateScheduleRow(row.rowKey, { employee_id: e.target.value })}
@@ -1033,7 +1033,7 @@ export default function ShiftManagementPage() {
                             </select>
                           </div>
                           <div>
-                            <label className="text-xs text-gray-600">Start</label>
+                            <label className="text-xs text-muted-foreground">Start</label>
                             <TimeOfDayInput
                               key={`${row.rowKey}-s-${timeFormat}`}
                               value={row.scheduled_start}
@@ -1043,7 +1043,7 @@ export default function ShiftManagementPage() {
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-gray-600">End</label>
+                            <label className="text-xs text-muted-foreground">End</label>
                             <TimeOfDayInput
                               key={`${row.rowKey}-e-${timeFormat}`}
                               value={row.scheduled_end}
@@ -1053,7 +1053,7 @@ export default function ShiftManagementPage() {
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-gray-600">Notes</label>
+                            <label className="text-xs text-muted-foreground">Notes</label>
                             <input
                               type="text"
                               value={row.notes}
@@ -1065,7 +1065,7 @@ export default function ShiftManagementPage() {
                             <button
                               type="button"
                               onClick={() => removeScheduleRow(row.rowKey)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                              className="p-2 text-destructive hover:bg-destructive/5 rounded-lg"
                               title="Remove"
                             >
                               <X className="h-4 w-4" />
@@ -1088,7 +1088,7 @@ export default function ShiftManagementPage() {
                   parseFloat(openingCash) < 0 ||
                   templates.length === 0
                 }
-                className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors"
+                className="erp-btn-success-lg flex items-center justify-center space-x-2"
               >
                 <PlayCircle className="h-5 w-5" />
                 <span>Open shift</span>
@@ -1099,21 +1099,21 @@ export default function ShiftManagementPage() {
 
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="mb-4 flex items-center gap-3">
-            <div className="shrink-0 rounded-lg bg-gray-100 p-2 text-gray-700">
+            <div className="shrink-0 rounded-lg bg-muted p-2 text-foreground/85">
               <History className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Shift history</h2>
-              <p className="text-sm text-gray-500">Recent sessions, newest first (up to 100).</p>
+              <h2 className="text-xl font-bold text-foreground">Shift history</h2>
+              <p className="text-sm text-muted-foreground">Recent sessions, newest first (up to 100).</p>
             </div>
           </div>
           {sessionHistory.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-500">No shift sessions yet for this company.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">No shift sessions yet for this company.</p>
           ) : (
             <div className="-mx-1 overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b text-gray-600">
+                  <tr className="border-b text-muted-foreground">
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Opened</th>
                     <th className="py-2 pr-3">Closed</th>
@@ -1128,35 +1128,35 @@ export default function ShiftManagementPage() {
                   {sessionHistory.map((s) => {
                     const isOpen = s.closed_at == null
                     return (
-                      <tr key={s.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/80">
+                      <tr key={s.id} className="border-b border-border/70 last:border-0 hover:bg-muted/40/80">
                         <td className="py-2 pr-3">
                           {isOpen ? (
-                            <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">
+                            <span className="erp-badge erp-badge--success px-2 py-0.5 text-xs">
                               Open
                             </span>
                           ) : (
-                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                            <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground/85">
                               Closed
                             </span>
                           )}
                         </td>
                         <td className="whitespace-nowrap py-2 pr-3">{formatDate(s.opened_at, true)}</td>
-                        <td className="whitespace-nowrap py-2 pr-3 text-gray-700">
+                        <td className="whitespace-nowrap py-2 pr-3 text-foreground/85">
                           {s.closed_at ? formatDate(s.closed_at, true) : '—'}
                         </td>
                         <td className="py-2 pr-3">{sessionStationLabel(s.station_id)}</td>
                         <td className="py-2 pr-3">{sessionTemplateLabel(s.template_id)}</td>
-                        <td className="py-2 pr-3 text-right font-medium text-gray-900">
+                        <td className="py-2 pr-3 text-right font-medium text-foreground">
                           {formatCurrency(Number(s.total_sales_amount || 0))}
                         </td>
-                        <td className="py-2 pr-3 text-right text-gray-800">{s.sale_transaction_count ?? 0}</td>
+                        <td className="py-2 pr-3 text-right text-foreground">{s.sale_transaction_count ?? 0}</td>
                         <td
                           className={`py-2 text-right font-medium ${
                             isOpen
-                              ? 'text-gray-400'
+                              ? 'text-muted-foreground/70'
                               : Number(s.cash_variance) >= 0
-                                ? 'text-green-600'
-                                : 'text-red-600'
+                                ? 'text-success'
+                                : 'text-destructive'
                           }`}
                         >
                           {isOpen ? '—' : formatCurrency(Number(s.cash_variance || 0))}
@@ -1168,12 +1168,12 @@ export default function ShiftManagementPage() {
               </table>
             </div>
           )}
-          <p className="mt-4 text-xs text-gray-400">Dated summaries: Reports → Shift summary.</p>
+          <p className="mt-4 text-xs text-muted-foreground/70">Dated summaries: Reports → Shift summary.</p>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Shift templates</h2>
+            <h2 className="text-xl font-bold text-foreground">Shift templates</h2>
             {canManageTemplates && (
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -1188,7 +1188,7 @@ export default function ShiftManagementPage() {
                 <button
                   type="button"
                   onClick={handleCreateTemplate}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary flex items-center space-x-2 transition-colors"
                 >
                   <Plus className="h-5 w-5" />
                   <span>New template</span>
@@ -1197,7 +1197,7 @@ export default function ShiftManagementPage() {
             )}
           </div>
           {templates.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
+            <p className="text-muted-foreground text-center py-8">
               No templates defined for this company.{' '}
               {canManageTemplates
                 ? 'Click “Add 24/7 standard (×3)” for Day / Evening / Night shifts, or “New template” for a custom window.'
@@ -1208,13 +1208,13 @@ export default function ShiftManagementPage() {
               {templates.map((template) => (
                 <div key={template.id} className="border rounded-lg p-4 relative">
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-bold text-gray-900">{template.name}</h3>
+                    <h3 className="font-bold text-foreground">{template.name}</h3>
                     {canManageTemplates && (
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handleEditTemplate(template)}
-                          className="p-1 text-green-600 hover:text-green-900 rounded"
+                          className="p-1 text-success hover:text-green-900 rounded"
                           title="Edit"
                         >
                           <Edit2 className="h-4 w-4" />
@@ -1222,7 +1222,7 @@ export default function ShiftManagementPage() {
                         <button
                           type="button"
                           onClick={() => handleDeleteTemplate(template)}
-                          className="p-1 text-red-600 hover:text-red-900 rounded"
+                          className="p-1 text-destructive hover:text-red-900 rounded"
                           title="Delete"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1230,7 +1230,7 @@ export default function ShiftManagementPage() {
                       </div>
                     )}
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-muted-foreground">
                     <div className="flex items-center space-x-2 mb-1">
                       <Clock className="h-4 w-4 shrink-0" />
                       <span>
@@ -1251,7 +1251,7 @@ export default function ShiftManagementPage() {
         {showTemplateModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+              <div className="erp-hero-strip">
                 <div className="flex items-center space-x-3">
                   <Clock className="h-6 w-6 text-white" />
                   <h2 className="text-2xl font-bold text-white">
@@ -1274,7 +1274,7 @@ export default function ShiftManagementPage() {
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Template name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1282,12 +1282,12 @@ export default function ShiftManagementPage() {
                         required
                         value={templateFormData.name}
                         onChange={(e) => setTemplateFormData({ ...templateFormData, name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="e.g. Morning shift"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Start time</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Start time</label>
                       <TimeOfDayInput
                         key={`tmpl-s-${templateTimeFieldsKey}-${timeFormat}`}
                         value={templateFormData.start_time}
@@ -1297,7 +1297,7 @@ export default function ShiftManagementPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">End time</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">End time</label>
                       <TimeOfDayInput
                         key={`tmpl-e-${templateTimeFieldsKey}-${timeFormat}`}
                         value={templateFormData.end_time}
@@ -1314,9 +1314,9 @@ export default function ShiftManagementPage() {
                           onChange={(e) =>
                             setTemplateFormData({ ...templateFormData, is_cross_midnight: e.target.checked })
                           }
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
                         />
-                        <span className="text-sm text-gray-700">Crosses midnight (reference only; not stored on server)</span>
+                        <span className="text-sm text-foreground/85">Crosses midnight (reference only; not stored on server)</span>
                       </label>
                     </div>
                   </div>
@@ -1329,13 +1329,13 @@ export default function ShiftManagementPage() {
                       setShowTemplateModal(false)
                       resetTemplateForm()
                     }}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    className="erp-btn-primary transition-colors"
                   >
                     {editingTemplateId ? 'Update' : 'Create'}
                   </button>

@@ -260,16 +260,16 @@ export default function CompanyPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-border border-t-blue-600" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         titleId="company-title"
@@ -285,7 +285,7 @@ export default function CompanyPage() {
             type="button"
             onClick={handleSave}
             disabled={saving || !companyId}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:bg-slate-500/50"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-accent0 disabled:cursor-not-allowed disabled:bg-muted/400/50"
           >
             <Save className="h-4 w-4" />
             {saving ? 'Saving…' : 'Save changes'}
@@ -293,16 +293,16 @@ export default function CompanyPage() {
         }
       >
           {!companyId ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-6 md:p-8 text-center text-amber-900">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 sm:p-6 md:p-8 text-center text-warning-foreground">
               <p className="font-medium">No company is linked to this session.</p>
-              <p className="mt-2 text-sm text-amber-800/90">
+              <p className="mt-2 text-sm text-warning-foreground/90">
                 Ask a Super Admin to assign your user to a company, or sign in with a tenant account.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
               <aside className="lg:col-span-4">
-                <div className="sticky top-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="sticky top-6 overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
                   <div className="bg-gradient-to-br from-blue-600 to-indigo-700 px-6 py-8 text-white">
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 backdrop-blur">
                       <Building2 className="h-9 w-9" />
@@ -312,74 +312,74 @@ export default function CompanyPage() {
                       <p className="mt-2 text-center text-sm text-blue-100">{formData.legal_name}</p>
                     ) : null}
                   </div>
-                  <div className="space-y-4 px-6 py-6 text-sm text-slate-600">
+                  <div className="space-y-4 px-6 py-6 text-sm text-muted-foreground">
                     {formData.email ? (
                       <div className="flex gap-3">
-                        <Mail className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
                         <span className="break-all">{formData.email}</span>
                       </div>
                     ) : null}
                     {formData.phone ? (
                       <div className="flex gap-3">
-                        <Phone className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <Phone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
                         <span>{formData.phone}</span>
                       </div>
                     ) : null}
                     {addressSummary ? (
                       <div className="flex gap-3">
-                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
                         <span className="whitespace-pre-line">{addressSummary}</span>
                       </div>
                     ) : (
-                      <p className="text-slate-400">Add an address in the form →</p>
+                      <p className="text-muted-foreground/70">Add an address in the form →</p>
                     )}
                   </div>
                 </div>
               </aside>
 
               <div className="space-y-6 lg:col-span-8">
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-slate-900">Legal & identity</h3>
-                  <p className="mt-1 text-sm text-slate-500">Registered name and tax identifiers.</p>
+                <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-foreground">Legal & identity</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">Registered name and tax identifiers.</p>
                   <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Company name *</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Company name *</label>
                       <input
                         type="text"
                         value={formData.company_name}
                         onChange={(e) => updateField('company_name', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Legal name</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Legal name</label>
                       <input
                         type="text"
                         value={formData.legal_name}
                         onChange={(e) => updateField('legal_name', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Tax / BIN / VAT ID</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Tax / BIN / VAT ID</label>
                       <input
                         type="text"
                         value={formData.tax_id}
                         onChange={(e) => updateField('tax_id', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
                   <div className="flex items-start gap-3">
                     <div className="rounded-lg bg-violet-50 p-2 text-violet-700">
                       <Calendar className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Regional & display</h3>
-                      <p className="mt-1 text-sm text-slate-500">
+                      <h3 className="text-lg font-semibold text-foreground">Regional & display</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
                         Currency for money fields, and how dates/times render in lists and reports.
                       </p>
                     </div>
@@ -387,11 +387,11 @@ export default function CompanyPage() {
 
                   <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Currency</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Currency</label>
                       <select
                         value={formData.currency}
                         onChange={(e) => updateField('currency', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       >
                         {currencies.map((c) => (
                           <option key={`${c.code}-${c.country}`} value={c.code}>
@@ -401,22 +401,22 @@ export default function CompanyPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Fiscal year starts</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Fiscal year starts</label>
                       <input
                         type="text"
                         value={formData.fiscal_year_start}
                         onChange={(e) => updateField('fiscal_year_start', e.target.value)}
                         placeholder="MM-DD"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 font-mono text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
-                      <p className="mt-1 text-xs text-slate-500">Month-day, e.g. 07-01 for July 1.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Month-day, e.g. 07-01 for July 1.</p>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Date format</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Date format</label>
                       <select
                         value={formData.date_format}
                         onChange={(e) => updateField('date_format', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       >
                         {COMPANY_DATE_FORMAT_OPTIONS.map((o) => (
                           <option key={o.value} value={o.value}>
@@ -426,11 +426,11 @@ export default function CompanyPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Time format</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Time format</label>
                       <select
                         value={formData.time_format}
                         onChange={(e) => updateField('time_format', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       >
                         {COMPANY_TIME_FORMAT_OPTIONS.map((o) => (
                           <option key={o.value} value={o.value}>
@@ -440,7 +440,7 @@ export default function CompanyPage() {
                       </select>
                     </div>
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">
                         {aquacultureT('languageLabel', formData.language)}
                       </label>
                       <select
@@ -448,21 +448,21 @@ export default function CompanyPage() {
                         onChange={(e) =>
                           updateField('language', e.target.value === 'bn' ? 'bn' : 'en')
                         }
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       >
                         <option value="en">{aquacultureT('languageEnglish', 'en')}</option>
                         <option value="bn">{aquacultureT('languageBangla', 'bn')}</option>
                       </select>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {aquacultureT('languageHelp', formData.language)}
                       </p>
                     </div>
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Time zone</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Time zone</label>
                       <select
                         value={formData.time_zone}
                         onChange={(e) => updateField('time_zone', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       >
                         {COMPANY_TIME_ZONE_OPTIONS.map((o) => (
                           <option key={o.value} value={o.value}>
@@ -475,20 +475,20 @@ export default function CompanyPage() {
                           </option>
                         )}
                       </select>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Default: Dhaka (Bangladesh), IANA name. Used for business &ldquo;today&rdquo; and local context across the app.
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <div className="mt-6 rounded-xl border border-border/70 bg-muted/40 px-4 py-3 text-sm text-foreground/85">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Clock className="h-4 w-4 text-slate-400" />
-                      <span className="font-medium text-slate-600">Preview:</span>
+                      <Clock className="h-4 w-4 text-muted-foreground/70" />
+                      <span className="font-medium text-muted-foreground">Preview:</span>
                       <span className="rounded-md bg-white px-2 py-1 font-mono shadow-sm">
                         {formatCompanyDate(previewDate, formData.date_format)}
                       </span>
-                      <span className="text-slate-400">·</span>
+                      <span className="text-muted-foreground/70">·</span>
                       <span className="rounded-md bg-white px-2 py-1 font-mono shadow-sm">
                         {formatCompanyTime(previewTime, formData.time_format)}
                       </span>
@@ -496,17 +496,17 @@ export default function CompanyPage() {
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
                   <div className="flex items-start gap-3">
-                    <div className="rounded-lg bg-amber-50 p-2 text-amber-800">
+                    <div className="rounded-lg bg-warning/10 p-2 text-warning-foreground">
                       <Layers className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Site model</h3>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Saved preference for how many <span className="font-medium text-slate-600">active</span> sites you
+                      <h3 className="text-lg font-semibold text-foreground">Site model</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Saved preference for how many <span className="font-medium text-muted-foreground">active</span> sites you
                         may run. POS, transfers, and report auto-scope still follow{' '}
-                        <span className="font-medium text-slate-600">how many stations are active right now</span>
+                        <span className="font-medium text-muted-foreground">how many stations are active right now</span>
                         {activeStationCount !== null ? (
                           <>
                             {' '}
@@ -514,13 +514,13 @@ export default function CompanyPage() {
                           </>
                         ) : null}
                         . In single-site mode you may still keep closed sites as inactive rows for history. Manage sites on{' '}
-                        <a href="/stations" className="font-medium text-blue-600 hover:text-blue-800">
+                        <a href="/stations" className="font-medium text-primary hover:text-primary/80">
                           Stations
                         </a>
                         .
                       </p>
                       {!canEditStationMode ? (
-                        <p className="mt-2 text-sm text-amber-900/90 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <p className="mt-2 text-sm text-warning-foreground/90 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
                           Only a platform Super Admin can change single vs multiple stations. Contact support if this
                           tenant-wide setting must be updated.
                         </p>
@@ -528,7 +528,7 @@ export default function CompanyPage() {
                     </div>
                   </div>
                   <fieldset disabled={!canEditStationMode} className="mt-6 space-y-3 disabled:opacity-60">
-                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 hover:bg-muted/40">
                       <input
                         type="radio"
                         name="station_mode"
@@ -537,13 +537,13 @@ export default function CompanyPage() {
                         onChange={() => updateField('station_mode', 'multi')}
                       />
                       <div>
-                        <p className="font-medium text-slate-900">Multiple stations</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-foreground">Multiple stations</p>
+                        <p className="text-sm text-muted-foreground">
                           Default. Use a separate station for each site; filters and reports can split by location.
                         </p>
                       </div>
                     </label>
-                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                    <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 hover:bg-muted/40">
                       <input
                         type="radio"
                         name="station_mode"
@@ -552,8 +552,8 @@ export default function CompanyPage() {
                         onChange={() => updateField('station_mode', 'single')}
                       />
                       <div>
-                        <p className="font-medium text-slate-900">Single site</p>
-                        <p className="text-sm text-slate-600">
+                        <p className="font-medium text-foreground">Single site</p>
+                        <p className="text-sm text-muted-foreground">
                           At most one <span className="font-medium">active</span> station. Extra rows can stay as inactive
                           (archived). You cannot save this if more than one site is still active—deactivate sold/closed
                           locations on Stations first.
@@ -564,26 +564,26 @@ export default function CompanyPage() {
                 </section>
 
                 {aquacultureLicensed ? (
-                  <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
                     <div className="flex items-start gap-3">
-                      <div className="rounded-lg bg-teal-50 p-2 text-teal-800">
+                      <div className="rounded-lg bg-accent p-2 text-primary">
                         <Layers className="h-5 w-5" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-lg font-semibold text-slate-900">Aquaculture</h3>
-                        <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                        <h3 className="text-lg font-semibold text-foreground">Aquaculture</h3>
+                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                           Your organization is licensed for Aquaculture. Turn it on here to show Aquaculture in the app
                           menu and use ponds, sales, sampling, and pond P&amp;L.                           New ponds receive a POS customer automatically for Cashier on-account sales; inventoried
                           supplies to ponds should flow through POS. Fuel-only sites can leave this off.
                         </p>
                         {!canEditAquacultureToggle ? (
-                          <p className="mt-3 text-sm text-amber-900/90 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="mt-3 text-sm text-warning-foreground/90 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
                             Only the company <span className="font-medium">Admin</span> can enable or disable
                             Aquaculture in these settings.
                           </p>
                         ) : null}
                         {canEditAquacultureToggle ? (
-                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50">
+                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 hover:bg-muted/40">
                             <input
                               type="checkbox"
                               className="mt-1"
@@ -591,23 +591,23 @@ export default function CompanyPage() {
                               onChange={(e) => setAquacultureEnabled(e.target.checked)}
                             />
                             <div>
-                              <p className="font-medium text-slate-900">Use Aquaculture in this company</p>
-                              <p className="text-sm leading-relaxed text-slate-600">
+                              <p className="font-medium text-foreground">Use Aquaculture in this company</p>
+                              <p className="text-sm leading-relaxed text-muted-foreground">
                                 When checked, Aquaculture appears for the Admin in the sidebar and apps. Other roles
                                 continue with fuel station and retail only.
                               </p>
                             </div>
                           </label>
                         ) : (
-                          <p className="mt-4 text-sm font-medium text-slate-700">
+                          <p className="mt-4 text-sm font-medium text-foreground/85">
                             Status:{' '}
-                            <span className={aquacultureEnabled ? 'text-teal-800' : 'text-slate-600'}>
+                            <span className={aquacultureEnabled ? 'text-primary' : 'text-muted-foreground'}>
                               {aquacultureEnabled ? 'On' : 'Off'}
                             </span>
                           </p>
                         )}
                         {aquacultureEnabled && canEditAquacultureToggle ? (
-                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-primary/25 bg-accent/40 p-4">
                             <input
                               type="checkbox"
                               className="mt-1"
@@ -615,11 +615,13 @@ export default function CompanyPage() {
                               onChange={(e) => setCapitalizeConsumptionToBioasset(e.target.checked)}
                             />
                             <div>
-                              <p className="font-medium text-slate-900">Capitalize pond feed &amp; medicine to GL 1581</p>
-                              <p className="text-sm leading-relaxed text-slate-600">
-                                When enabled, feed and medicine consumed from pond warehouses posts Dr Biological
-                                Inventory (1581) instead of COGS, so direct pond inputs accumulate in the bio-asset GL
-                                account alongside fry purchases. New consumption only — does not restate history.
+                              <p className="font-medium text-foreground">Capitalize pond production costs to GL 1581</p>
+                              <p className="text-sm leading-relaxed text-muted-foreground">
+                                When enabled, direct pond inputs (fry, feed, medicine, pond care, equipment, vendor
+                                bills, shop issues, and manual expenses) post Dr Biological Inventory (1581) instead of
+                                immediate operating expense, so each pond&apos;s liability/asset aligns with management
+                                P&amp;L and is relieved on harvest or inter-pond transfer. New entries only — does not
+                                restate history.
                               </p>
                             </div>
                           </label>
@@ -629,113 +631,113 @@ export default function CompanyPage() {
                   </section>
                 ) : null}
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-slate-900">Address</h3>
-                  <p className="mt-1 text-sm text-slate-500">Used on documents and compliance screens.</p>
+                <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-foreground">Address</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">Used on documents and compliance screens.</p>
                   <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Address line 1</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Address line 1</label>
                       <input
                         type="text"
                         value={formData.address_line1}
                         onChange={(e) => updateField('address_line1', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Address line 2</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Address line 2</label>
                       <input
                         type="text"
                         value={formData.address_line2}
                         onChange={(e) => updateField('address_line2', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">City</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">City</label>
                       <input
                         type="text"
                         value={formData.city}
                         onChange={(e) => updateField('city', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">State / region</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">State / region</label>
                       <input
                         type="text"
                         value={formData.state}
                         onChange={(e) => updateField('state', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Postal code</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Postal code</label>
                       <input
                         type="text"
                         value={formData.postal_code}
                         onChange={(e) => updateField('postal_code', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Country</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Country</label>
                       <input
                         type="text"
                         value={formData.country}
                         onChange={(e) => updateField('country', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-slate-900">Contact</h3>
+                <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-foreground">Contact</h3>
                   <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div>
-                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <Mail className="h-4 w-4 text-slate-400" /> Email
+                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
+                        <Mail className="h-4 w-4 text-muted-foreground/70" /> Email
                       </label>
                       <input
                         type="email"
                         value={formData.email}
                         onChange={(e) => updateField('email', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <Phone className="h-4 w-4 text-slate-400" /> Phone
+                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
+                        <Phone className="h-4 w-4 text-muted-foreground/70" /> Phone
                       </label>
                       <input
                         type="tel"
                         value={formData.phone}
                         onChange={(e) => updateField('phone', e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-slate-700">
-                        <User className="h-4 w-4 text-slate-400" /> Primary contact
+                      <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
+                        <User className="h-4 w-4 text-muted-foreground/70" /> Primary contact
                       </label>
                       <input
                         type="text"
                         value={formData.contact_person}
                         onChange={(e) => updateField('contact_person', e.target.value)}
                         placeholder="Name for correspondence"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
                   <div className="flex items-start gap-3">
-                    <Globe className="mt-0.5 h-5 w-5 text-slate-500" />
+                    <Globe className="mt-0.5 h-5 w-5 text-muted-foreground" />
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Online presence</h3>
-                      <p className="mt-1 text-sm text-slate-500">
+                      <h3 className="text-lg font-semibold text-foreground">Online presence</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
                         Subdomain and custom domain for multi-tenant routing. Changing these can affect how users reach
                         this tenant — coordinate with your administrator.
                       </p>
@@ -743,23 +745,23 @@ export default function CompanyPage() {
                   </div>
                   <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Subdomain</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Subdomain</label>
                       <input
                         type="text"
                         value={formData.subdomain}
                         onChange={(e) => updateField('subdomain', e.target.value.toLowerCase())}
                         placeholder="your-tenant"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 font-mono text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700">Custom domain</label>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Custom domain</label>
                       <input
                         type="text"
                         value={formData.custom_domain}
                         onChange={(e) => updateField('custom_domain', e.target.value.toLowerCase())}
                         placeholder="erp.example.com"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="w-full rounded-lg border border-border px-3 py-2 font-mono text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                   </div>

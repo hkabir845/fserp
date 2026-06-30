@@ -468,16 +468,16 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'paid':
-        return 'bg-green-100 text-green-800'
+        return 'bg-success/15 text-success'
       case 'pending':
         return 'bg-yellow-100 text-yellow-800'
       case 'failed':
       case 'overdue':
-        return 'bg-red-100 text-red-800'
+        return 'bg-destructive/10 text-destructive'
       case 'void':
-        return 'bg-slate-200 text-slate-700'
+        return 'bg-muted text-foreground/85'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-muted text-foreground'
     }
   }
 
@@ -486,15 +486,15 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-            <FileText className="h-6 w-6 text-blue-600" />
+          <h2 className="text-xl font-bold text-foreground flex items-center space-x-2">
+            <FileText className="h-6 w-6 text-primary" />
             <span>Subscription Ledger</span>
           </h2>
-          <p className="text-sm text-gray-600 mt-1">Manage subscription invoices and payments for all tenants</p>
+          <p className="text-sm text-muted-foreground mt-1">Manage subscription invoices and payments for all tenants</p>
         </div>
         <button
           onClick={handleCreateInvoice}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="erp-btn-primary flex items-center space-x-2 transition-colors"
         >
           <Plus className="h-5 w-5" />
           <span>Create Invoice</span>
@@ -505,11 +505,11 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
       <div className="bg-white rounded-lg shadow p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <label className="block text-sm font-medium text-foreground/85 mb-1">Company</label>
             <select
               value={selectedCompany}
               onChange={(e) => setSelectedCompany(e.target.value ? parseInt(e.target.value) : '')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             >
               <option value="">All Companies</option>
               {companies.map((company) => (
@@ -521,31 +521,31 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <label className="block text-sm font-medium text-foreground/85 mb-1">Start Date</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <label className="block text-sm font-medium text-foreground/85 mb-1">End Date</label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <label className="block text-sm font-medium text-foreground/85 mb-1">Status</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
             >
               <option value="">All Status</option>
               <option value="pending">Pending</option>
@@ -555,15 +555,15 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <label className="block text-sm font-medium text-foreground/85 mb-1">Search</label>
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/70" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search invoices..."
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
           </div>
@@ -574,49 +574,49 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
       <div className="bg-white rounded-lg shadow overflow-hidden">
         {loading ? (
           <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="text-gray-600 mt-4">Loading invoices...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+            <p className="text-muted-foreground mt-4">Loading invoices...</p>
           </div>
         ) : filteredInvoices.length === 0 ? (
           <div className="text-center py-12">
-            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">No invoices found. Create your first subscription invoice.</p>
+            <FileText className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+            <p className="text-muted-foreground">No invoices found. Create your first subscription invoice.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Period</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Invoice #</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Company</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Plan</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Due Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Period</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-border">
                 {filteredInvoices.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-gray-50">
+                  <tr key={invoice.id} className="hover:bg-muted/40">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{invoice.payment_number}</div>
+                      <div className="text-sm font-medium text-foreground">{invoice.payment_number}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{invoice.company_name}</div>
+                      <div className="text-sm text-foreground">{invoice.company_name}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 capitalize">
+                      <div className="text-sm text-foreground capitalize">
                         {(invoice.billing_plan_code || '—').replace(/_/g, ' ')}
                       </div>
                       {invoice.billing_cycle && (
-                        <div className="text-xs text-gray-500 capitalize">{invoice.billing_cycle.replace(/_/g, ' ')}</div>
+                        <div className="text-xs text-muted-foreground capitalize">{invoice.billing_cycle.replace(/_/g, ' ')}</div>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-semibold text-gray-900">
+                      <div className="text-sm font-semibold text-foreground">
                         {formatCurrency(invoice.amount, invoice.currency || 'BDT')}
                       </div>
                     </td>
@@ -625,14 +625,14 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                         {invoice.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateOnly(invoice.due_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateOnly(invoice.period_start)}
                       {invoice.period_end ? ` – ${formatDateOnly(invoice.period_end)}` : ''}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {formatDate(invoice.created_at, true)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -640,7 +640,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                         {invoice.status === 'pending' && (
                           <button
                             onClick={() => handleMarkAsPaid(invoice.id)}
-                            className="p-1.5 text-green-600 hover:text-green-900 hover:bg-green-50 rounded transition-colors"
+                            className="p-1.5 text-success hover:text-green-900 hover:bg-green-50 rounded transition-colors"
                             title="Mark as Paid"
                           >
                             <DollarSign className="h-4 w-4" />
@@ -648,14 +648,14 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                         )}
                         <button
                           onClick={() => handleEditClick(invoice)}
-                          className="p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
+                          className="p-1.5 text-primary hover:text-blue-900 hover:bg-accent rounded transition-colors"
                           title="Edit Invoice"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDeleteInvoice(invoice.id)}
-                          className="p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                          className="p-1.5 text-destructive hover:text-red-900 hover:bg-destructive/5 rounded transition-colors"
                           title="Delete Invoice"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -674,7 +674,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
       {showInvoiceModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+            <div className="erp-hero-strip">
               <h2 className="text-2xl font-bold text-white flex items-center space-x-2">
                 <FileText className="h-6 w-6" />
                 <span>Create Subscription Invoice</span>
@@ -691,14 +691,14 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Company <span className="text-red-500">*</span>
                     </label>
                     <select
                       required
                       value={invoiceFormData.company_id}
                       onChange={(e) => handleCompanyChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="">Select Company</option>
                       {companies.map((company) => (
@@ -710,14 +710,14 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Tenant subscription <span className="text-red-500">*</span>
                     </label>
                     <select
                       required
                       value={invoiceFormData.subscription_id}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, subscription_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       disabled={!invoiceFormData.company_id}
                     >
                       <option value="">Select tenant subscription</option>
@@ -727,7 +727,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       One subscription line per tenant; this links the invoice to that company&apos;s SaaS billing context.
                     </p>
                   </div>
@@ -735,14 +735,14 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
 
                 <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Billing plan <span className="text-red-500">*</span>
                     </label>
                     <select
                       required
                       value={invoiceFormData.billing_plan_code}
                       onChange={(e) => handleBillingPlanFieldChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="">Select billing plan</option>
                       {billingPlans.map((p) => (
@@ -754,7 +754,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Plans are managed platform-wide. Amount below updates from the catalog when you pick a plan (you can override).
                     </p>
                   </div>
@@ -762,7 +762,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Amount <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -771,19 +771,19 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                       step="0.01"
                       value={invoiceFormData.amount}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, amount: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder="0.00"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Currency
                     </label>
                     <select
                       value={invoiceFormData.currency}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, currency: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="USD">USD</option>
                       <option value="BDT">BDT</option>
@@ -792,14 +792,14 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Billing Cycle <span className="text-red-500">*</span>
                     </label>
                     <select
                       required
                       value={invoiceFormData.billing_cycle}
                       onChange={(e) => handleBillingCycleChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="monthly">Monthly</option>
                       <option value="quarterly">Quarterly</option>
@@ -811,7 +811,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Period Start <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -819,38 +819,38 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                       required
                       value={invoiceFormData.period_start}
                       onChange={(e) => handlePeriodStartChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Period End
                     </label>
                     <input
                       type="date"
                       value={invoiceFormData.period_end}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, period_end: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
                     <input
                       type="date"
                       value={invoiceFormData.due_date}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, due_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Discount (%)
                     </label>
                     <input
@@ -858,13 +858,13 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                       step="0.01"
                       value={invoiceFormData.discount_percent}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, discount_percent: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder="0.00"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Discount Amount
                     </label>
                     <input
@@ -872,40 +872,40 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                       step="0.01"
                       value={invoiceFormData.discount_amount}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, discount_amount: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder="0.00"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Discount Reason
                     </label>
                     <input
                       type="text"
                       value={invoiceFormData.discount_reason}
                       onChange={(e) => setInvoiceFormData({ ...invoiceFormData, discount_reason: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder="e.g., Annual upfront payment"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Notes
                   </label>
                   <textarea
                     rows={3}
                     value={invoiceFormData.notes}
                     onChange={(e) => setInvoiceFormData({ ...invoiceFormData, notes: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder="Additional notes..."
                   />
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-800">
+                <div className="bg-blue-50 border border-primary/25 rounded-lg p-3">
+                  <p className="text-sm text-primary">
                     <strong>Discount Rules:</strong> Annual upfront (15%), Half-yearly upfront (10%), Quarterly upfront (5%), Monthly (0%)
                   </p>
                 </div>
@@ -915,13 +915,13 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                 <button
                   type="button"
                   onClick={() => setShowInvoiceModal(false)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors flex items-center space-x-2"
                 >
                   <Plus className="h-4 w-4" />
                   <span>Create Invoice</span>
@@ -936,25 +936,25 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h2 className="text-lg font-semibold text-gray-900">Edit invoice {editingInvoice.payment_number}</h2>
+              <h2 className="text-lg font-semibold text-foreground">Edit invoice {editingInvoice.payment_number}</h2>
               <button
                 type="button"
                 onClick={() => {
                   setShowEditModal(false)
                   setEditingInvoice(null)
                 }}
-                className="p-2 rounded-full hover:bg-gray-100"
+                className="p-2 rounded-full hover:bg-muted"
               >
-                <X className="h-5 w-5 text-gray-600" />
+                <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
             <form onSubmit={handleUpdateInvoice} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Billing plan</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Billing plan</label>
                 <select
                   value={editFormData.billing_plan_code}
                   onChange={(e) => setEditFormData({ ...editFormData, billing_plan_code: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-border rounded-lg"
                 >
                   <option value="">— Unchanged / clear —</option>
                   {billingPlans.map((p) => (
@@ -966,7 +966,7 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Amount</label>
                   <input
                     type="number"
                     step="0.01"
@@ -976,22 +976,22 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Currency</label>
                   <input
                     type="text"
                     maxLength={3}
                     value={editFormData.currency}
                     onChange={(e) => setEditFormData({ ...editFormData, currency: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-border rounded-lg"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Status</label>
                 <select
                   value={editFormData.status}
                   onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-border rounded-lg"
                 >
                   <option value="pending">Pending</option>
                   <option value="paid">Paid</option>
@@ -1002,51 +1002,51 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Due date</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Due date</label>
                   <input
                     type="date"
                     value={editFormData.due_date ? editFormData.due_date.split('T')[0] : ''}
                     onChange={(e) => setEditFormData({ ...editFormData, due_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-border rounded-lg"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Paid date</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Paid date</label>
                   <input
                     type="date"
                     value={editFormData.paid_date ? editFormData.paid_date.split('T')[0] : ''}
                     onChange={(e) => setEditFormData({ ...editFormData, paid_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-border rounded-lg"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Period start</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Period start</label>
                   <input
                     type="date"
                     value={editFormData.period_start}
                     onChange={(e) => setEditFormData({ ...editFormData, period_start: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-border rounded-lg"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Period end</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Period end</label>
                   <input
                     type="date"
                     value={editFormData.period_end}
                     onChange={(e) => setEditFormData({ ...editFormData, period_end: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-border rounded-lg"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Notes</label>
                 <textarea
                   rows={3}
                   value={editFormData.notes}
                   onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-border rounded-lg"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -1056,11 +1056,11 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                     setShowEditModal(false)
                     setEditingInvoice(null)
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                <button type="submit" className="erp-btn-primary">
                   Save changes
                 </button>
               </div>

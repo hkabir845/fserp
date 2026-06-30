@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { CompanyProvider } from '@/contexts/CompanyContext'
-import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, BookOpen, Building2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, AlertTriangle, RefreshCw, Users, UserCheck, DollarSign, X, Mail, Phone, ArrowUpDown, ArrowUp, ArrowDown, BookOpen, Building2, Undo2 } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import api, { getApiDocsUrl, getBackendOrigin } from '@/lib/api'
@@ -72,6 +72,7 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [includeInactive, setIncludeInactive] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
@@ -173,6 +174,7 @@ export default function CustomersPage() {
           q: debouncedSearch,
           sort: sortField || 'id',
           dir: sortDirection,
+          extra: { include_inactive: includeInactive ? 'true' : undefined },
         })
         const response = await api.get('/customers/', { params, timeout: 15000 })
         const data = response.data
@@ -283,6 +285,7 @@ export default function CustomersPage() {
     router,
     sortDirection,
     sortField,
+    includeInactive,
     toast,
   ])
 
@@ -434,7 +437,7 @@ export default function CustomersPage() {
   const handleDelete = async (customerId: number) => {
     try {
       await api.delete(`/customers/${customerId}/`)
-      toast.success(tr('entityDeleted', { entity: ct('Customer') }))
+      toast.success(tr('entityDeleted', { entity: ct('Customer') }) + ' You can restore inactive customers when needed.')
       setShowDeleteConfirm(null)
       fetchCustomers()
     } catch (error: unknown) {
@@ -447,6 +450,24 @@ export default function CustomersPage() {
           : undefined
       )
       console.error('Failed to delete customer:', message)
+      toast.error(message)
+    }
+  }
+
+  const handleRestore = async (customerId: number) => {
+    try {
+      await api.put(`/customers/${customerId}/`, { is_active: true })
+      toast.success(tr('entityUpdated', { entity: ct('Customer') }) + ' — restored to active.')
+      fetchCustomers()
+    } catch (error: unknown) {
+      const ax = error as { response?: { data?: unknown; status?: number; statusText?: string } }
+      const message = formatJsonApiError(
+        ax.response?.data,
+        tr('failedUpdateEntity', { entity: ct('customer') }),
+        ax.response
+          ? { status: ax.response.status ?? 0, statusText: ax.response.statusText ?? '' }
+          : undefined
+      )
       toast.error(message)
     }
   }
@@ -496,11 +517,11 @@ export default function CustomersPage() {
 
   const SortIcon = ({ field }: { field: keyof Customer }) => {
     if (sortField !== field) {
-      return <ArrowUpDown className="h-4 w-4 ml-1 text-gray-400" />
+      return <ArrowUpDown className="h-4 w-4 ml-1 text-muted-foreground/70" />
     }
     return sortDirection === 'asc' 
-      ? <ArrowUp className="h-4 w-4 ml-1 text-blue-600" />
-      : <ArrowDown className="h-4 w-4 ml-1 text-blue-600" />
+      ? <ArrowUp className="h-4 w-4 ml-1 text-primary" />
+      : <ArrowDown className="h-4 w-4 ml-1 text-primary" />
   }
 
   const fetchCustomersForExport = async (): Promise<Customer[]> => {
@@ -548,7 +569,7 @@ export default function CustomersPage() {
 
   return (
     <CompanyProvider>
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="app-scroll-pad">
           <ErpPageShell
             flush
@@ -568,7 +589,7 @@ export default function CustomersPage() {
                 />
                 <button
                   onClick={() => setShowDebug(!showDebug)}
-                  className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="px-4 py-2 text-sm text-muted-foreground border border-border rounded-lg hover:bg-muted/40"
                   title={tr('toggleDebug')}
                 >
                   {showDebug ? tr('hideDebug') : tr('showDebug')}
@@ -577,7 +598,7 @@ export default function CustomersPage() {
             }
           >
             {showDebug && (
-              <div className="mb-6 p-4 bg-gray-100 rounded-lg text-xs font-mono">
+              <div className="mb-6 p-4 bg-muted rounded-lg text-xs font-mono">
                 <div className="mb-2"><strong>{tr('totalRows', { entity: ct('Customers') })}</strong> {totalCustomers}</div>
                 <div className="mb-2"><strong>{tr('rowsThisPage')}</strong> {customers.length}</div>
                 <div className="mb-2"><strong>{tr('apiResponse')}</strong> {apiResponse ? JSON.stringify(apiResponse, null, 2).substring(0, 500) : tr('notLoadedYet')}</div>
@@ -587,35 +608,35 @@ export default function CustomersPage() {
 
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-border">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('totalCustomers')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{totalCustomers}</p>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">{tr('totalCustomers')}</p>
+                    <p className="text-2xl font-bold text-foreground">{totalCustomers}</p>
                   </div>
                   <div className="bg-blue-100 rounded-full p-3">
-                    <Users className="h-6 w-6 text-blue-600" />
+                    <Users className="h-6 w-6 text-primary" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-border">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('activeCustomers')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{activeCustomers}</p>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">{tr('activeCustomers')}</p>
+                    <p className="text-2xl font-bold text-foreground">{activeCustomers}</p>
                   </div>
-                  <div className="bg-green-100 rounded-full p-3">
-                    <UserCheck className="h-6 w-6 text-green-600" />
+                  <div className="bg-success/15 rounded-full p-3">
+                    <UserCheck className="h-6 w-6 text-success" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-border">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('totalReceivables')}</p>
-                    <p className="text-2xl font-bold text-gray-900">
+                    <p className="text-sm font-medium text-muted-foreground mb-1">{tr('totalReceivables')}</p>
+                    <p className="text-2xl font-bold text-foreground">
                       {currencySymbol}{formatNumber(totalReceivable)}
                     </p>
                   </div>
@@ -625,40 +646,52 @@ export default function CustomersPage() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+              <div className="bg-white rounded-lg shadow-sm p-6 border border-border">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600 mb-1">{tr('netBalance')}</p>
-                    <p className={`text-2xl font-bold ${totalBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">{tr('netBalance')}</p>
+                    <p className={`text-2xl font-bold ${totalBalance >= 0 ? 'text-foreground' : 'text-destructive'}`}>
                       {currencySymbol}{formatNumber(Math.abs(totalBalance))}
                     </p>
                   </div>
-                  <div className={`rounded-full p-3 ${totalBalance >= 0 ? 'bg-gray-100' : 'bg-red-100'}`}>
-                    <DollarSign className={`h-6 w-6 ${totalBalance >= 0 ? 'text-gray-600' : 'text-red-600'}`} />
+                  <div className={`rounded-full p-3 ${totalBalance >= 0 ? 'bg-muted' : 'bg-destructive/10'}`}>
+                    <DollarSign className={`h-6 w-6 ${totalBalance >= 0 ? 'text-muted-foreground' : 'text-destructive'}`} />
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Search and Actions Bar */}
-            <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-gray-200">
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-border">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="relative flex-1 w-full sm:max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                  <Search className="erp-search-icon" />
                   <input
                     type="text"
                     placeholder={ct('searchCustomers')}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   />
                 </div>
+                <label className="inline-flex items-center gap-2 shrink-0 text-sm text-foreground/85">
+                  <input
+                    type="checkbox"
+                    checked={includeInactive}
+                    onChange={(e) => {
+                      setIncludeInactive(e.target.checked)
+                      setListPage(1)
+                    }}
+                    className="h-4 w-4 rounded border-border text-primary"
+                  />
+                  Include inactive
+                </label>
                 <div className="flex items-center gap-3">
                   {totalCustomers === 0 && (
                     <button
                       onClick={handleAddDummyCustomers}
                       disabled={addingDummy}
-                      className="flex items-center space-x-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center space-x-2 px-5 py-2.5 bg-success text-white rounded-lg hover:bg-success/90 transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       title={ct('addDummyTitle')}
                     >
                       {addingDummy ? (
@@ -680,7 +713,7 @@ export default function CustomersPage() {
                       setCreateCodeNonce((n) => n + 1)
                       setShowModal(true)
                     }}
-                    className="flex items-center space-x-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
+                    className="flex items-center space-x-2 px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary transition-colors shadow-sm font-medium"
                   >
                     <Plus className="h-5 w-5" />
                     <span>{tr('addEntity', { entity: ct('Customer') })}</span>
@@ -693,33 +726,33 @@ export default function CustomersPage() {
             {loading ? (
               <div className="space-y-4">
                 {/* Loading Skeleton */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="bg-white rounded-lg shadow-sm border border-border p-6">
                   <div className="animate-pulse space-y-4">
-                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                    <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                    <div className="h-4 bg-muted rounded w-3/4"></div>
+                    <div className="h-4 bg-muted rounded w-1/2"></div>
+                    <div className="h-4 bg-muted rounded w-5/6"></div>
                   </div>
                 </div>
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-white rounded-lg shadow-sm border border-border overflow-hidden">
                   <div className="animate-pulse">
-                    <div className="h-12 bg-gray-100"></div>
+                    <div className="h-12 bg-muted"></div>
                     {[1, 2, 3, 4, 5].map((i) => (
-                      <div key={i} className="h-16 border-b border-gray-200 bg-white"></div>
+                      <div key={i} className="h-16 border-b border-border bg-white"></div>
                     ))}
                   </div>
                 </div>
               </div>
             ) : error ? (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 md:p-8">
+              <div className="bg-destructive/5 border border-destructive/25 rounded-lg p-4 sm:p-6 md:p-8">
                 <div className="text-center mb-6">
-                  <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold text-red-800 mb-2">{tr('backendConnectionError')}</h3>
-                  <p className="text-red-700 whitespace-pre-line text-left max-w-2xl mx-auto mb-6">{error}</p>
+                  <AlertTriangle className="h-16 w-16 text-destructive mx-auto mb-4" />
+                  <h3 className="text-xl font-bold text-destructive mb-2">{tr('backendConnectionError')}</h3>
+                  <p className="text-destructive whitespace-pre-line text-left max-w-2xl mx-auto mb-6">{error}</p>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <button
                     onClick={fetchCustomers}
-                    className="inline-flex items-center space-x-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                    className="inline-flex items-center space-x-2 px-6 py-3 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors font-medium"
                   >
                     <RefreshCw className="h-5 w-5" />
                     <span>{tr('retryConnection')}</span>
@@ -728,7 +761,7 @@ export default function CustomersPage() {
                     href={apiDocsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center space-x-2 px-6 py-3 border border-red-300 text-red-700 rounded-lg hover:bg-red-100 transition-colors font-medium"
+                    className="inline-flex items-center space-x-2 px-6 py-3 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/10 transition-colors font-medium"
                   >
                     <span>{tr('checkBackendStatus')}</span>
                   </a>
@@ -744,16 +777,16 @@ export default function CustomersPage() {
                 </div>
               </div>
             ) : customers.length === 0 ? (
-              <div className="bg-white rounded-lg shadow-sm p-12 text-center border border-gray-200">
-                <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              <div className="bg-white rounded-lg shadow-sm p-12 text-center border border-border">
+                <Users className="h-16 w-16 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-foreground mb-2">
                   {debouncedSearch.trim()
                     ? tr('noEntityFound', { entities: ct('customers') })
                     : totalCustomers === 0
                       ? tr('noEntityInDb', { entities: ct('customers') })
                       : tr('noEntityToShow', { entities: ct('customers') })}
                 </h3>
-                <p className="text-gray-600 mb-6">
+                <p className="text-muted-foreground mb-6">
                   {debouncedSearch.trim()
                     ? tr('tryAdjustSearch')
                     : totalCustomers === 0
@@ -765,7 +798,7 @@ export default function CustomersPage() {
                     <button
                       onClick={handleAddDummyCustomers}
                       disabled={addingDummy}
-                      className="inline-flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                      className="inline-flex items-center space-x-2 px-6 py-3 bg-success text-white rounded-lg hover:bg-success/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                     >
                       {addingDummy ? (
                         <>
@@ -787,7 +820,7 @@ export default function CustomersPage() {
                         setCreateCodeNonce((n) => n + 1)
                         setShowModal(true)
                       }}
-                      className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      className="inline-flex items-center space-x-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary transition-colors font-medium"
                     >
                       <Plus className="h-5 w-5" />
                       <span>{totalCustomers === 0 ? tr('addYourFirst', { entity: ct('Customer') }) : tr('addNew', { entity: ct('Customer') })}</span>
@@ -795,35 +828,35 @@ export default function CustomersPage() {
                   )}
                   <button
                     onClick={fetchCustomers}
-                    className="inline-flex items-center space-x-2 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                    className="inline-flex items-center space-x-2 px-6 py-3 border border-border text-foreground/85 rounded-lg hover:bg-muted/40 transition-colors font-medium"
                   >
                     <RefreshCw className="h-5 w-5" />
                     <span>{t('refresh')}</span>
                   </button>
                 </div>
                 {totalCustomers === 0 && (
-                  <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-left max-w-2xl mx-auto">
-                    <p className="text-sm text-blue-800 mb-2">
+                  <div className="mt-6 p-4 bg-blue-50 border border-primary/25 rounded-lg text-left max-w-2xl mx-auto">
+                    <p className="text-sm text-primary mb-2">
                       <strong>{ct('quickStartTitle')}</strong>
                     </p>
-                    <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
+                    <ul className="text-sm text-primary list-disc list-inside space-y-1">
                       <li>{ct('quickStartCash')}</li>
                       <li>{ct('quickStartCredit')}</li>
                     </ul>
-                    <p className="text-xs text-blue-600 mt-3">
+                    <p className="text-xs text-primary mt-3">
                       {ct('quickStartDemo')}
                     </p>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-border">
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-border">
+                    <thead className="bg-muted/40">
                       <tr>
                         <th 
-                          className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider cursor-pointer hover:bg-muted transition-colors"
                           onClick={() => handleSort('customer_number')}
                         >
                           <div className="flex items-center">
@@ -832,7 +865,7 @@ export default function CustomersPage() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider cursor-pointer hover:bg-muted transition-colors"
                           onClick={() => handleSort('display_name')}
                         >
                           <div className="flex items-center">
@@ -841,7 +874,7 @@ export default function CustomersPage() {
                           </div>
                         </th>
                         <th
-                          className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider hidden md:table-cell"
+                          className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider hidden md:table-cell"
                           onClick={() => handleSort('default_station_name' as keyof Customer)}
                         >
                           <div className="flex items-center">
@@ -850,11 +883,11 @@ export default function CustomersPage() {
                             <SortIcon field={'default_station_name' as keyof Customer} />
                           </div>
                         </th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                           {tr('contact')}
                         </th>
                         <th 
-                          className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          className="px-6 py-4 text-right text-xs font-semibold text-foreground/85 uppercase tracking-wider cursor-pointer hover:bg-muted transition-colors"
                           onClick={() => handleSort('current_balance')}
                         >
                           <div className="flex items-center justify-end">
@@ -863,7 +896,7 @@ export default function CustomersPage() {
                           </div>
                         </th>
                         <th 
-                          className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          className="px-6 py-4 text-center text-xs font-semibold text-foreground/85 uppercase tracking-wider cursor-pointer hover:bg-muted transition-colors"
                           onClick={() => handleSort('is_active')}
                         >
                           <div className="flex items-center justify-center">
@@ -871,27 +904,27 @@ export default function CustomersPage() {
                             <SortIcon field="is_active" />
                           </div>
                         </th>
-                        <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        <th className="px-6 py-4 text-right text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                           {t('actions')}
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-border">
                       {customers.map((customer) => {
                         const balance = Number(customer.current_balance || 0)
                         return (
-                          <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={customer.id} className="hover:bg-muted/40 transition-colors">
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="text-sm font-medium text-gray-900">
+                              <span className="text-sm font-medium text-foreground">
                                 {customer.customer_number}
                               </span>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="text-sm font-medium text-gray-900">
+                              <div className="text-sm font-medium text-foreground">
                                 {customer.display_name || '-'}
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-700 max-w-[11rem] hidden md:table-cell">
+                            <td className="px-6 py-4 text-sm text-foreground/85 max-w-[11rem] hidden md:table-cell">
                               <span className="inline-flex items-center gap-1.5">
                                 <Building2 className="h-3.5 w-3.5 text-amber-600/80 shrink-0" />
                                 <span
@@ -905,19 +938,19 @@ export default function CustomersPage() {
                             <td className="px-6 py-4">
                               <div className="space-y-1">
                                 {customer.email && (
-                                  <div className="flex items-center text-sm text-gray-600">
-                                    <Mail className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
+                                  <div className="flex items-center text-sm text-muted-foreground">
+                                    <Mail className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70" />
                                     <span>{customer.email}</span>
                                   </div>
                                 )}
                                 {customer.phone && (
-                                  <div className="flex items-center text-sm text-gray-600">
-                                    <Phone className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
+                                  <div className="flex items-center text-sm text-muted-foreground">
+                                    <Phone className="h-3.5 w-3.5 mr-1.5 text-muted-foreground/70" />
                                     <span>{customer.phone}</span>
                                   </div>
                                 )}
                                 {!customer.email && !customer.phone && (
-                                  <span className="text-sm text-gray-400">-</span>
+                                  <span className="text-sm text-muted-foreground/70">-</span>
                                 )}
                               </div>
                             </td>
@@ -926,8 +959,8 @@ export default function CustomersPage() {
                                 balance > 0 
                                   ? 'text-amber-600' 
                                   : balance < 0 
-                                  ? 'text-green-600' 
-                                  : 'text-gray-900'
+                                  ? 'text-success' 
+                                  : 'text-foreground'
                               }`}>
                                 {balance > 0 ? '+' : ''}{currencySymbol}{formatNumber(Math.abs(balance))}
                               </span>
@@ -935,8 +968,8 @@ export default function CustomersPage() {
                             <td className="px-6 py-4 whitespace-nowrap text-center">
                               <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
                                 customer.is_active 
-                                  ? 'bg-green-100 text-green-800' 
-                                  : 'bg-red-100 text-red-800'
+                                  ? 'bg-success/15 text-success' 
+                                  : 'bg-destructive/10 text-destructive'
                               }`}>
                                 {customer.is_active ? t('active') : t('inactive')}
                               </span>
@@ -952,18 +985,28 @@ export default function CustomersPage() {
                                 </Link>
                                 <button 
                                   onClick={() => handleEdit(customer)}
-                                  className="text-blue-600 hover:text-blue-900 transition-colors"
+                                  className="text-primary hover:text-blue-900 transition-colors"
                                   title={tr('editTitle', { entity: ct('customer') })}
                                 >
                                   <Edit className="h-4 w-4" />
                                 </button>
-                                <button 
-                                  onClick={() => setShowDeleteConfirm(customer.id)}
-                                  className="text-red-600 hover:text-red-900 transition-colors"
-                                  title={tr('deleteTitle', { entity: ct('customer') })}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                {customer.is_active ? (
+                                  <button 
+                                    onClick={() => setShowDeleteConfirm(customer.id)}
+                                    className="text-destructive hover:text-red-900 transition-colors"
+                                    title={tr('deleteTitle', { entity: ct('customer') })}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleRestore(customer.id)}
+                                    className="text-emerald-600 hover:text-emerald-900 transition-colors"
+                                    title="Restore customer"
+                                  >
+                                    <Undo2 className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -973,7 +1016,7 @@ export default function CustomersPage() {
                   </table>
                 </div>
                 {totalCount > 0 && (
-                  <div className="space-y-3 bg-gray-50 px-6 py-4 border-t border-gray-200">
+                  <div className="space-y-3 bg-muted/40 px-6 py-4 border-t border-border">
                     <OffsetPaginationControls
                       page={listPage}
                       pageSize={pageSize}
@@ -987,7 +1030,7 @@ export default function CustomersPage() {
                     />
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       {sortField && (
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           {tr('sortedBy', {
                             field: String(sortField).replace('_', ' '),
                             dir: sortDirection === 'asc' ? tr('ascending') : tr('descending'),
@@ -1005,27 +1048,27 @@ export default function CustomersPage() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-gray-900">{tr('deleteEntity', { entity: ct('Customer') })}</h2>
+                    <h2 className="text-xl font-bold text-foreground">{tr('deleteEntity', { entity: ct('Customer') })}</h2>
                     <button
                       onClick={() => setShowDeleteConfirm(null)}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                     >
                       <X className="h-5 w-5" />
                     </button>
                   </div>
-                  <p className="text-gray-600 mb-6">
-                    {tr('deleteCustomerBody')}
+                  <p className="text-muted-foreground mb-6">
+                    {tr('deleteCustomerBody')} Enable &quot;Include inactive&quot; to find and restore this customer later.
                   </p>
                   <div className="flex justify-end space-x-3">
                     <button
                       onClick={() => setShowDeleteConfirm(null)}
-                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                      className="px-4 py-2 border border-border rounded-lg hover:bg-muted/40 transition-colors font-medium"
                     >
                       {t('cancel')}
                     </button>
                     <button
                       onClick={() => handleDelete(showDeleteConfirm)}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                      className="px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors font-medium"
                     >
                       {t('delete')}
                     </button>
@@ -1039,12 +1082,12 @@ export default function CustomersPage() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
                 <div className="bg-white rounded-lg app-modal-pad max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-xl my-8">
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-gray-900">
+                    <h2 className="text-2xl font-bold text-foreground">
                       {editingCustomer ? tr('editEntity', { entity: ct('Customer') }) : tr('addNewEntity', { entity: ct('Customer') })}
                     </h2>
                     <button
                       onClick={handleCloseModal}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                     >
                       <X className="h-6 w-6" />
                     </button>
@@ -1073,51 +1116,51 @@ export default function CustomersPage() {
                     )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           {tr('companyName')}
                         </label>
                         <input
                           type="text"
                           value={formData.company_name}
                           onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder={ct('enterCompanyName')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           {tr('contactPerson')}
                         </label>
                         <input
                           type="text"
                           value={formData.contact_person}
                           onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder={ct('enterContactPerson')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{tr('email')}</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{tr('email')}</label>
                         <input
                           type="email"
                           value={formData.email}
                           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder={ct('emailPlaceholder')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{tr('phone')}</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{tr('phone')}</label>
                         <input
                           type="text"
                           value={formData.phone}
                           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder={ct('phonePlaceholder')}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                        <label className="block text-sm font-medium text-foreground/85 mb-2 inline-flex items-center gap-1.5">
                           <Building2 className="h-4 w-4 text-amber-600" />
                           {tr('defaultSite')}
                         </label>
@@ -1129,7 +1172,7 @@ export default function CustomersPage() {
                               default_station_id: e.target.value === '' ? '' : e.target.value,
                             })
                           }
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                         >
                           <option value="">{tr('notSet')}</option>
                           {stations.map((s) => (
@@ -1138,15 +1181,15 @@ export default function CustomersPage() {
                             </option>
                           ))}
                         </select>
-                        <p className="mt-1.5 text-xs text-gray-500">
+                        <p className="mt-1.5 text-xs text-muted-foreground">
                           {ct('defaultSiteHint')}
                         </p>
                       </div>
                       <div className="md:col-span-2">
-                        <p className="text-sm font-semibold text-gray-800 mb-3">{tr('bankDetailsOptional')}</p>
+                        <p className="text-sm font-semibold text-foreground mb-3">{tr('bankDetailsOptional')}</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-medium text-foreground">
                               {tr('accountNumber')}
                             </label>
                             <input
@@ -1155,12 +1198,12 @@ export default function CustomersPage() {
                               onChange={(e) =>
                                 setFormData({ ...formData, bank_account_number: e.target.value })
                               }
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                               autoComplete="off"
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-medium text-foreground">
                               {tr('bankName')}
                             </label>
                             <input
@@ -1169,11 +1212,11 @@ export default function CustomersPage() {
                               onChange={(e) =>
                                 setFormData({ ...formData, bank_name: e.target.value })
                               }
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-medium text-foreground">
                               {tr('branch')}
                             </label>
                             <input
@@ -1182,11 +1225,11 @@ export default function CustomersPage() {
                               onChange={(e) =>
                                 setFormData({ ...formData, bank_branch: e.target.value })
                               }
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-medium text-foreground">
                               {tr('routingNumber')}
                             </label>
                             <input
@@ -1195,14 +1238,14 @@ export default function CustomersPage() {
                               onChange={(e) =>
                                 setFormData({ ...formData, bank_routing_number: e.target.value })
                               }
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                               placeholder={tr('routingPlaceholder')}
                             />
                           </div>
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           {tr('openingBalance', { sym: currencySymbol })}
                         </label>
                         <input
@@ -1210,24 +1253,24 @@ export default function CustomersPage() {
                           step="0.01"
                           value={formData.opening_balance}
                           onChange={(e) => setFormData({ ...formData, opening_balance: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder="0.00"
                         />
-                        <p className="mt-1.5 text-xs text-gray-500">
+                        <p className="mt-1.5 text-xs text-muted-foreground">
                           {editingCustomer ? ct('openingBalanceHintEdit') : ct('openingBalanceHintCreate')}
                         </p>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           {tr('asOfDate')}
                         </label>
                         <input
                           type="date"
                           value={formData.opening_balance_date}
                           onChange={(e) => setFormData({ ...formData, opening_balance_date: e.target.value })}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
-                        <p className="mt-1.5 text-xs text-gray-500">
+                        <p className="mt-1.5 text-xs text-muted-foreground">
                           {ct('openingBalanceDateHint')}
                         </p>
                       </div>
@@ -1237,23 +1280,23 @@ export default function CustomersPage() {
                             type="checkbox"
                             checked={formData.is_active}
                             onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                            className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            className="w-5 h-5 text-primary border-border rounded focus:ring-ring"
                           />
-                          <span className="text-sm font-medium text-gray-700">{ct('activeCustomer')}</span>
+                          <span className="text-sm font-medium text-foreground/85">{ct('activeCustomer')}</span>
                         </label>
                       </div>
                     </div>
-                    <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                    <div className="flex justify-end space-x-3 pt-6 border-t border-border">
                       <button
                         type="button"
                         onClick={handleCloseModal}
-                        className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                        className="px-6 py-2.5 border border-border rounded-lg hover:bg-muted/40 transition-colors font-medium"
                       >
                         {t('cancel')}
                       </button>
                       <button
                         type="submit"
-                        className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+                        className="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary transition-colors font-medium shadow-sm"
                       >
                         {editingCustomer ? tr('updateEntity', { entity: ct('Customer') }) : tr('createEntity', { entity: ct('Customer') })}
                       </button>

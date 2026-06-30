@@ -63,7 +63,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         flush
         showBackLink={false}
@@ -78,10 +78,10 @@ export default function ChangePasswordPage() {
       >
         <form
           onSubmit={handleSubmit}
-          className="space-y-5 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm"
+          className="space-y-5 rounded-2xl border border-border/80 bg-white p-6 shadow-sm"
         >
           <div>
-            <label htmlFor="cur" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="cur" className="mb-1 block text-sm font-medium text-foreground/85">
               {tr('currentPassword')}
             </label>
             <input
@@ -89,13 +89,13 @@ export default function ChangePasswordPage() {
               type={show ? 'text' : 'password'}
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
+              className="w-full rounded-lg border border-border px-3 py-2 text-foreground"
               autoComplete="current-password"
               required
             />
           </div>
           <div>
-            <label htmlFor="newp" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="newp" className="mb-1 block text-sm font-medium text-foreground/85">
               {tr('newPassword')}
             </label>
             <div className="relative">
@@ -104,24 +104,24 @@ export default function ChangePasswordPage() {
                 type={show ? 'text' : 'password'}
                 value={nextPw}
                 onChange={(e) => setNextPw(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-slate-900"
+                className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-foreground"
                 autoComplete="new-password"
                 minLength={8}
                 required
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
                 onClick={() => setShow((s) => !s)}
                 aria-label={show ? 'Hide passwords' : 'Show passwords'}
               >
                 {show ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </button>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Minimum 8 characters.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Minimum 8 characters.</p>
           </div>
           <div>
-            <label htmlFor="cfm" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="cfm" className="mb-1 block text-sm font-medium text-foreground/85">
               {tr('confirmPassword')}
             </label>
             <input
@@ -129,7 +129,7 @@ export default function ChangePasswordPage() {
               type={show ? 'text' : 'password'}
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
+              className="w-full rounded-lg border border-border px-3 py-2 text-foreground"
               autoComplete="new-password"
               required
             />
@@ -143,7 +143,7 @@ export default function ChangePasswordPage() {
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {tr('updatePassword')}
             </button>
-            <Link href="/dashboard" className="text-sm text-slate-600 hover:text-slate-900">
+            <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground">
               Cancel
             </Link>
           </div>

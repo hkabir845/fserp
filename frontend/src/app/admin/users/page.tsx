@@ -393,7 +393,7 @@ function UsersPageContent() {
         <Sidebar />
         <div className="flex-1 overflow-y-auto app-scroll-pad">
           <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-            <p className="text-gray-600">Please switch to SaaS Dashboard mode to manage users.</p>
+            <p className="text-muted-foreground">Please switch to SaaS Dashboard mode to manage users.</p>
           </div>
         </div>
       </div>
@@ -407,10 +407,10 @@ function UsersPageContent() {
         <div className="app-scroll-pad">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">All Users</h2>
-              <p className="mt-1 max-w-2xl text-sm text-gray-600">
-                <strong>Status</strong> is <span className="text-green-700">Active</span> or{' '}
-                <span className="text-red-700">Inactive</span>. The trash icon{' '}
+              <h2 className="text-xl font-bold text-foreground">All Users</h2>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                <strong>Status</strong> is <span className="text-success">Active</span> or{' '}
+                <span className="text-destructive">Inactive</span>. The trash icon{' '}
                 <strong>deactivates</strong> login (the row stays). Use <strong>Activate</strong> to
                 allow sign-in again. The <span className="inline-flex items-center gap-0.5 align-middle">
                   <OctagonAlert className="inline h-3.5 w-3.5 text-rose-700" aria-hidden />
@@ -419,22 +419,22 @@ function UsersPageContent() {
                 (you must type DELETE to confirm). You cannot remove or deactivate your own account
                 here. You cannot delete the last active Super Admin.
               </p>
-              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-foreground/85">
                 <input
                   type="checkbox"
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded border-input text-primary focus:ring-ring"
                   checked={showInactiveUsers}
                   onChange={(e) => setShowInactiveUsers(e.target.checked)}
                 />
                 Show inactive users
                 {inactiveCount > 0 && (
-                  <span className="text-gray-500">({inactiveCount} inactive)</span>
+                  <span className="text-muted-foreground">({inactiveCount} inactive)</span>
                 )}
               </label>
             </div>
             <button
               onClick={handleCreateUser}
-              className="flex shrink-0 items-center space-x-2 self-start rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+              className="flex shrink-0 items-center space-x-2 self-start rounded-lg bg-primary px-4 py-2 text-white transition-colors hover:bg-primary"
             >
               <Plus className="h-5 w-5" />
               <span>New User</span>
@@ -443,32 +443,32 @@ function UsersPageContent() {
 
           {loading ? (
             <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading users...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading users...</p>
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">User</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Company</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Joined</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-border">
                   {users.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center">
-                        <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600 text-lg mb-2">No users found</p>
-                        <p className="text-gray-500 text-sm mb-4">Users will appear here once companies are created</p>
+                        <Users className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                        <p className="text-muted-foreground text-lg mb-2">No users found</p>
+                        <p className="text-muted-foreground text-sm mb-4">Users will appear here once companies are created</p>
                         <button
                           onClick={handleCreateUser}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          className="erp-btn-primary transition-colors"
                         >
                           Create User
                         </button>
@@ -476,12 +476,12 @@ function UsersPageContent() {
                     </tr>
                   ) : visibleUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-gray-600">
+                      <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
                         <p className="mb-2">All users are inactive and hidden.</p>
                         <button
                           type="button"
                           onClick={() => setShowInactiveUsers(true)}
-                          className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                          className="text-sm font-medium text-primary hover:text-primary/80"
                         >
                           Show inactive users
                         </button>
@@ -489,29 +489,29 @@ function UsersPageContent() {
                     </tr>
                   ) : (
                     visibleUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-50">
+                      <tr key={user.id} className="hover:bg-muted/40">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
-                            <div className="text-xs text-gray-500">{user.email || user.username}</div>
+                            <div className="text-sm font-medium text-foreground">{user.full_name}</div>
+                            <div className="text-xs text-muted-foreground">{user.email || user.username}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             user.role === 'super_admin' ? 'bg-purple-100 text-purple-800' :
-                            user.role === 'admin' ? 'bg-blue-100 text-blue-800' :
-                            user.role === 'accountant' ? 'bg-green-100 text-green-800' :
+                            user.role === 'admin' ? 'bg-blue-100 text-primary' :
+                            user.role === 'accountant' ? 'bg-success/15 text-success' :
                             user.role === 'cashier' ? 'bg-yellow-100 text-yellow-800' :
-                            user.role === 'operator' ? 'bg-teal-100 text-teal-800' :
-                            'bg-gray-100 text-gray-800'
+                            user.role === 'operator' ? 'bg-teal-100 text-primary' :
+                            'bg-muted text-foreground'
                           }`}>
                             {user.role.replace('_', ' ').toUpperCase()}
                           </span>
                           {(user.role === 'cashier' || user.role === 'operator') && (
-                            <div className="mt-1 text-[11px] font-medium tabular-nums text-gray-500">
+                            <div className="mt-1 text-[11px] font-medium tabular-nums text-muted-foreground">
                               Lane: {formatPosSaleScopeShort(user.pos_sale_scope)}
                               {user.home_station_id ? (
-                                <span className="mt-0.5 block text-gray-600">
+                                <span className="mt-0.5 block text-muted-foreground">
                                   Site: {(user.home_station_name || '').trim() || `#${user.home_station_id}`}
                                 </span>
                               ) : null}
@@ -519,7 +519,7 @@ function UsersPageContent() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
+                          <div className="text-sm text-foreground">
                             {user.company_name
                               ? `${user.company_name} (ID: ${user.company_id})`
                               : (user.role === 'super_admin' ? 'ERP superuser (platform owner)' : 'No company')}
@@ -528,20 +528,20 @@ function UsersPageContent() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             user.is_active
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
+                              ? 'bg-success/15 text-success'
+                              : 'bg-destructive/10 text-destructive'
                           }`}>
                             {user.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                           {user.created_at ? formatDate(user.created_at, true) : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex flex-wrap items-center justify-end gap-2">
                             <button
                               onClick={() => handleEditUser(user)}
-                              className="rounded p-1.5 text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-900"
+                              className="rounded p-1.5 text-primary transition-colors hover:bg-accent hover:text-blue-900"
                               title="Edit user"
                               type="button"
                             >
@@ -549,7 +549,7 @@ function UsersPageContent() {
                             </button>
                             {currentUserId !== null && user.id === currentUserId ? (
                               <span
-                                className="px-2 text-xs text-gray-400"
+                                className="px-2 text-xs text-muted-foreground/70"
                                 title="You cannot deactivate, activate, or permanently delete your own account from this screen"
                               >
                                 —
@@ -560,7 +560,7 @@ function UsersPageContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleDeactivateUser(user)}
-                                    className="rounded p-1.5 text-red-600 transition-colors hover:bg-red-50 hover:text-red-900"
+                                    className="rounded p-1.5 text-destructive transition-colors hover:bg-destructive/5 hover:text-red-900"
                                     title="Deactivate login (keeps the user record)"
                                   >
                                     <Trash2 className="h-4 w-4" />
@@ -569,7 +569,7 @@ function UsersPageContent() {
                                   <button
                                     type="button"
                                     onClick={() => handleActivateUser(user)}
-                                    className="rounded p-1.5 text-green-600 transition-colors hover:bg-green-50 hover:text-green-900"
+                                    className="rounded p-1.5 text-success transition-colors hover:bg-green-50 hover:text-green-900"
                                     title="Activate login"
                                   >
                                     <UserCheck className="h-4 w-4" />
@@ -599,7 +599,7 @@ function UsersPageContent() {
           {showUserModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+                <div className="erp-hero-strip">
                   <h2 className="text-2xl font-bold text-white">
                     {editingUser ? 'Edit User' : 'New User'}
                   </h2>
@@ -614,7 +614,7 @@ function UsersPageContent() {
                 <form onSubmit={handleSubmitUser} className="p-6">
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">User type</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">User type</label>
                       <select
                         value={userFormData.role}
                         onChange={(e) => {
@@ -627,7 +627,7 @@ function UsersPageContent() {
                             home_station_id: keepHome ? userFormData.home_station_id : '',
                           })
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       >
                         <option value="super_admin">Super Admin (ERP owner – full access)</option>
                         <option value="admin">Company Admin — email + password for one company</option>
@@ -639,7 +639,7 @@ function UsersPageContent() {
 
                     {(userFormData.role === 'cashier' || userFormData.role === 'operator') && (
                       <div className="space-y-4">
-                        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                        <div className="rounded-xl border border-border bg-muted/40/80 p-4">
                           <PosSaleScopeSelector
                             name="admin-user-pos-scope"
                             value={userFormData.pos_sale_scope}
@@ -649,9 +649,9 @@ function UsersPageContent() {
                           />
                         </div>
                         {userFormData.company_id ? (
-                          <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4">
-                            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-800">
-                              <MapPin className="h-4 w-4 shrink-0 text-amber-700" />
+                          <div className="rounded-xl border border-amber-100 bg-warning/10/50 p-4">
+                            <label className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+                              <MapPin className="h-4 w-4 shrink-0 text-warning-foreground" />
                               POS home station
                             </label>
                             <select
@@ -668,7 +668,7 @@ function UsersPageContent() {
                                   home_station_id: v === '' ? '' : v,
                                 }))
                               }}
-                              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                              className="w-full rounded-lg border border-border bg-white px-3 py-2 focus:border-ring focus:ring-2 focus:ring-ring"
                             >
                               <option value="">All sites (not limited — can switch station in POS)</option>
                               {tenantStationsForForm.map((s) => (
@@ -678,13 +678,13 @@ function UsersPageContent() {
                                 </option>
                               ))}
                             </select>
-                            <p className="mt-2 text-xs text-gray-600">
+                            <p className="mt-2 text-xs text-muted-foreground">
                               When set, this cashier or operator only sees catalog and pumps for that site and
                               cannot change selling location after sign-in.
                             </p>
                           </div>
                         ) : (
-                          <p className="text-xs text-amber-800">
+                          <p className="text-xs text-warning-foreground">
                             Select a company above to choose a station for this POS user.
                           </p>
                         )}
@@ -692,8 +692,8 @@ function UsersPageContent() {
                     )}
 
                     {userFormData.role === 'super_admin' ? (
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <p className="text-sm text-gray-700">
+                      <div className="rounded-lg border border-border bg-muted/40 p-3">
+                        <p className="text-sm text-foreground/85">
                           <strong>Platform owner:</strong> no company selected. Full access to all companies.
                         </p>
                       </div>
@@ -701,11 +701,11 @@ function UsersPageContent() {
                       <div
                         className={`rounded-lg border-2 p-4 space-y-2 ${
                           userFormData.role === 'admin'
-                            ? 'border-blue-200 bg-blue-50/90'
-                            : 'border-gray-200 bg-gray-50'
+                            ? 'border-primary/25 bg-blue-50/90'
+                            : 'border-border bg-muted/40'
                         }`}
                       >
-                        <label className="block text-sm font-semibold text-gray-800">
+                        <label className="block text-sm font-semibold text-foreground">
                           {userFormData.role === 'admin'
                             ? 'Company — who this administrator manages'
                             : 'Company'}
@@ -721,7 +721,7 @@ function UsersPageContent() {
                               home_station_id: '',
                             })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                         >
                           <option value="">— Select company —</option>
                           {companies.map((c) => (
@@ -738,18 +738,18 @@ function UsersPageContent() {
                           </p>
                         )}
                         {userFormData.company_id ? (
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-muted-foreground">
                             Company ID <span className="font-mono font-medium">{userFormData.company_id}</span> is
                             used by the system; you only need to pick the company name.
                           </p>
                         ) : (
-                          <p className="text-xs text-amber-700">Choose a company from the list.</p>
+                          <p className="text-xs text-warning-foreground">Choose a company from the list.</p>
                         )}
                       </div>
                     )}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Email address (login username) <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -757,14 +757,14 @@ function UsersPageContent() {
                         required
                         value={userFormData.email}
                         onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="admin@theircompany.com"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Used to sign in.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Used to sign in.</p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Full name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -772,7 +772,7 @@ function UsersPageContent() {
                         required
                         value={userFormData.full_name}
                         onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Display name"
                       />
                     </div>
@@ -780,7 +780,7 @@ function UsersPageContent() {
                     {!editingUser && (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Password <span className="text-red-500">*</span>
                           </label>
                           <div className="relative">
@@ -789,19 +789,19 @@ function UsersPageContent() {
                               required={!editingUser}
                               value={userFormData.password}
                               onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring pr-10"
                             />
                             <button
                               type="button"
                               onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground/85"
                             >
                               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                             </button>
                           </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Confirm Password <span className="text-red-500">*</span>
                           </label>
                           <div className="relative">
@@ -810,12 +810,12 @@ function UsersPageContent() {
                               required={!editingUser}
                               value={userFormData.confirmPassword}
                               onChange={(e) => setUserFormData({ ...userFormData, confirmPassword: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring pr-10"
                             />
                             <button
                               type="button"
                               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground/85"
                             >
                               {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                             </button>
@@ -827,7 +827,7 @@ function UsersPageContent() {
                     {editingUser && (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             New Password (leave blank to keep current)
                           </label>
                           <div className="relative">
@@ -835,13 +835,13 @@ function UsersPageContent() {
                               type={showEditPassword ? 'text' : 'password'}
                               value={userFormData.password}
                               onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring pr-10"
                               placeholder="Enter new password"
                             />
                             <button
                               type="button"
                               onClick={() => setShowEditPassword(!showEditPassword)}
-                              className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground/85"
                               aria-label={showEditPassword ? 'Hide password' : 'Show password'}
                             >
                               {showEditPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -849,7 +849,7 @@ function UsersPageContent() {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Confirm New Password
                             {userFormData.password ? <span className="text-red-500"> *</span> : null}
                           </label>
@@ -860,20 +860,20 @@ function UsersPageContent() {
                               onChange={(e) =>
                                 setUserFormData({ ...userFormData, confirmPassword: e.target.value })
                               }
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring pr-10"
                               placeholder="Confirm new password"
                               aria-required={!!userFormData.password}
                             />
                             <button
                               type="button"
                               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground/85"
                               aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                             >
                               {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                             </button>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Required when setting a new password.
                           </p>
                         </div>
@@ -885,13 +885,13 @@ function UsersPageContent() {
                     <button
                       type="button"
                       onClick={() => setShowUserModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="erp-btn-primary transition-colors"
                     >
                       {editingUser ? 'Update User' : 'Create User'}
                     </button>

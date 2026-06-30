@@ -269,7 +269,7 @@ export default function AquacultureCyclesPage() {
       <button
         type="button"
         onClick={() => openEdit(r)}
-        className="rounded p-2 text-slate-600 hover:bg-slate-100"
+        className="rounded p-2 text-muted-foreground hover:bg-muted"
         aria-label={`Edit ${r.name}`}
       >
         <Edit2 className="h-4 w-4" />
@@ -277,7 +277,7 @@ export default function AquacultureCyclesPage() {
       <button
         type="button"
         onClick={() => void remove(r)}
-        className="rounded p-2 text-red-600 hover:bg-red-50"
+        className="rounded p-2 text-destructive hover:bg-destructive/5"
         aria-label={`Delete ${r.name}`}
       >
         <Trash2 className="h-4 w-4" />
@@ -319,7 +319,7 @@ export default function AquacultureCyclesPage() {
               onClick={() => setViewMode('list')}
               aria-pressed={viewMode === 'list'}
               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
-                viewMode === 'list' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                viewMode === 'list' ? 'bg-white text-primary shadow-sm' : 'text-teal-100 hover:bg-white/10'
               }`}
             >
               <List className="h-3.5 w-3.5" aria-hidden />
@@ -330,7 +330,7 @@ export default function AquacultureCyclesPage() {
               onClick={() => setViewMode('cards')}
               aria-pressed={viewMode === 'cards'}
               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
-                viewMode === 'cards' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                viewMode === 'cards' ? 'bg-white text-primary shadow-sm' : 'text-teal-100 hover:bg-white/10'
               }`}
             >
               <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
@@ -366,32 +366,32 @@ export default function AquacultureCyclesPage() {
         ) : undefined
       }
     >
-      <section className="rounded-xl border border-teal-100 bg-teal-50/40 p-4 text-sm text-teal-950">
-        <h2 className="font-semibold text-teal-900">{workflow.title}</h2>
+      <section className="rounded-xl border border-teal-100 bg-accent/40 p-4 text-sm text-teal-950">
+        <h2 className="font-semibold text-primary">{workflow.title}</h2>
         <ol className="mt-3 space-y-2">
           {workflow.steps.map((s) => (
             <li key={s.phase} className="flex gap-2">
-              <span className="shrink-0 font-medium text-teal-800">{s.phase}:</span>
-              <span className="text-teal-900/90">{s.detail}</span>
+              <span className="shrink-0 font-medium text-primary">{s.phase}:</span>
+              <span className="text-primary/90">{s.detail}</span>
             </li>
           ))}
         </ol>
       </section>
 
       {ponds.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
-          <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
+        <div className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-5 text-sm text-warning-foreground">
+          <Link href="/aquaculture/ponds" className="font-medium text-primary underline">
             {aquacultureT('createPondFirst', lang)}
           </Link>{' '}
           {aquacultureT('createPondThenBatches', lang)}
         </div>
       ) : loading ? (
         <div className="mt-10 flex justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       ) : displayRows.length === 0 ? (
         <div
-          className="mt-6 rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm"
+          className="mt-6 rounded-xl border border-border bg-white p-10 text-center text-sm text-muted-foreground shadow-sm"
           aria-labelledby="aq-cycles-title"
         >
           {filterPond
@@ -400,11 +400,11 @@ export default function AquacultureCyclesPage() {
         </div>
       ) : viewMode === 'list' ? (
         <div
-          className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"
+          className="mt-6 overflow-x-auto rounded-xl border border-border bg-white shadow-sm"
           aria-labelledby="aq-cycles-title"
         >
           <table className="min-w-[800px] w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">{aquacultureT('batch', lang)}</th>
                 <th className="px-4 py-3">{t('pond')}</th>
@@ -415,41 +415,41 @@ export default function AquacultureCyclesPage() {
                 <th className="px-4 py-3 text-right">{t('actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border/70">
               {displayRows.map((r) => (
-                <tr key={r.id} className="align-top text-slate-800">
+                <tr key={r.id} className="align-top text-foreground">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900">{r.name}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
+                    <p className="font-medium text-foreground">{r.name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       {r.code?.trim()
                         ? aquacultureTFormat('codeOrder', lang, { code: r.code.trim(), order: r.sort_order ?? 0 })
                         : `${pick('Order', 'ক্রম')} ${r.sort_order ?? 0}`}
                     </p>
                     {r.source_production_cycle_name || r.source_production_cycle_code ? (
-                      <p className="mt-1 text-xs text-teal-800">
+                      <p className="mt-1 text-xs text-primary">
                         {aquacultureT('fromNursing', lang)}: {r.source_production_cycle_code || r.source_production_cycle_name}
                       </p>
                     ) : null}
-                    <p className="mt-1 text-xs text-slate-600 md:hidden">{periodLabel(r)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground md:hidden">{periodLabel(r)}</p>
                   </td>
-                  <td className="px-4 py-3 text-slate-700">
+                  <td className="px-4 py-3 text-foreground/85">
                     {r.pond_name || pondName(r.pond_id)}
                     {r.pond_role === 'nursing' ? (
                       <span className="ml-1 text-xs text-violet-700">({aquacultureT('nursingRole', lang)})</span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-slate-700">{r.fish_species_label || 'Tilapia'}</td>
+                  <td className="px-4 py-3 text-foreground/85">{r.fish_species_label || 'Tilapia'}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                        r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-muted text-muted-foreground'
                       }`}
                     >
                       {r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-700">{periodLabel(r)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-700">{r.sort_order ?? 0}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-foreground/85">{periodLabel(r)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-foreground/85">{r.sort_order ?? 0}</td>
                   <td className="px-4 py-3 text-right">
                     <CycleActions r={r} />
                   </td>
@@ -466,12 +466,12 @@ export default function AquacultureCyclesPage() {
           {displayRows.map((r) => (
             <li
               key={r.id}
-              className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="flex flex-col rounded-xl border border-border bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-900">{r.name}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="truncate font-semibold text-foreground">{r.name}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {r.code?.trim()
                       ? aquacultureTFormat('codeSort', lang, { code: r.code.trim(), order: r.sort_order ?? 0 })
                       : `${pick('Sort', 'সাজানো')} ${r.sort_order ?? 0}`}
@@ -479,7 +479,7 @@ export default function AquacultureCyclesPage() {
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                    r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                    r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')}
@@ -488,36 +488,36 @@ export default function AquacultureCyclesPage() {
 
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <div className="col-span-2">
-                  <dt className="text-slate-500">{t('pond')}</dt>
-                  <dd className="font-medium text-slate-800">{pondName(r.pond_id)}</dd>
+                  <dt className="text-muted-foreground">{t('pond')}</dt>
+                  <dd className="font-medium text-foreground">{pondName(r.pond_id)}</dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-slate-500">{pick('Period', 'সময়সীমা')}</dt>
-                  <dd className="font-medium text-slate-800">{periodLabel(r)}</dd>
+                  <dt className="text-muted-foreground">{pick('Period', 'সময়সীমা')}</dt>
+                  <dd className="font-medium text-foreground">{periodLabel(r)}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">{pick('Start', 'শুরু')}</dt>
-                  <dd className="font-medium tabular-nums text-slate-800">{formatDateOnly(r.start_date)}</dd>
+                  <dt className="text-muted-foreground">{pick('Start', 'শুরু')}</dt>
+                  <dd className="font-medium tabular-nums text-foreground">{formatDateOnly(r.start_date)}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">{pick('End', 'শেষ')}</dt>
-                  <dd className="font-medium tabular-nums text-slate-800">
+                  <dt className="text-muted-foreground">{pick('End', 'শেষ')}</dt>
+                  <dd className="font-medium tabular-nums text-foreground">
                     {r.end_date ? formatDateOnly(r.end_date) : aquacultureT('periodOpen', lang)}
                   </dd>
                 </div>
                 {r.created_at ? (
                   <div className="col-span-2">
-                    <dt className="text-slate-500">{aquacultureT('recordCreated', lang)}</dt>
-                    <dd className="font-medium text-slate-800">{formatDateOnly(r.created_at)}</dd>
+                    <dt className="text-muted-foreground">{aquacultureT('recordCreated', lang)}</dt>
+                    <dd className="font-medium text-foreground">{formatDateOnly(r.created_at)}</dd>
                   </div>
                 ) : null}
               </dl>
 
               {r.notes?.trim() ? (
-                <p className="mt-2 line-clamp-3 border-t border-slate-100 pt-2 text-xs text-slate-600">{r.notes.trim()}</p>
+                <p className="mt-2 line-clamp-3 border-t border-border/70 pt-2 text-xs text-muted-foreground">{r.notes.trim()}</p>
               ) : null}
 
-              <div className="mt-auto flex justify-end border-t border-slate-100 pt-3">
+              <div className="mt-auto flex justify-end border-t border-border/70 pt-3">
                 <CycleActions r={r} />
               </div>
             </li>
@@ -532,10 +532,10 @@ export default function AquacultureCyclesPage() {
               {editing ? aquacultureT('editStockingBatch', lang) : aquacultureT('newStockingBatch', lang)}
             </h2>
             <div className="mt-4 space-y-3">
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {t('pond')}
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.pond_id}
                   disabled={!!editing}
                   onChange={(e) => {
@@ -568,10 +568,10 @@ export default function AquacultureCyclesPage() {
                   ))}
                 </select>
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('species', lang)}
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.fish_species}
                   onChange={(e) => {
                     const v = e.target.value
@@ -598,82 +598,82 @@ export default function AquacultureCyclesPage() {
                   {fishSpecies.length === 0 ? <option value="tilapia">Tilapia</option> : null}
                 </select>
                 {!usesSeasonalStockingBatches(form.fish_species) ? (
-                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
                     {aquacultureT('continuousBatchHint', lang)}
                   </span>
                 ) : (
-                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
                     {aquacultureT('tilapiaBatchHint', lang)}
                   </span>
                 )}
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('batchName', lang)}
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 />
               </label>
               {editing ? (
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   {aquacultureT('codeLabel', lang)}
                   <input
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono"
                     value={form.code}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
                     placeholder={aquacultureT('codePlaceholder', lang)}
                   />
                 </label>
               ) : (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-sm font-medium text-slate-700">{aquacultureT('cycleCodeAuto', lang)}</p>
-                  <p className="mt-1 font-mono text-base font-semibold text-slate-900">{form.code || '—'}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground/85">{aquacultureT('cycleCodeAuto', lang)}</p>
+                  <p className="mt-1 font-mono text-base font-semibold text-foreground">{form.code || '—'}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {aquacultureT('cycleCodeHint', lang)}
                   </p>
                 </div>
               )}
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {pick('Start date', 'শুরুর তারিখ')}
                 <input
                   type="date"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.start_date}
                   onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('endDateOptional', lang)}
                 <input
                   type="date"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.end_date}
                   onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('sortOrder', lang)}
                 <input
                   type="number"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.sort_order}
                   onChange={(e) => setForm((f) => ({ ...f, sort_order: e.target.value }))}
                 />
               </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <input
                   type="checkbox"
-                  className="rounded border-slate-300"
+                  className="rounded border-border"
                   checked={form.is_active}
                   onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
                 />
                 {pick('Active', 'সক্রিয়')}
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('notes', lang)}
                 <textarea
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   rows={2}
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
@@ -684,14 +684,14 @@ export default function AquacultureCyclesPage() {
               <button
                 type="button"
                 onClick={() => setModal(false)}
-                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
               >
                 {t('cancel')}
               </button>
               <button
                 type="button"
                 onClick={() => void save()}
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white"
               >
                 {t('save')}
               </button>

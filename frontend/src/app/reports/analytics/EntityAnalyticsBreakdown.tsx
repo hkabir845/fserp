@@ -33,7 +33,7 @@ function AnalyticsKpiCard({
   iconClass: string
 }) {
   return (
-    <div className="rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ring-1 ring-slate-200/40">
+    <div className="rounded-xl border border-border/80 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ring-1 ring-border/40">
       <div className="flex gap-3">
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconClass}`}>
           <Icon className="h-5 w-5 text-white" strokeWidth={2} />
@@ -70,26 +70,26 @@ function StationListTable({
     net_income: sumField(rows, (r) => r.net_income),
   }
   return (
-    <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200">
-      <h3 className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900">
+    <div className="mt-6 overflow-x-auto rounded-lg border border-border">
+      <h3 className="border-b border-border bg-muted/40 px-4 py-3 text-sm font-semibold text-foreground">
         Station list
       </h3>
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50">
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Station</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">Invoice sales</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">P&amp;L income</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">COGS</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">Expenses</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">Gross profit</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">Net income</th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Station</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Invoice sales</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">P&amp;L income</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">COGS</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Expenses</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Gross profit</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Net income</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
+        <tbody className="divide-y divide-border/70 bg-white">
           {rows.map((r) => (
-            <tr key={`st-${r.entity_id}`} className="hover:bg-slate-50/80">
-              <td className="px-4 py-3 font-medium text-slate-900">{r.entity_name}</td>
+            <tr key={`st-${r.entity_id}`} className="hover:bg-muted/50">
+              <td className="px-4 py-3 font-medium text-foreground">{r.entity_name}</td>
               <td className="px-3 py-3 text-right tabular-nums">{fmt(r.document_sales)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{fmt(r.pl_income)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{fmt(r.pl_cogs)}</td>
@@ -99,9 +99,9 @@ function StationListTable({
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-t border-slate-200 bg-slate-100 font-semibold">
+        <tfoot className="border-t border-border bg-muted font-semibold">
           <tr>
-            <td className="px-4 py-3 text-slate-900">{totalLabel}</td>
+            <td className="px-4 py-3 text-foreground">{totalLabel}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.document_sales)}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.pl_income)}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.pl_cogs)}</td>
@@ -135,36 +135,36 @@ function PondListTable({
     net_income: sumField(rows, (r) => r.net_income),
   }
   return (
-    <div className="mt-6 overflow-x-auto rounded-lg border border-teal-200/80">
-      <h3 className="border-b border-teal-100 bg-teal-50/80 px-4 py-3 text-sm font-semibold text-teal-950">
+    <div className="mt-6 overflow-x-auto rounded-lg border border-primary/25/80">
+      <h3 className="border-b border-teal-100 bg-accent/80 px-4 py-3 text-sm font-semibold text-teal-950">
         Pond list
       </h3>
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-teal-50/50">
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-accent/50">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Pond</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500 whitespace-nowrap">
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Pond</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground whitespace-nowrap">
               Sales (register)
             </th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500 whitespace-nowrap">
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground whitespace-nowrap">
               Mgmt revenue
             </th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500 whitespace-nowrap">
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground whitespace-nowrap">
               Mgmt profit
             </th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">P&amp;L income</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">COGS</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">Expenses</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500">Gross profit</th>
-            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-slate-500 whitespace-nowrap">
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">P&amp;L income</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">COGS</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Expenses</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Gross profit</th>
+            <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground whitespace-nowrap">
               Net income (GL)
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
+        <tbody className="divide-y divide-border/70 bg-white">
           {rows.map((r) => (
-            <tr key={`pond-${r.entity_id}`} className="hover:bg-teal-50/30">
-              <td className="px-4 py-3 font-medium text-slate-900">{r.entity_name}</td>
+            <tr key={`pond-${r.entity_id}`} className="hover:bg-accent/30">
+              <td className="px-4 py-3 font-medium text-foreground">{r.entity_name}</td>
               <td className="px-3 py-3 text-right tabular-nums">{fmt(r.document_sales)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{fmt(r.management_revenue_bdt ?? 0)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{fmt(r.management_profit_bdt ?? 0)}</td>
@@ -176,7 +176,7 @@ function PondListTable({
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-t border-teal-100 bg-teal-50/60 font-semibold">
+        <tfoot className="border-t border-teal-100 bg-accent/60 font-semibold">
           <tr>
             <td className="px-4 py-3 text-teal-950">{totalLabel}</td>
             <td className="px-3 py-3 text-right tabular-nums">{fmt(totals.document_sales)}</td>
@@ -251,7 +251,7 @@ export function EntityAnalyticsBreakdown({
             value={String(aquacultureSummary.active_ponds)}
             subtitle="Included in pond comparison below"
             icon={Fish}
-            iconClass="bg-teal-600"
+            iconClass="bg-primary"
           />
           <AnalyticsKpiCard
             title="Pond sales (register)"
@@ -272,13 +272,13 @@ export function EntityAnalyticsBreakdown({
             value={fmt(aquacultureSummary.total_management_profit_bdt)}
             subtitle="May differ from GL pond tags"
             icon={Percent}
-            iconClass="bg-teal-700"
+            iconClass="bg-primary"
           />
         </div>
       ) : null}
 
       {stationNetIncomeBars.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
+        <div className="overflow-hidden rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-border/50 md:p-6">
           <div className="mb-4 flex items-start gap-3">
             <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden />
             <div>
@@ -317,9 +317,9 @@ export function EntityAnalyticsBreakdown({
       ) : null}
 
       {pondPerformanceBars.length > 0 ? (
-        <div className="overflow-hidden rounded-xl border border-teal-200/90 bg-white p-4 shadow-sm ring-1 ring-teal-100/80 md:p-6">
+        <div className="overflow-hidden rounded-xl border border-primary/25/90 bg-white p-4 shadow-sm ring-1 ring-teal-100/80 md:p-6">
           <div className="mb-4 flex items-start gap-3">
-            <Fish className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" aria-hidden />
+            <Fish className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
             <div>
               <h2 className="text-lg font-semibold tracking-tight text-neutral-900">Pond performance</h2>
               <p className="mt-1 max-w-2xl text-sm text-neutral-600">

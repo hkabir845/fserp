@@ -53,7 +53,7 @@ export function TimeOfDayInput({
         value={toHhMmString(value)}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={`w-full min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${className || ''}`}
+        className={`w-full min-w-0 rounded-lg border border-border bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/40 ${className || ''}`}
         step={60}
       />
     )
@@ -77,7 +77,7 @@ export function TimeOfDayInput({
   return (
     <div
       id={id}
-      className={`flex min-w-0 max-w-full items-stretch overflow-hidden rounded-lg border border-gray-300 bg-white ${className || ''} ${wrapperClassName}`}
+      className={`flex min-w-0 max-w-full items-stretch overflow-hidden rounded-lg border border-border bg-white ${className || ''} ${wrapperClassName}`}
     >
       <label className="sr-only" htmlFor={id ? `${id}-h` : undefined}>
         Hour
@@ -87,7 +87,7 @@ export function TimeOfDayInput({
         value={d12.h}
         onChange={(e) => push(e.target.value, d12.m, d12.ap)}
         disabled={disabled}
-        className="min-w-0 flex-1 border-0 border-r border-gray-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-0"
+        className="min-w-0 flex-1 border-0 border-r border-border bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-0"
         aria-label="Hour, 1–12"
       >
         <option value="">—</option>
@@ -97,7 +97,7 @@ export function TimeOfDayInput({
           </option>
         ))}
       </select>
-      <span className="flex shrink-0 items-center bg-slate-50 px-0.5 text-sm text-slate-500" aria-hidden>
+      <span className="flex shrink-0 items-center bg-muted/40 px-0.5 text-sm text-muted-foreground" aria-hidden>
         :
       </span>
       <label className="sr-only" htmlFor={id ? `${id}-m` : undefined}>
@@ -108,7 +108,7 @@ export function TimeOfDayInput({
         value={d12.m}
         onChange={(e) => push(d12.h, e.target.value, d12.ap)}
         disabled={disabled}
-        className="min-w-0 flex-1 border-0 border-r border-gray-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-0"
+        className="min-w-0 flex-1 border-0 border-r border-border bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-0"
         aria-label="Minutes"
       >
         <option value="">—</option>

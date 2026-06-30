@@ -309,7 +309,7 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
               ))}
             </select>
             {payableBanks.length === 0 ? (
-              <p className="text-xs text-amber-700">
+              <p className="text-xs text-warning-foreground">
                 No bank/cash registers found. Add a bank account under settings so disbursements can credit the right
                 account.
               </p>

@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from api.models import Bill, BillLine, Invoice, PaymentInvoiceAllocation
+from decimal import Decimal
+
+from django.db.models import Sum
+
+from api.models import Bill, BillLine, Invoice, PaymentBillAllocation, PaymentInvoiceAllocation
 from api.services.gl_posting import (
     cleanup_vendor_bill_posting_effects,
     recompute_item_average_cost,
@@ -17,6 +21,58 @@ from api.services.gl_posting import (
     sync_posted_vendor_bill,
 )
 from api.services.payment_allocation import refresh_invoice_from_allocations
+
+
+def _invoice_amount_paid(inv: Invoice) -> Decimal:
+    cache = getattr(inv, "_prefetched_objects_cache", None)
+    if cache and "payment_allocations" in cache:
+        return sum(
+            (a.amount for a in inv.payment_allocations.all()),
+            start=Decimal("0"),
+        )
+    agg = PaymentInvoiceAllocation.objects.filter(invoice_id=inv.id).aggregate(t=Sum("amount"))
+    return agg["t"] or Decimal("0")
+
+
+def _bill_amount_paid(bill: Bill) -> Decimal:
+    cache = getattr(bill, "_prefetched_objects_cache", None)
+    if cache and "payment_allocations" in cache:
+        return sum(
+            (a.amount for a in bill.payment_allocations.all()),
+            start=Decimal("0"),
+        )
+    agg = PaymentBillAllocation.objects.filter(bill_id=bill.id).aggregate(t=Sum("amount"))
+    return agg["t"] or Decimal("0")
+
+
+def assert_bill_edit_allowed(bill: Bill) -> tuple[bool, str]:
+    """Block bill edit when payments exist or status is paid/partial (matches UI)."""
+    paid = _bill_amount_paid(bill)
+    if paid > Decimal("0"):
+        return (
+            False,
+            "Cannot edit a bill that has vendor payments allocated. "
+            "Remove or reallocate those payments first.",
+        )
+    status = (bill.status or "").strip().lower().replace(" ", "_")
+    if status in ("paid", "partial", "partially_paid"):
+        return False, "Cannot edit a paid or partially paid bill."
+    return True, ""
+
+
+def assert_invoice_edit_allowed(company_id: int, inv: Invoice) -> tuple[bool, str]:
+    """Block invoice edit when paid/partial or customer receipts are allocated."""
+    status = (inv.status or "").strip().lower().replace(" ", "_")
+    if status in ("paid", "partial", "partially_paid"):
+        return False, "Cannot edit a paid or partially paid invoice."
+    paid = _invoice_amount_paid(inv)
+    if paid > Decimal("0"):
+        return (
+            False,
+            "Cannot edit an invoice that has customer payments allocated. "
+            "Remove or reallocate those payments first.",
+        )
+    return assert_invoice_change_allowed(company_id, int(inv.id))
 
 
 def assert_invoice_change_allowed(company_id: int, invoice_id: int) -> tuple[bool, str]:
@@ -53,7 +109,7 @@ def reconcile_invoice_after_material_edit(
     bank_account_id: int | None = None,
 ) -> tuple[bool, str]:
     """Rollback AUTO-INV-* / stock / shift (not payments), then re-post from current invoice rows."""
-    ok, err = assert_invoice_change_allowed(company_id, int(inv.id))
+    ok, err = assert_invoice_edit_allowed(company_id, inv)
     if not ok:
         return False, err
     ok_rb, err_rb = rollback_invoice_posting_effects(

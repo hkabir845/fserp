@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from django.db.models import Q, Sum
 
-from api.models import AquacultureExpense, AquacultureFishSale, JournalEntryLine
+from api.models import AquacultureExpense, AquacultureFishSale, JournalEntry, JournalEntryLine
 
 
 # Journal lines from posted vendor bills: debit accounts in these types count toward pond operating P&L.
@@ -166,6 +166,27 @@ def landlord_lease_payment_pond_operating_total_company(
     return _money_q(Decimal(str(t or 0)))
 
 
+def fry_stocking_capitalized_manual_expense_ids(company_id: int) -> set[int]:
+    """Manual pond expenses capitalized Dr 1581 (AUTO-AQ-EXP) — exclude from expense-bucket double count."""
+    nums = (
+        JournalEntry.objects.filter(
+            company_id=company_id,
+            is_posted=True,
+            entry_number__startswith="AUTO-AQ-EXP-",
+            lines__account__account_code="1581",
+            lines__aquaculture_cost_bucket="fry_stocking",
+        )
+        .values_list("entry_number", flat=True)
+        .distinct()
+    )
+    out: set[int] = set()
+    for en in nums:
+        suffix = str(en).rsplit("-", 1)[-1]
+        if suffix.isdigit():
+            out.add(int(suffix))
+    return out
+
+
 def pond_fry_stocking_capitalized_journal_total(
     *,
     company_id: int,
@@ -175,7 +196,7 @@ def pond_fry_stocking_capitalized_journal_total(
     cycle_filter_id: int | None,
 ) -> Decimal:
     """
-    Fry/fingerling vendor bills post Dr 1581 (biological inventory), not expense-type bill journals.
+    Fry/fingerling purchases post Dr 1581 (vendor bills and manual fry expenses).
     Include in fry_stocking bucket so inter-pond transfer cost moves fry purchase value with the fish.
     """
     from django.db.models import Q
@@ -190,10 +211,15 @@ def pond_fry_stocking_capitalized_journal_total(
         journal_entry__entry_date__gte=fry_start,
         journal_entry__entry_date__lte=end,
         journal_entry__is_posted=True,
-        journal_entry__entry_number__startswith="AUTO-BILL-",
         debit__gt=0,
         account__account_code="1581",
         aquaculture_pond_id=pond_id,
+    ).filter(
+        Q(journal_entry__entry_number__startswith="AUTO-BILL-")
+        | Q(
+            journal_entry__entry_number__startswith="AUTO-AQ-EXP-",
+            aquaculture_cost_bucket="fry_stocking",
+        )
     )
     if cycle_filter_id is not None:
         # Fry bills are often pond-tagged without a cycle on the journal line; still count for batch transfers.
@@ -413,7 +439,12 @@ def pond_bucket_amounts_for_period(
     if cycle_filter_id is not None:
         q = q.filter(production_cycle_id=cycle_filter_id)
     q = aquaculture_expenses_for_pl_direct_sum(q)
-    for row in q.values("expense_category").annotate(s=Sum("amount")):
+    capitalized_fry_ids = fry_stocking_capitalized_manual_expense_ids(company_id)
+    for row in (
+        q.exclude(pk__in=capitalized_fry_ids)
+        .values("expense_category")
+        .annotate(s=Sum("amount"))
+    ):
         amt = _money_q(Decimal(str(row["s"] or 0)))
         if amt != 0:
             add_from_expense_row(amt, row["expense_category"])

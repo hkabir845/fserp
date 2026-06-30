@@ -61,9 +61,9 @@ function iconBtnClass(variant: 'default' | 'danger' = 'default') {
   const base =
     'inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500/40'
   if (variant === 'danger') {
-    return `${base} border-transparent text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-800`
+    return `${base} border-transparent text-muted-foreground hover:border-destructive/25 hover:bg-destructive/5 hover:text-destructive`
   }
-  return `${base} border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-teal-900`
+  return `${base} border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-primary`
 }
 
 export default function AquacultureLandlordsPage() {
@@ -257,72 +257,72 @@ export default function AquacultureLandlordsPage() {
         </>
       }
     >
-      <p className="text-xs text-slate-500">
-        Period columns use ledger entry dates for <span className="font-medium text-slate-700">{periodDescription}</span>
+      <p className="text-xs text-muted-foreground">
+        Period columns use ledger entry dates for <span className="font-medium text-foreground/85">{periodDescription}</span>
         , matched to each row&apos;s pond when the line has a pond. Remaining contract payable is measured from{' '}
-        <span className="font-medium text-slate-700">{metricsAsOf}</span> through each pond&apos;s lease end (when set).
+        <span className="font-medium text-foreground/85">{metricsAsOf}</span> through each pond&apos;s lease end (when set).
       </p>
 
       {!loading && rows.length > 0 ? (
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Land share</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-              {formatNumber(totals.land, 4)} <span className="text-sm font-normal text-slate-500">dec</span>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Land share</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+              {formatNumber(totals.land, 4)} <span className="text-sm font-normal text-muted-foreground">dec</span>
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Implied annual rent</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Implied annual rent</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
               {sym}
               {formatNumber(totals.annual, 2)}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Period receivable</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Period receivable</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
               {sym}
               {formatNumber(totals.rec, 2)}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Period paid</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Period paid</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
               {sym}
               {formatNumber(totals.paid, 2)}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Period balance</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Period balance</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
               {sym}
               {formatNumber(totals.bal, 2)}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Contract remainder</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Contract remainder</p>
+            <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
               {sym}
               {formatNumber(totals.rem, 2)}
             </p>
             {totals.anyOpenEndedGap ? (
-              <p className="mt-0.5 text-[11px] text-amber-800">Some rows exclude open-ended leases</p>
+              <p className="mt-0.5 text-[11px] text-warning-foreground">Some rows exclude open-ended leases</p>
             ) : null}
           </div>
         </div>
       ) : null}
 
       {rows.length > uniqueLandlordIds.size ? (
-        <p className="mb-3 text-xs text-slate-500">
+        <p className="mb-3 text-xs text-muted-foreground">
           The same landlord may appear on multiple rows (one per pond share). Do not sum the ledger balance column across
           rows.
         </p>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-[1180px] w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="whitespace-nowrap px-3 py-3 pl-4 font-medium">Pond</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium">Landlord</th>
@@ -334,7 +334,7 @@ export default function AquacultureLandlordsPage() {
                 <th className="whitespace-nowrap px-3 py-3 text-right font-medium">Contract remainder</th>
                 <th className="whitespace-nowrap px-3 py-3 text-right font-medium">Ledger balance</th>
                 <th className="whitespace-nowrap px-3 py-3 font-medium">Status</th>
-                <th className="sticky right-0 whitespace-nowrap bg-slate-50 px-3 py-3 pr-4 text-right font-medium shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
+                <th className="sticky right-0 whitespace-nowrap bg-muted/40 px-3 py-3 pr-4 text-right font-medium shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
                   Actions
                 </th>
               </tr>
@@ -342,17 +342,17 @@ export default function AquacultureLandlordsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">
                     No landlords yet.{' '}
                     <button
                       type="button"
-                      className="font-medium text-teal-800 underline"
+                      className="font-medium text-primary underline"
                       onClick={() => setFormModal({ mode: 'create' })}
                     >
                       Create the first landlord
@@ -367,54 +367,54 @@ export default function AquacultureLandlordsPage() {
                       : r.pond_name?.trim() || `Pond #${r.pond_id}`
                   const rk = `${r.id}-${r.pond_id ?? 'na'}`
                   return (
-                    <tr key={rk} className="group border-b border-slate-100 last:border-0 hover:bg-slate-50/80">
-                      <td className="px-3 py-3 pl-4 align-top text-slate-800">{pLabel}</td>
+                    <tr key={rk} className="group border-b border-border/70 last:border-0 hover:bg-muted/50">
+                      <td className="px-3 py-3 pl-4 align-top text-foreground">{pLabel}</td>
                       <td className="px-3 py-3 align-top">
                         <Link
                           href={`/aquaculture/landlords/${r.id}`}
-                          className="font-medium text-slate-900 hover:text-teal-900 hover:underline"
+                          className="font-medium text-foreground hover:text-primary hover:underline"
                         >
                           {r.name}
                         </Link>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                           {r.code ? <span className="font-mono">{r.code}</span> : null}
                           <span>
                             {r.pond_share_count} pond{r.pond_share_count === 1 ? '' : 's'}
                           </span>
                           {!r.is_active ? (
-                            <span className="rounded bg-slate-200 px-1.5 py-0.5 text-slate-700">Inactive</span>
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-foreground/85">Inactive</span>
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right tabular-nums text-foreground">
                         {formatNumber(parseMoney(r.land_share_decimal), 4)}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right tabular-nums text-foreground">
                         {sym}
                         {formatNumber(parseMoney(r.implied_annual_lease), 2)}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right tabular-nums text-foreground">
                         {sym}
                         {formatNumber(parseMoney(r.ytd_receivable), 2)}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right tabular-nums text-foreground">
                         {sym}
                         {formatNumber(parseMoney(r.ytd_paid), 2)}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right tabular-nums text-foreground">
                         {sym}
                         {formatNumber(parseMoney(r.ytd_balance), 2)}
                       </td>
-                      <td className="px-3 py-3 text-right align-top tabular-nums text-slate-800">
+                      <td className="px-3 py-3 text-right align-top tabular-nums text-foreground">
                         <div>
                           {sym}
                           {formatNumber(parseMoney(r.remaining_contract_payable), 2)}
                         </div>
                         {r.remaining_contract_excludes_open_ended ? (
-                          <div className="mt-0.5 text-[11px] font-normal text-amber-800">+ open-ended</div>
+                          <div className="mt-0.5 text-[11px] font-normal text-warning-foreground">+ open-ended</div>
                         ) : null}
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums font-medium text-slate-900">
+                      <td className="px-3 py-3 text-right tabular-nums font-medium text-foreground">
                         {sym}
                         {formatNumber(parseMoney(r.balance_signed), 2)}
                       </td>
@@ -425,7 +425,7 @@ export default function AquacultureLandlordsPage() {
                           {statusLabel(r.balance_status)}
                         </span>
                       </td>
-                      <td className="sticky right-0 bg-white px-3 py-3 pr-4 text-right align-top group-hover:bg-slate-50/80">
+                      <td className="sticky right-0 bg-white px-3 py-3 pr-4 text-right align-top group-hover:bg-muted/50">
                         <div className="inline-flex items-center gap-0.5">
                           <Link
                             href={`/aquaculture/landlords/${r.id}`}

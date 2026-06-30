@@ -160,25 +160,25 @@ export default function NewPurchaseOrderPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] space-y-6 pb-24 lg:pb-8">
       {/* Header */}
-      <div className="rounded-2xl border border-gray-200/80 bg-gradient-to-br from-white to-slate-50/80 p-6 shadow-sm">
+      <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-white to-slate-50/80 p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <nav className="text-xs font-medium text-gray-500">
-              <Link href="/purchase/orders" className="hover:text-indigo-600">
+            <nav className="text-xs font-medium text-muted-foreground">
+              <Link href="/purchase/orders" className="hover:text-primary">
                 Purchase orders
               </Link>
-              <span className="mx-1.5 text-gray-300">/</span>
-              <span className="text-gray-700">New</span>
+              <span className="mx-1.5 text-muted-foreground/40">/</span>
+              <span className="text-foreground/85">New</span>
             </nav>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Create purchase order</h1>
-            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-gray-600">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Create purchase order</h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               Select a supplier, add material or fuel lines, then create. You can receive goods later via GRN into inventory.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
             <Link
               href="/purchase/orders"
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-semibold text-foreground/85 shadow-sm transition hover:bg-muted/40"
             >
               Cancel
             </Link>
@@ -186,7 +186,7 @@ export default function NewPurchaseOrderPage() {
               type="button"
               onClick={() => createMutation.mutate()}
               disabled={createMutation.isPending || lines.length === 0 || !form.supplier_id}
-              className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40"
             >
               {createMutation.isPending ? (
                 <span className="flex items-center gap-2">
@@ -201,7 +201,7 @@ export default function NewPurchaseOrderPage() {
         </div>
 
         {createMutation.isError && (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          <div className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
             {String(errMsg)}
           </div>
         )}
@@ -210,18 +210,18 @@ export default function NewPurchaseOrderPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_minmax(260px,320px)] xl:gap-8">
         <div className="space-y-6">
           {/* Supplier & dates */}
-          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Order details</h2>
+          <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Order details</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <div className="sm:col-span-2 xl:col-span-1">
-                <label htmlFor="po-supplier" className="block text-sm font-medium text-gray-800">
+                <label htmlFor="po-supplier" className="block text-sm font-medium text-foreground">
                   Supplier <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="po-supplier"
                   value={form.supplier_id}
                   onChange={(e) => setForm({ ...form, supplier_id: Number(e.target.value) })}
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 >
                   <option value={0}>Select supplier…</option>
                   {suppliers.map((s) => (
@@ -232,7 +232,7 @@ export default function NewPurchaseOrderPage() {
                 </select>
               </div>
               <div>
-                <label htmlFor="po-order-date" className="block text-sm font-medium text-gray-800">
+                <label htmlFor="po-order-date" className="block text-sm font-medium text-foreground">
                   Order date
                 </label>
                 <input
@@ -240,11 +240,11 @@ export default function NewPurchaseOrderPage() {
                   type="date"
                   value={form.order_date}
                   onChange={(e) => setForm({ ...form, order_date: e.target.value })}
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 />
               </div>
               <div>
-                <label htmlFor="po-expected" className="block text-sm font-medium text-gray-800">
+                <label htmlFor="po-expected" className="block text-sm font-medium text-foreground">
                   Expected date
                 </label>
                 <input
@@ -252,30 +252,30 @@ export default function NewPurchaseOrderPage() {
                   type="date"
                   value={form.expected_date}
                   onChange={(e) => setForm({ ...form, expected_date: e.target.value })}
-                  className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                 />
               </div>
             </div>
           </section>
 
           {/* Add line */}
-          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Line items</h2>
-                <p className="text-sm text-gray-600">
+                <h2 className="text-lg font-semibold text-foreground">Line items</h2>
+                <p className="text-sm text-muted-foreground">
                   Quantities use each item&apos;s <strong>stocking unit</strong> (UoM from master data). Unit price is per that UoM
                   (e.g. per KG, per L, per MT).
                 </p>
               </div>
-              <span className="text-xs font-medium text-gray-400">{purchasableItems.length} items available</span>
+              <span className="text-xs font-medium text-muted-foreground/70">{purchasableItems.length} items available</span>
             </div>
 
-            <div className="mt-6 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/30 p-4 sm:p-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-indigo-900/80">Add a line</p>
+            <div className="mt-6 rounded-xl border border-dashed border-primary/25 bg-accent/30 p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/80">Add a line</p>
               <div className="mt-4 flex flex-col gap-4 xl:flex-row xl:items-end">
                 <div className="min-w-0 flex-1">
-                  <label className="mb-1.5 block text-sm font-medium text-gray-800">Item</label>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground">Item</label>
                   <PurchaseItemCombobox
                     items={purchasableItems}
                     value={draftItemId}
@@ -285,7 +285,7 @@ export default function NewPurchaseOrderPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-2 xl:gap-3">
                   <div className="w-full min-w-[7rem] xl:w-32">
-                    <label htmlFor="draft-qty" className="mb-1.5 block text-sm font-medium text-gray-800">
+                    <label htmlFor="draft-qty" className="mb-1.5 block text-sm font-medium text-foreground">
                       Quantity
                       {draftItem?.uom?.code ? (
                         <span className="ml-1 font-normal text-emerald-700">({draftItem.uom.code})</span>
@@ -303,15 +303,15 @@ export default function NewPurchaseOrderPage() {
                         }
                       }}
                       placeholder="0"
-                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm tabular-nums shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm tabular-nums shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                     />
                   </div>
                   <div className="w-full min-w-[7rem] xl:w-36">
-                    <label htmlFor="draft-price" className="mb-1.5 block text-sm font-medium text-gray-800">
+                    <label htmlFor="draft-price" className="mb-1.5 block text-sm font-medium text-foreground">
                       {draftItem?.uom ? `Price / ${draftItem.uom.code}` : 'Unit price'}
                     </label>
                     <div className="relative">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">₹</span>
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
                       <input
                         id="draft-price"
                         inputMode="decimal"
@@ -324,7 +324,7 @@ export default function NewPurchaseOrderPage() {
                           }
                         }}
                         placeholder="0.00"
-                        className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-8 pr-3 text-sm tabular-nums shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        className="w-full rounded-lg border border-border bg-white py-2.5 pl-8 pr-3 text-sm tabular-nums shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                     </div>
                   </div>
@@ -333,7 +333,7 @@ export default function NewPurchaseOrderPage() {
                   <button
                     type="button"
                     onClick={addLine}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.99]"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 active:scale-[0.99]"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -343,12 +343,12 @@ export default function NewPurchaseOrderPage() {
                 </div>
               </div>
               {draftError && (
-                <p className="mt-3 text-sm font-medium text-red-600" role="status">
+                <p className="mt-3 text-sm font-medium text-destructive" role="status">
                   {draftError}
                 </p>
               )}
               {draftItem?.uom && (
-                <p className="mt-2 text-xs text-gray-600">
+                <p className="mt-2 text-xs text-muted-foreground">
                   Stocking unit: <strong>{draftItem.uom.code}</strong> — {draftItem.uom.name}. Order in this unit; conversions are handled at
                   receipt/production if configured.
                 </p>
@@ -357,8 +357,8 @@ export default function NewPurchaseOrderPage() {
 
             {/* Lines table */}
             <div className="mt-8">
-              <div className="overflow-hidden rounded-xl border border-gray-200">
-                <div className="hidden bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid md:[grid-template-columns:minmax(0,1fr)_56px_88px_104px_104px_100px_72px] md:gap-2 md:px-4">
+              <div className="overflow-hidden rounded-xl border border-border">
+                <div className="hidden bg-muted/40 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground md:grid md:[grid-template-columns:minmax(0,1fr)_56px_88px_104px_104px_100px_72px] md:gap-2 md:px-4">
                   <span>Item</span>
                   <span className="text-center">UoM</span>
                   <span className="text-right">Qty</span>
@@ -367,8 +367,8 @@ export default function NewPurchaseOrderPage() {
                   <span className="sr-only">Actions</span>
                 </div>
                 {lines.length === 0 ? (
-                  <div className="bg-gray-50/50 px-6 py-16 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-200/80 text-gray-500">
+                  <div className="bg-muted/40/50 px-6 py-16 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted/80 text-muted-foreground">
                       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                         <path
                           strokeLinecap="round"
@@ -378,11 +378,11 @@ export default function NewPurchaseOrderPage() {
                         />
                       </svg>
                     </div>
-                    <p className="mt-4 text-sm font-medium text-gray-800">No line items yet</p>
-                    <p className="mt-1 text-sm text-gray-500">Select an item, enter quantity and price, then tap Add line.</p>
+                    <p className="mt-4 text-sm font-medium text-foreground">No line items yet</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Select an item, enter quantity and price, then tap Add line.</p>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-gray-100 bg-white">
+                  <ul className="divide-y divide-border/70 bg-white">
                     {lines.map((l, idx) => {
                       const it = purchasableItems.find((x) => x.id === l.item_id)
                       const lineTotal = (Number(l.qty) || 0) * (Number(l.unit_price) || 0)
@@ -392,20 +392,20 @@ export default function NewPurchaseOrderPage() {
                           className="px-4 py-4 md:grid md:[grid-template-columns:minmax(0,1fr)_56px_88px_104px_104px_100px_72px] md:items-center md:gap-2 md:py-3"
                         >
                           <div className="min-w-0">
-                            <div className="md:hidden text-xs font-semibold uppercase text-gray-400">Item</div>
+                            <div className="md:hidden text-xs font-semibold uppercase text-muted-foreground/70">Item</div>
                             {it ? (
                               <div className="mt-0.5">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="font-mono text-xs font-semibold text-indigo-700">{it.sku}</span>
+                                  <span className="font-mono text-xs font-semibold text-primary">{it.sku}</span>
                                 </div>
-                                <p className="mt-0.5 text-sm font-medium text-gray-900">{it.name}</p>
+                                <p className="mt-0.5 text-sm font-medium text-foreground">{it.name}</p>
                               </div>
                             ) : (
-                              <span className="text-sm text-gray-600">Item #{l.item_id}</span>
+                              <span className="text-sm text-muted-foreground">Item #{l.item_id}</span>
                             )}
                           </div>
                           <div className="mt-2 md:mt-0 md:text-center">
-                            <span className="text-xs font-semibold text-gray-500 md:hidden">UoM</span>
+                            <span className="text-xs font-semibold text-muted-foreground md:hidden">UoM</span>
                             {it?.uom?.code ? (
                               <span
                                 className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 font-mono text-xs font-bold text-emerald-900 md:mx-auto"
@@ -414,11 +414,11 @@ export default function NewPurchaseOrderPage() {
                                 {it.uom.code}
                               </span>
                             ) : (
-                              <span className="text-xs text-gray-400">—</span>
+                              <span className="text-xs text-muted-foreground/70">—</span>
                             )}
                           </div>
                           <div className="mt-3 flex items-center justify-between gap-2 md:mt-0 md:block md:text-right">
-                            <span className="text-xs font-semibold text-gray-500 md:hidden">Qty</span>
+                            <span className="text-xs font-semibold text-muted-foreground md:hidden">Qty</span>
                             <input
                               aria-label={`Quantity for ${it?.sku ?? 'line'}`}
                               inputMode="decimal"
@@ -426,13 +426,13 @@ export default function NewPurchaseOrderPage() {
                               onChange={(e) =>
                                 updateLine(idx, { qty: parsePositiveNum(e.target.value, l.qty) })
                               }
-                              className="inline-block w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-right text-sm tabular-nums shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 md:ml-auto md:max-w-[100px]"
+                              className="inline-block w-full rounded-lg border border-border bg-white px-2 py-1.5 text-right text-sm tabular-nums shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring md:ml-auto md:max-w-[100px]"
                             />
                           </div>
                           <div className="mt-2 flex items-center justify-between gap-2 md:mt-0 md:block md:text-right">
-                            <span className="text-xs font-semibold text-gray-500 md:hidden">Price / UoM</span>
+                            <span className="text-xs font-semibold text-muted-foreground md:hidden">Price / UoM</span>
                             <div className="relative w-full md:ml-auto md:max-w-[120px]">
-                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">₹</span>
+                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">₹</span>
                               <input
                                 aria-label={`Unit price for ${it?.sku ?? 'line'}`}
                                 inputMode="decimal"
@@ -440,19 +440,19 @@ export default function NewPurchaseOrderPage() {
                                 onChange={(e) =>
                                   updateLine(idx, { unit_price: parsePositiveNum(e.target.value, l.unit_price) })
                                 }
-                                className="w-full rounded-lg border border-gray-200 bg-white py-1.5 pl-6 pr-2 text-right text-sm tabular-nums shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="w-full rounded-lg border border-border bg-white py-1.5 pl-6 pr-2 text-right text-sm tabular-nums shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                               />
                             </div>
                           </div>
                           <div className="mt-2 flex items-center justify-between md:mt-0 md:block md:text-right">
-                            <span className="text-xs font-semibold text-gray-500 md:hidden">Line total</span>
-                            <span className="text-sm font-semibold tabular-nums text-gray-900">₹{lineTotal.toFixed(2)}</span>
+                            <span className="text-xs font-semibold text-muted-foreground md:hidden">Line total</span>
+                            <span className="text-sm font-semibold tabular-nums text-foreground">₹{lineTotal.toFixed(2)}</span>
                           </div>
                           <div className="mt-2 flex justify-end md:mt-0">
                             <button
                               type="button"
                               onClick={() => removeLine(idx)}
-                              className="rounded-lg px-2 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                              className="rounded-lg px-2 py-1.5 text-sm font-semibold text-destructive transition hover:bg-destructive/5"
                             >
                               Remove
                             </button>
@@ -471,31 +471,31 @@ export default function NewPurchaseOrderPage() {
         <aside className="space-y-6 lg:top-24 lg:self-start xl:sticky">
           <details
             open
-            className="group rounded-2xl border border-gray-200 bg-white shadow-sm [&_summary::-webkit-details-marker]:hidden"
+            className="group rounded-2xl border border-border bg-white shadow-sm [&_summary::-webkit-details-marker]:hidden"
           >
-            <summary className="cursor-pointer list-none rounded-2xl p-5 hover:bg-gray-50/80">
+            <summary className="cursor-pointer list-none rounded-2xl p-5 hover:bg-muted/40/80">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Units of measure (UoM)</h2>
-                  <p className="mt-1 text-xs leading-relaxed text-gray-600">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Units of measure (UoM)</h2>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     Codes your tenant can use on items. PO quantities and prices are always in the item&apos;s stocking UoM.
                   </p>
                 </div>
-                <span className="text-xs font-medium text-indigo-600 group-open:hidden">Show</span>
-                <span className="hidden text-xs font-medium text-indigo-600 group-open:inline">Hide</span>
+                <span className="text-xs font-medium text-primary group-open:hidden">Show</span>
+                <span className="hidden text-xs font-medium text-primary group-open:inline">Hide</span>
               </div>
             </summary>
-            <div className="border-t border-gray-100 px-5 pb-5">
+            <div className="border-t border-border/70 px-5 pb-5">
               <div className="max-h-[min(420px,55vh)] space-y-4 overflow-y-auto pt-4">
                 {uomsFetched && uomsGrouped && uomsGrouped.length > 0
                   ? uomsGrouped.map((g) => (
                       <div key={g.category}>
-                        <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{g.category}</h3>
+                        <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{g.category}</h3>
                         <ul className="mt-1.5 space-y-1 text-xs">
                           {g.units.map((u) => (
-                            <li key={u.code} className="flex justify-between gap-2 border-b border-gray-50 py-1 last:border-0">
-                              <span className="font-mono font-semibold text-gray-900">{u.code}</span>
-                              <span className="text-gray-600">{u.name}</span>
+                            <li key={u.code} className="flex justify-between gap-2 border-b border-border/50 py-1 last:border-0">
+                              <span className="font-mono font-semibold text-foreground">{u.code}</span>
+                              <span className="text-muted-foreground">{u.name}</span>
                             </li>
                           ))}
                         </ul>
@@ -503,13 +503,13 @@ export default function NewPurchaseOrderPage() {
                     ))
                   : industrialUomReference.map((g) => (
                       <div key={g.category}>
-                        <h3 className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{g.category}</h3>
-                        <p className="text-[10px] text-gray-500">{g.description}</p>
+                        <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{g.category}</h3>
+                        <p className="text-[10px] text-muted-foreground">{g.description}</p>
                         <ul className="mt-1.5 space-y-1 text-xs">
                           {g.units.map((u) => (
-                            <li key={u.code} className="flex justify-between gap-2 border-b border-gray-50 py-1 last:border-0">
-                              <span className="font-mono font-semibold text-gray-900">{u.code}</span>
-                              <span className="text-gray-600">{u.name}</span>
+                            <li key={u.code} className="flex justify-between gap-2 border-b border-border/50 py-1 last:border-0">
+                              <span className="font-mono font-semibold text-foreground">{u.code}</span>
+                              <span className="text-muted-foreground">{u.name}</span>
                             </li>
                           ))}
                         </ul>
@@ -517,28 +517,28 @@ export default function NewPurchaseOrderPage() {
                     ))}
               </div>
               {!uomsFetched ? (
-                <p className="mt-2 text-[10px] text-gray-400">Loading tenant units…</p>
+                <p className="mt-2 text-[10px] text-muted-foreground/70">Loading tenant units…</p>
               ) : tenantUoms.length === 0 ? (
-                <p className="mt-2 text-[10px] text-amber-800">
+                <p className="mt-2 text-[10px] text-warning-foreground">
                   No tenant UoM API data — showing a standard industrial reference. Configure units under Settings → Units.
                 </p>
               ) : null}
             </div>
           </details>
 
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Summary</h2>
-            <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+          <div className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Summary</h2>
+            <div className="mt-4 space-y-3 border-t border-border/70 pt-4">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Line items</span>
-                <span className="font-semibold text-gray-900">{lines.length}</span>
+                <span className="text-muted-foreground">Line items</span>
+                <span className="font-semibold text-foreground">{lines.length}</span>
               </div>
-              <div className="flex justify-between border-t border-dashed border-gray-200 pt-3">
-                <span className="font-semibold text-gray-900">Estimated total</span>
-                <span className="text-xl font-bold tabular-nums text-gray-900">₹{total.toFixed(2)}</span>
+              <div className="flex justify-between border-t border-dashed border-border pt-3">
+                <span className="font-semibold text-foreground">Estimated total</span>
+                <span className="text-xl font-bold tabular-nums text-foreground">₹{total.toFixed(2)}</span>
               </div>
             </div>
-            <p className="mt-4 text-xs leading-relaxed text-gray-500">
+            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               After you create this order, use <strong>Receive (GRN)</strong> on the PO to post stock and accrue inventory.
             </p>
           </div>
@@ -546,17 +546,17 @@ export default function NewPurchaseOrderPage() {
       </div>
 
       {/* Mobile sticky bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] backdrop-blur-sm lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-white/95 p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] backdrop-blur-sm lg:hidden">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
-            <div className="text-xs text-gray-500">Total</div>
-            <div className="text-lg font-bold tabular-nums text-gray-900">₹{total.toFixed(2)}</div>
+            <div className="text-xs text-muted-foreground">Total</div>
+            <div className="text-lg font-bold tabular-nums text-foreground">₹{total.toFixed(2)}</div>
           </div>
           <button
             type="button"
             onClick={() => createMutation.mutate()}
             disabled={createMutation.isPending || lines.length === 0 || !form.supplier_id}
-            className="min-w-[160px] flex-1 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-sm disabled:opacity-40"
+            className="min-w-[160px] flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-white shadow-sm disabled:opacity-40"
           >
             {createMutation.isPending ? 'Creating…' : 'Create PO'}
           </button>

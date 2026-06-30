@@ -11,7 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.services.permission_service import normalize_role_key
 from api.utils.auth import auth_required, user_is_super_admin
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, query_include_inactive, require_company_id
 from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_station_fk
@@ -136,6 +136,8 @@ def _customer_list_stats(qs, company_id: int):
 def customers_list(request):
     if request.method == "GET":
         qs = Customer.objects.filter(company_id=request.company_id).select_related("default_station")
+        if not query_include_inactive(request):
+            qs = qs.filter(is_active=True)
         qs = _customer_apply_q(qs, request.GET.get("q", ""))
         qs = _customer_apply_sort(qs, request)
         if wants_paged_response(request):
@@ -333,8 +335,12 @@ def customer_detail(request, customer_id: int):
         )
         return JsonResponse(_customer_to_json(c, company_id=request.company_id))
     if request.method == "DELETE":
-        c.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        c.is_active = False
+        c.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse(
+            {"detail": "Customer deleted (soft) successfully", "is_active": False},
+            status=200,
+        )
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 

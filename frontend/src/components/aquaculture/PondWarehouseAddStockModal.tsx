@@ -24,8 +24,8 @@ import {
 } from '@/lib/pondWarehouseTransferUtils'
 
 const inputCls =
-  'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
-const labelCls = 'block text-xs font-medium text-slate-700'
+  'mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
+const labelCls = 'block text-xs font-medium text-foreground/85'
 
 type CategoryFilter = '' | 'feed' | 'medicine' | 'general' | 'fish'
 
@@ -348,7 +348,7 @@ export function PondWarehouseAddStockModal(props: {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-900/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[80] flex items-end justify-center bg-foreground/50 p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="pond-wh-add-title"
@@ -357,22 +357,22 @@ export function PondWarehouseAddStockModal(props: {
       }}
     >
       <div
-        className="flex max-h-[min(92vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-xl sm:rounded-2xl"
+        className="flex max-h-[min(92vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-white shadow-xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
           <div>
-            <h2 id="pond-wh-add-title" className="text-base font-semibold text-slate-900">
+            <h2 id="pond-wh-add-title" className="text-base font-semibold text-foreground">
               Add stock to pond warehouse
             </h2>
-            <p className="mt-0.5 text-xs text-slate-600">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               Move feed, medicine, or supplies from your shop into a pond. No COGS until you consume or apply feeding
               advice.
             </p>
           </div>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Close"
             disabled={saving}
             onClick={onClose}
@@ -383,16 +383,16 @@ export function PondWarehouseAddStockModal(props: {
 
         <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
           {loadingMeta ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-600">
-              <Loader2 className="h-5 w-5 animate-spin text-teal-700" aria-hidden />
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" aria-hidden />
               Loading shops and products…
             </div>
           ) : activePonds.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-600">
+            <p className="py-8 text-center text-sm text-muted-foreground">
               Add an active pond under <strong>Aquaculture → Ponds</strong> first.
             </p>
           ) : activeStations.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-600">
+            <p className="py-8 text-center text-sm text-muted-foreground">
               Add an active shop site under <strong>Sites</strong> with stock on hand.
             </p>
           ) : (
@@ -432,7 +432,7 @@ export function PondWarehouseAddStockModal(props: {
                     ))}
                   </select>
                   {homeStationId != null ? (
-                    <span className="mt-1 block text-[11px] text-slate-500">
+                    <span className="mt-1 block text-[11px] text-muted-foreground">
                       Locked to your home station.
                     </span>
                   ) : null}
@@ -440,7 +440,7 @@ export function PondWarehouseAddStockModal(props: {
               </div>
 
               <div>
-                <p className="text-xs font-medium text-slate-700">Product type</p>
+                <p className="text-xs font-medium text-foreground/85">Product type</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {categoryChips.map((c) => (
                     <button
@@ -450,31 +450,31 @@ export function PondWarehouseAddStockModal(props: {
                       onClick={() => setCategoryFilter(c.id)}
                       className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                         categoryFilter === c.id
-                          ? 'bg-teal-700 text-white'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          ? 'bg-primary text-white'
+                          : 'bg-muted text-foreground/85 hover:bg-muted'
                       }`}
                     >
                       {c.label}
                     </button>
                   ))}
                 </div>
-                <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
                     checked={onlyInStock}
                     disabled={!Number.isFinite(stationNum) || saving}
                     onChange={(e) => setOnlyInStock(e.target.checked)}
-                    className="rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+                    className="rounded border-border text-primary focus:ring-teal-500"
                   />
                   Only show products with stock at this shop
                 </label>
               </div>
 
-              <div className="rounded-lg border border-slate-200">
-                <div className="border-b border-slate-100 bg-slate-50/80 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <div className="rounded-lg border border-border">
+                <div className="border-b border-border/70 bg-muted/50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Products to move
                 </div>
-                <div className="divide-y divide-slate-100 p-3 space-y-3">
+                <div className="divide-y divide-border/70 p-3 space-y-3">
                   {lineRows.map((row, i) => {
                     const st = row.item_id > 0 ? itemAvail[row.item_id] : null
                     let availHint: string | null = null
@@ -530,7 +530,7 @@ export function PondWarehouseAddStockModal(props: {
                             )}
                           </select>
                           {selected ? (
-                            <span className="mt-0.5 block text-[11px] text-slate-500">
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">
                               {pondWarehouseShelfLabel(selected.pos_category)}
                             </span>
                           ) : null}
@@ -552,7 +552,7 @@ export function PondWarehouseAddStockModal(props: {
                             title="Use maximum available at shop"
                             disabled={saving || row.item_id <= 0}
                             onClick={() => applyMaxQty(i)}
-                            className="rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                            className="rounded-lg border border-border px-2 py-2 text-xs font-medium text-foreground/85 hover:bg-muted/40 disabled:opacity-40"
                           >
                             Max
                           </button>
@@ -561,24 +561,24 @@ export function PondWarehouseAddStockModal(props: {
                             aria-label="Remove line"
                             disabled={saving || lineRows.length <= 1}
                             onClick={() => removeLine(i)}
-                            className="inline-flex size-10 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+                            className="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                         {availHint ? (
-                          <p className="text-[11px] text-slate-500 sm:col-span-3 -mt-1">{availHint}</p>
+                          <p className="text-[11px] text-muted-foreground sm:col-span-3 -mt-1">{availHint}</p>
                         ) : null}
                       </div>
                     )
                   })}
                 </div>
-                <div className="border-t border-slate-100 px-3 py-2">
+                <div className="border-t border-border/70 px-3 py-2">
                   <button
                     type="button"
                     disabled={saving}
                     onClick={addLine}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 hover:text-teal-950"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-teal-950"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add another product
@@ -587,7 +587,7 @@ export function PondWarehouseAddStockModal(props: {
               </div>
 
               {issues.length > 0 ? (
-                <ul className="list-inside list-disc rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <ul className="list-inside list-disc rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                   {issues.map((msg, idx) => (
                     <li key={idx}>{msg}</li>
                   ))}
@@ -597,12 +597,12 @@ export function PondWarehouseAddStockModal(props: {
           )}
         </div>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50/80 px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
+        <div className="flex flex-col-reverse gap-2 border-t border-border bg-muted/50 px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
           <button
             type="button"
             disabled={saving}
             onClick={onClose}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
           >
             Cancel
           </button>
@@ -616,7 +616,7 @@ export function PondWarehouseAddStockModal(props: {
               issues.length > 0
             }
             onClick={() => void submit()}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Package className="h-4 w-4" />}
             Add to pond warehouse

@@ -43,6 +43,7 @@ import { CatalogItemCombobox } from '@/components/reference/CatalogItemCombobox'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
+import { formatQuantity } from '@/utils/quantity'
 
 const inputClassName =
   'w-full min-h-10 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -61,7 +62,7 @@ const btnRowIconMuted = btnRowIcon + ' border border-input bg-background hover:b
 const btnRowIconDanger = btnRowIcon + ' border border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20'
 const btnRowIconWarning =
   btnRowIcon +
-  ' border border-amber-200/90 bg-amber-50/80 text-amber-950 hover:bg-amber-100/90 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/45'
+  ' border border-warning/30/90 bg-warning/10/80 text-warning-foreground hover:bg-amber-100/90 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/45'
 
 type Station = {
   id: number
@@ -443,10 +444,10 @@ function StatCard({
 }) {
   const accentClasses = {
     default: 'border-border/80 bg-card from-muted/30 to-card ring-border/60',
-    amber: 'border-amber-200/80 bg-gradient-to-br from-amber-50/90 to-card ring-amber-500/10 dark:border-amber-900/40 dark:from-amber-950/25',
+    amber: 'border-warning/30/80 bg-gradient-to-br from-amber-50/90 to-card ring-amber-500/10 dark:border-amber-900/40 dark:from-amber-950/25',
     emerald:
       'border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 to-card ring-emerald-500/10 dark:border-emerald-900/40 dark:from-emerald-950/25',
-    teal: 'border-teal-200/80 bg-gradient-to-br from-teal-50/90 to-card ring-teal-500/10 dark:border-teal-900/40 dark:from-teal-950/25',
+    teal: 'border-primary/25/80 bg-gradient-to-br from-teal-50/90 to-card ring-teal-500/10 dark:border-teal-900/40 dark:from-teal-950/25',
   }[accent]
 
   return (
@@ -1441,7 +1442,7 @@ function InventoryContent() {
   }, [confirmAction, language])
 
   return (
-    <PageLayout containScroll className="bg-slate-50">
+    <PageLayout containScroll className="bg-muted/40">
       <div className="flex h-full min-h-0 flex-col">
         <div className="shrink-0 app-scroll-pad pb-3">
           <ErpPageShell
@@ -1555,14 +1556,14 @@ function InventoryContent() {
               onClick={() => setTabAndUrl('transfers')}
               className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 tab === 'transfers'
-                  ? 'bg-teal-600 text-white shadow-sm'
+                  ? 'bg-primary text-white shadow-sm'
                   : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
               }`}
             >
               <ArrowRightLeft className="h-4 w-4 shrink-0" />
               {inventoryT('tabTransfers', language)}
               {!loading && transferStats.draftCount > 0 ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-warning-foreground dark:bg-amber-900/40 dark:text-amber-100">
                   {transferStats.draftCount}
                 </span>
               ) : null}
@@ -1574,7 +1575,7 @@ function InventoryContent() {
               onClick={() => setTabAndUrl('lookup')}
               className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
                 tab === 'lookup'
-                  ? 'bg-teal-600 text-white shadow-sm'
+                  ? 'bg-primary text-white shadow-sm'
                   : 'text-muted-foreground hover:bg-background/80 hover:text-foreground'
               }`}
             >
@@ -1691,12 +1692,12 @@ function InventoryContent() {
               {!lookupLoading && availability && (
                 <div className="space-y-4">
                   {!availability.tracks_per_station ? (
-                    <div className="flex items-start gap-3 rounded-xl border border-amber-200/80 bg-amber-50/80 p-4 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                    <div className="flex items-start gap-3 rounded-xl border border-warning/30/80 bg-warning/10/80 p-4 text-sm text-warning-foreground dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
                       <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
                       <div>
                         <p className="font-semibold">{availability.name}</p>
                         <p className="mt-1">{availability.message || inventoryT('notTrackedPerStation', language)}</p>
-                        <p className="mt-2 text-xs text-amber-900/80 dark:text-amber-200/80">
+                        <p className="mt-2 text-xs text-warning-foreground/80 dark:text-amber-200/80">
                           {inventoryT('fuelManagedHint', language)}
                         </p>
                       </div>
@@ -1772,18 +1773,18 @@ function InventoryContent() {
                         </div>
 
                         {(availability.pond_warehouses?.length ?? 0) > 0 ? (
-                          <div className="overflow-hidden rounded-xl border border-teal-200/80 dark:border-teal-900/40">
-                            <div className="border-b border-teal-200/70 bg-teal-50/90 px-4 py-3 dark:border-teal-900/40 dark:bg-teal-950/35">
+                          <div className="overflow-hidden rounded-xl border border-primary/25/80 dark:border-teal-900/40">
+                            <div className="border-b border-primary/25/70 bg-accent/90 px-4 py-3 dark:border-teal-900/40 dark:bg-teal-950/35">
                               <h3 className="text-sm font-semibold text-teal-950 dark:text-teal-100">
                                 {inventoryT('pondWarehouses', language)}
                               </h3>
-                              <p className="text-xs text-teal-800/80 dark:text-teal-200/80">
+                              <p className="text-xs text-primary/80 dark:text-teal-200/80">
                                 {inventoryT('pondWarehousesHint', language)}
                               </p>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full min-w-[320px] text-sm">
-                                <thead className="bg-teal-50/60 text-left text-xs font-medium uppercase tracking-wide text-teal-900/70 dark:bg-teal-950/25 dark:text-teal-200/70">
+                                <thead className="bg-accent/60 text-left text-xs font-medium uppercase tracking-wide text-primary/70 dark:bg-teal-950/25 dark:text-teal-200/70">
                                   <tr>
                                     <th className="px-4 py-2.5">{inventoryT('pond', language)}</th>
                                     <th className="px-4 py-2.5 text-right">{inventoryT('quantity', language)}</th>
@@ -1794,7 +1795,7 @@ function InventoryContent() {
                                     <tr key={p.pond_id} className="border-t border-border/70">
                                       <td className="px-4 py-3">
                                         <span className="inline-flex items-center gap-1.5">
-                                          <Sprout className="h-3.5 w-3.5 text-teal-700 dark:text-teal-400" />
+                                          <Sprout className="h-3.5 w-3.5 text-primary dark:text-teal-400" />
                                           {p.pond_name}
                                         </span>
                                       </td>
@@ -2098,16 +2099,14 @@ function InventoryContent() {
                                 availMain = (
                                   <span className="tabular-nums">
                                     <span className="font-semibold text-foreground">
-                                      {qtyNum.toLocaleString(undefined, {
-                                        maximumFractionDigits: 6,
-                                      })}
+                                      {formatQuantity(qtyNum)}
                                     </span>{' '}
                                     <span className="text-muted-foreground">{unit}</span>
                                   </span>
                                 )
                                 if (qtyNum <= 0) {
                                   availSub = (
-                                    <span className="mt-0.5 block text-xs text-amber-800 dark:text-amber-200">
+                                    <span className="mt-0.5 block text-xs text-warning-foreground dark:text-amber-200">
                                       {inventoryT('noStockAtSource', language)}
                                     </span>
                                   )
@@ -2117,7 +2116,7 @@ function InventoryContent() {
                                     <span className="mt-0.5 block text-xs text-muted-foreground">
                                       {inventoryT('maxThisLine', language)}{' '}
                                       <span className="font-medium text-foreground">
-                                        {maxLine.toLocaleString(undefined, { maximumFractionDigits: 6 })} {unit}
+                                        {formatQuantity(maxLine)} {unit}
                                       </span>
                                     </span>
                                   )
@@ -2143,7 +2142,7 @@ function InventoryContent() {
                                   )
                                 } else if (!st.data.tracks_per_station) {
                                   availMain = (
-                                    <span className="text-xs text-amber-800 dark:text-amber-200">
+                                    <span className="text-xs text-warning-foreground dark:text-amber-200">
                                       {inventoryT('notMovable', language)}
                                     </span>
                                   )
@@ -2164,9 +2163,7 @@ function InventoryContent() {
                                 destMain = (
                                   <span className="tabular-nums">
                                     <span className="font-semibold text-foreground">
-                                      {destQty.toLocaleString(undefined, {
-                                        maximumFractionDigits: 6,
-                                      })}
+                                      {formatQuantity(destQty)}
                                     </span>{' '}
                                     <span className="text-muted-foreground">{destUnit}</span>
                                   </span>
@@ -2176,9 +2173,7 @@ function InventoryContent() {
                                     <span className="mt-0.5 block text-xs text-muted-foreground">
                                       {inventoryT('afterMove', language)}{' '}
                                       <span className="font-medium text-foreground">
-                                        {(destQty + qVal).toLocaleString(undefined, {
-                                          maximumFractionDigits: 6,
-                                        })}{' '}
+                                        {formatQuantity(destQty + qVal)}{' '}
                                         {destUnit}
                                       </span>
                                     </span>
@@ -2189,7 +2184,7 @@ function InventoryContent() {
                               return (
                                 <tr
                                   key={`inv-line-${i}`}
-                                  className={`border-t border-border ${rowWarn ? 'bg-amber-500/5 dark:bg-amber-500/10' : ''}`}
+                                  className={`border-t border-border ${rowWarn ? 'bg-warning/100/5 dark:bg-warning/100/10' : ''}`}
                                 >
                                   <td className="px-3 py-2.5 align-top text-muted-foreground tabular-nums">{i + 1}</td>
                                   <td className="px-3 py-2.5 align-top">
@@ -2299,12 +2294,12 @@ function InventoryContent() {
 
                       {transferDraftIssues.length > 0 && (
                         <div
-                          className="mt-4 rounded-lg border border-amber-200/90 bg-amber-50/90 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/25"
+                          className="mt-4 rounded-lg border border-warning/30/90 bg-warning/10/90 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/25"
                           role="status"
                         >
                           <div className="flex gap-2">
-                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
-                            <ul className="list-inside list-disc space-y-1 text-sm text-amber-950 dark:text-amber-100">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground dark:text-amber-400" />
+                            <ul className="list-inside list-disc space-y-1 text-sm text-warning-foreground dark:text-amber-100">
                               {transferDraftIssues.map((msg, idx) => (
                                 <li key={idx}>{msg}</li>
                               ))}
@@ -2453,7 +2448,7 @@ function InventoryContent() {
                                 className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                                   t.status === 'posted'
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200'
-                                    : 'bg-amber-100 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200'
+                                    : 'bg-amber-100 text-warning-foreground dark:bg-amber-900/20 dark:text-amber-200'
                                 }`}
                                 title={interStationTransferImpactSummary(t, language)}
                               >
@@ -2887,10 +2882,10 @@ function InventoryContent() {
         size="sm"
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             {confirmCopy.body}
             {confirmAction ? (
-              <span className="mt-2 block font-medium text-gray-900">{confirmAction.label}</span>
+              <span className="mt-2 block font-medium text-foreground">{confirmAction.label}</span>
             ) : null}
           </p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -2923,7 +2918,7 @@ function InventoryContent() {
 function InventoryLoadingFallback() {
   const { language } = useCompanyLocale()
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="flex min-h-[50vh] items-center justify-center p-6">
         <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card px-10 py-12 text-center shadow-sm">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />

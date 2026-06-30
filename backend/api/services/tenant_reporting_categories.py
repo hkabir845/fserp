@@ -204,7 +204,10 @@ AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
     "fish_harvest_sale": "Primary table-fish or market harvest revenue from the pond.",
     "fingerling_sale": "Sales of fry or fingerlings produced or held at the pond.",
     "processing_value_add": "Smoked, filleted, or otherwise processed fish sold at a premium.",
-    "empty_feed_sack_sale": "Scrap income from empty feed sacks — does not reduce fish biomass in stock reports.",
+    "empty_feed_sack_sale": (
+        "Non-biological byproduct income for this pond — empty sacks sold after feed consumption. "
+        "Included in pond P&L revenue (with fish harvest sales); does not reduce fish biomass or bio-asset GL 1581."
+    ),
     "used_material_sale": "Scrap materials (netting, drums, etc.) — non-biological pond revenue.",
     "rejected_material_sale": "Rejected or waste material sold off — non-biological pond revenue.",
     "used_equipment_sale": "Used or scrap equipment sold — non-biological pond revenue.",

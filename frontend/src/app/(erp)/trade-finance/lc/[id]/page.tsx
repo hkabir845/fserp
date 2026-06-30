@@ -136,16 +136,16 @@ export default function LCDetailPage() {
 
   if (isLoading) {
     return (
-              <div className="flex min-h-[40vh] items-center justify-center text-sm text-gray-500">Loading LC…</div>
+              <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">Loading LC…</div>
     )
   }
 
   if (isError || !lc) {
     return (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800">
+              <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-6 text-sm text-destructive">
           {(error as Error)?.message || 'Not found'}
           <div className="mt-3">
-            <Link href="/trade-finance/lc" className="font-medium text-indigo-600">
+            <Link href="/trade-finance/lc" className="font-medium text-primary">
               ← Back
             </Link>
           </div>
@@ -157,30 +157,30 @@ export default function LCDetailPage() {
           <div className="mx-auto max-w-5xl space-y-6 pb-16">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <Link href="/trade-finance/lc" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+            <Link href="/trade-finance/lc" className="text-sm font-medium text-primary hover:text-primary">
               ← LC register
             </Link>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900 font-mono">{lc.lc_internal_number}</h1>
+              <h1 className="text-2xl font-bold text-foreground font-mono">{lc.lc_internal_number}</h1>
               <span
                 className={
                   lc.direction === 'import'
-                    ? 'rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold uppercase text-blue-800'
-                    : 'rounded-md bg-teal-100 px-2 py-0.5 text-xs font-bold uppercase text-teal-800'
+                    ? 'rounded-md bg-blue-100 px-2 py-0.5 text-xs font-bold uppercase text-primary'
+                    : 'rounded-md bg-teal-100 px-2 py-0.5 text-xs font-bold uppercase text-primary'
                 }
               >
                 {lc.direction}
               </span>
-              <span className="rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{lc.deal_type}</span>
+              <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-semibold text-foreground/85">{lc.deal_type}</span>
             </div>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               {lc.beneficiary_name}
-              {lc.bank_lc_reference ? <span className="ml-2 font-mono text-gray-500">· Bank ref {lc.bank_lc_reference}</span> : null}
+              {lc.bank_lc_reference ? <span className="ml-2 font-mono text-muted-foreground">· Bank ref {lc.bank_lc_reference}</span> : null}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800"
+              className="rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-foreground"
               value={lc.status}
               onChange={(e) => statusMut.mutate(e.target.value)}
               disabled={statusMut.isPending}
@@ -194,7 +194,7 @@ export default function LCDetailPage() {
             <button
               type="button"
               onClick={() => setShowAmend((v) => !v)}
-              className="rounded-md border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+              className="rounded-md border border-primary/25 bg-accent px-4 py-2 text-sm font-semibold text-primary hover:bg-accent"
             >
               + Amendment
             </button>
@@ -202,38 +202,38 @@ export default function LCDetailPage() {
         </div>
 
         {showAmend && (
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
-            <h3 className="text-sm font-semibold text-indigo-900">Record amendment (bank advice)</h3>
+          <div className="rounded-xl border border-primary/25 bg-accent/50 p-4">
+            <h3 className="text-sm font-semibold text-foreground/85">Record amendment (bank advice)</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="text-xs font-medium text-gray-600">Effective date</label>
+                <label className="text-xs font-medium text-muted-foreground">Effective date</label>
                 <input
                   type="date"
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                   value={amendForm.effective_date}
                   onChange={(e) => setAmendForm({ ...amendForm, effective_date: e.target.value })}
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-xs font-medium text-gray-600">Summary *</label>
+                <label className="text-xs font-medium text-muted-foreground">Summary *</label>
                 <input
-                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                   placeholder="e.g. Extension of shipment date; +10% tolerance"
                   value={amendForm.summary}
                   onChange={(e) => setAmendForm({ ...amendForm, summary: e.target.value })}
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="text-xs font-medium text-gray-600">Detail</label>
-                <textarea className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" rows={2} value={amendForm.detail} onChange={(e) => setAmendForm({ ...amendForm, detail: e.target.value })} />
+                <label className="text-xs font-medium text-muted-foreground">Detail</label>
+                <textarea className="mt-1 w-full rounded border border-border px-3 py-2 text-sm" rows={2} value={amendForm.detail} onChange={(e) => setAmendForm({ ...amendForm, detail: e.target.value })} />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Amount before</label>
-                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={amendForm.amount_before} onChange={(e) => setAmendForm({ ...amendForm, amount_before: e.target.value })} />
+                <label className="text-xs font-medium text-muted-foreground">Amount before</label>
+                <input className="mt-1 w-full rounded border border-border px-3 py-2 text-sm" value={amendForm.amount_before} onChange={(e) => setAmendForm({ ...amendForm, amount_before: e.target.value })} />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Amount after</label>
-                <input className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm" value={amendForm.amount_after} onChange={(e) => setAmendForm({ ...amendForm, amount_after: e.target.value })} />
+                <label className="text-xs font-medium text-muted-foreground">Amount after</label>
+                <input className="mt-1 w-full rounded border border-border px-3 py-2 text-sm" value={amendForm.amount_after} onChange={(e) => setAmendForm({ ...amendForm, amount_after: e.target.value })} />
               </div>
             </div>
             <div className="mt-3 flex gap-2">
@@ -249,11 +249,11 @@ export default function LCDetailPage() {
                     amount_after: amendForm.amount_after ? Number(amendForm.amount_after) : undefined,
                   })
                 }
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="erp-btn-primary rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
               >
                 Save amendment
               </button>
-              <button type="button" onClick={() => setShowAmend(false)} className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700">
+              <button type="button" onClick={() => setShowAmend(false)} className="rounded-md border border-border bg-white px-4 py-2 text-sm text-foreground/85">
                 Cancel
               </button>
             </div>
@@ -261,36 +261,36 @@ export default function LCDetailPage() {
         )}
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Commercial</h2>
+          <div className="erp-panel lg:col-span-2">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Commercial</h2>
             <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-gray-500">Amount</dt>
-                <dd className="font-mono text-lg font-bold text-gray-900">
+                <dt className="text-muted-foreground">Amount</dt>
+                <dd className="font-mono text-lg font-bold text-foreground">
                   {lc.currency_code} {lc.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </dd>
               </div>
               <div>
-                <dt className="text-gray-500">Incoterm</dt>
-                <dd className="font-semibold text-gray-900">{lc.incoterm || '—'}</dd>
+                <dt className="text-muted-foreground">Incoterm</dt>
+                <dd className="font-semibold text-foreground">{lc.incoterm || '—'}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Expiry</dt>
-                <dd className="text-gray-900">{lc.expiry_date ? formatDateOnly(lc.expiry_date) : '—'}</dd>
+                <dt className="text-muted-foreground">Expiry</dt>
+                <dd className="text-foreground">{lc.expiry_date ? formatDateOnly(lc.expiry_date) : '—'}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Latest shipment</dt>
-                <dd className="text-gray-900">{lc.latest_shipment_date ? formatDateOnly(lc.latest_shipment_date) : '—'}</dd>
+                <dt className="text-muted-foreground">Latest shipment</dt>
+                <dd className="text-foreground">{lc.latest_shipment_date ? formatDateOnly(lc.latest_shipment_date) : '—'}</dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-gray-500">Goods</dt>
-                <dd className="whitespace-pre-wrap text-gray-900">{lc.goods_description}</dd>
+                <dt className="text-muted-foreground">Goods</dt>
+                <dd className="whitespace-pre-wrap text-foreground">{lc.goods_description}</dd>
               </div>
             </dl>
           </div>
-          <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-5 shadow-sm">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-amber-900">Bangladesh refs</h2>
-            <ul className="mt-3 space-y-2 text-xs text-amber-950">
+          <div className="rounded-xl border border-amber-100 bg-warning/10/60 p-5 shadow-sm">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-warning-foreground">Bangladesh refs</h2>
+            <ul className="mt-3 space-y-2 text-xs text-warning-foreground">
               <li>
                 <span className="font-semibold">BB / reporting:</span> {lc.bangladesh_bank_reporting_ref || '—'}
               </li>
@@ -310,31 +310,31 @@ export default function LCDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Banks</h2>
+        <div className="erp-panel">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Banks</h2>
           <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
             <div>
-              <div className="font-semibold text-gray-900">{lc.issuing_bank_name}</div>
-              <div className="text-gray-600">{lc.issuing_bank_branch}</div>
-              <div className="font-mono text-xs text-gray-500">{lc.issuing_bank_swift}</div>
+              <div className="font-semibold text-foreground">{lc.issuing_bank_name}</div>
+              <div className="text-muted-foreground">{lc.issuing_bank_branch}</div>
+              <div className="font-mono text-xs text-muted-foreground">{lc.issuing_bank_swift}</div>
             </div>
             <div>
-              <div className="text-xs uppercase text-gray-500">Advising</div>
-              <div className="font-semibold text-gray-900">{lc.advising_bank_name || '—'}</div>
-              <div className="font-mono text-xs text-gray-500">{lc.advising_bank_swift}</div>
+              <div className="text-xs uppercase text-muted-foreground">Advising</div>
+              <div className="font-semibold text-foreground">{lc.advising_bank_name || '—'}</div>
+              <div className="font-mono text-xs text-muted-foreground">{lc.advising_bank_swift}</div>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="erp-panel">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Document checklist</h2>
-            <span className="text-xs text-gray-500">Tap status to cycle: pending → presented → accepted</span>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Document checklist</h2>
+            <span className="text-xs text-muted-foreground">Tap status to cycle: pending → presented → accepted</span>
           </div>
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 text-left text-xs uppercase text-gray-500">
+                <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
                   <th className="py-2 pr-4">Code</th>
                   <th className="py-2 pr-4">Document</th>
                   <th className="py-2">Status</th>
@@ -342,7 +342,7 @@ export default function LCDetailPage() {
               </thead>
               <tbody>
                 {(lc.documents_required || []).map((d) => (
-                  <tr key={d.code} className="border-b border-gray-100">
+                  <tr key={d.code} className="border-b border-border/70">
                     <td className="py-2 pr-4 font-mono text-xs">{d.code}</td>
                     <td className="py-2 pr-4">{d.label}</td>
                     <td className="py-2">
@@ -350,7 +350,7 @@ export default function LCDetailPage() {
                         type="button"
                         onClick={() => cycleDoc(d.code)}
                         disabled={docMut.isPending}
-                        className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-800 hover:bg-gray-200 disabled:opacity-50"
+                        className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
                       >
                         {d.status || 'pending'}
                       </button>
@@ -363,17 +363,17 @@ export default function LCDetailPage() {
         </div>
 
         {lc.amendments?.length ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">Amendments</h2>
+          <div className="erp-panel">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Amendments</h2>
             <ul className="mt-3 space-y-3">
               {lc.amendments.map((a) => (
-                <li key={a.id} className="rounded-lg border border-gray-100 bg-gray-50/80 p-3 text-sm">
+                <li key={a.id} className="rounded-lg border border-border/70 bg-muted/40/80 p-3 text-sm">
                   <div className="flex flex-wrap justify-between gap-2">
-                    <span className="font-semibold text-gray-900">#{a.amendment_no}</span>
-                    <span className="text-xs text-gray-500">{formatDateOnly(a.effective_date)}</span>
+                    <span className="font-semibold text-foreground">#{a.amendment_no}</span>
+                    <span className="text-xs text-muted-foreground">{formatDateOnly(a.effective_date)}</span>
                   </div>
-                  <div className="mt-1 text-gray-800">{a.summary}</div>
-                  {a.detail ? <div className="mt-1 text-xs text-gray-600">{a.detail}</div> : null}
+                  <div className="mt-1 text-foreground">{a.summary}</div>
+                  {a.detail ? <div className="mt-1 text-xs text-muted-foreground">{a.detail}</div> : null}
                 </li>
               ))}
             </ul>
@@ -381,17 +381,17 @@ export default function LCDetailPage() {
         ) : null}
 
         {(lc.compliance_notes || lc.internal_notes) && (
-          <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm shadow-sm">
+          <div className="rounded-xl border border-border bg-white p-5 text-sm shadow-sm">
             {lc.compliance_notes ? (
               <div className="mb-3">
-                <div className="text-xs font-bold uppercase text-gray-500">Compliance</div>
-                <p className="mt-1 whitespace-pre-wrap text-gray-800">{lc.compliance_notes}</p>
+                <div className="text-xs font-bold uppercase text-muted-foreground">Compliance</div>
+                <p className="mt-1 whitespace-pre-wrap text-foreground">{lc.compliance_notes}</p>
               </div>
             ) : null}
             {lc.internal_notes ? (
               <div>
-                <div className="text-xs font-bold uppercase text-gray-500">Internal</div>
-                <p className="mt-1 whitespace-pre-wrap text-gray-800">{lc.internal_notes}</p>
+                <div className="text-xs font-bold uppercase text-muted-foreground">Internal</div>
+                <p className="mt-1 whitespace-pre-wrap text-foreground">{lc.internal_notes}</p>
               </div>
             ) : null}
           </div>

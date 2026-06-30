@@ -56,8 +56,8 @@ function SidebarModeTabs({
             className={`flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-[11px] font-medium transition-colors ${
               active
                 ? id === 'fsms_erp'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-violet-600 text-white shadow-sm'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-[hsl(var(--sidebar-accent))] text-[hsl(var(--sidebar-accent-fg))] shadow-sm'
                 : 'text-[hsl(var(--sidebar-fg-subtle))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-fg))]'
             }`}
           >

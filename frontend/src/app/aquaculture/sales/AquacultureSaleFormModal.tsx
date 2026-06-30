@@ -505,10 +505,10 @@ export function AquacultureSaleFormModal({
   if (!open) return null
 
   const inputCls =
-    'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/25'
-  const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-slate-500'
+    'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-primary/20'
+  const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-muted-foreground'
   const thCls =
-    'px-2 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500'
+    'px-2 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'
 
   return (
     <>
@@ -518,18 +518,18 @@ export function AquacultureSaleFormModal({
         ))}
       </datalist>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-6"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-3 sm:p-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="aq-sale-form-title"
       >
-      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-teal-50 to-white px-5 py-4 sm:px-6">
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 to-card px-5 py-4 sm:px-6">
           <div>
-            <h2 id="aq-sale-form-title" className="text-xl font-bold tracking-tight text-slate-900">
+            <h2 id="aq-sale-form-title" className="text-xl font-bold tracking-tight text-foreground">
               {isEdit ? 'Edit sale line' : 'Record pond sale'}
             </h2>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               {isEdit
                 ? 'Update this registered line. Posted lines must be changed via Invoices.'
                 : 'One buyer visit can include several lines — e.g. same species from two production cycles at different sizes and prices.'}
@@ -538,7 +538,7 @@ export function AquacultureSaleFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -546,13 +546,13 @@ export function AquacultureSaleFormModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-          <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
-            <h3 className="text-sm font-semibold text-slate-900">Sale header</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Shared for every line on this ticket.</p>
+          <section className="rounded-xl border border-border bg-muted/40/60 p-4 sm:p-5">
+            <h3 className="text-sm font-semibold text-foreground">Sale header</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Shared for every line on this ticket.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <label className="block sm:col-span-1">
                 <span className={labelCls}>
-                  Pond <span className="text-red-600">*</span>
+                  Pond <span className="text-destructive">*</span>
                 </span>
                 <select
                   className={`${inputCls} mt-1.5`}
@@ -569,7 +569,7 @@ export function AquacultureSaleFormModal({
               </label>
               <label className="block sm:col-span-1">
                 <span className={labelCls}>
-                  Sale date <span className="text-red-600">*</span>
+                  Sale date <span className="text-destructive">*</span>
                 </span>
                 <input
                   type="date"
@@ -611,8 +611,8 @@ export function AquacultureSaleFormModal({
           <section className="mt-5">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Sale lines</h3>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <h3 className="text-sm font-semibold text-foreground">Sale lines</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   Tag each line to a <strong>production cycle</strong> when size and price differ. Duplicate species on
                   separate lines is normal.
                 </p>
@@ -622,7 +622,7 @@ export function AquacultureSaleFormModal({
                   <button
                     type="button"
                     onClick={() => setLines((prev) => [...prev, emptyFishHarvestLine()])}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/35 bg-accent px-3 py-2 text-sm font-medium text-primary hover:bg-teal-100"
                   >
                     <Plus className="h-4 w-4" />
                     Fish harvest line
@@ -630,7 +630,7 @@ export function AquacultureSaleFormModal({
                   <button
                     type="button"
                     onClick={() => setLines((prev) => [...prev, emptyNonFishLine()])}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
                   >
                     <Plus className="h-4 w-4" />
                     Other pond income
@@ -639,9 +639,9 @@ export function AquacultureSaleFormModal({
               ) : null}
             </div>
 
-            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="min-w-[880px] w-full border-collapse text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50">
+                <thead className="border-b border-border bg-muted/40">
                   <tr>
                     <th className={`${thCls} w-8`}>#</th>
                     <th className={`${thCls} min-w-[9rem]`}>Production cycle</th>
@@ -669,8 +669,8 @@ export function AquacultureSaleFormModal({
                       avail != null && Number.isFinite(reqHeads) && reqHeads > avail.count
                     const noStock = avail != null && avail.weightKg <= 0 && avail.count <= 0
                     return (
-                      <tr key={line.localId} className="border-b border-slate-100 align-top hover:bg-slate-50/80">
-                        <td className="px-2 py-2 text-center text-xs font-medium text-slate-400">{idx + 1}</td>
+                      <tr key={line.localId} className="border-b border-border/70 align-top hover:bg-muted/50">
+                        <td className="px-2 py-2 text-center text-xs font-medium text-muted-foreground/70">{idx + 1}</td>
                         <td className="px-2 py-2">
                           <select
                             className={inputCls}
@@ -698,7 +698,7 @@ export function AquacultureSaleFormModal({
                         </td>
                         <td className="px-2 py-2">
                           {nonFish ? (
-                            <span className="block py-2.5 text-xs text-slate-400">N/A</span>
+                            <span className="block py-2.5 text-xs text-muted-foreground/70">N/A</span>
                           ) : (
                             <div className="space-y-1">
                               <select
@@ -730,7 +730,7 @@ export function AquacultureSaleFormModal({
                               {avail != null ? (
                                 <p
                                   className={`text-[11px] font-medium leading-tight ${
-                                    noStock || overWeight || overHeads ? 'text-red-600' : 'text-emerald-700'
+                                    noStock || overWeight || overHeads ? 'text-destructive' : 'text-emerald-700'
                                   }`}
                                   title={
                                     noStock
@@ -766,7 +766,7 @@ export function AquacultureSaleFormModal({
                         </td>
                         <td className="px-2 py-2">
                           {nonFish ? (
-                            <span className="block py-2.5 text-center text-xs text-slate-400">—</span>
+                            <span className="block py-2.5 text-center text-xs text-muted-foreground/70">—</span>
                           ) : (
                             <div className="space-y-1">
                               <input
@@ -786,7 +786,7 @@ export function AquacultureSaleFormModal({
                               ) : pondStockRow?.current_fish_per_kg &&
                                 line.fish_per_kg.trim() !== '' &&
                                 !sampleRef?.fish_per_kg ? (
-                                <p className="text-[11px] leading-tight text-slate-500">
+                                <p className="text-[11px] leading-tight text-muted-foreground">
                                   From pond stock estimate
                                 </p>
                               ) : null}
@@ -795,13 +795,13 @@ export function AquacultureSaleFormModal({
                         </td>
                         <td className="px-2 py-2">
                           {nonFish ? (
-                            <span className="block py-2.5 text-center text-xs text-slate-400">—</span>
+                            <span className="block py-2.5 text-center text-xs text-muted-foreground/70">—</span>
                           ) : (
                             <input
                               type="text"
                               readOnly
                               tabIndex={-1}
-                              className={`${inputCls} cursor-default bg-slate-50 text-right tabular-nums`}
+                              className={`${inputCls} cursor-default bg-muted/40 text-right tabular-nums`}
                               value={line.fish_count || '—'}
                             />
                           )}
@@ -824,7 +824,7 @@ export function AquacultureSaleFormModal({
                             step="0.01"
                             readOnly={line.sale_price_per_kg.trim() !== ''}
                             className={`${inputCls} text-right tabular-nums ${
-                              line.sale_price_per_kg.trim() !== '' ? 'bg-slate-50' : ''
+                              line.sale_price_per_kg.trim() !== '' ? 'bg-muted/40' : ''
                             }`}
                             value={line.total_amount}
                             onChange={(e) => updateLine(line.localId, { total_amount: e.target.value })}
@@ -837,7 +837,7 @@ export function AquacultureSaleFormModal({
                                 type="button"
                                 title="Duplicate line (clears quantities)"
                                 onClick={() => duplicateLine(line)}
-                                className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
+                                className="rounded-md p-2 text-muted-foreground hover:bg-muted"
                               >
                                 <Copy className="h-4 w-4" />
                               </button>
@@ -846,7 +846,7 @@ export function AquacultureSaleFormModal({
                                 title="Remove line"
                                 disabled={lines.length <= 1}
                                 onClick={() => removeLine(line.localId)}
-                                className="rounded-md p-2 text-red-600 hover:bg-red-50 disabled:opacity-30"
+                                className="rounded-md p-2 text-destructive hover:bg-destructive/5 disabled:opacity-30"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -857,15 +857,15 @@ export function AquacultureSaleFormModal({
                     )
                   })}
                 </tbody>
-                <tfoot className="border-t-2 border-slate-200 bg-teal-50/50">
+                <tfoot className="border-t-2 border-border bg-accent/50">
                   <tr>
                     <td
                       colSpan={isEdit ? 8 : 9}
-                      className="px-3 py-3 text-right text-sm font-semibold text-slate-700"
+                      className="px-3 py-3 text-right text-sm font-semibold text-foreground/85"
                     >
                       Ticket total ({lines.length} line{lines.length === 1 ? '' : 's'})
                     </td>
-                    <td className="px-3 py-3 text-right text-lg font-bold tabular-nums text-teal-900">
+                    <td className="px-3 py-3 text-right text-lg font-bold tabular-nums text-primary">
                       {sym}
                       {formatNumber(grandTotal)}
                     </td>
@@ -877,12 +877,12 @@ export function AquacultureSaleFormModal({
           </section>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-muted/40 px-5 py-4 sm:px-6">
           <button
             type="button"
             disabled={submitting}
             onClick={onClose}
-            className="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-200/80 disabled:opacity-50"
+            className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -890,7 +890,7 @@ export function AquacultureSaleFormModal({
             type="button"
             disabled={submitting}
             onClick={() => void save()}
-            className="inline-flex min-w-[8rem] items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-60"
+            className="inline-flex min-w-[8rem] items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary disabled:opacity-60"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             {isEdit ? 'Update line' : lines.length > 1 ? `Save ${lines.length} lines` : 'Save sale'}

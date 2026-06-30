@@ -140,9 +140,9 @@ export default function TransportPage() {
 
   const statusPill = (status: string) => {
     if (status === 'completed') return 'bg-emerald-100 text-emerald-700'
-    if (status === 'in_progress') return 'bg-blue-100 text-blue-700'
+    if (status === 'in_progress') return 'bg-blue-100 text-primary'
     if (status === 'cancelled') return 'bg-rose-100 text-rose-700'
-    return 'bg-amber-100 text-amber-700'
+    return 'bg-amber-100 text-warning-foreground'
   }
   const mutationError =
     (addV.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -154,14 +154,14 @@ export default function TransportPage() {
           <div className="max-w-6xl space-y-8">
         <ReportingHubBreadcrumb current="Transport & fleet" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Transport & fleet</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-foreground">Transport & fleet</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             FMERP vehicles, drivers, trips, and delivery notes — use with Fuel station for diesel/octane refueling logs.
           </p>
         </div>
 
         {vErr ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
             Select a tenant in the company switcher to manage fleet data.
           </div>
         ) : null}
@@ -172,31 +172,31 @@ export default function TransportPage() {
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Trips total</div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">{summary.total ?? 0}</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Trips total</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">{summary.total ?? 0}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Draft</div>
-            <div className="mt-2 text-2xl font-semibold text-amber-700">{summary.draft ?? 0}</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Draft</div>
+            <div className="mt-2 text-2xl font-semibold text-warning-foreground">{summary.draft ?? 0}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">In progress</div>
-            <div className="mt-2 text-2xl font-semibold text-blue-700">{summary.in_progress ?? 0}</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">In progress</div>
+            <div className="mt-2 text-2xl font-semibold text-primary">{summary.in_progress ?? 0}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Completed</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Completed</div>
             <div className="mt-2 text-2xl font-semibold text-emerald-700">{summary.completed ?? 0}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Cancelled</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cancelled</div>
             <div className="mt-2 text-2xl font-semibold text-rose-700">{summary.cancelled ?? 0}</div>
           </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">Add vehicle</h2>
+          <section className="erp-panel">
+            <h2 className="text-sm font-semibold text-foreground">Add vehicle</h2>
             <div className="mt-2 space-y-2">
               <input
                 className="w-full rounded-md border px-3 py-2 text-sm"
@@ -215,15 +215,15 @@ export default function TransportPage() {
                 type="button"
                 disabled={!reg.trim() || addV.isPending}
                 onClick={() => addV.mutate()}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {addV.isPending ? 'Saving…' : 'Save vehicle'}
               </button>
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">Add driver</h2>
+          <section className="erp-panel">
+            <h2 className="text-sm font-semibold text-foreground">Add driver</h2>
             <div className="mt-2 space-y-2">
               <input
                 className="w-full rounded-md border px-3 py-2 text-sm"
@@ -241,15 +241,15 @@ export default function TransportPage() {
                 type="button"
                 disabled={!dname.trim() || addD.isPending}
                 onClick={() => addD.mutate()}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {addD.isPending ? 'Saving…' : 'Save driver'}
               </button>
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">New trip</h2>
+          <section className="erp-panel">
+            <h2 className="text-sm font-semibold text-foreground">New trip</h2>
             <div className="mt-2 space-y-2">
               <input
                 className="w-full rounded-md border px-3 py-2 text-sm"
@@ -286,28 +286,28 @@ export default function TransportPage() {
                 {addT.isPending ? 'Creating…' : 'Create trip'}
               </button>
               {!canStartTrips ? (
-                <p className="text-xs text-amber-700">Add at least one vehicle and one driver first.</p>
+                <p className="text-xs text-warning-foreground">Add at least one vehicle and one driver first.</p>
               ) : null}
             </div>
           </section>
         </div>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Fleet</h2>
+        <section className="erp-panel">
+          <h2 className="text-sm font-semibold text-foreground">Fleet</h2>
           <div className="mt-2 grid gap-4 sm:grid-cols-2">
             <div>
-              <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">Vehicles</h3>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Vehicles</h3>
               <ul className="mt-1 text-sm">
                 {vehicles.map((v) => (
                   <li key={v.id}>
                     {v.reg_no}{' '}
-                    <span className="text-gray-500">({vehicleTypeLabel(v.type)})</span>
+                    <span className="text-muted-foreground">({vehicleTypeLabel(v.type)})</span>
                   </li>
                 ))}
               </ul>
             </div>
             <div>
-              <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">Drivers</h3>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Drivers</h3>
               <ul className="mt-1 text-sm">
                 {drivers.map((d) => (
                   <li key={d.id}>{d.name}</li>
@@ -317,8 +317,8 @@ export default function TransportPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Trips</h2>
+        <section className="erp-panel">
+          <h2 className="text-sm font-semibold text-foreground">Trips</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input
               className="w-full rounded-md border px-3 py-2 text-sm"
@@ -340,12 +340,12 @@ export default function TransportPage() {
             </select>
           </div>
           {isLoading ? (
-            <p className="mt-2 text-sm text-gray-500">Loading…</p>
+            <p className="mt-2 text-sm text-muted-foreground">Loading…</p>
           ) : (
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-50">
+                  <tr className="border-b bg-muted/40">
                     <th className="p-2">Trip #</th>
                     <th className="p-2">Type</th>
                     <th className="p-2">Vehicle</th>
@@ -356,7 +356,7 @@ export default function TransportPage() {
                 </thead>
                 <tbody>
                   {trips.map((t) => (
-                    <tr key={t.id} className="border-b border-gray-100">
+                    <tr key={t.id} className="border-b border-border/70">
                       <td className="p-2 font-medium">{t.trip_number}</td>
                       <td className="p-2">{t.trip_type}</td>
                       <td className="p-2">{t.vehicle_reg_no ?? '-'}</td>
@@ -370,7 +370,7 @@ export default function TransportPage() {
                         {t.status === 'draft' ? (
                           <button
                             type="button"
-                            className="text-xs text-indigo-600"
+                            className="text-xs text-primary"
                             disabled={statusTrip.isPending}
                             onClick={() => statusTrip.mutate({ id: t.id, status: 'in_progress' })}
                           >

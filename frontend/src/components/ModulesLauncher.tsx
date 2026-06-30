@@ -25,9 +25,9 @@ function readinessMeta(readiness: ModuleReadiness) {
     return { label: 'Production-ready', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
   }
   if (readiness === 'beta') {
-    return { label: 'Beta', className: 'bg-amber-100 text-amber-800 border-amber-200' }
+    return { label: 'Beta', className: 'bg-amber-100 text-warning-foreground border-warning/30' }
   }
-  return { label: 'Planned', className: 'bg-slate-100 text-slate-700 border-slate-200' }
+  return { label: 'Planned', className: 'bg-muted text-foreground/85 border-border' }
 }
 
 function ModuleCard({
@@ -44,8 +44,8 @@ function ModuleCard({
     <article
       className={`group flex flex-col rounded-2xl border p-5 shadow-sm transition ${
         emphasis
-          ? 'border-indigo-200 bg-gradient-to-br from-white to-indigo-50/80 hover:border-indigo-300 hover:shadow-md'
-          : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
+          ? 'border-primary/25 bg-gradient-to-br from-white to-accent/80 hover:border-primary/30 hover:shadow-md'
+          : 'border-border bg-white hover:border-border hover:shadow-md'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -54,27 +54,27 @@ function ModuleCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold text-gray-900">{app.title}</h3>
+            <h3 className="text-lg font-semibold text-foreground">{app.title}</h3>
             <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${readiness.className}`}>
               {readiness.label}
             </span>
           </div>
-          <p className="mt-1 text-sm leading-relaxed text-gray-600">{app.tagline}</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{app.tagline}</p>
           {profile?.domains?.length ? (
-            <p className="mt-2 text-xs text-gray-500">Domain coverage: {profile.domains.slice(0, 2).join(' • ')}</p>
+            <p className="mt-2 text-xs text-muted-foreground">Domain coverage: {profile.domains.slice(0, 2).join(' • ')}</p>
           ) : null}
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-border/70 pt-4">
         <Link
           href={app.entryHref}
-          className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
+          className="inline-flex items-center justify-center rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90"
         >
           Open app
         </Link>
         <Link
           href={hubPath}
-          className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-800 transition hover:border-indigo-200 hover:bg-indigo-50/80"
+          className="inline-flex items-center justify-center rounded-lg border border-border bg-white px-3.5 py-2 text-sm font-medium text-foreground transition hover:border-primary/25 hover:bg-accent/80"
         >
           Screens &amp; hub
         </Link>
@@ -110,7 +110,7 @@ export function ModulesLauncher({ erpModuleCount }: Props) {
 
   return (
     <div className="space-y-12">
-      <header className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-900 px-6 py-10 text-white shadow-lg sm:px-10">
+      <header className="relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-[hsl(var(--hero-from))] via-[hsl(var(--hero-via))] to-[hsl(var(--hero-from))] px-6 py-10 text-white shadow-lg sm:px-10">
         <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" aria-hidden />
         <div className="relative max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-200/90">FMERP suite</p>
@@ -139,11 +139,11 @@ export function ModulesLauncher({ erpModuleCount }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by name or description…"
-          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm outline-none ring-0 placeholder:text-gray-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          className="w-full rounded-xl border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm outline-none ring-0 placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-indigo-100"
           autoComplete="off"
         />
         {query && (
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-muted-foreground">
             {flatMatchCount === 0 ? 'No modules match.' : `${flatMatchCount} module${flatMatchCount === 1 ? '' : 's'} match.`}
           </p>
         )}
@@ -154,8 +154,8 @@ export function ModulesLauncher({ erpModuleCount }: Props) {
         return (
           <section key={category} className="space-y-4">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">{meta.title}</h2>
-              <p className="text-sm text-gray-500">{meta.subtitle}</p>
+              <h2 className="text-xl font-semibold text-foreground">{meta.title}</h2>
+              <p className="text-sm text-muted-foreground">{meta.subtitle}</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {apps.map((app) => (
@@ -166,11 +166,11 @@ export function ModulesLauncher({ erpModuleCount }: Props) {
         )
       })}
 
-      <section className="space-y-4 border-t border-gray-200 pt-12">
+      <section className="space-y-4 border-t border-border pt-12">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Platform (operator console)</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-xl font-semibold text-foreground">Platform (operator console)</h2>
+            <p className="text-sm text-muted-foreground">
               Multi-tenant administration — separate from your company ERP and only for platform roles.
             </p>
           </div>
@@ -185,7 +185,7 @@ export function ModulesLauncher({ erpModuleCount }: Props) {
           {platformApps.map((p) => (
             <article
               key={p.id}
-              className="flex flex-col rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-white p-5 shadow-sm transition hover:border-purple-200 hover:shadow-md"
+              className="flex flex-col rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-card p-5 shadow-sm transition hover:border-purple-200 hover:shadow-md"
             >
               <div className="flex items-start gap-3">
                 <span className="text-2xl" aria-hidden>

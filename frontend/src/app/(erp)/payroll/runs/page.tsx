@@ -94,8 +94,8 @@ export default function PayrollRunsPage() {
     return (
       <div className="bg-white rounded-lg shadow p-6 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading runs…</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading runs…</p>
         </div>
       </div>
     )
@@ -105,46 +105,46 @@ export default function PayrollRunsPage() {
     <div className="space-y-6">
       <ReportingHubBreadcrumb current="Payroll runs" />
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md rounded-lg border border-indigo-200 bg-white px-4 py-3 text-sm text-gray-800 shadow-lg">
+        <div className="fixed bottom-6 right-6 z-50 max-w-md rounded-lg border border-primary/25 bg-white px-4 py-3 text-sm text-foreground shadow-lg">
           {toast}
         </div>
       )}
 
       <header>
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Payroll runs</h1>
-        <p className="mt-1 text-gray-600">Draft → calculate payslips → post. Create a new run from the Overview tab.</p>
+        <h1 className="text-2xl font-bold text-foreground tracking-tight">Payroll runs</h1>
+        <p className="mt-1 text-muted-foreground">Draft → calculate payslips → post. Create a new run from the Overview tab.</p>
       </header>
 
       {errRuns && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {errDetail || 'Could not load payroll runs.'}
         </div>
       )}
 
-      <section className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
-          <h2 className="text-lg font-semibold text-gray-900">Runs</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Draft → calculate payslips → post</p>
+      <section className="bg-white rounded-xl shadow-sm border border-border/70 overflow-hidden">
+        <div className="px-5 py-4 border-b border-border/70 bg-gradient-to-r from-muted/40 to-card">
+          <h2 className="text-lg font-semibold text-foreground">Runs</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Draft → calculate payslips → post</p>
         </div>
         <div className="p-5">
           {runs.length === 0 ? (
-            <p className="text-gray-500 text-sm">No runs yet. Open Payroll → Overview and use step 2 to create a run.</p>
+            <p className="text-muted-foreground text-sm">No runs yet. Open Payroll → Overview and use step 2 to create a run.</p>
           ) : (
             <div className="overflow-x-auto -mx-5 sm:mx-0">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <table className="min-w-full divide-y divide-border text-sm">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <tr className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     <th className="px-4 py-3">Run #</th>
                     <th className="px-4 py-3">Period</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border/70">
                   {runs.map((r) => (
-                    <tr key={r.id} className="hover:bg-gray-50/80">
-                      <td className="px-4 py-3 font-mono text-xs text-gray-800">{r.run_number}</td>
-                      <td className="px-4 py-3 text-gray-800">
+                    <tr key={r.id} className="hover:bg-muted/40/80">
+                      <td className="px-4 py-3 font-mono text-xs text-foreground">{r.run_number}</td>
+                      <td className="px-4 py-3 text-foreground">
                         {MONTHS[(r.period_month || 1) - 1]} {r.period_year}
                       </td>
                       <td className="px-4 py-3">
@@ -156,7 +156,7 @@ export default function PayrollRunsPage() {
                         <button
                           type="button"
                           onClick={() => setPayslipRun(r)}
-                          className="text-indigo-600 font-medium hover:underline"
+                          className="text-primary font-medium hover:underline"
                         >
                           Payslips
                         </button>
@@ -166,7 +166,7 @@ export default function PayrollRunsPage() {
                               type="button"
                               onClick={() => calculateMut.mutate(r.id)}
                               disabled={calculateMut.isPending}
-                              className="text-gray-700 font-medium hover:underline disabled:opacity-50"
+                              className="text-foreground/85 font-medium hover:underline disabled:opacity-50"
                             >
                               Recalc
                             </button>
@@ -194,25 +194,25 @@ export default function PayrollRunsPage() {
 
       {payslipRun && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/50 p-4"
           onClick={() => setPayslipRun(null)}
         >
           <div
             className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-gray-900">Payslips — {payslipRun.run_number}</h3>
-            <p className="text-sm text-gray-500">
+            <h3 className="text-lg font-bold text-foreground">Payslips — {payslipRun.run_number}</h3>
+            <p className="text-sm text-muted-foreground">
               {MONTHS[payslipRun.period_month - 1]} {payslipRun.period_year}
             </p>
             {loadingPayslips ? (
-              <p className="mt-4 text-gray-500">Loading…</p>
+              <p className="mt-4 text-muted-foreground">Loading…</p>
             ) : payslipRows.length === 0 ? (
-              <p className="mt-4 text-gray-500">No payslips yet. Use Recalc on a draft run.</p>
+              <p className="mt-4 text-muted-foreground">No payslips yet. Use Recalc on a draft run.</p>
             ) : (
               <table className="mt-4 min-w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-gray-500 border-b">
+                  <tr className="text-left text-xs font-semibold text-muted-foreground border-b">
                     <th className="py-2">Employee</th>
                     <th className="py-2 text-right">Gross</th>
                     <th className="py-2 text-right">Deductions</th>
@@ -221,10 +221,10 @@ export default function PayrollRunsPage() {
                 </thead>
                 <tbody>
                   {payslipRows.map((p) => (
-                    <tr key={p.id} className="border-b border-gray-100">
-                      <td className="py-2 text-gray-900">{p.employee_name || `#${p.employee_id}`}</td>
+                    <tr key={p.id} className="border-b border-border/70">
+                      <td className="py-2 text-foreground">{p.employee_name || `#${p.employee_id}`}</td>
                       <td className="py-2 text-right tabular-nums">{fmtBdt(p.gross)}</td>
-                      <td className="py-2 text-right tabular-nums text-amber-800">{fmtBdt(p.deduction)}</td>
+                      <td className="py-2 text-right tabular-nums text-warning-foreground">{fmtBdt(p.deduction)}</td>
                       <td className="py-2 text-right font-semibold tabular-nums text-emerald-800">{fmtBdt(p.net)}</td>
                     </tr>
                   ))}
@@ -234,7 +234,7 @@ export default function PayrollRunsPage() {
             <button
               type="button"
               onClick={() => setPayslipRun(null)}
-              className="mt-6 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
+              className="mt-6 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground/85"
             >
               Close
             </button>

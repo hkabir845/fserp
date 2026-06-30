@@ -465,32 +465,32 @@ export default function AquacultureDataBankPage() {
     >
       <div className="space-y-8">
       <section
-        className="rounded-xl border border-slate-200 bg-slate-50/90 p-5"
+        className="rounded-xl border border-border bg-muted/50 p-5"
         aria-labelledby="data-bank-lock-meaning"
       >
-        <h2 id="data-bank-lock-meaning" className="text-sm font-semibold text-slate-900">
+        <h2 id="data-bank-lock-meaning" className="text-sm font-semibold text-foreground">
           When a pond or station is locked
         </h2>
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-600">
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-muted-foreground">
           <li>
-            <strong className="font-medium text-slate-800">Pond structure unchanged</strong> — name,
+            <strong className="font-medium text-foreground">Pond structure unchanged</strong> — name,
             code, dimensions, and station link from Site &amp; lease remain as recorded.
           </li>
           <li>
-            <strong className="font-medium text-slate-800">No internal data in the closed window</strong>{' '}
+            <strong className="font-medium text-foreground">No internal data in the closed window</strong>{' '}
             — production cycles, stocking, feeds, and other dated entries within the close period
             are archived; they cannot be edited. Use{' '}
-            <strong className="font-medium text-slate-800">View archive</strong> for read-only
+            <strong className="font-medium text-foreground">View archive</strong> for read-only
             management P&amp;L.
           </li>
           <li>
-            <strong className="font-medium text-slate-800">Next season</strong> — the farmer prepares
+            <strong className="font-medium text-foreground">Next season</strong> — the farmer prepares
             the pond again and records new operational data dated{' '}
-            <strong className="font-medium text-slate-800">after</strong> the period end (new cycle,
+            <strong className="font-medium text-foreground">after</strong> the period end (new cycle,
             stocking readiness, etc.).
           </li>
           <li>
-            <strong className="font-medium text-slate-800">Station close</strong> — the same rules
+            <strong className="font-medium text-foreground">Station close</strong> — the same rules
             apply to every pond linked to that shop station in one step.
           </li>
         </ul>
@@ -498,25 +498,25 @@ export default function AquacultureDataBankPage() {
 
       {isAdmin ? (
         <>
-        <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-            <Calendar className="h-5 w-5 text-amber-700" />
+        <section className="rounded-xl border border-warning/30 bg-warning/10/60 p-5 shadow-sm">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Calendar className="h-5 w-5 text-warning-foreground" />
             Close one pond
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             Pick the pond and its period end. This archives operational data for that window and
             leaves pond structure unchanged; the farmer starts the next season with dates after the
             period end. Optional custom period start (otherwise fiscal year start from Settings).
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label className="block text-sm sm:col-span-2">
-              <span className="font-medium text-slate-700">Pond</span>
+              <span className="font-medium text-foreground/85">Pond</span>
               <select
                 value={closePondId}
                 onChange={(e) =>
                   setClosePondId(e.target.value ? Number(e.target.value) : '')
                 }
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               >
                 <option value="">Select pond…</option>
                 {ponds.map((p) => (
@@ -529,33 +529,33 @@ export default function AquacultureDataBankPage() {
               </select>
             </label>
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">Period end</span>
+              <span className="font-medium text-foreground/85">Period end</span>
               <input
                 type="date"
                 value={periodEnd}
                 onChange={(e) => setPeriodEnd(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
             <label className="block text-sm">
-              <span className="font-medium text-slate-700">Period start (optional)</span>
+              <span className="font-medium text-foreground/85">Period start (optional)</span>
               <input
                 type="date"
                 value={periodStart}
                 onChange={(e) => setPeriodStart(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
             <div className="sm:col-span-2 lg:col-span-4">
               {!labelIsManual ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-sm font-medium text-slate-700">Label (assigned automatically)</p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">
+                <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground/85">Label (assigned automatically)</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
                     {closeLabel ||
                       preview?.label ||
                       (closePondId && periodEnd ? 'Loading…' : 'Select pond and period end')}
                   </p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     Built from pond name and fiscal period (company Settings). Updates when pond or dates change.
                   </p>
                   {closePondId && periodEnd ? (
@@ -565,7 +565,7 @@ export default function AquacultureDataBankPage() {
                         setLabelIsManual(true)
                         setCloseLabel(closeLabel || preview?.label || '')
                       }}
-                      className="mt-2 text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                      className="mt-2 text-xs font-medium text-primary underline hover:text-teal-950"
                     >
                       Customize label
                     </button>
@@ -573,13 +573,13 @@ export default function AquacultureDataBankPage() {
                 </div>
               ) : (
                 <label className="block text-sm">
-                  <span className="font-medium text-slate-700">Label (custom)</span>
+                  <span className="font-medium text-foreground/85">Label (custom)</span>
                   <input
                     type="text"
                     value={closeLabel}
                     onChange={(e) => setCloseLabel(e.target.value)}
                     placeholder={preview?.label ?? ''}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                   <button
                     type="button"
@@ -587,7 +587,7 @@ export default function AquacultureDataBankPage() {
                       setLabelIsManual(false)
                       if (preview?.label) setCloseLabel(preview.label)
                     }}
-                    className="mt-2 text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                    className="mt-2 text-xs font-medium text-primary underline hover:text-teal-950"
                   >
                     Use automatic label
                   </button>
@@ -596,14 +596,14 @@ export default function AquacultureDataBankPage() {
             </div>
           </div>
           {preview && (
-            <div className="mt-3 text-sm text-slate-700">
+            <div className="mt-3 text-sm text-foreground/85">
               <p>
                 Preview: <strong>{preview.label}</strong> ({formatDateOnly(preview.period_start)} –{' '}
                 {formatDateOnly(preview.period_end)})
               </p>
               {(preview.settlement_fish_count != null ||
                 preview.settlement_bioasset_value != null) && (
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Closing biomass to be recorded:{' '}
                   {preview.settlement_fish_count != null
                     ? `${preview.settlement_fish_count.toLocaleString()} fish`
@@ -619,12 +619,12 @@ export default function AquacultureDataBankPage() {
             </div>
           )}
           <label className="mt-3 block text-sm">
-            <span className="font-medium text-slate-700">Notes (optional)</span>
+            <span className="font-medium text-foreground/85">Notes (optional)</span>
             <textarea
               value={closeNotes}
               onChange={(e) => setCloseNotes(e.target.value)}
               rows={2}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
             />
           </label>
           <button
@@ -641,29 +641,29 @@ export default function AquacultureDataBankPage() {
           </button>
         </section>
 
-        <section className="rounded-xl border border-teal-200 bg-teal-50/50 p-5 shadow-sm">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-            <Store className="h-5 w-5 text-teal-700" />
+        <section className="rounded-xl border border-primary/25 bg-accent/50 p-5 shadow-sm">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+            <Store className="h-5 w-5 text-primary" />
             Close selected station
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             Lock every pond linked to a shop station (for example Premium Agro) in one step — same
             rules as a single-pond close: structure unchanged, closed-period data archived, each pond
             gets its own close record and label.
           </p>
           {stationList.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No active stations. Add sites under Stations first.</p>
+            <p className="mt-3 text-sm text-muted-foreground">No active stations. Add sites under Stations first.</p>
           ) : (
             <>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <label className="block text-sm sm:col-span-2">
-                  <span className="font-medium text-slate-700">Station</span>
+                  <span className="font-medium text-foreground/85">Station</span>
                   <select
                     value={closeStationId}
                     onChange={(e) =>
                       setCloseStationId(e.target.value ? Number(e.target.value) : '')
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   >
                     <option value="">Select station…</option>
                     {stationList.map((s) => (
@@ -674,26 +674,26 @@ export default function AquacultureDataBankPage() {
                   </select>
                 </label>
                 <label className="block text-sm">
-                  <span className="font-medium text-slate-700">Period end</span>
+                  <span className="font-medium text-foreground/85">Period end</span>
                   <input
                     type="date"
                     value={stationPeriodEnd}
                     onChange={(e) => setStationPeriodEnd(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="font-medium text-slate-700">Period start (optional)</span>
+                  <span className="font-medium text-foreground/85">Period start (optional)</span>
                   <input
                     type="date"
                     value={stationPeriodStart}
                     onChange={(e) => setStationPeriodStart(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </label>
               </div>
               {stationPreview && (
-                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <div className="mt-3 space-y-2 text-sm text-foreground/85">
                   <p>
                     Preview: <strong>{stationPreview.label}</strong> ({formatDateOnly(stationPreview.period_start)} –{' '}
                     {formatDateOnly(stationPreview.period_end)})
@@ -703,7 +703,7 @@ export default function AquacultureDataBankPage() {
                     {stationPreview.open_pond_count} still open for this close.
                   </p>
                   {stationPreview.ponds.length > 0 ? (
-                    <ul className="list-inside list-disc text-slate-600">
+                    <ul className="list-inside list-disc text-muted-foreground">
                       {stationPreview.ponds.map((p) => (
                         <li key={p.pond_id}>
                           {p.pond_name} — {p.label}
@@ -714,12 +714,12 @@ export default function AquacultureDataBankPage() {
                 </div>
               )}
               <label className="mt-3 block text-sm">
-                <span className="font-medium text-slate-700">Notes (optional)</span>
+                <span className="font-medium text-foreground/85">Notes (optional)</span>
                 <textarea
                   value={stationCloseNotes}
                   onChange={(e) => setStationCloseNotes(e.target.value)}
                   rows={2}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                 />
               </label>
               <button
@@ -740,24 +740,24 @@ export default function AquacultureDataBankPage() {
         </section>
         </>
       ) : (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           Per-pond year close requires tenant Admin role.
         </p>
       )}
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Ponds</h2>
+          <h2 className="text-lg font-semibold text-foreground">Ponds</h2>
           {!loading && ponds.length > 0 ? (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               {ponds.length} pond{ponds.length === 1 ? '' : 's'} (same list as Site &amp; lease)
             </p>
           ) : null}
         </div>
         {loading && ponds.length === 0 ? (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <p className="text-sm text-muted-foreground">Loading…</p>
         ) : ponds.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+          <p className="rounded-lg border border-dashed border-border bg-muted/40 px-4 py-8 text-center text-sm text-muted-foreground">
             No ponds yet. Add ponds under Site &amp; lease, then close each one here when ready.
           </p>
         ) : (
@@ -767,36 +767,36 @@ export default function AquacultureDataBankPage() {
             return (
               <div
                 key={row.pond_id}
-                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+                className="overflow-hidden rounded-xl border border-border bg-white shadow-sm"
               >
                 <button
                   type="button"
                   onClick={() => setExpandedPondId(open ? null : row.pond_id)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40"
                 >
                   {open ? (
-                    <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" />
+                    <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground/70" />
                   ) : (
-                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/70" />
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
                         href={`/aquaculture/ponds/${row.pond_id}`}
                         onClick={(e) => e.stopPropagation()}
-                        className="font-semibold text-teal-700 hover:underline"
+                        className="font-semibold text-primary hover:underline"
                       >
                         {row.pond_name}
                         {row.pond_code ? ` (${row.pond_code})` : ''}
                       </Link>
                       {!row.is_active ? (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                           Inactive
                         </span>
                       ) : null}
                       {row.is_currently_locked ? (
                         <span
-                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900"
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-warning-foreground"
                           title="Closed period archived; pond structure unchanged; new operational data uses dates after the period end."
                         >
                           <Lock className="h-3 w-3" /> Period closed
@@ -807,13 +807,13 @@ export default function AquacultureDataBankPage() {
                         </span>
                       )}
                       {row.reference_access_enabled ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-primary">
                           <Eye className="h-3 w-3" /> Reference
                         </span>
                       ) : null}
                     </div>
                     {latest ? (
-                      <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                         <span>
                           Latest: {latest.label} · {formatDateOnly(latest.period_start)} –{' '}
                           {formatDateOnly(latest.period_end)}
@@ -821,21 +821,21 @@ export default function AquacultureDataBankPage() {
                         <Link
                           href={archiveReportHref(latest)}
                           onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 font-medium text-teal-700 hover:underline"
+                          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                         >
                           <FileBarChart className="h-3.5 w-3.5" />
                           View archive
                         </Link>
                       </div>
                     ) : (
-                      <div className="text-sm text-slate-500">No year close yet</div>
+                      <div className="text-sm text-muted-foreground">No year close yet</div>
                     )}
                   </div>
                 </button>
                 {open && (
-                  <div className="border-t border-slate-100 px-4 py-3">
+                  <div className="border-t border-border/70 px-4 py-3">
                     {row.close_history.length === 0 ? (
-                      <p className="text-sm text-slate-500">No close history for this pond.</p>
+                      <p className="text-sm text-muted-foreground">No close history for this pond.</p>
                     ) : (
                       <ul className="space-y-3">
                         {row.close_history.map((c) => {
@@ -846,11 +846,11 @@ export default function AquacultureDataBankPage() {
                           return (
                             <li
                               key={c.id}
-                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-sm"
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/50 px-3 py-2 text-sm"
                             >
                               <div>
-                                <div className="font-medium text-slate-800">{c.label}</div>
-                                <div className="text-slate-500">
+                                <div className="font-medium text-foreground">{c.label}</div>
+                                <div className="text-muted-foreground">
                                   {formatDateOnly(c.period_start)} – {formatDateOnly(c.period_end)}
                                   {c.closed_at
                                     ? ` · closed ${formatDateOnly(c.closed_at.slice(0, 10))}`
@@ -858,7 +858,7 @@ export default function AquacultureDataBankPage() {
                                 </div>
                                 {(c.settlement_fish_count != null ||
                                   c.settlement_bioasset_value != null) && (
-                                  <div className="mt-0.5 text-xs text-slate-500">
+                                  <div className="mt-0.5 text-xs text-muted-foreground">
                                     Closing biomass:{' '}
                                     {c.settlement_fish_count != null
                                       ? `${c.settlement_fish_count.toLocaleString()} fish`
@@ -877,7 +877,7 @@ export default function AquacultureDataBankPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 <Link
                                   href={archiveReportHref(c)}
-                                  className="inline-flex items-center gap-1 rounded border border-teal-200 bg-white px-2 py-1 text-xs font-medium text-teal-800 hover:bg-teal-50"
+                                  className="inline-flex items-center gap-1 rounded border border-primary/25 bg-white px-2 py-1 text-xs font-medium text-primary hover:bg-accent"
                                 >
                                   <FileBarChart className="h-3 w-3" />
                                   View archive
@@ -888,7 +888,7 @@ export default function AquacultureDataBankPage() {
                                     type="button"
                                     disabled={busy}
                                     onClick={() => void unlockClose(c)}
-                                    className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                                    className="inline-flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-xs font-medium text-warning-foreground hover:bg-amber-100 disabled:opacity-50"
                                   >
                                     <LockOpen className="h-3 w-3" /> Unlock operations
                                   </button>
@@ -897,7 +897,7 @@ export default function AquacultureDataBankPage() {
                                       type="button"
                                       disabled={busy}
                                       onClick={() => void relockClose(c)}
-                                      className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs font-medium hover:bg-white disabled:opacity-50"
+                                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs font-medium hover:bg-white disabled:opacity-50"
                                     >
                                       <Lock className="h-3 w-3" /> Re-lock
                                     </button>
@@ -906,7 +906,7 @@ export default function AquacultureDataBankPage() {
                                       type="button"
                                       disabled={busy}
                                       onClick={() => void reopenClose(c)}
-                                      className="inline-flex items-center gap-1 rounded border border-teal-200 px-2 py-1 text-xs font-medium text-teal-800 hover:bg-teal-50 disabled:opacity-50"
+                                      className="inline-flex items-center gap-1 rounded border border-primary/25 px-2 py-1 text-xs font-medium text-primary hover:bg-accent disabled:opacity-50"
                                     >
                                       <Eye className="h-3 w-3" /> Open reference
                                     </button>

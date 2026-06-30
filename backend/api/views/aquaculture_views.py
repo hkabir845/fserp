@@ -77,6 +77,10 @@ from api.services.aquaculture_biological_asset_service import (
     compute_biological_asset_portfolio,
     compute_pond_biological_asset_summary,
 )
+from api.services.aquaculture_pond_economics_service import (
+    compute_pond_economics_portfolio,
+    compute_pond_economics_snapshot,
+)
 from api.services.aquaculture_pond_consumption_ledger_service import (
     CONSUMPTION_KIND_LABELS,
     compute_pond_warehouse_consumption_rows,
@@ -4073,6 +4077,68 @@ def aquaculture_biological_asset_summary(request):
         cid, pond_id=pond_id, as_of_date=as_of, production_cycle=cycle
     )
     return JsonResponse(payload)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_pond_economics_snapshot(request, pond_id: int):
+    """Live fish, biomass, density, production cost, transfer cost/head, and market value for one pond."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    if not _pond_for_company(cid, pond_id):
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    cy_id, e = _parse_optional_int(request.GET.get("production_cycle_id"), name="production_cycle_id")
+    if e:
+        return e
+    cycle = None
+    if cy_id is not None:
+        cycle = AquacultureProductionCycle.objects.filter(pk=cy_id, company_id=cid).first()
+        if not cycle:
+            return JsonResponse({"detail": "production_cycle not found"}, status=404)
+        if cycle.pond_id != pond_id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to pond_id"}, status=400)
+    as_of_raw = (request.GET.get("as_of") or "").strip()
+    as_of = date.today()
+    if as_of_raw:
+        try:
+            as_of = date.fromisoformat(as_of_raw.split("T")[0])
+        except Exception:
+            return JsonResponse({"detail": "as_of must be YYYY-MM-DD"}, status=400)
+    species = (request.GET.get("fish_species") or "").strip() or None
+    payload = compute_pond_economics_snapshot(
+        cid,
+        pond_id,
+        as_of_date=as_of,
+        production_cycle=cycle,
+        fish_species=species,
+    )
+    if not payload:
+        return JsonResponse({"detail": "pond not found"}, status=404)
+    return JsonResponse(payload)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_pond_economics_portfolio(request):
+    """All active ponds: live stock, biomass, cost/fish, transfer cost/head (dashboard)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    cid = request.company_id
+    as_of_raw = (request.GET.get("as_of") or "").strip()
+    as_of = date.today()
+    if as_of_raw:
+        try:
+            as_of = date.fromisoformat(as_of_raw.split("T")[0])
+        except Exception:
+            return JsonResponse({"detail": "as_of must be YYYY-MM-DD"}, status=400)
+    return JsonResponse(compute_pond_economics_portfolio(cid, as_of_date=as_of))
 
 
 @csrf_exempt

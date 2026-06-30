@@ -211,16 +211,16 @@ export function LandlordLedgerEntryModal({
       aria-modal="true"
       aria-labelledby="landlord-ledger-entry-title"
     >
-      <div className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+      <div className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-border bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h2 id="landlord-ledger-entry-title" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-              <Wallet className="h-5 w-5 text-teal-700" aria-hidden />
+            <h2 id="landlord-ledger-entry-title" className="flex items-center gap-2 text-lg font-semibold text-foreground">
+              <Wallet className="h-5 w-5 text-primary" aria-hidden />
               {title}
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               {landlordName}
-              <span className="text-slate-400"> · </span>
+              <span className="text-muted-foreground/70"> · </span>
               {sym} subledger
             </p>
           </div>
@@ -228,7 +228,7 @@ export function LandlordLedgerEntryModal({
             type="button"
             onClick={handleClose}
             disabled={posting}
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-5 w-5" aria-hidden />
@@ -236,7 +236,7 @@ export function LandlordLedgerEntryModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <p className="mb-4 text-xs leading-relaxed text-slate-600">
+          <p className="mb-4 text-xs leading-relaxed text-muted-foreground">
             {legKind === 'payment'
               ? 'Payments reduce what you owe. Select a bank register to post Dr 6711 / Cr cash. Optionally update each pond’s “paid to landlord” total.'
               : legKind === 'rent_charge'
@@ -244,10 +244,10 @@ export function LandlordLedgerEntryModal({
                 : 'Signed amount: positive increases obligation; negative is credit.'}
           </p>
           <div className="grid gap-3 text-sm sm:grid-cols-2">
-            <label className="font-medium text-slate-700">
+            <label className="font-medium text-foreground/85">
               Kind
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                 value={legKind}
                 onChange={(e) => setLegKind(e.target.value as LedgerKind)}
               >
@@ -256,17 +256,17 @@ export function LandlordLedgerEntryModal({
                 <option value="adjustment">Adjustment (signed)</option>
               </select>
             </label>
-            <label className="font-medium text-slate-700">
+            <label className="font-medium text-foreground/85">
               Date
               <input
                 type="date"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                 value={legDate}
                 onChange={(e) => setLegDate(e.target.value)}
               />
             </label>
             {legKind === 'payment' ? (
-              <label className="flex items-center gap-2 text-slate-700 sm:col-span-2">
+              <label className="flex items-center gap-2 text-foreground/85 sm:col-span-2">
                 <input
                   type="checkbox"
                   checked={splitPayment}
@@ -276,13 +276,13 @@ export function LandlordLedgerEntryModal({
               </label>
             ) : null}
             {legKind === 'payment' && splitPayment ? (
-              <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3 sm:col-span-2">
+              <div className="space-y-2 rounded-lg border border-border bg-muted/50 p-3 sm:col-span-2">
                 {allocRows.map((ar, aidx) => (
                   <div key={aidx} className="flex flex-wrap items-end gap-2">
-                    <label className="min-w-[120px] flex-1 text-xs font-medium text-slate-700">
+                    <label className="min-w-[120px] flex-1 text-xs font-medium text-foreground/85">
                       Pond
                       <select
-                        className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                        className="mt-1 w-full rounded border border-border bg-white px-2 py-1.5 text-sm"
                         value={ar.pond_id}
                         onChange={(e) => {
                           const v = e.target.value
@@ -297,10 +297,10 @@ export function LandlordLedgerEntryModal({
                         ))}
                       </select>
                     </label>
-                    <label className="w-28 text-xs font-medium text-slate-700">
+                    <label className="w-28 text-xs font-medium text-foreground/85">
                       Amount
                       <input
-                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums"
+                        className="mt-1 w-full rounded border border-border px-2 py-1.5 text-sm tabular-nums"
                         value={ar.amount}
                         onChange={(e) => {
                           const v = e.target.value
@@ -308,7 +308,7 @@ export function LandlordLedgerEntryModal({
                         }}
                       />
                     </label>
-                    <label className="flex items-center gap-1 text-xs text-slate-700">
+                    <label className="flex items-center gap-1 text-xs text-foreground/85">
                       <input
                         type="checkbox"
                         checked={ar.applies_to_lease_paid}
@@ -323,7 +323,7 @@ export function LandlordLedgerEntryModal({
                     </label>
                     <button
                       type="button"
-                      className="rounded border border-slate-300 px-2 py-1 text-xs"
+                      className="rounded border border-border px-2 py-1 text-xs"
                       onClick={() => setAllocRows((prev) => prev.filter((_, i) => i !== aidx))}
                     >
                       Remove
@@ -332,7 +332,7 @@ export function LandlordLedgerEntryModal({
                 ))}
                 <button
                   type="button"
-                  className="text-xs font-medium text-teal-800 underline"
+                  className="text-xs font-medium text-primary underline"
                   onClick={() =>
                     setAllocRows((prev) => [...prev, { pond_id: '', amount: '', applies_to_lease_paid: true }])
                   }
@@ -342,19 +342,19 @@ export function LandlordLedgerEntryModal({
               </div>
             ) : (
               <>
-                <label className="font-medium text-slate-700 sm:col-span-2">
+                <label className="font-medium text-foreground/85 sm:col-span-2">
                   {legKind === 'adjustment' ? 'Signed amount (+ owe, − credit)' : `Amount (${sym})`}
                   <input
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 tabular-nums"
+                    className="mt-1 w-full rounded-lg border border-border px-2 py-2 tabular-nums"
                     value={legAmount}
                     onChange={(e) => setLegAmount(e.target.value)}
                     placeholder={legKind === 'adjustment' ? 'e.g. -500' : 'e.g. 5000'}
                   />
                 </label>
-                <label className="font-medium text-slate-700 sm:col-span-2">
+                <label className="font-medium text-foreground/85 sm:col-span-2">
                   Pond (optional)
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                     value={legPond}
                     onChange={(e) => setLegPond(e.target.value)}
                   >
@@ -367,35 +367,35 @@ export function LandlordLedgerEntryModal({
                   </select>
                 </label>
                 {legKind === 'payment' && legPond ? (
-                  <label className="flex items-center gap-2 text-slate-700 sm:col-span-2">
+                  <label className="flex items-center gap-2 text-foreground/85 sm:col-span-2">
                     <input type="checkbox" checked={legApplyPaid} onChange={(e) => setLegApplyPaid(e.target.checked)} />
                     Update pond &quot;paid to landlord&quot;
                   </label>
                 ) : null}
               </>
             )}
-            <label className="font-medium text-slate-700 sm:col-span-2">
+            <label className="font-medium text-foreground/85 sm:col-span-2">
               Memo
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                 value={legMemo}
                 onChange={(e) => setLegMemo(e.target.value)}
               />
             </label>
-            <label className="font-medium text-slate-700 sm:col-span-2">
+            <label className="font-medium text-foreground/85 sm:col-span-2">
               Reference
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                 value={legRef}
                 onChange={(e) => setLegRef(e.target.value)}
               />
             </label>
             {legKind === 'payment' ? (
               <>
-                <label className="font-medium text-slate-700 sm:col-span-2">
+                <label className="font-medium text-foreground/85 sm:col-span-2">
                   Bank / cash register (G/L)
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                     value={legBankId}
                     onChange={(e) => setLegBankId(e.target.value)}
                   >
@@ -407,10 +407,10 @@ export function LandlordLedgerEntryModal({
                     ))}
                   </select>
                 </label>
-                <label className="font-medium text-slate-700 sm:col-span-2">
+                <label className="font-medium text-foreground/85 sm:col-span-2">
                   Site (optional)
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-2 py-2"
                     value={legStationId}
                     onChange={(e) => setLegStationId(e.target.value)}
                   >
@@ -427,12 +427,12 @@ export function LandlordLedgerEntryModal({
           </div>
         </div>
 
-        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50/80 px-5 py-4">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-muted/50 px-5 py-4">
           <button
             type="button"
             onClick={handleClose}
             disabled={posting}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground"
           >
             Cancel
           </button>
@@ -440,7 +440,7 @@ export function LandlordLedgerEntryModal({
             type="button"
             onClick={() => void submit()}
             disabled={posting}
-            className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
           >
             {posting ? 'Posting…' : legKind === 'payment' ? 'Record payment' : 'Post entry'}
           </button>

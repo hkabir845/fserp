@@ -47,7 +47,7 @@ from api.services.station_stock import (
     set_station_stock,
 )
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id, _serialize_decimal
+from api.views.common import parse_json_body, require_company_id, _serialize_decimal, _serialize_quantity
 
 
 def _user_home_station_id(request) -> int | None:
@@ -105,7 +105,7 @@ def _pond_receipt_to_json(rec: PondWarehouseStockReceipt) -> dict:
             {
                 "item_id": ln.item_id,
                 "item_name": (ln.item.name or "") if ln.item_id else "",
-                "quantity": _serialize_decimal(ln.quantity),
+                "quantity": _serialize_quantity(ln.quantity),
                 **cost_fields,
             }
         )
@@ -137,7 +137,7 @@ def _pond_return_to_json(ret: PondWarehouseStockReturn) -> dict:
             {
                 "item_id": ln.item_id,
                 "item_name": (ln.item.name or "") if ln.item_id else "",
-                "quantity": _serialize_decimal(ln.quantity),
+                "quantity": _serialize_quantity(ln.quantity),
                 **cost_fields,
             }
         )
@@ -172,7 +172,7 @@ def _transfer_to_json(tr: InventoryTransfer):
                 "id": ln.id,
                 "item_id": ln.item_id,
                 "item_name": (ln.item.name or "") if ln.item_id else "",
-                "quantity": _serialize_decimal(ln.quantity),
+                "quantity": _serialize_quantity(ln.quantity),
                 **cost_fields,
             }
         )
@@ -295,7 +295,7 @@ def _parse_interstation_transfer_draft_body(
                 {
                     "detail": (
                         f'Not enough stock of "{it.name}" at the source station to save this transfer: '
-                        f"need {_serialize_decimal(total_need)} in total but only {_serialize_decimal(have)} on hand."
+                        f"need {_serialize_quantity(total_need)} in total but only {_serialize_quantity(have)} on hand."
                     )
                 },
                 status=400,
@@ -342,8 +342,8 @@ def _validate_destination_can_reverse_transfer(
                 {
                     "detail": (
                         f'Cannot update: not enough "{(it.name or "").strip()}" at the receiving site to '
-                        f"reverse the current transfer: need {_serialize_decimal(total_need)} but only "
-                        f"{_serialize_decimal(have)} on hand."
+                        f"reverse the current transfer: need {_serialize_quantity(total_need)} but only "
+                        f"{_serialize_quantity(have)} on hand."
                     )
                 },
                 status=400,
@@ -406,8 +406,8 @@ def _inventory_transfer_amend_posted(request, tr: InventoryTransfer) -> JsonResp
                     {
                         "detail": (
                             f'Not enough stock of "{it.name}" at the source station after reversing the '
-                            f"prior move: need {_serialize_decimal(total_need)} but only "
-                            f"{_serialize_decimal(have)} on hand."
+                            f"prior move: need {_serialize_quantity(total_need)} but only "
+                            f"{_serialize_quantity(have)} on hand."
                         )
                     },
                     status=400,
@@ -587,7 +587,7 @@ def inventory_item_availability(request):
             "name": it.name,
             "tracks_per_station": True,
             "unit": it.unit or "piece",
-            "total_on_hand": _serialize_decimal(it.quantity_on_hand or Decimal("0")),
+            "total_on_hand": _serialize_quantity(it.quantity_on_hand or Decimal("0")),
             "stations": per_station_quantities(request.company_id, it.id),
             "pond_warehouses": pond_rows,
         }
@@ -687,8 +687,8 @@ def inventory_transfer_detail_or_post(request, transfer_id: int):
                     {
                         "detail": (
                             f'Not enough stock of "{it.name}" at source station: '
-                            f"need {_serialize_decimal(total_need)} in total across lines but only "
-                            f"{_serialize_decimal(have)} on hand."
+                            f"need {_serialize_quantity(total_need)} in total across lines but only "
+                            f"{_serialize_quantity(have)} on hand."
                         )
                     },
                     status=400,
@@ -776,7 +776,7 @@ def inventory_transfer_unpost(request, transfer_id: int):
                     {
                         "detail": (
                             f'Cannot roll back: not enough "{it.name}" at the receiving station to return: '
-                            f"need {_serialize_decimal(total_need)} but only {_serialize_decimal(have)} on hand."
+                            f"need {_serialize_quantity(total_need)} but only {_serialize_quantity(have)} on hand."
                         )
                     },
                     status=400,
@@ -831,8 +831,8 @@ def _adjustment_to_json(adj: InventoryAdjustment) -> dict:
                 "item_id": ln.item_id,
                 "item_name": (ln.item.name or "") if ln.item_id else "",
                 "unit": (ln.item.unit or "piece") if ln.item_id else "",
-                "counted_quantity": _serialize_decimal(ln.counted_quantity),
-                "book_quantity": _serialize_decimal(ln.book_quantity)
+                "counted_quantity": _serialize_quantity(ln.counted_quantity),
+                "book_quantity": _serialize_quantity(ln.book_quantity)
                 if ln.book_quantity is not None
                 else None,
                 "unit_cost": _serialize_decimal(ln.unit_cost) if ln.unit_cost is not None else None,

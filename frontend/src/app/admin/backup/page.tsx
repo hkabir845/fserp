@@ -81,7 +81,7 @@ function SaasBackupRestoreContent() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     )
   }
@@ -90,13 +90,13 @@ function SaasBackupRestoreContent() {
     <PageLayout>
       <div className="mx-auto max-w-3xl app-scroll-pad">
         <div className="mb-8 flex items-start gap-3">
-          <div className="rounded-lg bg-indigo-100 p-3">
-            <Database className="h-8 w-8 text-indigo-800" />
+          <div className="rounded-lg bg-accent p-3">
+            <Database className="h-8 w-8 text-primary" />
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">SaaS platform</p>
-            <h1 className="text-3xl font-bold text-gray-900">Backup &amp; Restore</h1>
-            <p className="mt-1 text-gray-600">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">SaaS platform</p>
+            <h1 className="text-3xl font-bold text-foreground">Backup &amp; Restore</h1>
+            <p className="mt-1 text-muted-foreground">
               Export or replace a tenant&apos;s full ERP data by company (schema v2): core books, forecourt, aquaculture
               (ponds, landlords, Data Bank closes, stock), inventory, payroll, loans, and portal organization settings.
               Use for disaster recovery and migration — protect files like production credentials.

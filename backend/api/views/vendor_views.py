@@ -8,7 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, query_include_inactive, require_company_id
 from api.models import Vendor
 from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
@@ -131,6 +131,8 @@ def vendors_list_or_create(request):
         qs = Vendor.objects.filter(company_id=request.company_id).select_related(
             "default_station", "default_aquaculture_pond", "default_expense_account"
         )
+        if not query_include_inactive(request):
+            qs = qs.filter(is_active=True)
         qs = _vendor_apply_q(qs, request.GET.get("q", ""))
         qs = _vendor_apply_sort(qs, request)
         if wants_paged_response(request):
@@ -298,8 +300,12 @@ def vendor_detail(request, vendor_id: int):
         return JsonResponse(_vendor_to_json(v))
 
     if request.method == "DELETE":
-        v.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        v.is_active = False
+        v.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse(
+            {"detail": "Vendor deleted (soft) successfully", "is_active": False},
+            status=200,
+        )
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 

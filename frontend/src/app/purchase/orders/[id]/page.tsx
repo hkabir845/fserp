@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDateOnly } from '@/utils/date'
+import { formatQuantity, formatQuantityPlain } from '@/utils/quantity'
 
 type Supplier = { id: number; name: string }
 
@@ -111,7 +112,7 @@ export default function PurchaseOrderDetailPage() {
           .filter((x) => x.qty > 0)
         for (const row of linePayload) {
           if (row.qty > row.max + 1e-9) {
-            throw new Error(`Line ${row.po_line_id}: quantity cannot exceed outstanding (${row.max.toFixed(3)})`)
+            throw new Error(`Line ${row.po_line_id}: quantity cannot exceed outstanding (${formatQuantityPlain(row.max)})`)
           }
         }
         if (linePayload.length === 0) {
@@ -132,7 +133,7 @@ export default function PurchaseOrderDetailPage() {
   if (orderLoading) {
     return (
               <div className="bg-white rounded-lg shadow p-6 flex items-center justify-center min-h-[300px]">
-          <div className="text-sm text-gray-600">Loading purchase order…</div>
+          <div className="text-sm text-muted-foreground">Loading purchase order…</div>
         </div>
     )
   }
@@ -140,33 +141,33 @@ export default function PurchaseOrderDetailPage() {
   if (!order) {
     return (
               <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-red-600">Purchase order not found</div>
+          <div className="text-destructive">Purchase order not found</div>
         </div>
     )
   }
 
   return (
           <div className="space-y-6">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <div className="bg-white rounded-xl border border-border shadow-sm p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm text-gray-500">Purchasing</div>
-              <h2 className="mt-1 text-2xl font-semibold text-gray-900 tracking-tight">{order.po_number}</h2>
-              <div className="mt-2 text-sm text-gray-600">
-                Supplier: <span className="font-semibold text-gray-900">{supplierName(order.supplier_id)}</span>
+              <div className="text-sm text-muted-foreground">Purchasing</div>
+              <h2 className="mt-1 text-2xl font-semibold text-foreground tracking-tight">{order.po_number}</h2>
+              <div className="mt-2 text-sm text-muted-foreground">
+                Supplier: <span className="font-semibold text-foreground">{supplierName(order.supplier_id)}</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <Link
                 href="/purchase/orders"
-                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
               >
                 Back
               </Link>
               <button
                 type="button"
                 onClick={() => setShowReceive((v) => !v)}
-                className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm"
+                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 shadow-sm"
               >
                 Receive (GRN)
               </button>
@@ -174,43 +175,43 @@ export default function PurchaseOrderDetailPage() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Order date</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">{formatDateOnly(order.order_date)}</div>
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Order date</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{formatDateOnly(order.order_date)}</div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Expected</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">{order.expected_date ? formatDateOnly(order.expected_date) : '-'}</div>
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Expected</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{order.expected_date ? formatDateOnly(order.expected_date) : '-'}</div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Status</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">{order.status}</div>
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Status</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{order.status}</div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Total</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">₹{Number(order.total_amount || 0).toFixed(2)}</div>
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Total</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">₹{Number(order.total_amount || 0).toFixed(2)}</div>
             </div>
           </div>
 
           {showReceive && (
-            <div className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-              <div className="text-sm font-semibold text-indigo-900">Receive goods (GRN + stock; accrual Dr Inventory / Cr GRNI when configured)</div>
-              <label className="mt-3 flex items-center gap-2 text-sm text-gray-800">
+            <div className="mt-6 rounded-lg border border-primary/25 bg-accent p-4">
+              <div className="text-sm font-semibold text-foreground/85">Receive goods (GRN + stock; accrual Dr Inventory / Cr GRNI when configured)</div>
+              <label className="mt-3 flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={partialReceive}
                   onChange={(e) => setPartialReceive(e.target.checked)}
-                  className="rounded border-gray-300"
+                  className="rounded border-border"
                 />
                 <span>Partial receipt (enter quantity per line)</span>
               </label>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse *</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Warehouse *</label>
                   <select
                     value={receiveForm.warehouse_id}
                     onChange={(e) => setReceiveForm({ ...receiveForm, warehouse_id: Number(e.target.value) })}
-                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
                   >
                     <option value={0}>Select warehouse…</option>
                     {warehouses.map((w) => (
@@ -221,20 +222,20 @@ export default function PurchaseOrderDetailPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Receipt date</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Receipt date</label>
                   <input
                     type="date"
                     value={receiveForm.receipt_date}
                     onChange={(e) => setReceiveForm({ ...receiveForm, receipt_date: e.target.value })}
-                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
                   />
                 </div>
               </div>
               {partialReceive && (
-                <div className="mt-4 overflow-x-auto rounded-md border border-indigo-100 bg-white">
+                <div className="mt-4 overflow-x-auto rounded-md border border-primary/15 bg-white">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase text-gray-600">
+                      <tr className="border-b border-border bg-muted/40 text-left text-xs font-semibold uppercase text-muted-foreground">
                         <th className="px-3 py-2">Item</th>
                         <th className="px-3 py-2 text-right">Ordered</th>
                         <th className="px-3 py-2 text-right">Already in</th>
@@ -242,16 +243,16 @@ export default function PurchaseOrderDetailPage() {
                         <th className="px-3 py-2 text-right">Receive now</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border/70">
                       {lines.map((l) => {
                         const it = itemById.get(l.item_id)
                         const out = outstanding(l)
                         return (
                           <tr key={l.id}>
-                            <td className="px-3 py-2 text-gray-900">{it ? `${it.sku}` : `#${l.item_id}`}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{Number(l.qty).toFixed(3)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">{Number(l.qty_received ?? 0).toFixed(3)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums font-medium">{out.toFixed(3)}</td>
+                            <td className="px-3 py-2 text-foreground">{it ? `${it.sku}` : `#${l.item_id}`}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{formatQuantity(l.qty)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{formatQuantity(l.qty_received ?? 0)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums font-medium">{formatQuantity(out)}</td>
                             <td className="px-3 py-2 text-right">
                               <input
                                 id={`recv-qty-${l.id}`}
@@ -261,7 +262,7 @@ export default function PurchaseOrderDetailPage() {
                                 step="any"
                                 disabled={out <= 0}
                                 defaultValue={out > 0 ? String(out) : '0'}
-                                className="w-28 rounded border border-gray-300 px-2 py-1 text-right text-sm disabled:bg-gray-100"
+                                className="w-28 rounded border border-border px-2 py-1 text-right text-sm disabled:bg-muted"
                               />
                             </td>
                           </tr>
@@ -276,20 +277,20 @@ export default function PurchaseOrderDetailPage() {
                   type="button"
                   disabled={receiveMutation.isPending || receiveForm.warehouse_id === 0}
                   onClick={() => receiveMutation.mutate()}
-                  className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
                 >
                   {receiveMutation.isPending ? 'Receiving…' : 'Confirm Receive'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowReceive(false)}
-                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
                 >
                   Cancel
                 </button>
               </div>
               {receiveMutation.isError && (
-                <div className="mt-3 text-sm text-red-700">
+                <div className="mt-3 text-sm text-destructive">
                   {(receiveMutation.error as any)?.response?.data?.detail || (receiveMutation.error as any)?.message || 'Failed to receive'}
                 </div>
               )}
@@ -297,29 +298,29 @@ export default function PurchaseOrderDetailPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900">Lines</h3>
+        <div className="bg-white rounded-xl border border-border shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-foreground">Lines</h3>
           <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Item</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Unit price</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Total</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Item</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Unit price</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Total</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+              <tbody className="bg-white divide-y divide-border/70">
                 {lines.map((l) => {
                   const it = itemById.get(l.item_id)
                   return (
-                    <tr key={l.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
+                    <tr key={l.id} className="hover:bg-muted/40">
+                      <td className="px-4 py-3 text-sm text-foreground">
                         <div className="font-semibold">{it ? `${it.sku} — ${it.name}` : `Item #${l.item_id}`}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">{Number(l.qty || 0).toFixed(3)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">₹{Number(l.unit_price || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">₹{Number(l.total || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-foreground text-right">{formatQuantity(l.qty || 0)}</td>
+                      <td className="px-4 py-3 text-sm text-foreground text-right">₹{Number(l.unit_price || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-foreground text-right">₹{Number(l.total || 0).toFixed(2)}</td>
                     </tr>
                   )
                 })}

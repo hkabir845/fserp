@@ -238,25 +238,25 @@ export default function SubscriptionsPage() {
   const getPlanColor = (planType: string) => {
     switch (planType.toLowerCase()) {
       case 'free':
-        return 'bg-gray-100 text-gray-700'
+        return 'bg-muted text-foreground/85'
       case 'basic':
-        return 'bg-blue-100 text-blue-700'
+        return 'bg-blue-100 text-primary'
       case 'professional':
         return 'bg-purple-100 text-purple-700'
       case 'enterprise':
         return 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white'
       default:
-        return 'bg-gray-100 text-gray-700'
+        return 'bg-muted text-foreground/85'
     }
   }
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      trial: { color: 'bg-blue-100 text-blue-800', icon: Clock, label: 'Trial' },
-      active: { color: 'bg-green-100 text-green-800', icon: CheckCircle2, label: 'Active' },
+      trial: { color: 'bg-blue-100 text-primary', icon: Clock, label: 'Trial' },
+      active: { color: 'bg-success/15 text-success', icon: CheckCircle2, label: 'Active' },
       suspended: { color: 'bg-yellow-100 text-yellow-800', icon: AlertCircle, label: 'Suspended' },
-      cancelled: { color: 'bg-gray-100 text-gray-800', icon: XCircle, label: 'Cancelled' },
-      expired: { color: 'bg-red-100 text-red-800', icon: XCircle, label: 'Expired' },
+      cancelled: { color: 'bg-muted text-foreground', icon: XCircle, label: 'Cancelled' },
+      expired: { color: 'bg-destructive/10 text-destructive', icon: XCircle, label: 'Expired' },
       past_due: { color: 'bg-orange-100 text-orange-800', icon: AlertCircle, label: 'Past Due' }
     }
 
@@ -317,16 +317,16 @@ export default function SubscriptionsPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -339,7 +339,7 @@ export default function SubscriptionsPage() {
           maxWidthClass="max-w-7xl"
           contentClassName="mt-4"
         >
-          <div className="mb-8 border-b border-slate-200">
+          <div className="mb-8 border-b border-border">
             <nav className="flex space-x-8">
               {[
                 { id: 'current', label: tr('subTabCurrent'), icon: CreditCard },
@@ -354,8 +354,8 @@ export default function SubscriptionsPage() {
                     onClick={() => setActiveTab(tab.id as any)}
                     className={`flex items-center gap-2 pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                       activeTab === tab.id
-                        ? 'border-blue-600 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        ? 'border-blue-600 text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground/85 hover:border-border'
                     }`}
                   >
                     <Icon className="h-5 w-5" />
@@ -370,7 +370,7 @@ export default function SubscriptionsPage() {
           {activeTab === 'current' && subscription && (
             <div className="space-y-6">
               {/* Current Plan Card */}
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-lg border border-border overflow-hidden">
                 <div className={`${getPlanColor(subscription.plan.plan_type)} p-6`}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
@@ -389,22 +389,22 @@ export default function SubscriptionsPage() {
                 <div className="p-6 space-y-6">
                   {/* Billing Info */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="text-sm text-gray-600 mb-1">Current Price</div>
-                      <div className="text-2xl font-bold text-gray-900">
+                    <div className="bg-muted/40 rounded-xl p-4">
+                      <div className="text-sm text-muted-foreground mb-1">Current Price</div>
+                      <div className="text-2xl font-bold text-foreground">
                         {formatPrice(subscription.price, subscription.plan.currency)}
-                        <span className="text-sm font-normal text-gray-600">/{subscription.billing_cycle}</span>
+                        <span className="text-sm font-normal text-muted-foreground">/{subscription.billing_cycle}</span>
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="text-sm text-gray-600 mb-1">Billing Cycle</div>
-                      <div className="text-lg font-semibold text-gray-900 capitalize">
+                    <div className="bg-muted/40 rounded-xl p-4">
+                      <div className="text-sm text-muted-foreground mb-1">Billing Cycle</div>
+                      <div className="text-lg font-semibold text-foreground capitalize">
                         {subscription.billing_cycle}
                       </div>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="text-sm text-gray-600 mb-1">Next Billing Date</div>
-                      <div className="text-lg font-semibold text-gray-900">
+                    <div className="bg-muted/40 rounded-xl p-4">
+                      <div className="text-sm text-muted-foreground mb-1">Next Billing Date</div>
+                      <div className="text-lg font-semibold text-foreground">
                         {formatDateOnly(subscription.current_period_end)}
                       </div>
                     </div>
@@ -412,12 +412,12 @@ export default function SubscriptionsPage() {
 
                   {/* Trial Info */}
                   {subscription.status === 'trial' && subscription.trial_end_date && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="bg-blue-50 border border-primary/25 rounded-xl p-4">
                       <div className="flex items-center gap-2 mb-2">
-                        <Clock className="h-5 w-5 text-blue-600" />
+                        <Clock className="h-5 w-5 text-primary" />
                         <span className="font-semibold text-blue-900">Trial Period</span>
                       </div>
-                      <p className="text-blue-800">
+                      <p className="text-primary">
                         Your trial ends on {formatDateOnly(subscription.trial_end_date)}. 
                         After that, you'll be charged {formatPrice(subscription.price, subscription.plan.currency)} per {subscription.billing_cycle}.
                       </p>
@@ -444,18 +444,18 @@ export default function SubscriptionsPage() {
                   )}
 
                   {/* Actions */}
-                  <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <div className="flex gap-3 pt-4 border-t border-border">
                     {!subscription.cancel_at_period_end && (
                       <button
                         onClick={handleCancel}
-                        className="px-6 py-2.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium"
+                        className="px-6 py-2.5 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/5 transition-colors font-medium"
                       >
                         Cancel Subscription
                       </button>
                     )}
                     <button
                       onClick={() => setActiveTab('plans')}
-                      className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+                      className="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary transition-colors font-medium flex items-center gap-2"
                     >
                       Change Plan
                       <ArrowRight className="h-4 w-4" />
@@ -471,15 +471,15 @@ export default function SubscriptionsPage() {
             <div className="space-y-8">
               {/* Billing Cycle Selector */}
               <div className="flex justify-center">
-                <div className="inline-flex bg-white rounded-xl p-1 shadow-md border border-gray-200">
+                <div className="inline-flex bg-white rounded-xl p-1 shadow-md border border-border">
                   {(['monthly', 'quarterly', 'yearly'] as const).map((cycle) => (
                     <button
                       key={cycle}
                       onClick={() => setSelectedBillingCycle(cycle)}
                       className={`px-6 py-2 rounded-lg font-medium transition-all ${
                         selectedBillingCycle === cycle
-                          ? 'bg-blue-600 text-white shadow-md'
-                          : 'text-gray-600 hover:text-gray-900'
+                          ? 'bg-primary text-white shadow-md'
+                          : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
                       {cycle.charAt(0).toUpperCase() + cycle.slice(1)}
@@ -506,7 +506,7 @@ export default function SubscriptionsPage() {
                       <div
                         key={plan.id}
                         className={`relative bg-white rounded-2xl shadow-lg border-2 transition-all hover:shadow-xl ${
-                          isPopular ? 'border-blue-500 scale-105' : 'border-gray-200'
+                          isPopular ? 'border-blue-500 scale-105' : 'border-border'
                         } ${isCurrentPlan ? 'ring-2 ring-blue-500' : ''}`}
                       >
                         {isPopular && (
@@ -520,7 +520,7 @@ export default function SubscriptionsPage() {
 
                         {isCurrentPlan && (
                           <div className="absolute top-4 right-4">
-                            <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-semibold">
+                            <span className="bg-success/15 text-success px-3 py-1 rounded-full text-xs font-semibold">
                               Current Plan
                             </span>
                           </div>
@@ -551,7 +551,7 @@ export default function SubscriptionsPage() {
                             {plan.features?.slice(0, 5).map((feature, idx) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <Check className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                                <span className="text-sm text-gray-700 capitalize">
+                                <span className="text-sm text-foreground/85 capitalize">
                                   {feature.replace(/_/g, ' ')}
                                 </span>
                               </li>
@@ -559,24 +559,24 @@ export default function SubscriptionsPage() {
                           </ul>
 
                           {/* Limits */}
-                          <div className="border-t border-gray-200 pt-4 mb-6 space-y-2">
+                          <div className="border-t border-border pt-4 mb-6 space-y-2">
                             {plan.limits && (
                               <>
                                 {plan.limits.stations !== undefined && (
                                   <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Stations:</span>
+                                    <span className="text-muted-foreground">Stations:</span>
                                     <span className="font-semibold">{formatLimit(plan.limits.stations)}</span>
                                   </div>
                                 )}
                                 {plan.limits.users !== undefined && (
                                   <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Users:</span>
+                                    <span className="text-muted-foreground">Users:</span>
                                     <span className="font-semibold">{formatLimit(plan.limits.users)}</span>
                                   </div>
                                 )}
                                 {plan.limits.storage_gb !== undefined && (
                                   <div className="flex justify-between text-sm">
-                                    <span className="text-gray-600">Storage:</span>
+                                    <span className="text-muted-foreground">Storage:</span>
                                     <span className="font-semibold">{formatLimit(plan.limits.storage_gb)} GB</span>
                                   </div>
                                 )}
@@ -590,10 +590,10 @@ export default function SubscriptionsPage() {
                             disabled={isCurrentPlan || subscribing === plan.id}
                             className={`w-full py-3 rounded-lg font-semibold transition-all ${
                               isCurrentPlan
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                ? 'bg-muted text-muted-foreground/70 cursor-not-allowed'
                                 : isPopular
                                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-lg hover:scale-105'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-primary text-white hover:bg-primary'
                             }`}
                           >
                             {subscribing === plan.id ? (
@@ -609,7 +609,7 @@ export default function SubscriptionsPage() {
                           </button>
 
                           {plan.trial_days > 0 && (
-                            <p className="text-center text-xs text-gray-500 mt-2">
+                            <p className="text-center text-xs text-muted-foreground mt-2">
                               {plan.trial_days}-day free trial
                             </p>
                           )}
@@ -624,8 +624,8 @@ export default function SubscriptionsPage() {
           {/* Usage Tab */}
           {activeTab === 'usage' && usage && (
             <div className="space-y-6">
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Resource Usage</h2>
+              <div className="bg-white rounded-2xl shadow-lg border border-border p-6">
+                <h2 className="mb-6 text-2xl font-bold text-foreground">Resource Usage</h2>
                 <div className="space-y-6">
                   {Object.keys(usage.limits || {}).map((key) => {
                     const current = usage.usage?.[key] || 0
@@ -637,18 +637,18 @@ export default function SubscriptionsPage() {
                     return (
                       <div key={key} className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-sm font-semibold text-gray-700 capitalize">
+                          <span className="text-sm font-semibold text-foreground/85 capitalize">
                             {key.replace(/_/g, ' ')}
                           </span>
-                          <span className={`text-sm font-bold ${isOverLimit ? 'text-red-600' : 'text-gray-900'}`}>
+                          <span className={`text-sm font-bold ${isOverLimit ? 'text-destructive' : 'text-foreground'}`}>
                             {current} / {formatLimit(limit)}
                           </span>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-500 ${
                               isOverLimit
-                                ? 'bg-red-500'
+                                ? 'bg-destructive/50'
                                 : percentage > 80
                                 ? 'bg-yellow-500'
                                 : 'bg-blue-500'
@@ -657,7 +657,7 @@ export default function SubscriptionsPage() {
                           />
                         </div>
                         {isOverLimit && (
-                          <p className="text-xs text-red-600 flex items-center gap-1">
+                          <p className="text-xs text-destructive flex items-center gap-1">
                             <AlertCircle className="h-3 w-3" />
                             Limit reached. Please upgrade your plan.
                           </p>
@@ -672,53 +672,53 @@ export default function SubscriptionsPage() {
 
           {/* Billing History Tab */}
           {activeTab === 'billing' && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-900">Payment History</h2>
+            <div className="bg-white rounded-2xl shadow-lg border border-border overflow-hidden">
+              <div className="p-6 border-b border-border">
+                <h2 className="text-2xl font-bold text-foreground">Payment History</h2>
               </div>
               {payments.length === 0 ? (
                 <div className="p-12 text-center">
-                  <CreditCard className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600">No payment history available</p>
+                  <CreditCard className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
+                  <p className="text-muted-foreground">No payment history available</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-muted/40">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Payment #
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Amount
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Period
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Status
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                           Date
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-border">
                       {payments.map((payment) => (
-                        <tr key={payment.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <tr key={payment.id} className="hover:bg-muted/40">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                             {payment.payment_number}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                             {formatPrice(payment.amount, payment.currency)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                             {formatDateOnly(payment.period_start)} - {formatDateOnly(payment.period_end)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {getStatusBadge(payment.status)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                             {payment.paid_date
                               ? formatDateOnly(payment.paid_date)
                               : formatDateOnly(payment.due_date)}
@@ -734,13 +734,13 @@ export default function SubscriptionsPage() {
 
           {/* No Subscription Message */}
           {activeTab === 'current' && !subscription && (
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-12 text-center">
-              <Shield className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No Active Subscription</h3>
-              <p className="text-gray-600 mb-6">Subscribe to a plan to start using all features</p>
+            <div className="bg-white rounded-2xl shadow-lg border border-border p-12 text-center">
+              <Shield className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-foreground mb-2">No Active Subscription</h3>
+              <p className="text-muted-foreground mb-6">Subscribe to a plan to start using all features</p>
               <button
                 onClick={() => setActiveTab('plans')}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium inline-flex items-center gap-2"
+                className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary transition-colors font-medium inline-flex items-center gap-2"
               >
                 Browse Plans
                 <ArrowRight className="h-5 w-5" />

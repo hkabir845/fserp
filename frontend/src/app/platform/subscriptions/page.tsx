@@ -40,20 +40,20 @@ interface TenantSubscription {
 }
 
 const STATUS_META: Record<SubscriptionStatus, { label: string; cls: string }> = {
-  trial: { label: 'Trial', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
-  active: { label: 'Active', cls: 'bg-green-100 text-green-800 border-green-200' },
+  trial: { label: 'Trial', cls: 'bg-blue-100 text-primary border-primary/25' },
+  active: { label: 'Active', cls: 'bg-success/15 text-success border-success/25' },
   suspended: { label: 'Suspended', cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  cancelled: { label: 'Cancelled', cls: 'bg-red-100 text-red-800 border-red-200' },
-  expired: { label: 'Expired', cls: 'bg-gray-100 text-gray-800 border-gray-200' },
+  cancelled: { label: 'Cancelled', cls: 'bg-destructive/10 text-destructive border-destructive/25' },
+  expired: { label: 'Expired', cls: 'bg-muted text-foreground border-border' },
 }
 
 /** Top accent bar on card view (no shadow — color only) */
 const STATUS_STRIPE: Record<SubscriptionStatus, string> = {
   trial: 'bg-blue-500',
   active: 'bg-emerald-500',
-  suspended: 'bg-amber-500',
-  cancelled: 'bg-red-500',
-  expired: 'bg-slate-400',
+  suspended: 'bg-warning/100',
+  cancelled: 'bg-destructive/50',
+  expired: 'bg-muted-foreground/50',
 }
 
 export default function PlatformSubscriptionsPage() {
@@ -138,13 +138,13 @@ export default function PlatformSubscriptionsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Subscriptions</h1>
-              <p className="mt-2 text-gray-600">Manage tenant billing status, plan assignment, and renewal settings.</p>
+              <h1 className="text-3xl font-bold text-foreground">Subscriptions</h1>
+              <p className="mt-2 text-muted-foreground">Manage tenant billing status, plan assignment, and renewal settings.</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => refetch()}
-                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
               >
                 Refresh
               </button>
@@ -156,27 +156,27 @@ export default function PlatformSubscriptionsPage() {
             <StatCard title="Active" value={stats.active} accent="border-green-500" />
             <StatCard title="Trial" value={stats.trial} accent="border-blue-500" />
             <StatCard title="Suspended" value={stats.suspended} accent="border-yellow-500" />
-            <StatCard title="Cancelled/Expired" value={stats.overdueHint} accent="border-gray-500" />
+            <StatCard title="Cancelled/Expired" value={stats.overdueHint} accent="border-border/500" />
           </div>
 
-          <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
-            <div className="border-b border-gray-200 bg-gray-50/90 px-6 py-4">
+          <div className="mb-6 overflow-hidden rounded-xl border border-border bg-white">
+            <div className="border-b border-border bg-muted/40/90 px-6 py-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600">Search</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Search</label>
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Tenant name, domain, plan..."
-                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600">Status</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Status</label>
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as any)}
-                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
                   >
                     <option value="all">All</option>
                     <option value="trial">Trial</option>
@@ -187,11 +187,11 @@ export default function PlatformSubscriptionsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600">Plan</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Plan</label>
                   <select
                     value={planId}
                     onChange={(e) => setPlanId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
                   >
                     <option value="all">All</option>
                     {plans.map((p) => (
@@ -202,11 +202,11 @@ export default function PlatformSubscriptionsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600">Billing cycle</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Billing cycle</label>
                   <select
                     value={cycle}
                     onChange={(e) => setCycle(e.target.value as any)}
-                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
                   >
                     <option value="all">All</option>
                     <option value="monthly">Monthly</option>
@@ -219,16 +219,16 @@ export default function PlatformSubscriptionsPage() {
             {isLoading ? (
               <div className="p-10 text-center">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600" />
-                <div className="mt-3 text-sm text-gray-600">Loading subscriptions…</div>
+                <div className="mt-3 text-sm text-muted-foreground">Loading subscriptions…</div>
               </div>
             ) : isError ? (
               <div className="p-8">
-                <div className="rounded-md border border-red-200 bg-red-50 p-4">
-                  <div className="text-sm font-semibold text-red-800">Could not load subscriptions</div>
-                  <div className="mt-1 text-sm text-red-700">{errorMsg}</div>
+                <div className="rounded-md border border-destructive/25 bg-destructive/5 p-4">
+                  <div className="text-sm font-semibold text-destructive">Could not load subscriptions</div>
+                  <div className="mt-1 text-sm text-destructive">{errorMsg}</div>
                   <button
                     onClick={() => refetch()}
-                    className="mt-3 inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                    className="mt-3 inline-flex items-center rounded-md border border-destructive/30 bg-white px-3 py-2 text-sm font-semibold text-destructive hover:bg-destructive/5"
                   >
                     Try again
                   </button>
@@ -236,21 +236,21 @@ export default function PlatformSubscriptionsPage() {
               </div>
             ) : subs.length === 0 ? (
               <div className="p-10 text-center">
-                <div className="text-lg font-semibold text-gray-900">No subscriptions found</div>
-                <div className="mt-2 text-sm text-gray-600">Seed demo data or adjust your filters.</div>
+                <div className="text-lg font-semibold text-foreground">No subscriptions found</div>
+                <div className="mt-2 text-sm text-muted-foreground">Seed demo data or adjust your filters.</div>
               </div>
             ) : (
               <>
-                <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-white px-4 py-2.5">
-                  <span className="text-sm font-medium text-gray-800">
+                <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-white px-4 py-2.5">
+                  <span className="text-sm font-medium text-foreground">
                     {subs.length} subscription{subs.length === 1 ? '' : 's'}
                   </span>
-                  <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
+                  <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
                     <button
                       type="button"
                       onClick={() => setSubsView('list')}
                       className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-                        subsView === 'list' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-white'
+                        subsView === 'list' ? 'bg-purple-600 text-white' : 'text-muted-foreground hover:bg-white'
                       }`}
                     >
                       List
@@ -259,7 +259,7 @@ export default function PlatformSubscriptionsPage() {
                       type="button"
                       onClick={() => setSubsView('cards')}
                       className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-                        subsView === 'cards' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-white'
+                        subsView === 'cards' ? 'bg-purple-600 text-white' : 'text-muted-foreground hover:bg-white'
                       }`}
                     >
                       Cards
@@ -268,44 +268,44 @@ export default function PlatformSubscriptionsPage() {
                 </div>
                 {subsView === 'list' ? (
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-border">
+                      <thead className="bg-muted/40">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tenant</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Plan</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Billing</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Renewal</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Updated</th>
-                          <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tenant</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Plan</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Billing</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Renewal</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Updated</th>
+                          <th className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
+                      <tbody className="divide-y divide-border bg-white">
                         {subs.map((s) => (
-                          <tr key={s.id} className="hover:bg-gray-50">
+                          <tr key={s.id} className="hover:bg-muted/40">
                             <td className="px-6 py-4">
-                              <div className="text-sm font-semibold text-gray-900">{s.tenant_name || `Tenant #${s.tenant_id}`}</div>
-                              <div className="text-xs text-gray-500">{s.tenant_domain || '-'}</div>
+                              <div className="text-sm font-semibold text-foreground">{s.tenant_name || `Tenant #${s.tenant_id}`}</div>
+                              <div className="text-xs text-muted-foreground">{s.tenant_domain || '-'}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{s.plan_name || `Plan #${s.plan_id}`}</div>
+                              <div className="text-sm text-foreground">{s.plan_name || `Plan #${s.plan_id}`}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span
-                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_META[s.status]?.cls || 'bg-gray-100 text-gray-800 border-gray-200'}`}
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_META[s.status]?.cls || 'bg-muted text-foreground border-border'}`}
                               >
                                 {STATUS_META[s.status]?.label || s.status}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm capitalize text-gray-900">{s.billing_cycle}</div>
-                              <div className="text-xs text-gray-500">Start: {fmtDate(s.start_date)}</div>
+                              <div className="text-sm capitalize text-foreground">{s.billing_cycle}</div>
+                              <div className="text-xs text-muted-foreground">Start: {fmtDate(s.start_date)}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{s.auto_renew ? 'Auto-renew' : 'Manual'}</div>
-                              <div className="text-xs text-gray-500">End: {s.end_date ? fmtDate(s.end_date) : '—'}</div>
+                              <div className="text-sm text-foreground">{s.auto_renew ? 'Auto-renew' : 'Manual'}</div>
+                              <div className="text-xs text-muted-foreground">End: {s.end_date ? fmtDate(s.end_date) : '—'}</div>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fmtDateTime(s.updated_at)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground/85">{fmtDateTime(s.updated_at)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                               <button
                                 type="button"
@@ -321,24 +321,24 @@ export default function PlatformSubscriptionsPage() {
                     </table>
                   </div>
                 ) : (
-                  <div className="bg-gray-50/50 p-4">
+                  <div className="bg-muted/40/50 p-4">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {subs.map((s) => (
                         <div
                           key={s.id}
-                          className="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white"
+                          className="flex flex-col overflow-hidden rounded-xl border border-border bg-white"
                         >
-                          <div className={`h-1.5 w-full ${STATUS_STRIPE[s.status] || 'bg-slate-400'}`} aria-hidden />
+                          <div className={`h-1.5 w-full ${STATUS_STRIPE[s.status] || 'bg-muted-foreground/50'}`} aria-hidden />
                           <div className="flex flex-1 flex-col p-4">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <div className="truncate text-base font-semibold text-gray-900">
+                                <div className="truncate text-base font-semibold text-foreground">
                                   {s.tenant_name || `Tenant #${s.tenant_id}`}
                                 </div>
-                                <div className="mt-0.5 truncate font-mono text-xs text-gray-500">{s.tenant_domain || '—'}</div>
+                                <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{s.tenant_domain || '—'}</div>
                               </div>
                               <span
-                                className={`shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_META[s.status]?.cls || 'bg-gray-100 text-gray-800 border-gray-200'}`}
+                                className={`shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_META[s.status]?.cls || 'bg-muted text-foreground border-border'}`}
                               >
                                 {STATUS_META[s.status]?.label || s.status}
                               </span>
@@ -348,29 +348,29 @@ export default function PlatformSubscriptionsPage() {
                                 {s.plan_name || `Plan #${s.plan_id}`}
                               </span>
                             </div>
-                            <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-gray-100 pt-3 text-xs">
+                            <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border/70 pt-3 text-xs">
                               <div>
-                                <dt className="font-medium text-gray-500">Billing</dt>
-                                <dd className="mt-0.5 font-semibold capitalize text-gray-900">{s.billing_cycle}</dd>
+                                <dt className="font-medium text-muted-foreground">Billing</dt>
+                                <dd className="mt-0.5 font-semibold capitalize text-foreground">{s.billing_cycle}</dd>
                               </div>
                               <div>
-                                <dt className="font-medium text-gray-500">Renewal</dt>
-                                <dd className="mt-0.5 font-semibold text-gray-900">{s.auto_renew ? 'Auto' : 'Manual'}</dd>
+                                <dt className="font-medium text-muted-foreground">Renewal</dt>
+                                <dd className="mt-0.5 font-semibold text-foreground">{s.auto_renew ? 'Auto' : 'Manual'}</dd>
                               </div>
                               <div className="col-span-2">
-                                <dt className="font-medium text-gray-500">Period</dt>
-                                <dd className="mt-0.5 text-gray-800">
+                                <dt className="font-medium text-muted-foreground">Period</dt>
+                                <dd className="mt-0.5 text-foreground">
                                   {fmtDate(s.start_date)}
                                   {s.end_date ? ` → ${fmtDate(s.end_date)}` : ' → open'}
                                 </dd>
                               </div>
                               {s.trial_end_date && (
                                 <div className="col-span-2">
-                                  <dt className="font-medium text-gray-500">Trial ends</dt>
-                                  <dd className="mt-0.5 text-gray-800">{fmtDate(s.trial_end_date)}</dd>
+                                  <dt className="font-medium text-muted-foreground">Trial ends</dt>
+                                  <dd className="mt-0.5 text-foreground">{fmtDate(s.trial_end_date)}</dd>
                                 </div>
                               )}
-                              <div className="col-span-2 text-gray-500">
+                              <div className="col-span-2 text-muted-foreground">
                                 Updated {fmtDateTime(s.updated_at)}
                               </div>
                             </dl>
@@ -409,11 +409,11 @@ export default function PlatformSubscriptionsPage() {
 
 function StatCard({ title, value, accent }: { title: string; value: number; accent: string }) {
   return (
-    <div className={`rounded-lg border border-gray-200 bg-white p-6 border-l-4 ${accent}`}>
+    <div className={`rounded-lg border border-border bg-white p-6 border-l-4 ${accent}`}>
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-600">{title}</p>
-          <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+          <p className="text-sm font-semibold text-muted-foreground">{title}</p>
+          <p className="mt-2 text-3xl font-bold text-foreground">{value}</p>
         </div>
         <div className="rounded-full bg-purple-100 p-3 ring-1 ring-purple-200/60">
           <svg className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -458,31 +458,31 @@ function EditSubscriptionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-gray-200 bg-white">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between">
+      <div className="w-full max-w-2xl rounded-xl border border-border bg-white">
+        <div className="px-6 py-4 border-b border-border flex items-start justify-between">
           <div>
-            <div className="text-lg font-bold text-gray-900">Manage subscription</div>
-            <div className="mt-1 text-sm text-gray-600">
+            <div className="text-lg font-bold text-foreground">Manage subscription</div>
+            <div className="mt-1 text-sm text-muted-foreground">
               {sub.tenant_name || `Tenant #${sub.tenant_id}`} · {sub.tenant_domain || '-'}
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground/85">
             ✕
           </button>
         </div>
 
         <div className="px-6 py-5">
           {errorMsg && (
-            <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{errorMsg}</div>
+            <div className="mb-4 rounded-md border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{errorMsg}</div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-600">Plan</label>
+              <label className="block text-xs font-semibold text-muted-foreground">Plan</label>
               <select
                 value={planId}
                 onChange={(e) => setPlanId(Number(e.target.value))}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               >
                 {plans.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -493,11 +493,11 @@ function EditSubscriptionModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600">Status</label>
+              <label className="block text-xs font-semibold text-muted-foreground">Status</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as SubscriptionStatus)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               >
                 <option value="trial">Trial</option>
                 <option value="active">Active</option>
@@ -508,11 +508,11 @@ function EditSubscriptionModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600">Billing cycle</label>
+              <label className="block text-xs font-semibold text-muted-foreground">Billing cycle</label>
               <select
                 value={billing}
                 onChange={(e) => setBilling(e.target.value as BillingCycle)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               >
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
@@ -525,46 +525,46 @@ function EditSubscriptionModal({
                 type="checkbox"
                 checked={autoRenew}
                 onChange={(e) => setAutoRenew(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-purple-600"
+                className="h-4 w-4 rounded border-border text-purple-600"
               />
-              <label htmlFor="auto_renew" className="text-sm font-semibold text-gray-700">
+              <label htmlFor="auto_renew" className="text-sm font-semibold text-foreground/85">
                 Auto-renew
               </label>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600">Start date</label>
+              <label className="block text-xs font-semibold text-muted-foreground">Start date</label>
               <input
                 type="datetime-local"
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600">Trial end date (optional)</label>
+              <label className="block text-xs font-semibold text-muted-foreground">Trial end date (optional)</label>
               <input
                 type="datetime-local"
                 value={trialEnd}
                 onChange={(e) => setTrialEnd(e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600">End date (optional)</label>
+              <label className="block text-xs font-semibold text-muted-foreground">End date (optional)</label>
               <input
                 type="datetime-local"
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
           </div>
 
-          <div className="mt-6 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-            <div className="font-semibold text-gray-900 mb-2">Audit</div>
+          <div className="mt-6 rounded-md border border-border bg-muted/40 p-4 text-sm text-foreground/85">
+            <div className="font-semibold text-foreground mb-2">Audit</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <div>Created: {fmtDateTime(sub.created_at)}</div>
               <div>Updated: {fmtDateTime(sub.updated_at)}</div>
@@ -572,10 +572,10 @@ function EditSubscriptionModal({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+        <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            className="rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
           >
             Cancel
           </button>

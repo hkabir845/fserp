@@ -80,15 +80,15 @@ export default function SettingsGeneralPage() {
   )
 
   if (settingsLoading) {
-    return <div className="text-sm text-gray-500">Loading settings…</div>
+    return <div className="text-sm text-muted-foreground">Loading settings…</div>
   }
 
   return (
     <div className="space-y-6">
       {Object.entries(allSettingsByCategory).map(([category, categorySettings]) => (
         <div key={category} className="rounded-lg bg-white shadow">
-          <div className="border-b border-gray-200 px-6 py-4">
-            <h2 className="text-lg font-semibold capitalize text-gray-900">
+          <div className="border-b border-border px-6 py-4">
+            <h2 className="text-lg font-semibold capitalize text-foreground">
               {category.replace('_', ' ')}
             </h2>
           </div>
@@ -96,10 +96,10 @@ export default function SettingsGeneralPage() {
             {categorySettings.map((setting) => (
               <div key={setting.key} className="flex items-center justify-between">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     {setting.key.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
                   </label>
-                  {setting.description && <p className="mt-1 text-xs text-gray-500">{setting.description}</p>}
+                  {setting.description && <p className="mt-1 text-xs text-muted-foreground">{setting.description}</p>}
                 </div>
                 <div className="ml-4 flex items-center gap-2">
                   {editingSetting === setting.key ? (
@@ -122,18 +122,18 @@ export default function SettingsGeneralPage() {
                           }
                         }}
                         autoFocus
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        className="rounded-md border border-border px-3 py-2 text-sm focus:border-ring focus:ring-ring"
                       />
                     </>
                   ) : (
                     <>
-                      <span className="min-w-[200px] text-right text-sm text-gray-900">
+                      <span className="min-w-[200px] text-right text-sm text-foreground">
                         {setting.value || '-'}
                       </span>
                       <button
                         type="button"
                         onClick={() => setEditingSetting(setting.key)}
-                        className="text-indigo-600 hover:text-indigo-900"
+                        className="text-primary hover:text-foreground/85"
                         aria-label={`Edit ${setting.key}`}
                       >
                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -15,10 +15,11 @@ from api.utils.transaction_filters import (
     apply_transaction_amount_range,
     apply_transaction_date_range,
 )
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, _serialize_quantity
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
 from api.services.document_posting_lifecycle import (
+    assert_invoice_edit_allowed,
     body_has_material_invoice_change,
     reconcile_invoice_after_material_edit,
 )
@@ -92,7 +93,7 @@ def _invoice_to_json(inv, company_id: int):
                 "item_name": (l.item.name if getattr(l, "item_id", None) and getattr(l, "item", None) else "")
                 or "",
                 "description": l.description or "",
-                "quantity": str(l.quantity),
+                "quantity": _serialize_quantity(l.quantity),
                 "unit_price": str(l.unit_price),
                 "amount": str(l.amount),
                 "revenue_account_id": getattr(l, "revenue_account_id", None),
@@ -313,6 +314,9 @@ def invoice_detail(request, invoice_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
+        ok_edit, err_edit = assert_invoice_edit_allowed(cid, inv)
+        if not ok_edit:
+            return JsonResponse({"detail": err_edit}, status=409)
         old_status = inv.status
         material = body_has_material_invoice_change(body) and inv.status != "draft"
         inv.invoice_date = _parse_date(body.get("invoice_date")) or inv.invoice_date

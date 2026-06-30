@@ -87,9 +87,9 @@ export default function PurchaseRequisitionDetailPage() {
 
   if (!Number.isFinite(id) || qDetail.isError) {
     return (
-      <div className="p-8 text-center text-gray-600">
+      <div className="p-8 text-center text-muted-foreground">
         Requisition not found.{' '}
-        <Link href="/purchase/requisitions" className="text-indigo-600">
+        <Link href="/purchase/requisitions" className="text-primary">
           Back
         </Link>
       </div>
@@ -97,7 +97,7 @@ export default function PurchaseRequisitionDetailPage() {
   }
 
   if (qDetail.isLoading || !qDetail.data) {
-    return <div className="p-8 text-center text-gray-600">Loading…</div>
+    return <div className="p-8 text-center text-muted-foreground">Loading…</div>
   }
 
   const r = qDetail.data
@@ -109,19 +109,19 @@ export default function PurchaseRequisitionDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link href="/purchase/requisitions" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+      <Link href="/purchase/requisitions" className="text-sm font-medium text-primary hover:text-primary">
         ← All purchase requisitions
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold text-gray-900">{r.doc_number}</h1>
-      <p className="text-sm text-gray-600">Status: {r.status.replace(/_/g, ' ')}</p>
+      <h1 className="mt-2 text-2xl font-semibold text-foreground">{r.doc_number}</h1>
+      <p className="text-sm text-muted-foreground">Status: {r.status.replace(/_/g, ' ')}</p>
 
-      {r.purpose && <p className="mt-3 text-sm text-gray-700">{r.purpose}</p>}
+      {r.purpose && <p className="mt-3 text-sm text-foreground/85">{r.purpose}</p>}
 
-      <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-900">Lines</h2>
+      <div className="mt-6 rounded-lg border border-border bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">Lines</h2>
         <ul className="mt-2 space-y-1 text-sm">
           {r.lines.map((l) => (
-            <li key={l.id} className="flex justify-between text-gray-700">
+            <li key={l.id} className="flex justify-between text-foreground/85">
               <span>Item #{l.item_id}</span>
               <span>
                 {l.qty} @ {l.est_unit_price}
@@ -132,17 +132,17 @@ export default function PurchaseRequisitionDetailPage() {
       </div>
 
       <div className="mt-4">
-        <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Notes (optional)</label>
+        <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes (optional)</label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
           placeholder="Visible on approval log"
         />
       </div>
 
-      {err && <p className="mt-2 text-sm text-red-600">{typeof err === 'string' ? err : JSON.stringify(err)}</p>}
+      {err && <p className="mt-2 text-sm text-destructive">{typeof err === 'string' ? err : JSON.stringify(err)}</p>}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {r.status === 'draft' && (
@@ -150,7 +150,7 @@ export default function PurchaseRequisitionDetailPage() {
             type="button"
             disabled={submitMut.isPending}
             onClick={() => submitMut.mutate()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-accent0 disabled:opacity-50"
           >
             Submit for approval
           </button>
@@ -161,7 +161,7 @@ export default function PurchaseRequisitionDetailPage() {
               type="button"
               disabled={approveMut.isPending}
               onClick={() => approveMut.mutate()}
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
+              className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 disabled:opacity-50"
             >
               Approve step
             </button>
@@ -169,7 +169,7 @@ export default function PurchaseRequisitionDetailPage() {
               type="button"
               disabled={rejectMut.isPending}
               onClick={() => rejectMut.mutate()}
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
+              className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50"
             >
               Reject
             </button>
@@ -180,7 +180,7 @@ export default function PurchaseRequisitionDetailPage() {
             type="button"
             disabled={convertMut.isPending}
             onClick={() => convertMut.mutate()}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+            className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-white hover:bg-foreground disabled:opacity-50"
           >
             Create draft PO
           </button>
@@ -188,7 +188,7 @@ export default function PurchaseRequisitionDetailPage() {
         {r.converted_po_id && (
           <Link
             href={`/purchase/orders/${r.converted_po_id}`}
-            className="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+            className="inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40"
           >
             Open linked PO
           </Link>
@@ -196,16 +196,16 @@ export default function PurchaseRequisitionDetailPage() {
       </div>
 
       <div className="mt-10">
-        <h2 className="text-sm font-semibold text-gray-900">Approval log</h2>
-        <ul className="mt-2 space-y-2 text-sm text-gray-700">
+        <h2 className="text-sm font-semibold text-foreground">Approval log</h2>
+        <ul className="mt-2 space-y-2 text-sm text-foreground/85">
           {(qLog.data || []).map((row) => (
-            <li key={row.id} className="rounded border border-gray-100 bg-gray-50/80 px-3 py-2">
+            <li key={row.id} className="rounded border border-border/70 bg-muted/40/80 px-3 py-2">
               <span className="font-medium">{row.action.replace(/_/g, ' ')}</span>
-              <span className="text-gray-500"> · user #{row.actor_user_id}</span>
-              {row.notes && <p className="mt-1 text-gray-600">{row.notes}</p>}
+              <span className="text-muted-foreground"> · user #{row.actor_user_id}</span>
+              {row.notes && <p className="mt-1 text-muted-foreground">{row.notes}</p>}
             </li>
           ))}
-          {qLog.data?.length === 0 && <li className="text-gray-500">No events yet.</li>}
+          {qLog.data?.length === 0 && <li className="text-muted-foreground">No events yet.</li>}
         </ul>
       </div>
     </div>

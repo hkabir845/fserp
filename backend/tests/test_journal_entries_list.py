@@ -115,6 +115,70 @@ def test_journal_create_accepts_backdated_entry_date(api_client, company_tenant,
 
 
 @pytest.mark.django_db
+def test_journal_create_post_two_year_old_entry_hits_gl(
+    api_client, company_tenant_with_gl, auth_admin_headers
+):
+    """Back-dated manual journals (e.g. ~2 years) create, post, and appear in GL reports."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from api.models import ChartOfAccount, Station
+    from api.services.reporting import report_trial_balance
+
+    cid = company_tenant_with_gl.id
+    cash = ChartOfAccount.objects.get(company_id=cid, account_code="1010")
+    station = Station.objects.create(company_id=cid, station_name="Historic Site", is_active=True)
+    expense = ChartOfAccount.objects.get(company_id=cid, account_code="6900")
+
+    entry_date = (timezone.localdate() - timedelta(days=730)).isoformat()
+    create_body = {
+        "entry_date": entry_date,
+        "description": "Two-year back-dated expense",
+        "station_id": station.id,
+        "lines": [
+            {
+                "debit_account_id": expense.id,
+                "credit_account_id": None,
+                "amount": "250.00",
+                "station_id": station.id,
+            },
+            {
+                "debit_account_id": None,
+                "credit_account_id": cash.id,
+                "amount": "250.00",
+            },
+        ],
+    }
+    r = api_client.post(
+        "/api/journal-entries/",
+        data=json.dumps(create_body),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    entry = json.loads(r.content.decode())
+    assert entry["entry_date"] == entry_date
+    assert entry["is_posted"] is False
+
+    r_post = api_client.post(
+        f"/api/journal-entries/{entry['id']}/post/",
+        data=json.dumps({}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_post.status_code == 200, r_post.content.decode()
+    posted = json.loads(r_post.content.decode())
+    assert posted["is_posted"] is True
+
+    start = timezone.localdate() - timedelta(days=800)
+    end = timezone.localdate()
+    tb = report_trial_balance(cid, start, end)
+    cash_row = next(a for a in tb["accounts"] if a["account_code"] == "1010")
+    assert Decimal(str(cash_row["credit"])) >= Decimal("250.00")
+
+
+@pytest.mark.django_db
 def test_journal_search_ignores_date_range(api_client, company_tenant, auth_admin_headers):
     from api.models import ChartOfAccount, JournalEntry, JournalEntryLine
 

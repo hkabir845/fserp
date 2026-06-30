@@ -80,13 +80,13 @@ export default function PlatformDashboard() {
 
   const getStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
-      active: 'bg-green-100 text-green-800',
-      trial: 'bg-blue-100 text-blue-800',
+      active: 'bg-success/15 text-success',
+      trial: 'bg-blue-100 text-primary',
       suspended: 'bg-yellow-100 text-yellow-800',
-      cancelled: 'bg-red-100 text-red-800',
-      expired: 'bg-gray-100 text-gray-800',
+      cancelled: 'bg-destructive/10 text-destructive',
+      expired: 'bg-muted text-foreground',
     }
-    return colors[status] || 'bg-gray-100 text-gray-800'
+    return colors[status] || 'bg-muted text-foreground'
   }
 
   useEffect(() => {
@@ -134,11 +134,11 @@ export default function PlatformDashboard() {
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Tenants</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <p className="text-sm font-medium text-muted-foreground">Total Tenants</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">
                     {statsLoading ? '...' : stats?.total_tenants || 0}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {stats?.active_tenants || 0} active
                   </p>
                 </div>
@@ -153,16 +153,16 @@ export default function PlatformDashboard() {
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Active Subscriptions</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <p className="text-sm font-medium text-muted-foreground">Active Subscriptions</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">
                     {statsLoading ? '...' : stats?.active_subscriptions || 0}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     {stats?.trial_tenants || 0} on trial
                   </p>
                 </div>
-                <div className="bg-green-100 rounded-full p-3">
-                  <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="bg-success/15 rounded-full p-3">
+                  <svg className="h-6 w-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
@@ -172,16 +172,16 @@ export default function PlatformDashboard() {
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Monthly Revenue</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <p className="text-sm font-medium text-muted-foreground">Monthly Revenue</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">
                     {statsLoading ? '...' : formatCurrency(stats?.monthly_revenue || 0)}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Total: {formatCurrency(stats?.total_revenue || 0)}
                   </p>
                 </div>
                 <div className="bg-blue-100 rounded-full p-3">
-                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
@@ -191,8 +191,8 @@ export default function PlatformDashboard() {
 
           {/* Tenants Table */}
           <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Tenants</h2>
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <h2 className="text-xl font-bold text-foreground">Tenants</h2>
               <button
                 onClick={() => router.push('/platform/tenants/new')}
                 className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm font-medium flex items-center gap-2"
@@ -207,67 +207,67 @@ export default function PlatformDashboard() {
             {tenantsLoading ? (
               <div className="p-12 text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading tenants...</p>
+                <p className="text-muted-foreground">Loading tenants...</p>
               </div>
             ) : tenants && tenants.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Tenant
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Domain
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Subscription
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Users
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-border">
                     {tenants.map((tenant) => (
                       <tr
                         key={tenant.id}
-                        className={`hover:bg-gray-50 cursor-pointer ${selectedTenant === tenant.id ? 'bg-purple-50' : ''}`}
+                        className={`hover:bg-muted/40 cursor-pointer ${selectedTenant === tenant.id ? 'bg-purple-50' : ''}`}
                         onClick={() => handleTenantClick(tenant)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{tenant.name}</div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-sm font-medium text-foreground">{tenant.name}</div>
+                          <div className="text-xs text-muted-foreground">
                             Created: {formatDateOnly(tenant.created_at)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{tenant.domain}</div>
+                          <div className="text-sm text-foreground">{tenant.domain}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {tenant.subscription ? (
                             <div>
-                              <div className="text-sm text-gray-900">{tenant.subscription.plan_name || 'N/A'}</div>
+                              <div className="text-sm text-foreground">{tenant.subscription.plan_name || 'N/A'}</div>
                               <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(tenant.subscription.status)}`}>
                                 {tenant.subscription.status}
                               </span>
                             </div>
                           ) : (
-                            <span className="text-sm text-gray-400">No subscription</span>
+                            <span className="text-sm text-muted-foreground/70">No subscription</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                           {tenant.user_count || 0}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            tenant.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            tenant.is_active ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
                           }`}>
                             {tenant.is_active ? 'Active' : 'Inactive'}
                           </span>
@@ -287,11 +287,11 @@ export default function PlatformDashboard() {
               </div>
             ) : (
               <div className="p-12 text-center">
-                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="mx-auto h-12 w-12 text-muted-foreground/70 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No tenants found</h3>
-                <p className="text-gray-500 mb-4">Get started by creating a new tenant</p>
+                <h3 className="text-lg font-medium text-foreground mb-1">No tenants found</h3>
+                <p className="text-muted-foreground mb-4">Get started by creating a new tenant</p>
                 <button
                   onClick={() => router.push('/platform/tenants/new')}
                   className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"

@@ -35,9 +35,9 @@ function fmtMoney(n: number) {
 function statusBadge(status: string) {
   const s = status.toLowerCase()
   if (s === 'paid') return 'bg-emerald-100 text-emerald-900'
-  if (s === 'overdue') return 'bg-red-100 text-red-900'
-  if (s === 'cancelled') return 'bg-gray-200 text-gray-700'
-  return 'bg-amber-100 text-amber-900'
+  if (s === 'overdue') return 'bg-destructive/10 text-red-900'
+  if (s === 'cancelled') return 'bg-muted text-foreground/85'
+  return 'bg-amber-100 text-warning-foreground'
 }
 
 export default function PlatformInvoicesPage() {
@@ -56,45 +56,45 @@ export default function PlatformInvoicesPage() {
     <PlatformLayout>
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Subscription invoices</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="text-2xl font-bold text-foreground">Subscription invoices</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           SaaS subscription billing documents issued to tenants (platform scope).
         </p>
       </div>
 
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{err}</div>
+        <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">{err}</div>
       )}
 
       {!isLoading && !isError && data.length === 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+        <div className="rounded-xl border border-border bg-white p-8 text-center text-muted-foreground">
           No subscription invoices in the database yet.
         </div>
       )}
 
       {data.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
+        <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted/40">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Invoice #</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Tenant</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Date</th>
-                <th className="px-4 py-3 text-right font-medium text-slate-600">Total</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Due</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Invoice #</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Tenant</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">Total</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Due</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border/70">
               {data.map((inv) => (
                 <tr key={inv.id}>
-                  <td className="px-4 py-3 font-mono font-medium text-slate-900">{inv.invoice_number}</td>
+                  <td className="px-4 py-3 font-mono font-medium text-foreground">{inv.invoice_number}</td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-900">{inv.tenant_name || '—'}</div>
-                    <div className="text-xs text-slate-500">{inv.tenant_domain || ''}</div>
+                    <div className="font-medium text-foreground">{inv.tenant_name || '—'}</div>
+                    <div className="text-xs text-muted-foreground">{inv.tenant_domain || ''}</div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                  <td className="whitespace-nowrap px-4 py-3 text-foreground/85">
                     {formatDateOnly(inv.invoice_date)}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtMoney(inv.total_amount)}</td>
@@ -105,7 +105,7 @@ export default function PlatformInvoicesPage() {
                       {inv.status}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                  <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                     {formatDateOnly(inv.due_date)}
                   </td>
                 </tr>

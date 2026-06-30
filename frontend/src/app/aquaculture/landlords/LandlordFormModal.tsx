@@ -124,19 +124,19 @@ export function LandlordFormModal({
       aria-modal="true"
       aria-labelledby="landlord-form-title"
     >
-      <div className="flex max-h-[min(92vh,880px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+      <div className="flex max-h-[min(92vh,880px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-white shadow-2xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h2 id="landlord-form-title" className="text-lg font-semibold text-slate-900">
+            <h2 id="landlord-form-title" className="text-lg font-semibold text-foreground">
               {title}
             </h2>
-            <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
           </div>
           <button
             type="button"
             onClick={handleClose}
             disabled={saving}
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-5 w-5" aria-hidden />
@@ -144,87 +144,87 @@ export function LandlordFormModal({
         </div>
 
         {loadingDetail ? (
-          <div className="flex flex-1 items-center justify-center py-16 text-sm text-slate-500">Loading…</div>
+          <div className="flex flex-1 items-center justify-center py-16 text-sm text-muted-foreground">Loading…</div>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              <section className="rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                  <User className="h-4 w-4 text-teal-700" aria-hidden />
-                  <h3 className="text-sm font-semibold text-slate-900">Profile</h3>
+              <section className="rounded-xl border border-border bg-white">
+                <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3">
+                  <User className="h-4 w-4 text-primary" aria-hidden />
+                  <h3 className="text-sm font-semibold text-foreground">Profile</h3>
                 </div>
                 <div className="space-y-4 p-4">
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
-                      Name <span className="text-red-600">*</span>
+                    <label className="block text-sm font-medium text-foreground/85 sm:col-span-2">
+                      Name <span className="text-destructive">*</span>
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                         value={values.name}
                         onChange={(e) => setField('name', e.target.value)}
                         placeholder="e.g. Md. Rahman"
                         autoFocus
                       />
                     </label>
-                    <label className="block text-sm font-medium text-slate-700">
+                    <label className="block text-sm font-medium text-foreground/85">
                       Code
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm"
+                        className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm"
                         value={values.code}
                         onChange={(e) => setField('code', e.target.value)}
                         placeholder={mode === 'create' ? 'Auto LL-0001 if empty' : 'e.g. LL-0001'}
                       />
                     </label>
-                    <label className="block text-sm font-medium text-slate-700">
+                    <label className="block text-sm font-medium text-foreground/85">
                       Phone
                       <input
                         type="tel"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                         value={values.phone}
                         onChange={(e) => setField('phone', e.target.value)}
                       />
                     </label>
-                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                    <label className="block text-sm font-medium text-foreground/85 sm:col-span-2">
                       Email
                       <input
                         type="email"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                         value={values.email}
                         onChange={(e) => setField('email', e.target.value)}
                       />
                     </label>
                   </div>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Notes
                     <textarea
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                       rows={2}
                       value={values.notes}
                       onChange={(e) => setField('notes', e.target.value)}
                     />
                   </label>
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground/85">
                     <input
                       type="checkbox"
                       checked={values.isActive}
                       onChange={(e) => setField('isActive', e.target.checked)}
-                      className="rounded border-slate-300"
+                      className="rounded border-border"
                     />
                     Active landlord
                   </label>
                 </div>
               </section>
 
-              <section className="mt-4 rounded-xl border border-slate-200 bg-white">
-                <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                  <Droplets className="h-4 w-4 text-teal-700" aria-hidden />
+              <section className="mt-4 rounded-xl border border-border bg-white">
+                <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3">
+                  <Droplets className="h-4 w-4 text-primary" aria-hidden />
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Land by pond</h3>
-                    <p className="text-xs text-slate-600">Optional — leased land decimals per pond.</p>
+                    <h3 className="text-sm font-semibold text-foreground">Land by pond</h3>
+                    <p className="text-xs text-muted-foreground">Optional — leased land decimals per pond.</p>
                   </div>
                 </div>
                 <div className="space-y-2 p-4">
                   {values.shareDrafts.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-4 text-center text-sm text-slate-600">
+                    <p className="rounded-lg border border-dashed border-border bg-muted/50 px-3 py-4 text-center text-sm text-muted-foreground">
                       No pond shares yet.
                     </p>
                   ) : (
@@ -234,12 +234,12 @@ export function LandlordFormModal({
                       return (
                         <div
                           key={idx}
-                          className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-100 bg-slate-50/80 p-3"
+                          className="flex flex-wrap items-end gap-2 rounded-lg border border-border/70 bg-muted/50 p-3"
                         >
-                          <label className="min-w-[140px] flex-1 text-xs font-medium text-slate-700">
+                          <label className="min-w-[140px] flex-1 text-xs font-medium text-foreground/85">
                             Pond
                             <select
-                              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                              className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                               value={row.pond_id}
                               onChange={(e) => {
                                 const v = e.target.value
@@ -257,11 +257,11 @@ export function LandlordFormModal({
                               ))}
                             </select>
                           </label>
-                          <label className="w-28 text-xs font-medium text-slate-700">
+                          <label className="w-28 text-xs font-medium text-foreground/85">
                             Land (dec)
                             <input
                               inputMode="decimal"
-                              className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm tabular-nums"
+                              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 text-sm tabular-nums"
                               value={row.land_area_decimal}
                               onChange={(e) => {
                                 const v = e.target.value
@@ -274,9 +274,9 @@ export function LandlordFormModal({
                               }}
                             />
                           </label>
-                          <div className="w-32 text-xs font-medium text-slate-700">
+                          <div className="w-32 text-xs font-medium text-foreground/85">
                             <span className="block">Est. annual</span>
-                            <div className="mt-1 rounded-lg border border-dashed border-slate-200 bg-white px-2 py-1.5 text-sm tabular-nums">
+                            <div className="mt-1 rounded-lg border border-dashed border-border bg-white px-2 py-1.5 text-sm tabular-nums">
                               {implied != null ? (
                                 <>
                                   {sym}
@@ -287,10 +287,10 @@ export function LandlordFormModal({
                               )}
                             </div>
                           </div>
-                          <label className="min-w-[100px] flex-1 text-xs font-medium text-slate-700">
+                          <label className="min-w-[100px] flex-1 text-xs font-medium text-foreground/85">
                             Notes
                             <input
-                              className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                              className="mt-1 w-full rounded-lg border border-border px-2 py-1.5 text-sm"
                               value={row.notes}
                               onChange={(e) => {
                                 const v = e.target.value
@@ -303,7 +303,7 @@ export function LandlordFormModal({
                           </label>
                           <button
                             type="button"
-                            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            className="rounded-lg border border-border bg-white px-2 py-1.5 text-xs font-medium text-foreground/85 hover:bg-muted/40"
                             onClick={() =>
                               setField(
                                 'shareDrafts',
@@ -319,7 +319,7 @@ export function LandlordFormModal({
                   )}
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:text-teal-950"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-teal-950"
                     onClick={() => setField('shareDrafts', [...values.shareDrafts, emptyShareDraft()])}
                   >
                     <Plus className="h-4 w-4" aria-hidden />
@@ -328,49 +328,49 @@ export function LandlordFormModal({
                 </div>
               </section>
 
-              <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60">
-                <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-                  <Landmark className="h-4 w-4 text-teal-700" aria-hidden />
+              <section className="mt-4 rounded-xl border border-border bg-muted/40/60">
+                <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3">
+                  <Landmark className="h-4 w-4 text-primary" aria-hidden />
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Opening balance</h3>
-                    <p className="text-xs text-slate-600">Optional subledger starting position.</p>
+                    <h3 className="text-sm font-semibold text-foreground">Opening balance</h3>
+                    <p className="text-xs text-muted-foreground">Optional subledger starting position.</p>
                   </div>
                 </div>
                 <div className="space-y-3 p-4">
                   {values.openingLocked ? (
-                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                       Opening balance is locked after other ledger activity or after it is posted to the general
                       ledger.
                     </p>
                   ) : (
-                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-600">
+                    <div className="rounded-lg border border-border bg-white p-3 text-xs leading-relaxed text-muted-foreground">
                       <p>
-                        <span className="font-medium text-slate-800">Positive</span> — rent owed to landlord (we owe).
+                        <span className="font-medium text-foreground">Positive</span> — rent owed to landlord (we owe).
                       </p>
                       <p className="mt-1">
-                        <span className="font-medium text-slate-800">Negative</span> — credit or prepaid.
+                        <span className="font-medium text-foreground">Negative</span> — credit or prepaid.
                       </p>
                     </div>
                   )}
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block text-sm font-medium text-slate-700">
+                    <label className="block text-sm font-medium text-foreground/85">
                       Amount ({sym})
                       <input
                         type="number"
                         step="0.01"
                         disabled={values.openingLocked}
-                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums disabled:bg-slate-100"
+                        className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm tabular-nums disabled:bg-muted"
                         value={values.openingBalance}
                         onChange={(e) => setField('openingBalance', e.target.value)}
                         placeholder="0"
                       />
                     </label>
-                    <label className="block text-sm font-medium text-slate-700">
+                    <label className="block text-sm font-medium text-foreground/85">
                       As of date
                       <input
                         type="date"
                         disabled={values.openingLocked}
-                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+                        className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:bg-muted"
                         value={values.openingBalanceDate}
                         onChange={(e) => setField('openingBalanceDate', e.target.value)}
                       />
@@ -380,12 +380,12 @@ export function LandlordFormModal({
               </section>
             </div>
 
-            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-slate-200 bg-slate-50/80 px-5 py-4">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-muted/50 px-5 py-4">
               <button
                 type="button"
                 onClick={handleClose}
                 disabled={saving}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -393,7 +393,7 @@ export function LandlordFormModal({
                 type="button"
                 onClick={() => void submit()}
                 disabled={saving}
-                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               >
                 {saving ? 'Saving…' : mode === 'create' ? 'Create landlord' : 'Save changes'}
               </button>

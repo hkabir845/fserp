@@ -22,7 +22,7 @@ export default function LogoutButton({ className = '', showLabel = true }: Logou
       onClick={performLogout}
       className={
         className ||
-        'inline-flex items-center gap-2 rounded-lg border-2 border-red-500 bg-white px-3 py-2 text-sm font-medium text-red-700 shadow-sm transition-colors hover:border-red-600 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2'
+        'inline-flex items-center gap-2 rounded-lg border-2 border-red-500 bg-white px-3 py-2 text-sm font-medium text-destructive shadow-sm transition-colors hover:border-red-600 hover:bg-destructive/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2'
       }
       aria-label="Log out"
     >

@@ -212,15 +212,15 @@ export default function QualityLabPage() {
   }, [params])
 
   return (
-          <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <div className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
+          <div className="min-h-screen bg-gradient-to-b from-muted/40 to-card">
+        <div className="border-b border-border/80 bg-white/90 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 py-8">
             <ReportingHubBreadcrumb current="Lab & QC" className="mb-4" />
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">FMERP · Quality</p>
-                <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Laboratory & feed compliance</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">FMERP · Quality</p>
+                <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">Laboratory & feed compliance</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                   Test incoming ingredients against supplier COA, validate formulations vs targets, and release finished feed
                   with documented limits (proximates, mycotoxins, micro, and physical pellet quality). Aligned with compound
                   feed industry practice: traceable samples, specification-driven OOS checks, and retention-ready records.
@@ -230,19 +230,19 @@ export default function QualityLabPage() {
                 type="button"
                 onClick={() => seed.mutate()}
                 disabled={seed.isPending}
-                className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50"
               >
                 Load default analyte catalog
               </button>
             </div>
-            <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+            <div className="mt-6 flex flex-wrap gap-2 border-t border-border/70 pt-4">
               {(['samples', 'specs', 'catalog'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTab(t)}
                   className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                    tab === t ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    tab === t ? 'bg-foreground text-white' : 'bg-muted text-foreground/85 hover:bg-muted'
                   }`}
                 >
                   {t === 'samples' ? 'Samples & results' : t === 'specs' ? 'Specifications' : 'Analyte catalog'}
@@ -254,15 +254,15 @@ export default function QualityLabPage() {
 
         <div className="mx-auto max-w-6xl space-y-8 px-4 py-8">
           {error ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning-foreground">
               Select a tenant in the company switcher to use the quality lab.
             </div>
           ) : null}
 
           {tab === 'catalog' ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900">Analyte catalog</h2>
-              <p className="mt-1 text-sm text-slate-500">
+            <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-foreground">Analyte catalog</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Standard panel includes protein, fat, fiber, ash, moisture, energy, minerals, aflatoxin / Fusarium toxins,
                 pellet durability, hardness, and hygiene indicators — extend with your methods (ISO 17025-style method
                 references on each result row in the API).
@@ -270,21 +270,21 @@ export default function QualityLabPage() {
               <div className="mt-6 space-y-6">
                 {Object.entries(byCat).map(([cat, rows]) => (
                   <div key={cat}>
-                    <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">{cat}</h3>
-                    <div className="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-100">
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground/70">{cat}</h3>
+                    <div className="mt-2 divide-y divide-border/70 rounded-xl border border-border/70">
                       {rows.map((p) => (
                         <div key={p.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
-                          <span className="font-mono text-sm text-indigo-700">{p.code}</span>
-                          <span className="flex-1 text-sm text-slate-800">{p.name}</span>
-                          <span className="text-xs text-slate-500">{p.unit ?? '—'}</span>
-                          <span className="text-xs text-slate-400">{p.method_family}</span>
+                          <span className="font-mono text-sm text-primary">{p.code}</span>
+                          <span className="flex-1 text-sm text-foreground">{p.name}</span>
+                          <span className="text-xs text-muted-foreground">{p.unit ?? '—'}</span>
+                          <span className="text-xs text-muted-foreground/70">{p.method_family}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 ))}
                 {params.length === 0 ? (
-                  <p className="text-sm text-slate-500">Run &quot;Load default analyte catalog&quot; to populate tests.</p>
+                  <p className="text-sm text-muted-foreground">Run &quot;Load default analyte catalog&quot; to populate tests.</p>
                 ) : null}
               </div>
             </section>
@@ -292,18 +292,18 @@ export default function QualityLabPage() {
 
           {tab === 'specs' ? (
             <div className="grid gap-6 lg:grid-cols-5">
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
-                <h2 className="text-lg font-semibold text-slate-900">New specification</h2>
-                <p className="mt-1 text-sm text-slate-500">Define min/max bands per analyte; attach purpose for audits.</p>
+              <section className="rounded-2xl border border-border bg-white p-6 shadow-sm lg:col-span-2">
+                <h2 className="text-lg font-semibold text-foreground">New specification</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Define min/max bands per analyte; attach purpose for audits.</p>
                 <div className="mt-4 space-y-3">
                   <input
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-border px-3 py-2 text-sm"
                     value={specName}
                     onChange={(e) => setSpecName(e.target.value)}
                     placeholder="Name (e.g. Broiler grower release v3)"
                   />
                   <select
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-border px-3 py-2 text-sm"
                     value={specPurpose}
                     onChange={(e) => setSpecPurpose(e.target.value)}
                   >
@@ -314,7 +314,7 @@ export default function QualityLabPage() {
                     ))}
                   </select>
                   {specLines.map((ln, idx) => (
-                    <div key={idx} className="flex flex-wrap gap-2 rounded-xl bg-slate-50 p-3">
+                    <div key={idx} className="flex flex-wrap gap-2 rounded-xl bg-muted/40 p-3">
                       <select
                         className="min-w-[140px] flex-1 rounded-lg border px-2 py-1.5 text-sm"
                         value={ln.parameter_id}
@@ -349,7 +349,7 @@ export default function QualityLabPage() {
                           )
                         }
                       />
-                      <label className="flex items-center gap-1 text-xs text-slate-600">
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
                         <input
                           type="checkbox"
                           checked={ln.is_critical}
@@ -366,7 +366,7 @@ export default function QualityLabPage() {
                   <button
                     type="button"
                     onClick={addSpecLine}
-                    className="text-sm font-medium text-indigo-600 hover:underline"
+                    className="text-sm font-medium text-primary hover:underline"
                   >
                     + Add limit line
                   </button>
@@ -374,32 +374,32 @@ export default function QualityLabPage() {
                     type="button"
                     disabled={!specName.trim() || specLines.length === 0 || createSpec.isPending}
                     onClick={() => createSpec.mutate()}
-                    className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+                    className="w-full rounded-xl bg-foreground py-2.5 text-sm font-semibold text-white hover:bg-foreground/90 disabled:opacity-40"
                   >
                     Save specification
                   </button>
                 </div>
               </section>
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
-                <h2 className="text-lg font-semibold text-slate-900">Active specifications</h2>
+              <section className="rounded-2xl border border-border bg-white p-6 shadow-sm lg:col-span-3">
+                <h2 className="text-lg font-semibold text-foreground">Active specifications</h2>
                 <ul className="mt-4 space-y-2">
                   {specs.map((s) => (
                     <li
                       key={s.id}
-                      className="flex flex-wrap items-center justify-between rounded-xl border border-slate-100 px-4 py-3"
+                      className="flex flex-wrap items-center justify-between rounded-xl border border-border/70 px-4 py-3"
                     >
                       <div>
-                        <span className="font-medium text-slate-900">{s.name}</span>
-                        <span className="ml-2 text-xs text-slate-500">{s.purpose}</span>
+                        <span className="font-medium text-foreground">{s.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{s.purpose}</span>
                       </div>
-                      <span className="text-xs text-slate-400">v{s.version ?? '—'}</span>
+                      <span className="text-xs text-muted-foreground/70">v{s.version ?? '—'}</span>
                     </li>
                   ))}
                 </ul>
-                {specs.length === 0 ? <p className="mt-4 text-sm text-slate-500">No specs yet.</p> : null}
-                <div className="mt-6 border-t border-slate-100 pt-4">
-                  <p className="text-xs leading-relaxed text-slate-500">
-                    <strong className="text-slate-700">How professionals use this:</strong> Supplier COA specs are linked to
+                {specs.length === 0 ? <p className="mt-4 text-sm text-muted-foreground">No specs yet.</p> : null}
+                <div className="mt-6 border-t border-border/70 pt-4">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    <strong className="text-foreground/85">How professionals use this:</strong> Supplier COA specs are linked to
                     ingredient + supplier; formulation release specs to feed product or BOM; regulatory envelopes for
                     contaminants. Each lab result stores snapshot limits for immutable audit (like batch COA retention).
                   </p>
@@ -410,11 +410,11 @@ export default function QualityLabPage() {
 
           {tab === 'samples' ? (
             <div className="grid gap-6 lg:grid-cols-2">
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-slate-900">Register sample</h2>
+              <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-foreground">Register sample</h2>
                 <div className="mt-4 space-y-3">
                   <select
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-border px-3 py-2 text-sm"
                     value={samType}
                     onChange={(e) => setSamType(e.target.value)}
                   >
@@ -425,7 +425,7 @@ export default function QualityLabPage() {
                     ))}
                   </select>
                   <select
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-border px-3 py-2 text-sm"
                     value={samSpec === '' ? '' : String(samSpec)}
                     onChange={(e) => setSamSpec(e.target.value ? Number(e.target.value) : '')}
                   >
@@ -437,7 +437,7 @@ export default function QualityLabPage() {
                     ))}
                   </select>
                   <input
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-xl border border-border px-3 py-2 text-sm"
                     placeholder="Lot / batch / GRN reference"
                     value={samLot}
                     onChange={(e) => setSamLot(e.target.value)}
@@ -446,24 +446,24 @@ export default function QualityLabPage() {
                     type="button"
                     onClick={() => createSample.mutate()}
                     disabled={createSample.isPending}
-                    className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                    className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
                   >
                     Create sample
                   </button>
                 </div>
-                <ul className="mt-6 max-h-64 space-y-1 overflow-auto border-t border-slate-100 pt-4">
+                <ul className="mt-6 max-h-64 space-y-1 overflow-auto border-t border-border/70 pt-4">
                   {samples.map((s) => (
                     <li key={s.id}>
                       <button
                         type="button"
                         onClick={() => setSelSample(s.id)}
-                        className={`w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-50 ${
-                          selSample === s.id ? 'bg-indigo-50 ring-1 ring-indigo-200' : ''
+                        className={`w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-muted/40 ${
+                          selSample === s.id ? 'bg-accent ring-1 ring-indigo-200' : ''
                         }`}
                       >
-                        <span className="font-mono text-indigo-700">{s.sample_number}</span>
-                        <span className="text-slate-600"> · {s.sample_type}</span>
-                        <span className="block text-xs text-slate-500">
+                        <span className="font-mono text-primary">{s.sample_number}</span>
+                        <span className="text-muted-foreground"> · {s.sample_type}</span>
+                        <span className="block text-xs text-muted-foreground">
                           {s.status}
                           {s.overall_compliant === true ? ' · ✓ compliant' : ''}
                           {s.overall_compliant === false ? ' · OOS' : ''}
@@ -474,13 +474,13 @@ export default function QualityLabPage() {
                 </ul>
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
                 {selSample && detail ? (
                   <>
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <h2 className="text-lg font-semibold text-slate-900">{detail.sample_number}</h2>
-                        <p className="text-sm text-slate-500">
+                        <h2 className="text-lg font-semibold text-foreground">{detail.sample_number}</h2>
+                        <p className="text-sm text-muted-foreground">
                           {detail.sample_type} · {detail.lot_reference ?? '—'} · {detail.sampling_point ?? '—'}
                         </p>
                         <p className="mt-2 text-sm">
@@ -497,7 +497,7 @@ export default function QualityLabPage() {
                       <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
-                          className="rounded-lg bg-slate-800 px-2 py-1 text-xs text-white"
+                          className="rounded-lg bg-foreground px-2 py-1 text-xs text-white"
                           onClick={() => setStatus.mutate({ id: detail.id, status: 'completed' })}
                         >
                           Mark complete
@@ -505,9 +505,9 @@ export default function QualityLabPage() {
                       </div>
                     </div>
 
-                    <div className="mt-6 space-y-3 border-t border-slate-100 pt-4">
-                      <h3 className="text-sm font-semibold text-slate-800">Enter results</h3>
-                      <p className="text-xs text-slate-500">
+                    <div className="mt-6 space-y-3 border-t border-border/70 pt-4">
+                      <h3 className="text-sm font-semibold text-foreground">Enter results</h3>
+                      <p className="text-xs text-muted-foreground">
                         Limits apply automatically when a specification is linked. Critical limits block release in regulated
                         workflows (configure lines accordingly).
                       </p>
@@ -515,8 +515,8 @@ export default function QualityLabPage() {
                         const existing = detail.results.find((r) => r.parameter_id === p.id)
                         const val = resultVals[p.id] ?? (existing?.result_numeric != null ? String(existing.result_numeric) : '')
                         return (
-                          <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50/80 px-3 py-2">
-                            <span className="w-24 font-mono text-xs text-indigo-800">{p.code}</span>
+                          <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
+                            <span className="w-24 font-mono text-xs text-primary">{p.code}</span>
                             <input
                               className="w-28 rounded border px-2 py-1 text-sm"
                               placeholder={p.unit ?? 'value'}
@@ -524,7 +524,7 @@ export default function QualityLabPage() {
                               onChange={(e) => setResultVals((m) => ({ ...m, [p.id]: e.target.value }))}
                             />
                             {existing?.lower_applied != null || existing?.upper_applied != null ? (
-                              <span className="text-xs text-slate-500">
+                              <span className="text-xs text-muted-foreground">
                                 [{existing.lower_applied ?? '—'} … {existing.upper_applied ?? '—'}]{' '}
                                 {existing.compliant === true ? '✓' : existing.compliant === false ? '✗' : ''}
                               </span>
@@ -543,7 +543,7 @@ export default function QualityLabPage() {
                     </button>
                   </>
                 ) : (
-                  <p className="text-sm text-slate-500">Select a sample to capture results or create one on the left.</p>
+                  <p className="text-sm text-muted-foreground">Select a sample to capture results or create one on the left.</p>
                 )}
               </section>
             </div>

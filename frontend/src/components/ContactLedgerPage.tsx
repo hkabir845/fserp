@@ -241,13 +241,13 @@ export default function ContactLedgerPage({
           <div className="mb-6 flex flex-wrap items-center gap-4">
             <Link
               href={backHref}
-              className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
               {backLabel}
             </Link>
-            <div className="flex items-center gap-2 text-gray-400">/</div>
-            <div className="flex items-center gap-2 text-gray-900 font-semibold">
+            <div className="flex items-center gap-2 text-muted-foreground/70">/</div>
+            <div className="flex items-center gap-2 text-foreground font-semibold">
               <BookOpen className="h-5 w-5" />
               Ledger
             </div>
@@ -255,26 +255,26 @@ export default function ContactLedgerPage({
 
           {initialLoading && !data ? (
             <div className="flex justify-center py-24">
-              <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+              <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
             </div>
           ) : data ? (
             <>
               <div className="mb-6 rounded-lg bg-white p-6 shadow">
-                <h1 className="text-2xl font-bold text-gray-900">{data.display_name}</h1>
+                <h1 className="text-2xl font-bold text-foreground">{data.display_name}</h1>
                 {data.note && (
-                  <p className="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2">
+                  <p className="mt-2 text-sm text-warning-foreground bg-warning/10 border border-amber-100 rounded px-3 py-2">
                     {data.note}
                   </p>
                 )}
                 {data.balance_note && (
-                  <p className={`text-sm text-gray-600 ${data.note ? 'mt-3' : 'mt-2'}`}>
+                  <p className={`text-sm text-muted-foreground ${data.note ? 'mt-3' : 'mt-2'}`}>
                     {data.balance_note}
                   </p>
                 )}
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <p className="text-xs font-medium uppercase text-gray-500">Period start balance</p>
-                    <p className="text-lg font-semibold text-gray-900">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Period start balance</p>
+                    <p className="text-lg font-semibold text-foreground">
                       {currencySymbol}
                       {parseFloat(data.period_start_balance || '0').toLocaleString(undefined, {
                         minimumFractionDigits: 2,
@@ -283,8 +283,8 @@ export default function ContactLedgerPage({
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium uppercase text-gray-500">Closing balance (period)</p>
-                    <p className="text-lg font-semibold text-blue-700">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Closing balance (period)</p>
+                    <p className="text-lg font-semibold text-primary">
                       {currencySymbol}
                       {parseFloat(data.closing_balance || '0').toLocaleString(undefined, {
                         minimumFractionDigits: 2,
@@ -293,8 +293,8 @@ export default function ContactLedgerPage({
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium uppercase text-gray-500">Stored profile balance</p>
-                    <p className="text-lg font-semibold text-gray-700">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Stored profile balance</p>
+                    <p className="text-lg font-semibold text-foreground/85">
                       {currencySymbol}
                       {parseFloat(data.stored_current_balance || '0').toLocaleString(undefined, {
                         minimumFractionDigits: 2,
@@ -304,8 +304,8 @@ export default function ContactLedgerPage({
                   </div>
                   {data.closing_balance_all_time != null && (
                     <div>
-                      <p className="text-xs font-medium uppercase text-gray-500">All-time closing</p>
-                      <p className="text-lg font-semibold text-gray-600">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">All-time closing</p>
+                      <p className="text-lg font-semibold text-muted-foreground">
                         {currencySymbol}
                         {parseFloat(data.closing_balance_all_time || '0').toLocaleString(undefined, {
                           minimumFractionDigits: 2,
@@ -316,45 +316,45 @@ export default function ContactLedgerPage({
                   )}
                 </div>
 
-                <div className="mt-6 flex flex-wrap items-end gap-4 border-t border-gray-100 pt-4">
+                <div className="mt-6 flex flex-wrap items-end gap-4 border-t border-border/70 pt-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500">Start date</label>
+                    <label className="block text-xs font-medium text-muted-foreground">Start date</label>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="mt-1 rounded border border-gray-300 px-3 py-2 text-sm"
+                      className="mt-1 rounded border border-border px-3 py-2 text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500">End date</label>
+                    <label className="block text-xs font-medium text-muted-foreground">End date</label>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="mt-1 rounded border border-gray-300 px-3 py-2 text-sm"
+                      className="mt-1 rounded border border-border px-3 py-2 text-sm"
                     />
                   </div>
                   <div className="min-w-[14rem] flex-1">
-                    <label className="block text-xs font-medium text-gray-500">Search (all dates)</label>
+                    <label className="block text-xs font-medium text-muted-foreground">Search (all dates)</label>
                     <div className="relative mt-1">
-                      <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
                       <input
                         type="search"
                         value={searchQ}
                         onChange={(e) => setSearchQ(e.target.value)}
                         placeholder="Reference, description…"
-                        className="w-full rounded border border-gray-300 py-2 pl-8 pr-3 text-sm"
+                        className="w-full rounded border border-border py-2 pl-8 pr-3 text-sm"
                       />
                     </div>
                     {hasTextSearch && (startDate || endDate) ? (
-                      <p className="mt-1 text-xs text-gray-500">Date range paused while searching.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Date range paused while searching.</p>
                     ) : null}
                   </div>
                   <button
                     type="button"
                     onClick={() => load()}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-white hover:bg-primary"
                   >
                     <RefreshCw className={`h-4 w-4 ${refetching ? 'animate-spin' : ''}`} />
                     Apply
@@ -363,7 +363,7 @@ export default function ContactLedgerPage({
                     <button
                       type="button"
                       onClick={clearFilters}
-                      className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900"
+                      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
                     >
                       <FilterX className="h-3.5 w-3.5" aria-hidden />
                       Clear filters
@@ -381,27 +381,27 @@ export default function ContactLedgerPage({
 
               {allowManualEntries && (
                 <div className="mb-6 rounded-lg bg-white p-6 shadow">
-                  <h2 className="text-lg font-semibold text-gray-900">Add ledger entry</h2>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <h2 className="text-lg font-semibold text-foreground">Add ledger entry</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
                     Debit increases net payable to the employee; credit records payment or recovery.
                   </p>
                   <form onSubmit={submitEntry} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Date</label>
+                      <label className="text-xs font-medium text-muted-foreground">Date</label>
                       <input
                         type="date"
                         required
                         value={entryForm.entry_date}
                         onChange={(e) => setEntryForm((f) => ({ ...f, entry_date: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Type</label>
+                      <label className="text-xs font-medium text-muted-foreground">Type</label>
                       <select
                         value={entryForm.entry_type}
                         onChange={(e) => setEntryForm((f) => ({ ...f, entry_type: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                       >
                         <option value="salary">Salary / wages</option>
                         <option value="overtime">Overtime</option>
@@ -412,44 +412,44 @@ export default function ContactLedgerPage({
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Reference</label>
+                      <label className="text-xs font-medium text-muted-foreground">Reference</label>
                       <input
                         value={entryForm.reference}
                         onChange={(e) => setEntryForm((f) => ({ ...f, reference: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                         placeholder="Optional"
                       />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="text-xs font-medium text-gray-500">Memo</label>
+                      <label className="text-xs font-medium text-muted-foreground">Memo</label>
                       <input
                         value={entryForm.memo}
                         onChange={(e) => setEntryForm((f) => ({ ...f, memo: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                         placeholder="Description"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Debit</label>
+                      <label className="text-xs font-medium text-muted-foreground">Debit</label>
                       <input
                         type="number"
                         step="0.01"
                         min="0"
                         value={entryForm.debit}
                         onChange={(e) => setEntryForm((f) => ({ ...f, debit: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                         placeholder="0.00"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Credit</label>
+                      <label className="text-xs font-medium text-muted-foreground">Credit</label>
                       <input
                         type="number"
                         step="0.01"
                         min="0"
                         value={entryForm.credit}
                         onChange={(e) => setEntryForm((f) => ({ ...f, credit: e.target.value }))}
-                        className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
                         placeholder="0.00"
                       />
                     </div>
@@ -457,7 +457,7 @@ export default function ContactLedgerPage({
                       <button
                         type="submit"
                         disabled={savingEntry}
-                        className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                        className="w-full rounded-lg bg-success px-4 py-2 text-sm font-medium text-white hover:bg-success/90 disabled:opacity-50"
                       >
                         {savingEntry ? 'Saving…' : 'Save entry'}
                       </button>
@@ -469,22 +469,22 @@ export default function ContactLedgerPage({
               <div className="relative overflow-hidden rounded-lg bg-white shadow">
                 {refetching ? (
                   <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-600" aria-label="Updating ledger" />
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Updating ledger" />
                   </div>
                 ) : null}
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Reference</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">Description</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Type</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Reference</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Description</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Debit</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Credit</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Balance</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-border bg-white">
                     {data.transactions.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="p-0">
@@ -510,14 +510,14 @@ export default function ContactLedgerPage({
                       </tr>
                     ) : (
                       data.transactions.map((row, idx) => (
-                        <tr key={`${row.date}-${row.reference}-${idx}`} className="hover:bg-gray-50">
-                          <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-900">{row.date}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{row.type}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">{row.reference}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">
+                        <tr key={`${row.date}-${row.reference}-${idx}`} className="hover:bg-muted/40">
+                          <td className="whitespace-nowrap px-4 py-3 text-sm text-foreground">{row.date}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">{row.type}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">{row.reference}</td>
+                          <td className="px-4 py-3 text-sm text-foreground/85">
                             <div>{row.description}</div>
                             {row.allocations && row.allocations.length > 0 && (
-                              <ul className="mt-1 list-inside list-disc text-xs text-gray-500">
+                              <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
                                 {row.allocations.map((a, i) => (
                                   <li key={i}>
                                     {(a.invoice_number || a.bill_number || 'Line')}: {currencySymbol}
@@ -530,17 +530,17 @@ export default function ContactLedgerPage({
                               </ul>
                             )}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-900">
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-foreground">
                             {parseFloat(row.debit) > 0
                               ? `${currencySymbol}${parseFloat(row.debit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               : '—'}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-gray-900">
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm text-foreground">
                             {parseFloat(row.credit) > 0
                               ? `${currencySymbol}${parseFloat(row.credit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               : '—'}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-gray-900">
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-foreground">
                             {currencySymbol}
                             {parseFloat(row.balance).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
@@ -555,7 +555,7 @@ export default function ContactLedgerPage({
               </div>
             </>
           ) : (
-            <p className="text-gray-600">No data.</p>
+            <p className="text-muted-foreground">No data.</p>
           )}
         </div>
       </div>

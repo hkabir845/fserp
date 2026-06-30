@@ -410,25 +410,25 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
         </ul>
       </div>
 
-      <p className="mb-3 text-sm text-slate-700">
+      <p className="mb-3 text-sm text-foreground/85">
         Record <strong>fish on hand at cutover</strong> by species. Edit or remove rows below, or add lines for
         polyculture. Full ledger tools:{' '}
-        <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">
+        <Link href="/aquaculture/stock" className="font-medium text-primary underline">
           Aquaculture → Stock
         </Link>
         .
       </p>
 
-      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/90 px-3 py-2.5">
-        <p className="text-xs font-semibold text-slate-800">Species available in this system</p>
+      <div className="mb-4 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
+        <p className="text-xs font-semibold text-foreground">Species available in this system</p>
         {speciesLoading ? (
-          <p className="mt-2 text-xs text-slate-500">Loading species…</p>
+          <p className="mt-2 text-xs text-muted-foreground">Loading species…</p>
         ) : (
           <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Fish species catalog">
             {speciesOptions.map((s) => (
               <li
                 key={s.id}
-                className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200"
+                className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-foreground/85 ring-1 ring-border"
               >
                 {s.label}
               </li>
@@ -448,11 +448,11 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
           const glLocked = isEditing && Boolean(editingLedger?.row.journal_entry_id)
 
           return (
-            <section key={p.pond_id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="font-semibold text-slate-900">{p.pond_name}</h3>
+            <section key={p.pond_id} className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <h3 className="font-semibold text-foreground">{p.pond_name}</h3>
 
               {bio?.has_biomass ? (
-                <p className="mt-1 text-xs text-slate-600">
+                <p className="mt-1 text-xs text-muted-foreground">
                   On hand: {bio.total_fish_count.toLocaleString()} fish · {bio.total_weight_kg} kg
                   {bioasset && parseMoney(bioasset.estimated_value) > 0 ? (
                     <>
@@ -464,19 +464,19 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                   ) : null}
                 </p>
               ) : (
-                <p className="mt-1 text-xs text-amber-800">No biomass recorded yet.</p>
+                <p className="mt-1 text-xs text-warning-foreground">No biomass recorded yet.</p>
               )}
 
               <div className="mt-4">
-                <p className="text-xs font-semibold text-slate-700">Recorded opening / adjustment rows</p>
+                <p className="text-xs font-semibold text-foreground/85">Recorded opening / adjustment rows</p>
                 {ledgerLoading ? (
-                  <p className="mt-2 text-xs text-slate-500">Loading ledger…</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Loading ledger…</p>
                 ) : ledgerRows.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500">No go-live or positive adjustment rows yet.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">No go-live or positive adjustment rows yet.</p>
                 ) : (
-                  <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                  <div className="mt-2 overflow-x-auto rounded-lg border border-border">
                     <table className="w-full min-w-[640px] text-left text-xs">
-                      <thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-semibold uppercase text-slate-500">
+                      <thead className="border-b border-border bg-muted/40 text-[10px] font-semibold uppercase text-muted-foreground">
                         <tr>
                           <th className="px-2 py-2">Date</th>
                           <th className="px-2 py-2">Species</th>
@@ -487,13 +487,13 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                           <th className="px-2 py-2 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-border/70">
                         {ledgerRows.map((r) => (
-                          <tr key={r.id} className={isEditing && editingLedger?.row.id === r.id ? 'bg-teal-50/60' : ''}>
-                            <td className="px-2 py-2 tabular-nums text-slate-600">
+                          <tr key={r.id} className={isEditing && editingLedger?.row.id === r.id ? 'bg-accent/60' : ''}>
+                            <td className="px-2 py-2 tabular-nums text-muted-foreground">
                               {formatDateOnly(r.entry_date)}
                             </td>
-                            <td className="px-2 py-2 font-medium text-slate-800">{r.fish_species_label}</td>
+                            <td className="px-2 py-2 font-medium text-foreground">{r.fish_species_label}</td>
                             <td className="px-2 py-2 text-right tabular-nums">{r.fish_count_delta.toLocaleString()}</td>
                             <td className="px-2 py-2 text-right tabular-nums">{r.weight_kg_delta}</td>
                             <td className="px-2 py-2 text-right tabular-nums">
@@ -505,7 +505,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                                   Posted
                                 </span>
                               ) : (
-                                <span className="text-slate-400">Biology only</span>
+                                <span className="text-muted-foreground/70">Biology only</span>
                               )}
                             </td>
                             <td className="px-2 py-2 text-right">
@@ -514,7 +514,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                                   type="button"
                                   title={r.journal_entry_id ? 'Edit memo only' : 'Edit entry'}
                                   onClick={() => startEdit(p.pond_id, r)}
-                                  className="rounded border border-slate-200 p-1 text-slate-600 hover:bg-slate-50"
+                                  className="rounded border border-border p-1 text-muted-foreground hover:bg-muted/40"
                                 >
                                   <Edit2 className="h-3.5 w-3.5" aria-hidden />
                                 </button>
@@ -537,12 +537,12 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                 )}
               </div>
 
-              <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/80 p-3" data-go-live-fish-opening>
-                <p className="text-xs font-semibold text-slate-700">
+              <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/50 p-3" data-go-live-fish-opening>
+                <p className="text-xs font-semibold text-foreground/85">
                   {isEditing ? `Edit entry #${editingLedger?.row.id}` : 'Add opening stock'} (as of {cutoverDate})
                 </p>
                 {glLocked ? (
-                  <p className="mt-1 text-[11px] text-amber-900">
+                  <p className="mt-1 text-[11px] text-warning-foreground">
                     This row is posted to the books — only memo can change here. To reverse amounts, delete from Stock
                     (rolls back auto journal) or adjust on GL.
                   </p>
@@ -552,12 +552,12 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                   {lines.map((ln) => (
                     <div
                       key={ln.lineId}
-                      className="grid gap-2 rounded-lg border border-slate-200/80 bg-white p-2.5 sm:grid-cols-12 sm:items-end"
+                      className="grid gap-2 rounded-lg border border-border/80 bg-white p-2.5 sm:grid-cols-12 sm:items-end"
                     >
                       <label className="block text-xs sm:col-span-2">
-                        <span className="font-medium text-slate-600">Species</span>
+                        <span className="font-medium text-muted-foreground">Species</span>
                         <select
-                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:bg-slate-100"
+                          className="mt-1 w-full rounded-md border border-border bg-white px-2 py-1.5 text-sm disabled:bg-muted"
                           value={ln.species}
                           disabled={speciesLoading || glLocked}
                           onChange={(e) =>
@@ -576,11 +576,11 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                       </label>
                       {ln.species === 'other' ? (
                         <label className="block text-xs sm:col-span-2">
-                          <span className="font-medium text-slate-600">Other name</span>
+                          <span className="font-medium text-muted-foreground">Other name</span>
                           <input
                             type="text"
                             disabled={glLocked}
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-100"
+                            className="mt-1 w-full rounded-md border border-border px-2 py-1.5 text-sm disabled:bg-muted"
                             value={ln.speciesOther}
                             onChange={(e) => updateLine(p.pond_id, ln.lineId, { speciesOther: e.target.value })}
                           />
@@ -589,37 +589,37 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                         <div className="hidden sm:col-span-2 sm:block" aria-hidden />
                       )}
                       <label className="block text-xs sm:col-span-2">
-                        <span className="font-medium text-slate-600">Fish count</span>
+                        <span className="font-medium text-muted-foreground">Fish count</span>
                         <input
                           type="text"
                           inputMode="numeric"
                           disabled={glLocked}
-                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm tabular-nums disabled:bg-slate-100"
+                          className="mt-1 w-full rounded-md border border-border px-2 py-1.5 text-sm tabular-nums disabled:bg-muted"
                           value={ln.fishCount}
                           onChange={(e) => updateLine(p.pond_id, ln.lineId, { fishCount: e.target.value })}
                           onBlur={() => void applySuggestedBookValue(p.pond_id, ln, costPerKg)}
                         />
                       </label>
                       <label className="block text-xs sm:col-span-2">
-                        <span className="font-medium text-slate-600">Total kg</span>
+                        <span className="font-medium text-muted-foreground">Total kg</span>
                         <input
                           type="text"
                           inputMode="decimal"
                           disabled={glLocked}
-                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm tabular-nums disabled:bg-slate-100"
+                          className="mt-1 w-full rounded-md border border-border px-2 py-1.5 text-sm tabular-nums disabled:bg-muted"
                           value={ln.weightKg}
                           onChange={(e) => updateLine(p.pond_id, ln.lineId, { weightKg: e.target.value })}
                           onBlur={() => void applySuggestedBookValue(p.pond_id, ln, costPerKg)}
                         />
                       </label>
                       <label className="block text-xs sm:col-span-2">
-                        <span className="font-medium text-slate-600">Book value ({sym})</span>
+                        <span className="font-medium text-muted-foreground">Book value ({sym})</span>
                         <input
                           type="text"
                           inputMode="decimal"
                           disabled={glLocked}
                           placeholder={costPerKg ? `~${costPerKg}/kg` : '0'}
-                          className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm tabular-nums disabled:bg-slate-100"
+                          className="mt-1 w-full rounded-md border border-border px-2 py-1.5 text-sm tabular-nums disabled:bg-muted"
                           value={ln.bookValue}
                           onChange={(e) =>
                             updateLine(p.pond_id, ln.lineId, {
@@ -630,7 +630,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                         />
                       </label>
                       <label className="flex items-end sm:col-span-1">
-                        <span className="flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1.5 text-[11px]">
+                        <span className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-[11px]">
                           <input
                             type="checkbox"
                             disabled={glLocked}
@@ -645,7 +645,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                           <button
                             type="button"
                             onClick={() => removeLine(p.pond_id, ln.lineId)}
-                            className="rounded-md border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                            className="rounded-md border border-border p-2 text-muted-foreground hover:bg-muted/40"
                             aria-label="Remove line"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -664,7 +664,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                       type="button"
                       disabled={speciesLoading}
                       onClick={() => addLine(p.pond_id)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-900 hover:bg-teal-100"
+                      className="inline-flex items-center gap-1 rounded-lg border border-primary/25 bg-accent px-3 py-1.5 text-sm font-medium text-primary hover:bg-teal-100"
                     >
                       <Plus className="h-4 w-4" aria-hidden />
                       Add line
@@ -673,7 +673,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                     <button
                       type="button"
                       onClick={() => cancelEdit(p.pond_id)}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                      className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm text-foreground/85 hover:bg-muted/40"
                     >
                       Cancel edit
                     </button>
@@ -682,7 +682,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
                     type="button"
                     disabled={saving === p.pond_id || speciesLoading}
                     onClick={() => void saveOpenings(p.pond_id)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
                   >
                     {saving === p.pond_id ? 'Saving…' : isEditing ? 'Save changes' : 'Save openings'}
                   </button>

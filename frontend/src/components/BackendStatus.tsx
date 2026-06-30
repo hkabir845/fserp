@@ -39,11 +39,11 @@ export function BackendStatus() {
 
   if (checking) {
     return (
-      <div className="bg-amber-50 border-l-4 border-amber-500 p-4 mb-6 rounded-lg shadow-sm">
+      <div className="bg-warning/10 border-l-4 border-amber-500 p-4 mb-6 rounded-lg shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
-          <div className="text-sm font-semibold text-amber-900">Checking backend connection…</div>
-          <div className="text-xs text-amber-800">
+          <div className="h-2.5 w-2.5 rounded-full bg-warning/100 animate-pulse" />
+          <div className="text-sm font-semibold text-warning-foreground">Checking backend connection…</div>
+          <div className="text-xs text-warning-foreground">
             {apiOriginHint || '—'}
           </div>
         </div>
@@ -53,7 +53,7 @@ export function BackendStatus() {
 
   if (!isOnline) {
     return (
-      <div className="bg-red-50 border-l-4 border-red-500 p-6 mb-6 rounded-lg shadow-lg">
+      <div className="bg-destructive/5 border-l-4 border-red-500 p-6 mb-6 rounded-lg shadow-lg">
         <div className="flex items-start">
           <div className="flex-shrink-0">
             <svg className="h-6 w-6 text-red-500" viewBox="0 0 20 20" fill="currentColor">
@@ -61,14 +61,14 @@ export function BackendStatus() {
             </svg>
           </div>
           <div className="ml-4 flex-1">
-            <h3 className="text-lg font-bold text-red-800 mb-2">
+            <h3 className="text-lg font-bold text-destructive mb-2">
               ⚠️ Backend Server is NOT Running!
             </h3>
-            <p className="text-sm text-red-700 mb-4">
+            <p className="text-sm text-destructive mb-4">
               The CORS errors you're seeing are because the backend server is not running. 
               The frontend cannot connect to the API without the backend.
             </p>
-            <p className="text-sm text-red-800 mb-4 rounded border border-red-200 bg-red-100/50 p-3">
+            <p className="text-sm text-destructive mb-4 rounded border border-destructive/25 bg-destructive/10/50 p-3">
               <strong>FMERP API is FastAPI (Uvicorn)</strong> on port 8000 — not{' '}
               <code className="rounded bg-white px-1">python manage.py runserver</code> (Django). Stop anything else
               bound to 8000, then start the backend from the repo root with{' '}
@@ -77,11 +77,11 @@ export function BackendStatus() {
                 cd backend; python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
               </code>
             </p>
-            <div className="bg-white p-4 rounded border border-red-200 mb-4">
-              <p className="font-semibold text-red-800 mb-2">To Fix This:</p>
-              <ol className="list-decimal list-inside space-y-2 text-sm text-red-700">
+            <div className="bg-white p-4 rounded border border-destructive/25 mb-4">
+              <p className="font-semibold text-destructive mb-2">To Fix This:</p>
+              <ol className="list-decimal list-inside space-y-2 text-sm text-destructive">
                 <li>Go to the project root folder</li>
-                <li>Double-click: <code className="bg-red-100 px-2 py-1 rounded font-mono">start-backend.bat</code></li>
+                <li>Double-click: <code className="bg-destructive/10 px-2 py-1 rounded font-mono">start-backend.bat</code></li>
                 <li>Wait for the backend window to show "Uvicorn running on http://127.0.0.1:8000"</li>
                 <li>Refresh this page (F5)</li>
               </ol>
@@ -91,7 +91,7 @@ export function BackendStatus() {
                 href="http://localhost:8000/health"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700"
+                className="inline-flex items-center px-4 py-2 bg-destructive text-white text-sm font-medium rounded-md hover:bg-destructive/90"
               >
                 Test Backend Health
               </a>
@@ -99,12 +99,12 @@ export function BackendStatus() {
                 href="http://localhost:8000/api/docs"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-700"
+                className="inline-flex items-center px-4 py-2 bg-muted-foreground text-white text-sm font-medium rounded-md hover:bg-muted-foreground"
               >
                 Open API Docs
               </a>
             </div>
-            <p className="mt-4 text-xs text-red-600">
+            <p className="mt-4 text-xs text-destructive">
               <strong>Note:</strong> If the links above don't work, the backend is definitely not running.
             </p>
           </div>

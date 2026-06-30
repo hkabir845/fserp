@@ -22,14 +22,14 @@ function StatusPill({ status }: { status: string }) {
   const s = (status || '').toLowerCase()
   const cls =
     s === 'approved'
-      ? 'bg-green-50 text-green-700 ring-green-200'
+      ? 'bg-green-50 text-success ring-green-200'
       : s === 'rejected'
-        ? 'bg-red-50 text-red-700 ring-red-200'
+        ? 'bg-destructive/5 text-destructive ring-red-200'
         : s === 'draft'
-          ? 'bg-amber-50 text-amber-700 ring-amber-200'
+          ? 'bg-warning/10 text-warning-foreground ring-amber-200'
           : s.includes('pending')
-            ? 'bg-indigo-50 text-indigo-700 ring-indigo-200'
-            : 'bg-gray-50 text-gray-700 ring-gray-200'
+            ? 'bg-accent text-primary ring-indigo-200'
+            : 'bg-muted/40 text-foreground/85 ring-gray-200'
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ring-1 ${cls}`}>
       {status.replace(/_/g, ' ')}
@@ -61,21 +61,21 @@ export default function PurchaseRequisitionsPage() {
       <ReportingHubBreadcrumb current="Purchase requisitions" className="mb-4" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Purchase requisitions</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-semibold text-foreground">Purchase requisitions</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Internal requests with department head approval, then executive sign-off (GM / Head of Accounts / MD).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             href="/requisitions/inbox"
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40"
           >
             Approvals inbox
           </Link>
           <Link
             href="/purchase/requisitions/new"
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-accent0"
           >
             New requisition
           </Link>
@@ -83,11 +83,11 @@ export default function PurchaseRequisitionsPage() {
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <label className="text-sm text-gray-600">Filter</label>
+        <label className="text-sm text-muted-foreground">Filter</label>
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm"
+          className="rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm"
         >
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
@@ -99,12 +99,12 @@ export default function PurchaseRequisitionsPage() {
         <button
           type="button"
           onClick={() => refetch()}
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          className="text-sm font-medium text-primary hover:text-primary"
         >
           {isFetching ? 'Refreshing…' : 'Refresh'}
         </button>
         {counts.size > 0 && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted-foreground">
             Showing {rows.length} — {Array.from(counts.entries())
               .map(([k, v]) => `${k}: ${v}`)
               .join(' · ')}
@@ -112,22 +112,22 @@ export default function PurchaseRequisitionsPage() {
         )}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="mt-6 overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">Document</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">PO</th>
-              <th className="px-4 py-3 text-right font-semibold text-gray-700"> </th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/85">Document</th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/85">Status</th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/85">PO</th>
+              <th className="px-4 py-3 text-right font-semibold text-foreground/85"> </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border/70">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
+                <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
                   No purchase requisitions yet.{' '}
-                  <Link href="/purchase/requisitions/new" className="font-medium text-indigo-600 hover:text-indigo-800">
+                  <Link href="/purchase/requisitions/new" className="font-medium text-primary hover:text-primary">
                     Create one
                   </Link>
                   .
@@ -135,14 +135,14 @@ export default function PurchaseRequisitionsPage() {
               </tr>
             ) : (
               rows.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50/80">
-                  <td className="px-4 py-3 font-medium text-gray-900">{r.doc_number}</td>
+                <tr key={r.id} className="hover:bg-muted/40/80">
+                  <td className="px-4 py-3 font-medium text-foreground">{r.doc_number}</td>
                   <td className="px-4 py-3">
                     <StatusPill status={r.status} />
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
+                  <td className="px-4 py-3 text-muted-foreground">
                     {r.converted_po_id ? (
-                      <Link href={`/purchase/orders/${r.converted_po_id}`} className="text-indigo-600 hover:underline">
+                      <Link href={`/purchase/orders/${r.converted_po_id}`} className="text-primary hover:underline">
                         PO #{r.converted_po_id}
                       </Link>
                     ) : (
@@ -152,7 +152,7 @@ export default function PurchaseRequisitionsPage() {
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/purchase/requisitions/${r.id}`}
-                      className="font-medium text-indigo-600 hover:text-indigo-800"
+                      className="font-medium text-primary hover:text-primary"
                     >
                       Open
                     </Link>

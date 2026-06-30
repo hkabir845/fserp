@@ -244,11 +244,11 @@ export default function RoleDashboard() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center px-4">
-          <div className="flex items-center gap-3 text-sm text-slate-500">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <div
-              className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600"
+              className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary"
               aria-hidden
             />
             {aquacultureT('dashboardLoading', lang)}
@@ -259,7 +259,7 @@ export default function RoleDashboard() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <AquaculturePageShell
         showBackLink={false}
         titleId="dashboard-title"
@@ -324,18 +324,18 @@ export default function RoleDashboard() {
             {broadcasts.slice(0, 2).map((b) => (
               <div
                 key={b.id}
-                className="flex items-start gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 shadow-sm"
+                className="erp-alert-warning flex items-start gap-3 shadow-sm"
               >
-                <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">{b.title}</p>
-                  <p className="mt-0.5 line-clamp-2 text-amber-900/90">{b.message}</p>
-                  <p className="mt-1 text-xs text-amber-800/70">{formatDate(b.created_at, true)}</p>
+                  <p className="mt-0.5 line-clamp-2 text-warning-foreground/90">{b.message}</p>
+                  <p className="mt-1 text-xs text-warning-foreground/70">{formatDate(b.created_at, true)}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => void markBroadcastRead(b.id)}
-                  className="shrink-0 rounded-lg p-1 text-amber-700/70 hover:bg-amber-100 hover:text-amber-900"
+                  className="shrink-0 rounded-lg p-1 text-warning-foreground/70 hover:bg-warning/15 hover:text-warning-foreground"
                   aria-label="Dismiss"
                 >
                   <X className="h-4 w-4" />
@@ -348,40 +348,40 @@ export default function RoleDashboard() {
         {showPosHero ? (
           <Link
             href="/cashier"
-            className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200/90 bg-white px-5 py-4 shadow-sm transition hover:border-teal-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+            className="erp-action-card w-full max-w-none justify-between px-5 py-4"
           >
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 text-white shadow-sm">
+              <div className="erp-metric-icon erp-metric-icon--warning flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cta to-warning text-cta-foreground shadow-sm">
                 <ShoppingCart className="h-6 w-6" strokeWidth={1.75} aria-hidden />
               </div>
               <div>
-                <p className="font-semibold text-slate-900">{aquacultureT('dashboardOpenPos', lang)}</p>
-                <p className="text-sm text-slate-600">{aquacultureT('dashboardOpenPosSub', lang)}</p>
+                <p className="font-semibold text-foreground">{aquacultureT('dashboardOpenPos', lang)}</p>
+                <p className="text-sm text-muted-foreground">{aquacultureT('dashboardOpenPosSub', lang)}</p>
               </div>
             </div>
-            <ArrowRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+            <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground/70" aria-hidden />
           </Link>
         ) : null}
 
         <section
-          className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:p-5"
+          className="erp-panel"
           aria-labelledby="quick-apps-heading"
         >
           <div className="mb-4 flex items-end justify-between gap-3">
             <div>
               <h2
                 id="quick-apps-heading"
-                className="flex items-center gap-2 text-base font-semibold text-slate-800"
+                className="erp-panel-heading"
               >
-                <Sparkles className="h-4 w-4 text-teal-600" aria-hidden />
+                <Sparkles className="h-4 w-4 text-primary" aria-hidden />
                 {aquacultureT('dashboardQuickAccess', lang)}
               </h2>
-              <p className="mt-0.5 text-sm text-slate-500">{aquacultureT('dashboardQuickAccessSub', lang)}</p>
+              <p className="erp-panel-subheading">{aquacultureT('dashboardQuickAccessSub', lang)}</p>
             </div>
             {hasPermission('app.launcher') ? (
               <Link
                 href="/apps"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-teal-300 hover:bg-teal-50 hover:text-teal-900"
+                className="erp-btn-secondary inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5"
               >
                 <LayoutGrid className="h-4 w-4" aria-hidden />
                 {aquacultureT('dashboardAllApps', lang)}
@@ -397,14 +397,14 @@ export default function RoleDashboard() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="group flex flex-col items-center rounded-2xl border border-slate-200/90 bg-slate-50/50 p-4 text-center transition hover:border-teal-300 hover:bg-white hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                    className="group erp-quick-app-tile"
                   >
                     <div
                       className={`mb-3 flex h-12 w-12 items-center justify-center rounded-xl ${item.tileClass} transition group-hover:opacity-90 sm:h-14 sm:w-14`}
                     >
                       <Icon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={1.75} aria-hidden />
                     </div>
-                    <span className="line-clamp-2 text-sm font-medium leading-snug text-slate-700">
+                    <span className="line-clamp-2 text-sm font-medium leading-snug text-foreground/85">
                       {item.label}
                     </span>
                   </Link>
@@ -412,7 +412,7 @@ export default function RoleDashboard() {
               })}
             </div>
           ) : (
-            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-10 text-center text-sm text-slate-500">
+            <p className="rounded-xl border border-dashed border-border bg-muted/50 px-4 py-10 text-center text-sm text-muted-foreground">
               {aquacultureT('dashboardNoApps', lang)}
             </p>
           )}

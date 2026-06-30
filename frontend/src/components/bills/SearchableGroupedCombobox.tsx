@@ -39,8 +39,8 @@ export function SearchableGroupedCombobox({
   onChange,
   groups,
   emptyOption,
-  className = 'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500',
-  listClassName = 'left-0 z-50 mt-1 max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg',
+  className = 'w-full min-w-0 px-2 py-1 text-sm border border-input rounded bg-background text-foreground focus:ring-1 focus:ring-ring',
+  listClassName = 'left-0 z-50 mt-1 max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-border bg-card py-1 text-sm text-card-foreground shadow-lg',
   id,
   placeholder = 'Search or select…',
 }: {
@@ -187,18 +187,18 @@ export function SearchableGroupedCombobox({
   const inputDisplay = open ? query : selectedLabel
 
   const portalListClassName =
-    'max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg'
+    'max-h-72 w-max min-w-full max-w-[min(42rem,calc(100vw-2rem))] overflow-auto rounded-md border border-border bg-card py-1 text-sm text-card-foreground shadow-lg'
 
   const listContent =
     flatRows.length === 0 ? (
-      <li className="px-3 py-2 text-gray-500">No matches. Try another search.</li>
+      <li className="px-3 py-2 text-muted-foreground">No matches. Try another search.</li>
     ) : (
       flatRows.map((row, idx) => {
         if (row.kind === 'header') {
           return (
             <li
               key={`h-${row.label}-${idx}`}
-              className="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 first:mt-0 first:border-t-0"
+              className="mt-1 border-t border-border px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground first:mt-0 first:border-t-0"
             >
               {row.label}
             </li>
@@ -215,7 +215,7 @@ export function SearchableGroupedCombobox({
             title={opt.title}
             className={`cursor-pointer px-3 py-1.5 ${
               opt.disabled ? 'cursor-not-allowed opacity-40' : ''
-            } ${active ? 'bg-blue-50 text-blue-900' : 'text-gray-900 hover:bg-gray-50'}`}
+            } ${active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-muted'}`}
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => {
               if (row.flatIndex >= 0) setActiveIndex(row.flatIndex)
@@ -224,7 +224,7 @@ export function SearchableGroupedCombobox({
           >
             <div className="whitespace-normal break-words leading-snug">{opt.label}</div>
             {opt.description ? (
-              <div className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-gray-500">
+              <div className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-muted-foreground">
                 {opt.description}
               </div>
             ) : null}
@@ -289,7 +289,7 @@ export function SearchableGroupedCombobox({
           type="button"
           tabIndex={-1}
           aria-label="Show options"
-          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-gray-400 hover:text-gray-600"
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             if (open) {

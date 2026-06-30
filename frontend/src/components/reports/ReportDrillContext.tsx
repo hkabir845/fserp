@@ -306,7 +306,7 @@ export function useReportDrillOptional(): ReportDrillContextValue | null {
 }
 
 const DRILL_BTN =
-  'cursor-pointer rounded px-0.5 underline decoration-dotted underline-offset-2 hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-400/60'
+  'cursor-pointer rounded px-0.5 underline decoration-dotted underline-offset-2 hover:bg-accent hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-ring/60'
 
 export function DrillAmount({
   amount,
@@ -419,27 +419,27 @@ function ReportDrillModal({
         onClick={onCloseAll}
       />
       <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 sm:px-6">
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-muted/40 px-4 py-3 sm:px-6">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500">
+            <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
               <span>Report drill-down</span>
               {stack.map((frame, idx) => (
                 <span key={frame.id} className="inline-flex items-center gap-1">
                   <ChevronRight className="h-3 w-3" />
-                  <span className={idx === stack.length - 1 ? 'font-medium text-gray-800' : ''}>
+                  <span className={idx === stack.length - 1 ? 'font-medium text-foreground' : ''}>
                     {frameTitle(frame)}
                   </span>
                 </span>
               ))}
             </div>
-            <h2 className="mt-1 truncate text-lg font-semibold text-gray-900">{frameTitle(top)}</h2>
+            <h2 className="mt-1 truncate text-lg font-semibold text-foreground">{frameTitle(top)}</h2>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {stack.length > 1 ? (
               <button
                 type="button"
                 onClick={onPop}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
@@ -448,7 +448,7 @@ function ReportDrillModal({
             <button
               type="button"
               onClick={onCloseAll}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
             >
               <X className="h-4 w-4" />
               Close
@@ -640,7 +640,7 @@ function ReportDrillPanel({
 
 function LoadingPanel() {
   return (
-    <div className="flex items-center justify-center py-16 text-gray-500">
+    <div className="flex items-center justify-center py-16 text-muted-foreground">
       <Loader2 className="mr-2 h-5 w-5 animate-spin" />
       Loading…
     </div>
@@ -649,7 +649,7 @@ function LoadingPanel() {
 
 function ErrorPanel({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{message}</div>
+    <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">{message}</div>
   )
 }
 
@@ -740,11 +740,11 @@ function GlStatementPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="font-semibold text-slate-900">
+      <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <p className="font-semibold text-foreground">
           {acct.account_code} — {acct.account_name || label}
         </p>
-        <p className="text-slate-600">
+        <p className="text-muted-foreground">
           {acct.account_type}
           {acct.account_sub_type ? ` / ${acct.account_sub_type}` : ''}
         </p>
@@ -756,47 +756,47 @@ function GlStatementPanel({
             Ending: <strong>{formatCurrency(Number(data.ending_balance ?? 0))}</strong>
           </span>
           {data.start_date || data.end_date ? (
-            <span className="text-slate-500">
+            <span className="text-muted-foreground">
               Period: {data.start_date || '…'} → {data.end_date || '…'}
             </span>
           ) : hasTextSearch ? (
-            <span className="text-slate-500">All dates (search active)</span>
+            <span className="text-muted-foreground">All dates (search active)</span>
           ) : null}
         </div>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-        <label className="mb-1 block text-xs font-medium text-slate-600">Search (all dates)</label>
+      <div className="rounded-lg border border-border bg-white px-4 py-3">
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">Search (all dates)</label>
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
           <input
             type="search"
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
             placeholder="Entry #, description, account…"
             disabled={loading}
-            className="w-full rounded-md border border-slate-300 py-2 pl-8 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-md border border-border py-2 pl-8 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
         {hasTextSearch && (startDate || endDate) ? (
-          <p className="mt-1 text-xs text-slate-500">Date range paused while searching.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Date range paused while searching.</p>
         ) : null}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Entry</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Description</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Entry</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Description</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Debit</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Credit</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Balance</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                   {hasTextSearch
                     ? 'No journal lines match your search.'
                     : 'No journal lines in this period.'}
@@ -811,13 +811,13 @@ function GlStatementPanel({
                     ? `${row.other_account_code} — ${row.other_account_name}`
                     : row.other_account_name || ''
                 return (
-                  <tr key={`${row.journal_entry_id}-${idx}`} className="hover:bg-gray-50">
+                  <tr key={`${row.journal_entry_id}-${idx}`} className="hover:bg-muted/40">
                     <td className="whitespace-nowrap px-3 py-2">{formatDateOnly(row.date)}</td>
                     <td className="px-3 py-2">
                       {row.journal_entry_id ? (
                         <button
                           type="button"
-                          className="font-mono text-xs text-blue-700 underline hover:text-blue-900"
+                          className="font-mono text-xs text-primary underline hover:text-blue-900"
                           onClick={() =>
                             onPush({
                               kind: 'journal-entry',
@@ -835,12 +835,12 @@ function GlStatementPanel({
                     <td className="px-3 py-2">
                       <div>{row.description || row.journal_description || '—'}</div>
                       {otherLabel ? (
-                        <div className="mt-0.5 text-xs text-gray-500">
+                        <div className="mt-0.5 text-xs text-muted-foreground">
                           Offset:{' '}
                           {row.other_account_id ? (
                             <button
                               type="button"
-                              className="text-blue-700 underline hover:text-blue-900"
+                              className="text-primary underline hover:text-blue-900"
                               onClick={() =>
                                 onPush({
                                   kind: 'gl-account',
@@ -969,33 +969,33 @@ function JournalEntryPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="font-semibold text-slate-900">{data.entry_number || `Entry #${entryId}`}</p>
-        <p className="text-slate-600">{formatDateOnly(data.entry_date)} — {data.description || 'No description'}</p>
-        {data.station_name ? <p className="text-slate-500">Site: {data.station_name}</p> : null}
-        <p className="mt-1 text-slate-700">
+      <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <p className="font-semibold text-foreground">{data.entry_number || `Entry #${entryId}`}</p>
+        <p className="text-muted-foreground">{formatDateOnly(data.entry_date)} — {data.description || 'No description'}</p>
+        {data.station_name ? <p className="text-muted-foreground">Site: {data.station_name}</p> : null}
+        <p className="mt-1 text-foreground/85">
           Total debit {formatCurrency(Number(data.total_debit ?? 0))} · Total credit{' '}
           {formatCurrency(Number(data.total_credit ?? 0))}
         </p>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Account</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Description</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Account</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Description</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Debit</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Credit</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {lines.map((line, idx) => (
-              <tr key={`${line.account_id}-${idx}`} className="hover:bg-gray-50">
+              <tr key={`${line.account_id}-${idx}`} className="hover:bg-muted/40">
                 <td className="px-3 py-2">
                   {line.account_id ? (
                     <button
                       type="button"
-                      className="text-left text-blue-700 underline hover:text-blue-900"
+                      className="text-left text-primary underline hover:text-blue-900"
                       onClick={() =>
                         onPush({
                           kind: 'gl-account',
@@ -1011,7 +1011,7 @@ function JournalEntryPanel({
                     '—'
                   )}
                   {line.station_name || line.aquaculture_pond_name ? (
-                    <div className="mt-0.5 text-xs text-gray-500">
+                    <div className="mt-0.5 text-xs text-muted-foreground">
                       {[line.station_name, line.aquaculture_pond_name].filter(Boolean).join(' · ')}
                     </div>
                   ) : null}
@@ -1114,8 +1114,8 @@ function ContactLedgerPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="font-semibold text-slate-900">{data.display_name}</p>
+      <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <p className="font-semibold text-foreground">{data.display_name}</p>
         <div className="mt-1 flex flex-wrap gap-4">
           <span>
             Opening: <strong>{formatCurrency(Number(data.opening_balance ?? 0))}</strong>
@@ -1124,47 +1124,47 @@ function ContactLedgerPanel({
             Closing: <strong>{formatCurrency(Number(data.closing_balance ?? 0))}</strong>
           </span>
           {hasTextSearch ? (
-            <span className="text-slate-500">All dates (search active)</span>
+            <span className="text-muted-foreground">All dates (search active)</span>
           ) : startDate || endDate ? (
-            <span className="text-slate-500">
+            <span className="text-muted-foreground">
               Period: {startDate || '…'} → {endDate || '…'}
             </span>
           ) : null}
         </div>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-        <label className="mb-1 block text-xs font-medium text-slate-600">Search (all dates)</label>
+      <div className="rounded-lg border border-border bg-white px-4 py-3">
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">Search (all dates)</label>
         <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
           <input
             type="search"
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
             placeholder="Reference, description…"
             disabled={loading}
-            className="w-full rounded-md border border-slate-300 py-2 pl-8 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-md border border-border py-2 pl-8 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
         {hasTextSearch && (startDate || endDate) ? (
-          <p className="mt-1 text-xs text-slate-500">Date range paused while searching.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Date range paused while searching.</p>
         ) : null}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Reference</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Debit</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Credit</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Type</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Reference</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Debit</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Credit</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Balance</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                   {hasTextSearch
                     ? 'No ledger lines match your search.'
                     : 'No ledger transactions in this period.'}
@@ -1176,13 +1176,13 @@ function ContactLedgerPanel({
                 const credit = Number(row.credit ?? 0)
                 const allocs = row.allocations || []
                 return (
-                  <tr key={`${row.reference}-${idx}`} className="hover:bg-gray-50 align-top">
+                  <tr key={`${row.reference}-${idx}`} className="hover:bg-muted/40 align-top">
                     <td className="whitespace-nowrap px-3 py-2">{formatDateOnly(row.date)}</td>
                     <td className="px-3 py-2">{row.type || '—'}</td>
                     <td className="px-3 py-2">
                       <div>{row.reference || row.description || '—'}</div>
                       {allocs.length > 0 ? (
-                        <ul className="mt-1 space-y-0.5 text-xs text-gray-600">
+                        <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                           {allocs.map((a, aIdx) => {
                             const docId = a.invoice_id ?? a.bill_id
                             const docNum = a.invoice_number ?? a.bill_number
@@ -1192,7 +1192,7 @@ function ContactLedgerPanel({
                                 {docId ? (
                                   <button
                                     type="button"
-                                    className="text-blue-700 underline hover:text-blue-900"
+                                    className="text-primary underline hover:text-blue-900"
                                     onClick={() =>
                                       onPush(
                                         isInvoice
@@ -1410,20 +1410,20 @@ function DocumentDetailView({
 }) {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-        <p className="text-lg font-semibold text-slate-900">{title}</p>
+      <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+        <p className="text-lg font-semibold text-foreground">{title}</p>
         <dl className="mt-2 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {meta.map(([label, value]) => (
             <div key={label}>
-              <dt className="text-gray-500">{label}</dt>
-              <dd className="font-medium text-gray-900">{value}</dd>
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="font-medium text-foreground">{value}</dd>
             </div>
           ))}
         </dl>
         {onCustomerDrill ? (
           <button
             type="button"
-            className="mt-3 text-sm font-medium text-blue-700 underline hover:text-blue-900"
+            className="mt-3 text-sm font-medium text-primary underline hover:text-blue-900"
             onClick={onCustomerDrill}
           >
             View customer ledger
@@ -1432,25 +1432,25 @@ function DocumentDetailView({
         {onContactDrill ? (
           <button
             type="button"
-            className="mt-3 text-sm font-medium text-blue-700 underline hover:text-blue-900"
+            className="mt-3 text-sm font-medium text-primary underline hover:text-blue-900"
             onClick={onContactDrill}
           >
             View vendor ledger
           </button>
         ) : null}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Line</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Line</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
                   No line items.
                 </td>
               </tr>
@@ -1465,7 +1465,7 @@ function DocumentDetailView({
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-500">{footerNote}</p>
+      <p className="text-xs text-muted-foreground">{footerNote}</p>
     </div>
   )
 }
@@ -1486,19 +1486,19 @@ function AgingDocumentsPanel({
   const isAr = entityType === 'customers'
   return (
     <div className="space-y-4">
-      {subtitle ? <p className="text-sm text-gray-600">{subtitle}</p> : null}
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Document</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Due</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Status</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Open amount</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Document</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Due</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Status</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Open amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {documents.map((doc, idx) => {
               const docId = isAr ? doc.invoice_id : doc.bill_id
               const drill: ReportDrillTarget | null = docId
@@ -1515,12 +1515,12 @@ function AgingDocumentsPanel({
                     }
                 : null
               return (
-                <tr key={`${doc.document_number}-${idx}`} className="hover:bg-gray-50">
+                <tr key={`${doc.document_number}-${idx}`} className="hover:bg-muted/40">
                   <td className="px-3 py-2 font-medium">
                     {docId ? (
                       <button
                         type="button"
-                        className="text-blue-700 underline hover:text-blue-900"
+                        className="text-primary underline hover:text-blue-900"
                         onClick={() => drill && onPush(drill)}
                       >
                         {doc.document_number || `#${docId}`}
@@ -1541,7 +1541,7 @@ function AgingDocumentsPanel({
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Open {isAr ? 'invoices' : 'bills'} for {title}. Click an amount to see the full document.
       </p>
     </div>
@@ -1720,37 +1720,37 @@ function ItemStockLedgerPanel({
   const rows = data?.movements || []
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="font-semibold text-slate-900">{label || data?.item?.name || `Item #${itemId}`}</p>
-        {data?.item?.sku ? <p className="text-slate-600">SKU: {data.item.sku}</p> : null}
+      <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <p className="font-semibold text-foreground">{label || data?.item?.name || `Item #${itemId}`}</p>
+        {data?.item?.sku ? <p className="text-muted-foreground">SKU: {data.item.sku}</p> : null}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Reference</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Qty Δ</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Type</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Reference</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Qty Δ</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
+                <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
                   No stock movements in this period.
                 </td>
               </tr>
             ) : (
               rows.map((row, idx) => (
-                <tr key={`${row.reference}-${idx}`} className="hover:bg-gray-50">
+                <tr key={`${row.reference}-${idx}`} className="hover:bg-muted/40">
                   <td className="px-3 py-2">{formatDateOnly(row.date)}</td>
                   <td className="px-3 py-2">{row.type_label || '—'}</td>
                   <td className="px-3 py-2">
                     {row.invoice_id ? (
                       <button
                         type="button"
-                        className="text-blue-700 underline"
+                        className="text-primary underline"
                         onClick={() =>
                           onPush({
                             kind: 'invoice',
@@ -1764,7 +1764,7 @@ function ItemStockLedgerPanel({
                     ) : row.bill_id ? (
                       <button
                         type="button"
-                        className="text-blue-700 underline"
+                        className="text-primary underline"
                         onClick={() =>
                           onPush({
                             kind: 'bill',
@@ -1835,26 +1835,26 @@ function LoanStatementPanel({
   const rows = (data?.transactions as Record<string, unknown>[]) || []
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-        <p className="font-semibold text-slate-900">{label || String(data?.loan_name || `Loan #${loanId}`)}</p>
+      <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <p className="font-semibold text-foreground">{label || String(data?.loan_name || `Loan #${loanId}`)}</p>
         {data?.outstanding != null ? (
           <p className="mt-1">
             Outstanding: <strong>{formatCurrency(Number(data.outstanding))}</strong>
           </p>
         ) : null}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Type</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Date</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Type</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-border bg-white">
             {rows.map((row, idx) => (
-              <tr key={idx} className="hover:bg-gray-50">
+              <tr key={idx} className="hover:bg-muted/40">
                 <td className="px-3 py-2">{formatDateOnly(String(row.date || ''))}</td>
                 <td className="px-3 py-2">{String(row.type || row.description || '—')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
@@ -1934,12 +1934,12 @@ function ScopedPlPanel({
   const scope = { startDate, endDate, stationId, pondId }
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-muted-foreground">
         Account detail for <strong>{label || 'entity'}</strong> in the selected period.
       </p>
       {blocks.map(({ title, payload }) => (
-        <div key={title} className="rounded-lg border border-gray-200">
-          <div className="flex justify-between border-b bg-gray-50 px-4 py-2">
+        <div key={title} className="rounded-lg border border-border">
+          <div className="flex justify-between border-b bg-muted/40 px-4 py-2">
             <span className="font-semibold">{title}</span>
             <DrillAmount
               amount={Number(payload?.total ?? 0)}
@@ -2000,21 +2000,21 @@ function AccountBreakdownPanel({
   const scope = { startDate, endDate, stationId, pondId }
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="text-sm text-gray-600">Click an amount to open that account&apos;s GL statement.</p>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <p className="text-sm text-muted-foreground">Click an amount to open that account&apos;s GL statement.</p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Code</th>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Account</th>
-              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Code</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Account</th>
+              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-border/70 bg-white">
             {accounts.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                   No lines in this total.
                 </td>
               </tr>
@@ -2022,9 +2022,9 @@ function AccountBreakdownPanel({
               accounts.map((a) => {
                 const drill = glAccountDrill(a, scope)
                 return (
-                  <tr key={a.account_id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 font-mono text-gray-700">{a.account_code || '—'}</td>
-                    <td className="px-4 py-2 text-gray-900">{a.account_name || '—'}</td>
+                  <tr key={a.account_id} className="hover:bg-muted/40">
+                    <td className="px-4 py-2 font-mono text-foreground/85">{a.account_code || '—'}</td>
+                    <td className="px-4 py-2 text-foreground">{a.account_name || '—'}</td>
                     <td className="px-4 py-2 text-right">
                       <DrillAmount amount={Number(a.amount ?? 0)} drill={drill} />
                     </td>
@@ -2055,29 +2055,29 @@ function ItemBreakdownPanel({
 }) {
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="text-sm text-gray-600">Click an amount to open that item&apos;s stock ledger.</p>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <p className="text-sm text-muted-foreground">Click an amount to open that item&apos;s stock ledger.</p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">SKU</th>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Item</th>
-              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">SKU</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Item</th>
+              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-border/70 bg-white">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                   No items in this total.
                 </td>
               </tr>
             ) : (
               items.map((it) => (
-                <tr key={it.item_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono text-gray-700">{it.sku || '—'}</td>
-                  <td className="px-4 py-2 text-gray-900">{it.name || '—'}</td>
+                <tr key={it.item_id} className="hover:bg-muted/40">
+                  <td className="px-4 py-2 font-mono text-foreground/85">{it.sku || '—'}</td>
+                  <td className="px-4 py-2 text-foreground">{it.name || '—'}</td>
                   <td className="px-4 py-2 text-right">
                     <DrillAmount
                       amount={Number(it.amount ?? 0)}
@@ -2120,29 +2120,29 @@ function LoanBreakdownPanel({
 }) {
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="text-sm text-gray-600">Click an amount to open that loan&apos;s statement.</p>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <p className="text-sm text-muted-foreground">Click an amount to open that loan&apos;s statement.</p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Loan #</th>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Counterparty</th>
-              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Loan #</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Counterparty</th>
+              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-border/70 bg-white">
             {loans.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
                   No facilities in this total.
                 </td>
               </tr>
             ) : (
               loans.map((ln) => (
-                <tr key={ln.loan_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono text-gray-700">{ln.loan_no || ln.loan_id}</td>
-                  <td className="px-4 py-2 text-gray-900">{ln.counterparty_name || '—'}</td>
+                <tr key={ln.loan_id} className="hover:bg-muted/40">
+                  <td className="px-4 py-2 font-mono text-foreground/85">{ln.loan_no || ln.loan_id}</td>
+                  <td className="px-4 py-2 text-foreground">{ln.counterparty_name || '—'}</td>
                   <td className="px-4 py-2 text-right">
                     <DrillAmount
                       amount={Number(ln.amount ?? 0)}
@@ -2182,29 +2182,29 @@ function ContactBreakdownPanel({
 }) {
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="text-sm text-gray-600">
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <p className="text-sm text-muted-foreground">
         Click an amount to open that {entityType === 'customers' ? 'customer' : 'vendor'}&apos;s ledger.
       </p>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Name</th>
-              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">Balance</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Name</th>
+              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Balance</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-border/70 bg-white">
             {contacts.length === 0 ? (
               <tr>
-                <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
                   No balances in this total.
                 </td>
               </tr>
             ) : (
               contacts.map((c) => (
-                <tr key={c.entity_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-900">{c.display_name || `#${c.entity_id}`}</td>
+                <tr key={c.entity_id} className="hover:bg-muted/40">
+                  <td className="px-4 py-2 text-foreground">{c.display_name || `#${c.entity_id}`}</td>
                   <td className="px-4 py-2 text-right">
                     <DrillAmount
                       amount={Math.abs(Number(c.amount ?? 0))}
@@ -2248,20 +2248,20 @@ function ScopedPlBreakdownPanel({
 }) {
   return (
     <div className="space-y-3">
-      <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-      <p className="text-sm text-gray-600">Click an amount to open that site&apos;s P&amp;L detail.</p>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <p className="text-sm text-muted-foreground">Click an amount to open that site&apos;s P&amp;L detail.</p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Site</th>
-              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-gray-500">Amount</th>
+              <th className="px-4 py-2 text-left text-xs font-medium uppercase text-muted-foreground">Site</th>
+              <th className="px-4 py-2 text-right text-xs font-medium uppercase text-muted-foreground">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100 bg-white">
+          <tbody className="divide-y divide-border/70 bg-white">
             {entities.length === 0 ? (
               <tr>
-                <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
                   No amounts in this total.
                 </td>
               </tr>
@@ -2271,8 +2271,8 @@ function ScopedPlBreakdownPanel({
                 const stationId = Number(e.station_id ?? 0)
                 const key = pondId || stationId || idx
                 return (
-                  <tr key={key} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-gray-900">{e.name || `#${key}`}</td>
+                  <tr key={key} className="hover:bg-muted/40">
+                    <td className="px-4 py-2 text-foreground">{e.name || `#${key}`}</td>
                     <td className="px-4 py-2 text-right">
                       <DrillAmount
                         amount={Number(e.amount ?? 0)}

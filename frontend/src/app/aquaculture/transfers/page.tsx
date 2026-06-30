@@ -47,7 +47,17 @@ interface TransferCostPreviewLine {
 
 interface TransferCostPreviewResponse {
   cost_basis: 'per_kg' | 'per_head'
+  live_fingerling_count?: number | null
+  stocked_fingerling_count?: number | null
   stocked_heads_basis?: number | null
+  movable_bio_asset_total?: string | null
+  implied_net_weight_kg?: string | null
+  effective_net_weight_kg?: string | null
+  current_fish_per_kg?: string | null
+  current_avg_weight_kg?: string | null
+  pond_cost_per_fish?: string | null
+  pond_cost_per_kg?: string | null
+  stock_density_kg_per_decimal?: string | null
   transfer_cost_per_kg?: string | null
   transfer_cost_per_head?: string | null
   transfer_cost_basis_note?: string | null
@@ -91,6 +101,25 @@ interface GlSyncPayload {
   gl_capped?: boolean
   gl_cap_note?: string | null
   journal_entry_number?: string | null
+}
+
+function transferOutboundFromSource(
+  t: TransferRow,
+  sourcePondId: number,
+  sourceCycleId: string
+): { heads: number; kg: number } {
+  if (t.from_pond_id !== sourcePondId) return { heads: 0, kg: 0 }
+  if (sourceCycleId.trim() !== '') {
+    const cy = parseInt(sourceCycleId, 10)
+    if (!Number.isFinite(cy) || t.from_production_cycle_id !== cy) return { heads: 0, kg: 0 }
+  }
+  let heads = 0
+  let kg = 0
+  for (const l of t.lines) {
+    heads += l.fish_count != null ? Number(l.fish_count) : 0
+    kg += Number.parseFloat(l.weight_kg) || 0
+  }
+  return { heads, kg }
 }
 
 function formatTransferGlMessage(
@@ -145,7 +174,9 @@ type SourceStockBrief = {
   implied_net_weight_kg: string
   effective_net_weight_kg?: string
   current_fish_per_kg?: string | null
+  current_avg_weight_kg?: string | null
   latest_sample_date?: string | null
+  stock_density_kg_per_decimal?: string | null
 }
 
 const emptyLine = (): LineDraft => ({
@@ -247,6 +278,8 @@ export default function AquacultureFishTransfersPage() {
   const [currency, setCurrency] = useState('BDT')
   const [modal, setModal] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  /** Snapshot when opening edit — used to add back outbound fish for stock checks (matches backend exclude_transfer_id). */
+  const [editingOriginal, setEditingOriginal] = useState<TransferRow | null>(null)
   const [fromPondId, setFromPondId] = useState('')
   const [fromCycleId, setFromCycleId] = useState('')
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -259,6 +292,17 @@ export default function AquacultureFishTransfersPage() {
   const [transferCostPerHead, setTransferCostPerHead] = useState<number | null>(null)
   const [transferCostPreviewLoading, setTransferCostPreviewLoading] = useState(false)
   const [transferPlBasisHint, setTransferPlBasisHint] = useState('')
+  const [transferCostContext, setTransferCostContext] = useState<{
+    liveFingerlingCount: number | null
+    stockedFingerlingCount: number | null
+    movableBioAssetTotal: number | null
+    pondCostPerFish: number | null
+  }>({
+    liveFingerlingCount: null,
+    stockedFingerlingCount: null,
+    movableBioAssetTotal: null,
+    pondCostPerFish: null,
+  })
   const skipAutoCostLine = useRef<Set<number>>(new Set())
   const skipAutoPcsLine = useRef<Set<number>>(new Set())
   const autoCycleFromSampleDone = useRef(false)
@@ -347,6 +391,12 @@ export default function AquacultureFishTransfersPage() {
       setTransferCostPerKg(null)
       setTransferCostPerHead(null)
       setTransferPlBasisHint('')
+      setTransferCostContext({
+        liveFingerlingCount: null,
+        stockedFingerlingCount: null,
+        movableBioAssetTotal: null,
+        pondCostPerFish: null,
+      })
       setTransferCostPreviewLoading(false)
       return
     }
@@ -399,6 +449,24 @@ export default function AquacultureFishTransfersPage() {
             phRaw != null && String(phRaw).trim() !== '' ? Number(phRaw) : NaN
           setTransferCostPerHead(Number.isFinite(ph) && ph >= 0 ? ph : null)
           setTransferPlBasisHint((data?.transfer_cost_basis_note || '').trim())
+          const liveRaw = data?.live_fingerling_count
+          const stockedRaw = data?.stocked_fingerling_count
+          const movableRaw = data?.movable_bio_asset_total
+          const cpfRaw = data?.pond_cost_per_fish
+          setTransferCostContext({
+            liveFingerlingCount:
+              liveRaw != null && Number.isFinite(Number(liveRaw)) ? Number(liveRaw) : null,
+            stockedFingerlingCount:
+              stockedRaw != null && Number.isFinite(Number(stockedRaw)) ? Number(stockedRaw) : null,
+            movableBioAssetTotal:
+              movableRaw != null && String(movableRaw).trim() !== ''
+                ? Number(String(movableRaw).replace(/,/g, ''))
+                : null,
+            pondCostPerFish:
+              cpfRaw != null && String(cpfRaw).trim() !== ''
+                ? Number(String(cpfRaw).replace(/,/g, ''))
+                : null,
+          })
 
           const previewLines = Array.isArray(data?.lines) ? data.lines : []
           setLineDrafts((drafts) =>
@@ -417,6 +485,12 @@ export default function AquacultureFishTransfersPage() {
           setTransferCostPerKg(null)
           setTransferCostPerHead(null)
           setTransferPlBasisHint('')
+          setTransferCostContext({
+            liveFingerlingCount: null,
+            stockedFingerlingCount: null,
+            movableBioAssetTotal: null,
+            pondCostPerFish: null,
+          })
         } finally {
           if (costPreviewRequestId.current === requestId) {
             setTransferCostPreviewLoading(false)
@@ -557,6 +631,18 @@ export default function AquacultureFishTransfersPage() {
     return sum
   }, [lineDrafts])
 
+  /** Book stock + fish this transfer already took from source (edit only — mirrors backend exclude_transfer_id). */
+  const effectiveSourceStock = useMemo(() => {
+    const baseHeads = sourceStock?.implied_net_fish_count ?? 0
+    const baseKg = Number(sourceStock?.implied_net_weight_kg) || 0
+    const fp = parseInt(fromPondId, 10)
+    if (!editingOriginal || !Number.isFinite(fp)) {
+      return { heads: baseHeads, kg: baseKg }
+    }
+    const addBack = transferOutboundFromSource(editingOriginal, fp, fromCycleId)
+    return { heads: baseHeads + addBack.heads, kg: baseKg + addBack.kg }
+  }, [sourceStock, editingOriginal, fromPondId, fromCycleId])
+
   const sampleStaleDays = useMemo(() => {
     if (!lastSample?.sample_date) return null
     return daysSinceIsoDate(lastSample.sample_date)
@@ -581,7 +667,7 @@ export default function AquacultureFishTransfersPage() {
   }
 
   const fillRemainderHeads = (lineIdx: number) => {
-    const available = sourceStock?.implied_net_fish_count ?? 0
+    const available = effectiveSourceStock.heads
     if (available <= 0) {
       toast.error(aquacultureT('noBookStockSource', lang))
       return
@@ -623,6 +709,7 @@ export default function AquacultureFishTransfersPage() {
   const closeModal = () => {
     setModal(false)
     setEditingId(null)
+    setEditingOriginal(null)
   }
 
   const activePonds = useMemo(() => ponds.filter((p) => p.is_active !== false), [ponds])
@@ -643,6 +730,7 @@ export default function AquacultureFishTransfersPage() {
     const { sameSite, others } = growOutPondsForTransfers(fromP, activePonds)
     const firstDest = sameSite ?? others[0]
     setEditingId(null)
+    setEditingOriginal(null)
     skipAutoCostLine.current = new Set()
     skipAutoPcsLine.current = new Set()
     autoCycleFromSampleDone.current = false
@@ -663,6 +751,7 @@ export default function AquacultureFishTransfersPage() {
 
   const openEdit = (t: TransferRow) => {
     setEditingId(t.id)
+    setEditingOriginal(t)
     skipAutoCostLine.current = new Set()
     skipAutoPcsLine.current = new Set()
     setFromPondId(String(t.from_pond_id))
@@ -696,7 +785,6 @@ export default function AquacultureFishTransfersPage() {
           }))
         : [emptyLine()]
     mapped.forEach((ln, i) => {
-      if (ln.cost_amount.trim() !== '') skipAutoCostLine.current.add(i)
       if (ln.pcs_per_kg.trim() !== '') skipAutoPcsLine.current.add(i)
     })
     setLineDrafts(mapped)
@@ -747,7 +835,7 @@ export default function AquacultureFishTransfersPage() {
       )
       if (!ok) return
     }
-    const available = sourceStock?.implied_net_fish_count ?? 0
+    const available = effectiveSourceStock.heads
     if (available > 0 && totalTransferHeads > available) {
       const ok = window.confirm(
         `Transfer lines total ${formatNumber(totalTransferHeads, 0)} heads but book stock shows ${formatNumber(available, 0)} available. Continue anyway?`
@@ -798,7 +886,11 @@ export default function AquacultureFishTransfersPage() {
           toast.error(`Line ${i + 1}: cost amount must be a valid non-negative number`)
           return
         }
-        costOut = n.toFixed(2)
+        // On edit, recalculate from source pond unless user manually overrode cost this session
+        const useManualCost = editingId == null || skipAutoCostLine.current.has(i)
+        if (useManualCost) {
+          costOut = n.toFixed(2)
+        }
       }
       const row: Record<string, unknown> = {
         to_pond_id: tp,
@@ -924,38 +1016,38 @@ export default function AquacultureFishTransfersPage() {
       }
     >
       {helpNote ? (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">
+        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground/85">
           {helpNote}
         </p>
       ) : null}
 
       {loading ? (
         <div className="mt-10 flex justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       ) : ponds.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
+        <div className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-5 text-sm text-warning-foreground">
           <p className="font-medium">{aquacultureT('addPondsFirst', lang)}</p>
-          <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-teal-800 underline">
+          <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-primary underline">
             {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
         <>
-          <p className="mt-4 text-xs text-slate-500">
+          <p className="mt-4 text-xs text-muted-foreground">
             Total in list:{' '}
-            <span className="font-medium tabular-nums text-slate-800">{formatNumber(totalKg, 2)} kg</span>
+            <span className="font-medium tabular-nums text-foreground">{formatNumber(totalKg, 2)} kg</span>
             {totalFish > 0 ? (
               <>
                 {' '}
                 ·{' '}
-                <span className="font-medium tabular-nums text-slate-800">{formatNumber(totalFish, 0)}</span> head
+                <span className="font-medium tabular-nums text-foreground">{formatNumber(totalFish, 0)}</span> head
               </>
             ) : null}
           </p>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
             <table className="min-w-[780px] w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">{uiT("date")}</th>
                   <th className="px-4 py-3">{aquacultureT('fromToCol', lang)}</th>
@@ -967,10 +1059,10 @@ export default function AquacultureFishTransfersPage() {
                   <th className="px-4 py-3 text-right">{uiT("actions")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border/70">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
                       No transfers yet. Example: log fry on a vendor bill (kg + heads), then record a transfer with each
                       line showing destination pond, kg moved, and head count (required). Optional cost per line
                       reallocates nursing biological cost to grow-out ponds.
@@ -988,43 +1080,43 @@ export default function AquacultureFishTransfersPage() {
                       })
                       .join('; ')
                     return (
-                      <tr key={t.id} className="align-top text-slate-800">
+                      <tr key={t.id} className="align-top text-foreground">
                         <td className="px-4 py-3 whitespace-nowrap">{formatDateOnly(t.transfer_date)}</td>
                         <td className="px-4 py-3">
-                          <div className="flex items-start gap-1.5 font-medium text-slate-900">
-                            <ArrowRightLeft className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                          <div className="flex items-start gap-1.5 font-medium text-foreground">
+                            <ArrowRightLeft className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
                             <span>
                               {t.from_pond_name}
                               {t.from_production_cycle_name ? (
-                                <span className="font-normal text-slate-500"> ({t.from_production_cycle_name})</span>
+                                <span className="font-normal text-muted-foreground"> ({t.from_production_cycle_name})</span>
                               ) : null}
                             </span>
                           </div>
-                          <p className="mt-1 max-w-md text-xs leading-relaxed text-slate-600">{dest}</p>
-                          {t.memo?.trim() ? <p className="mt-1 text-xs text-slate-500">{t.memo.trim()}</p> : null}
+                          <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{dest}</p>
+                          {t.memo?.trim() ? <p className="mt-1 text-xs text-muted-foreground">{t.memo.trim()}</p> : null}
                         </td>
-                        <td className="px-4 py-3 text-slate-700">{t.fish_species_label || t.fish_species}</td>
+                        <td className="px-4 py-3 text-foreground/85">{t.fish_species_label || t.fish_species}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{formatNumber(kg, 2)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{formatNumber(heads, 0)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {cost > 0 ? (
                             `${sym}${formatNumber(cost, 2)}`
                           ) : kg > 0 ? (
-                            <span className="text-amber-700" title="Edit and save to fill from source pond P&L">
+                            <span className="text-warning-foreground" title="Edit and save to fill from source pond P&L">
                               Not set
                             </span>
                           ) : (
                             '—'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-600">
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
                           {t.gl_posted ? (
-                            <span className="text-teal-800" title={t.journal_entry_number || undefined}>
+                            <span className="text-primary" title={t.journal_entry_number || undefined}>
                               Posted
                               {t.gl_total_amount ? ` · ${sym}${formatNumber(Number(t.gl_total_amount), 2)}` : ''}
                             </span>
                           ) : cost > 0 ? (
-                            <span className="text-slate-500">Not posted</span>
+                            <span className="text-muted-foreground">Not posted</span>
                           ) : (
                             '—'
                           )}
@@ -1037,7 +1129,7 @@ export default function AquacultureFishTransfersPage() {
                                 e.stopPropagation()
                                 openEdit(t)
                               }}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted"
                               title={aquacultureT('editTransfer', lang)}
                               aria-label={aquacultureT('editTransfer', lang)}
                             >
@@ -1070,9 +1162,16 @@ export default function AquacultureFishTransfersPage() {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">
+            <h2 className="text-lg font-semibold text-foreground">
               {editingId != null ? aquacultureT('editFishTransfer', lang) : aquacultureT('recordFishTransfer', lang)}
             </h2>
+            {editingId != null ? (
+              <p className="mt-2 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-xs leading-relaxed text-teal-950">
+                Saving replaces this transfer completely: fish and biological cost move from the new source pond to
+                each destination. Prior destinations lose the inbound fish; the prior source pond gets its stock
+                back before the new outbound is applied. GL 1581 is deleted and reposted.
+              </p>
+            ) : null}
             {fromPond?.pond_role === 'nursing' ? (
               <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
                 <p className="font-medium">{aquacultureT('nursingFingerlingTransfer', lang)}</p>
@@ -1094,7 +1193,7 @@ export default function AquacultureFishTransfersPage() {
             ) : null}
 
             {lastSampleLoading || sourceStockLoading ? (
-              <p className="mt-3 text-xs text-slate-500">Loading sample &amp; book stock for source pond…</p>
+              <p className="mt-3 text-xs text-muted-foreground">Loading sample &amp; book stock for source pond…</p>
             ) : null}
 
             {lastSample ? (
@@ -1156,14 +1255,14 @@ export default function AquacultureFishTransfersPage() {
                   ) : null}
                 </dl>
                 {lastSample.cycle_scope_fallback ? (
-                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-foreground">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                     No sample on the selected source cycle — using latest sample for this pond and species (
                     {lastSample.production_cycle_name || 'cycle'}).
                   </p>
                 ) : null}
                 {lastSample.site_scope_fallback ? (
-                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-foreground">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                     Latest seine sample for this physical site was recorded on{' '}
                     <strong>{lastSample.pond_name || 'another profit center'}</strong> — pcs/kg and book head are
@@ -1171,13 +1270,13 @@ export default function AquacultureFishTransfersPage() {
                   </p>
                 ) : null}
                 {!effectiveSamplePcs ? (
-                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-foreground">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                     Sample found but pcs/kg could not be calculated — enter seine fish count and sample kg on the
                     sampling record, or type pcs/kg manually on each line.
                   </p>
                 ) : sampleStaleDays != null && sampleStaleDays > SAMPLE_STALE_DAYS ? (
-                  <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-900">
+                  <p className="mt-2 flex items-start gap-1.5 text-xs text-warning-foreground">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                     Sample is {sampleStaleDays} days old — consider re-sampling before large transfers.
                   </p>
@@ -1189,13 +1288,13 @@ export default function AquacultureFishTransfersPage() {
                 ) : null}
                 <Link
                   href="/aquaculture/sampling"
-                  className="mt-1 inline-block text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                  className="mt-1 inline-block text-xs font-medium text-primary underline hover:text-teal-950"
                 >
                   Open sampling
                 </Link>
               </div>
             ) : !lastSampleLoading && !sourceStockLoading && modal && fromPondId && !lastSample ? (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+              <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning-foreground">
                 <p className="flex items-start gap-2 font-medium">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                   No live biomass sample for this pond and species
@@ -1206,7 +1305,7 @@ export default function AquacultureFishTransfersPage() {
                 </p>
                 <Link
                   href="/aquaculture/sampling"
-                  className="mt-1 inline-block text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                  className="mt-1 inline-block text-xs font-medium text-primary underline hover:text-teal-950"
                 >
                   Record sample now
                 </Link>
@@ -1214,9 +1313,9 @@ export default function AquacultureFishTransfersPage() {
             ) : null}
 
             {sourceStock ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800">
+              <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground">
                 <p className="flex flex-wrap items-center gap-2 font-medium">
-                  <Fish className="h-4 w-4 text-slate-500" aria-hidden />
+                  <Fish className="h-4 w-4 text-muted-foreground" aria-hidden />
                   Book stock (source pond)
                   <span className="tabular-nums font-semibold">
                     {formatNumber(sourceStock.implied_net_fish_count, 0)} fish
@@ -1234,7 +1333,7 @@ export default function AquacultureFishTransfersPage() {
                           <>
                             {' '}
                             · ~{formatNumber(effKg, 2)} kg est. biomass
-                            <span className="text-xs font-normal text-slate-500">
+                            <span className="text-xs font-normal text-muted-foreground">
                               {' '}
                               (book {formatNumber(bookKg, 2)} kg)
                             </span>
@@ -1243,23 +1342,80 @@ export default function AquacultureFishTransfersPage() {
                       }
                       return <> · {formatNumber(bookKg, 2)} kg</>
                     })()}
+                    {sourceStock.current_fish_per_kg ? (
+                      <>
+                        {' '}
+                        · {formatNumber(Number(sourceStock.current_fish_per_kg), 1)} pcs/kg
+                      </>
+                    ) : null}
+                    {sourceStock.current_avg_weight_kg ? (
+                      <>
+                        {' '}
+                        · avg {formatNumber(Number(sourceStock.current_avg_weight_kg), 4)} kg/fish
+                      </>
+                    ) : null}
+                    {sourceStock.stock_density_kg_per_decimal ? (
+                      <>
+                        {' '}
+                        · {formatNumber(Number(sourceStock.stock_density_kg_per_decimal), 1)} kg/dec
+                      </>
+                    ) : null}
                   </span>
                 </p>
+                {transferCostContext.liveFingerlingCount != null &&
+                transferCostContext.movableBioAssetTotal != null &&
+                transferCostContext.movableBioAssetTotal > 0 ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Movable production cost{' '}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {sym}
+                      {formatNumber(transferCostContext.movableBioAssetTotal, 2)}
+                    </span>
+                    {' ÷ '}
+                    {formatNumber(transferCostContext.liveFingerlingCount, 0)} live fingerlings
+                    {transferCostContext.stockedFingerlingCount != null &&
+                    transferCostContext.stockedFingerlingCount >
+                      transferCostContext.liveFingerlingCount ? (
+                      <>
+                        {' '}
+                        (stocked {formatNumber(transferCostContext.stockedFingerlingCount, 0)})
+                      </>
+                    ) : null}
+                    {transferCostPerHead != null ? (
+                      <>
+                        {' '}
+                        = {sym}
+                        {formatNumber(transferCostPerHead, 2)}/head
+                      </>
+                    ) : transferCostContext.pondCostPerFish != null ? (
+                      <>
+                        {' '}
+                        ≈ {sym}
+                        {formatNumber(transferCostContext.pondCostPerFish, 2)}/head
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
                 {totalTransferHeads > 0 ? (
                   <p
                     className={`mt-1 text-xs tabular-nums ${
-                      sourceStock.implied_net_fish_count > 0 && totalTransferHeads > sourceStock.implied_net_fish_count
+                      effectiveSourceStock.heads > 0 && totalTransferHeads > effectiveSourceStock.heads
                         ? 'font-medium text-rose-700'
-                        : 'text-slate-600'
+                        : 'text-muted-foreground'
                     }`}
                   >
                     This transfer: {formatNumber(totalTransferHeads, 0)} heads
-                    {sourceStock.implied_net_fish_count > 0 ? (
+                    {effectiveSourceStock.heads > 0 ? (
                       <>
                         {' '}
                         · Remaining after:{' '}
-                        {formatNumber(Math.max(0, sourceStock.implied_net_fish_count - totalTransferHeads), 0)} fish
+                        {formatNumber(Math.max(0, effectiveSourceStock.heads - totalTransferHeads), 0)} fish
                       </>
+                    ) : null}
+                    {editingOriginal ? (
+                      <span className="block font-normal text-primary">
+                        Edit mode: book stock above includes fish this transfer already moved from the source pond.
+                      </span>
                     ) : null}
                   </p>
                 ) : null}
@@ -1267,10 +1423,10 @@ export default function AquacultureFishTransfersPage() {
             ) : null}
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   From pond (source)
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                     value={fromPondId}
                     onChange={(e) => {
                       setFromPondId(e.target.value)
@@ -1289,20 +1445,20 @@ export default function AquacultureFishTransfersPage() {
                     ))}
                   </select>
                 </label>
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   Transfer date
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                     value={transferDate}
                     onChange={(e) => setTransferDate(e.target.value)}
                   />
                 </label>
               </div>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Source stocking batch (nursing cohort)
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={fromCycleId}
                   onChange={(e) => setFromCycleId(e.target.value)}
                 >
@@ -1313,15 +1469,15 @@ export default function AquacultureFishTransfersPage() {
                     </option>
                   ))}
                 </select>
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Pick the fry batch leaving nursing (e.g. C02). FSERP opens a linked grow-out batch on each
                   destination pond when you leave destination batch blank.
                 </span>
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Species
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={fishSpecies}
                   onChange={(e) => {
                     const v = e.target.value
@@ -1338,11 +1494,11 @@ export default function AquacultureFishTransfersPage() {
                 </select>
               </label>
               {fishSpecies === 'other' ? (
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   Species description
                   <input
                     type="text"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                     value={fishSpeciesOther}
                     onChange={(e) => setFishSpeciesOther(e.target.value)}
                     placeholder="e.g. local strain"
@@ -1353,12 +1509,12 @@ export default function AquacultureFishTransfersPage() {
 
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-slate-700">Destination lines</span>
+                  <span className="text-sm font-medium text-foreground/85">Destination lines</span>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       disabled={!hasAutoTransferCostRate}
-                      className="text-sm font-medium text-teal-800 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+                      className="text-sm font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground/70 disabled:no-underline"
                       onClick={() => {
                         skipAutoCostLine.current = new Set()
                         setCostPreviewRevision((r) => r + 1)
@@ -1368,14 +1524,14 @@ export default function AquacultureFishTransfersPage() {
                     </button>
                     <button
                       type="button"
-                      className="text-sm font-medium text-teal-800 hover:underline"
+                      className="text-sm font-medium text-primary hover:underline"
                       onClick={addSameSiteRemainderLine}
                     >
                       + Same-site grow-out
                     </button>
                     <button
                       type="button"
-                      className="text-sm font-medium text-teal-800 hover:underline"
+                      className="text-sm font-medium text-primary hover:underline"
                       onClick={() =>
                         setLineDrafts((d) => [
                           ...d,
@@ -1392,20 +1548,20 @@ export default function AquacultureFishTransfersPage() {
                     </button>
                   </div>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {transferCostPreviewLoading ? (
                     <span>Calculating transfer cost from pond production costs…</span>
                   ) : hasAutoTransferCostRate ? (
                     <span>
-                      Enter <strong className="font-medium text-slate-800">fish count (heads)</strong> on each line
+                      Enter <strong className="font-medium text-foreground">fish count (heads)</strong> on each line
                       first — weight (kg) and cost fill from the latest sample pcs/kg and pond production costs (
                       {transferCostBasis === 'per_head' && transferCostPerHead != null ? (
-                        <span className="tabular-nums font-medium text-slate-800">
+                        <span className="tabular-nums font-medium text-foreground">
                           {sym}
                           {formatNumber(transferCostPerHead, 2)}/head
                         </span>
                       ) : transferCostPerKg != null ? (
-                        <span className="tabular-nums font-medium text-slate-800">
+                        <span className="tabular-nums font-medium text-foreground">
                           {sym}
                           {formatNumber(transferCostPerKg, 2)}/kg
                         </span>
@@ -1420,13 +1576,13 @@ export default function AquacultureFishTransfersPage() {
                   )}
                 </p>
                 {transferPlBasisHint ? (
-                  <p className="mt-1 text-[11px] leading-snug text-slate-500">{transferPlBasisHint}</p>
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{transferPlBasisHint}</p>
                 ) : null}
                 <div className="mt-2 space-y-3">
                   {lineDrafts.map((ln, idx) => (
-                    <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                    <div key={idx} className="rounded-lg border border-border bg-muted/50 p-3">
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Line {idx + 1}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Line {idx + 1}</span>
                         {lineDrafts.length > 1 ? (
                           <button
                             type="button"
@@ -1442,10 +1598,10 @@ export default function AquacultureFishTransfersPage() {
                         ) : null}
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <label className="text-xs text-slate-600">
+                        <label className="text-xs text-muted-foreground">
                           To pond
                           <select
-                            className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                            className="mt-0.5 w-full rounded border border-border bg-white px-2 py-1.5 text-sm"
                             value={ln.to_pond_id}
                             onChange={(e) => {
                               const v = e.target.value
@@ -1464,10 +1620,10 @@ export default function AquacultureFishTransfersPage() {
                               ))}
                           </select>
                         </label>
-                        <label className="text-xs text-slate-600">
+                        <label className="text-xs text-muted-foreground">
                           To cycle (optional)
                           <select
-                            className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                            className="mt-0.5 w-full rounded border border-border bg-white px-2 py-1.5 text-sm"
                             value={ln.to_production_cycle_id}
                             onChange={(e) => {
                               const v = e.target.value
@@ -1482,10 +1638,10 @@ export default function AquacultureFishTransfersPage() {
                             ))}
                           </select>
                         </label>
-                        <label className="text-xs font-medium text-slate-700 sm:col-span-2">
+                        <label className="text-xs font-medium text-foreground/85 sm:col-span-2">
                           Fish count (heads) * — enter first
                           <input
-                            className="mt-0.5 w-full rounded border border-teal-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                            className="mt-0.5 w-full rounded border border-primary/35 bg-white px-2 py-1.5 text-sm tabular-nums"
                             inputMode="numeric"
                             placeholder="e.g. 200000"
                             value={ln.fish_count}
@@ -1522,10 +1678,10 @@ export default function AquacultureFishTransfersPage() {
                             }}
                           />
                         </label>
-                        <label className="text-xs text-slate-600">
+                        <label className="text-xs text-muted-foreground">
                           Pcs/kg {lastSample ? '(from sample)' : effectiveSamplePcs ? '(from sample)' : '*'}
                           <input
-                            className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                            className="mt-0.5 w-full rounded border border-border bg-white px-2 py-1.5 text-sm tabular-nums"
                             inputMode="decimal"
                             placeholder={
                               lastSample?.fish_per_kg ??
@@ -1557,10 +1713,10 @@ export default function AquacultureFishTransfersPage() {
                             }}
                           />
                         </label>
-                        <label className="text-xs text-slate-600">
+                        <label className="text-xs text-muted-foreground">
                           Weight (kg) * — auto from heads ÷ pcs/kg
                           <input
-                            className="mt-0.5 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm tabular-nums"
+                            className="mt-0.5 w-full rounded border border-border bg-muted/40 px-2 py-1.5 text-sm tabular-nums"
                             inputMode="decimal"
                             placeholder="Filled when heads + pcs/kg set"
                             value={ln.weight_kg}
@@ -1587,10 +1743,10 @@ export default function AquacultureFishTransfersPage() {
                             }}
                           />
                         </label>
-                        <label className="text-xs text-slate-600">
+                        <label className="text-xs text-muted-foreground">
                           Cost amount (BDT)
                           <input
-                            className="mt-0.5 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                            className="mt-0.5 w-full rounded border border-border bg-white px-2 py-1.5 text-sm tabular-nums"
                             inputMode="decimal"
                             placeholder={hasAutoTransferCostRate ? 'Auto when heads/kg entered' : 'Enter manually'}
                             value={ln.cost_amount}
@@ -1613,17 +1769,17 @@ export default function AquacultureFishTransfersPage() {
                           />
                         </label>
                       </div>
-                      {sourceStock && sourceStock.implied_net_fish_count > 0 ? (
+                      {effectiveSourceStock.heads > 0 ? (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            className="text-xs font-medium text-teal-800 underline hover:text-teal-950"
+                            className="text-xs font-medium text-primary underline hover:text-teal-950"
                             onClick={() => fillRemainderHeads(idx)}
                           >
                             Fill remainder ({formatNumber(
                               Math.max(
                                 0,
-                                sourceStock.implied_net_fish_count -
+                                effectiveSourceStock.heads -
                                   totalTransferHeads +
                                   (parseInt(String(ln.fish_count).trim(), 10) || 0),
                               ),
@@ -1638,10 +1794,10 @@ export default function AquacultureFishTransfersPage() {
                 </div>
               </div>
 
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Memo
                 <textarea
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   rows={2}
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
@@ -1652,14 +1808,14 @@ export default function AquacultureFishTransfersPage() {
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
                 onClick={closeModal}
               >
                 {uiT("cancel")}
               </button>
               <button
                 type="button"
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
                 onClick={() => void submit()}
               >
                 {editingId != null ? aquacultureT('saveChanges', lang) : aquacultureT('saveTransfer', lang)}

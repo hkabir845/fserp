@@ -27,7 +27,7 @@ type PoolRow = {
 }
 
 const inputCls =
-  'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500'
+  'mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500'
 
 export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void }) {
   const { onChanged } = props
@@ -119,14 +119,14 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <Layers className="h-4 w-4 text-teal-700" aria-hidden />
+          <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Layers className="h-4 w-4 text-primary" aria-hidden />
             Shared warehouse groups
           </h2>
-          <p className="mt-1 max-w-2xl text-xs text-slate-500">
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
             Link ponds that share one physical feed/medicine store (e.g. Ashari-1 and Ashari-2). Each pond keeps its own
             allocation; use <strong>Move between ponds</strong> to rebalance. Assign groups under{' '}
             <strong>Aquaculture → Ponds</strong>.
@@ -135,7 +135,7 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-900 hover:bg-teal-100"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-sm font-medium text-primary hover:bg-teal-100"
         >
           <Plus className="h-4 w-4" aria-hidden />
           New group
@@ -143,22 +143,22 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
       </div>
 
       {loading ? (
-        <p className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+        <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading groups…
         </p>
       ) : groups.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">No shared groups yet. Create one for ponds on the same shed or canal bund.</p>
+        <p className="mt-4 text-sm text-muted-foreground">No shared groups yet. Create one for ponds on the same shed or canal bund.</p>
       ) : (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {groups.map((g) => {
             const poolRows = pool.filter((r) => r.warehouse_group_id === g.id)
             return (
-              <div key={g.id} className="rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+              <div key={g.id} className="rounded-lg border border-border/70 bg-muted/50 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-medium text-slate-900">{g.name}</p>
-                    {g.code ? <p className="font-mono text-xs text-slate-500">{g.code}</p> : null}
-                    <p className="mt-1 text-xs text-slate-600">
+                    <p className="font-medium text-foreground">{g.name}</p>
+                    {g.code ? <p className="font-mono text-xs text-muted-foreground">{g.code}</p> : null}
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {g.member_pond_count} pond{g.member_pond_count === 1 ? '' : 's'}
                       {g.member_ponds?.length
                         ? `: ${g.member_ponds.map((p) => p.name).join(', ')}`
@@ -169,7 +169,7 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
                     <button
                       type="button"
                       onClick={() => openEdit(g)}
-                      className="rounded p-1 text-slate-500 hover:bg-white hover:text-slate-800"
+                      className="rounded p-1 text-muted-foreground hover:bg-white hover:text-foreground"
                       aria-label={`Edit ${g.name}`}
                     >
                       <Pencil className="h-4 w-4" />
@@ -177,7 +177,7 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
                     <button
                       type="button"
                       onClick={() => void remove(g)}
-                      className="rounded p-1 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                      className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-700"
                       aria-label={`Delete ${g.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -185,17 +185,17 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
                   </div>
                 </div>
                 {poolRows.length > 0 ? (
-                  <ul className="mt-2 space-y-0.5 border-t border-slate-200/80 pt-2 text-xs text-slate-700">
+                  <ul className="mt-2 space-y-0.5 border-t border-border/80 pt-2 text-xs text-foreground/85">
                     {poolRows.map((r) => (
                       <li key={`${r.warehouse_group_id}-${r.item_name}`}>
                         <span className="font-medium">{r.item_name}</span>: {formatNumber(Number(r.quantity), 2)}{' '}
                         {r.unit}{' '}
-                        <span className="text-slate-500">(pooled)</span>
+                        <span className="text-muted-foreground">(pooled)</span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 border-t border-slate-200/80 pt-2 text-xs text-slate-500">No pooled stock on hand.</p>
+                  <p className="mt-2 border-t border-border/80 pt-2 text-xs text-muted-foreground">No pooled stock on hand.</p>
                 )}
               </div>
             )
@@ -204,27 +204,27 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
       )}
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
-            <h3 className="text-sm font-semibold text-slate-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-white p-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-foreground">
               {editing ? 'Edit warehouse group' : 'New shared warehouse group'}
             </h3>
-            <label className="mt-3 block text-xs font-medium text-slate-700">
+            <label className="mt-3 block text-xs font-medium text-foreground/85">
               Name
               <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ashari canal shed" />
             </label>
-            <label className="mt-3 block text-xs font-medium text-slate-700">
+            <label className="mt-3 block text-xs font-medium text-foreground/85">
               Code (optional)
               <input className={inputCls} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ASHARI-WH" />
             </label>
-            <label className="mt-3 block text-xs font-medium text-slate-700">
+            <label className="mt-3 block text-xs font-medium text-foreground/85">
               Notes
               <textarea className={inputCls} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </label>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                className="rounded-lg border border-border px-3 py-2 text-sm text-foreground/85"
                 onClick={() => setModalOpen(false)}
               >
                 Cancel
@@ -232,7 +232,7 @@ export function AquacultureWarehouseGroupsPanel(props: { onChanged?: () => void 
               <button
                 type="button"
                 disabled={saving}
-                className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+                className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
                 onClick={() => void save()}
               >
                 {saving ? 'Saving…' : 'Save'}

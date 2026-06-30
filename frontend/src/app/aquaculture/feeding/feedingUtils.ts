@@ -287,11 +287,11 @@ export function mealPlanForFieldApply(
 
 export function statusPill(status: string) {
   const base = 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium'
-  if (status === 'pending_review') return `${base} bg-amber-100 text-amber-900`
+  if (status === 'pending_review') return `${base} bg-amber-100 text-warning-foreground`
   if (status === 'approved') return `${base} bg-sky-100 text-sky-900`
   if (status === 'applied') return `${base} bg-emerald-100 text-emerald-900`
-  if (status === 'cancelled') return `${base} bg-slate-200 text-slate-700`
-  return `${base} bg-slate-100 text-slate-800`
+  if (status === 'cancelled') return `${base} bg-muted text-foreground/85`
+  return `${base} bg-muted text-foreground`
 }
 
 export function snapshotWorldfish(snap: Record<string, unknown> | undefined): Record<string, unknown> | null {

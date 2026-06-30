@@ -614,9 +614,9 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
         aria-label="Close dialog"
         onClick={onClose}
       />
-      <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">Edit payment</h2>
+      <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-border/70 px-5 py-4">
+          <h2 className="text-lg font-semibold text-foreground">Edit payment</h2>
           <div className="flex items-center gap-2">
             {!loading && detail ? (
               <DocumentExportButtons
@@ -630,7 +630,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
               aria-label="Cancel"
             >
               <X className="h-5 w-5" />
@@ -639,14 +639,14 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
-          <p className="text-sm text-slate-600">
-            Saves run in one database transaction: the old <code className="rounded bg-slate-100 px-1 text-xs">AUTO-PAY</code>{' '}
+          <p className="text-sm text-muted-foreground">
+            Saves run in one database transaction: the old <code className="rounded bg-muted px-1 text-xs">AUTO-PAY</code>{' '}
             journal is removed, customer or vendor subledgers are restored, then the payment is updated and
             re-posted. If anything fails, nothing is committed.
           </p>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               {error}
             </div>
@@ -662,7 +662,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                 currencySymbol={currencySymbol}
               />
               {contactSnapshot.kind === 'customer' && parseMoneyNumber(contactSnapshot.current_balance) < 0 ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                   This customer has a credit balance (A/R is negative). Each line cannot exceed that invoice&apos;s
                   unpaid balance—reduce an allocation or the payment total if needed.
                 </p>
@@ -672,27 +672,27 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
 
           {loading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/70" />
             </div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Date</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Date</label>
                   <input
                     type="date"
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                     required
                   />
                 </div>
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Method</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Method</label>
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   >
                     {METHODS.map((m) => (
                       <option key={m} value={m}>
@@ -702,7 +702,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Amount</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Amount</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -718,11 +718,11 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Bank register (optional)</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Bank register (optional)</label>
                   <select
                     value={bankAccountId}
                     onChange={(e) => setBankAccountId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   >
                     <option value="">None (clearing / undeposited)</option>
                     {banks.map((b) => (
@@ -748,70 +748,70 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                     : null}
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Reference</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Reference</label>
                   <input
                     type="text"
                     value={reference}
                     onChange={(e) => setReference(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Memo</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Memo</label>
                   <textarea
                     value={memo}
                     onChange={(e) => setMemo(e.target.value)}
                     rows={2}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-2 block text-xs font-medium text-slate-600">
+                  <label className="mb-2 block text-xs font-medium text-muted-foreground">
                     {detail?.payment_type === 'received' ? 'Apply to invoices' : 'Apply to bills'}
                   </label>
                   {detail?.payment_type === 'received' ? (
                     receivedLinesLoading ? (
                       <div className="flex justify-center py-8">
-                        <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
+                        <Loader2 className="h-7 w-7 animate-spin text-muted-foreground/70" />
                       </div>
                     ) : (
-                      <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm">
-                          <thead className="bg-slate-50">
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="min-w-full divide-y divide-border text-sm">
+                          <thead className="bg-muted/40">
                             <tr>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
                                 Invoice
                               </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">
+                              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
                                 Date
                               </th>
-                              <th className="px-3 py-2 text-right text-xs font-medium text-slate-600">
+                              <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                                 Balance due
                               </th>
-                              <th className="px-3 py-2 text-right text-xs font-medium text-slate-600">
+                              <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                                 Allocate
                               </th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
+                          <tbody className="divide-y divide-border/70 bg-white">
                             {receivedLines.map((inv) => {
                               const key = recvRowKey(inv)
                               const allocated = receivedAlloc[key] ?? 0
                               const bal = Number(inv.balance_due) || 0
                               return (
                                 <tr key={key}>
-                                  <td className="max-w-[14rem] px-3 py-2 font-medium text-slate-900">
+                                  <td className="max-w-[14rem] px-3 py-2 font-medium text-foreground">
                                     {inv.invoice_number}
                                     {isRecvOnAccount(inv) ? (
-                                      <span className="ml-1 text-xs font-normal text-slate-500">
+                                      <span className="ml-1 text-xs font-normal text-muted-foreground">
                                         (on-account / advance)
                                       </span>
                                     ) : null}
                                   </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                                  <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                                     {formatDateOnly(inv.invoice_date)}
                                   </td>
-                                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-800">
+                                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                                     {currencySymbol}
                                     {bal.toLocaleString(undefined, {
                                       minimumFractionDigits: 2,
@@ -841,24 +841,24 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                     )
                   ) : madeLinesLoading ? (
                     <div className="flex justify-center py-8">
-                      <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
+                      <Loader2 className="h-7 w-7 animate-spin text-muted-foreground/70" />
                     </div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-slate-200">
-                      <table className="min-w-full divide-y divide-slate-200 text-sm">
-                        <thead className="bg-slate-50">
+                    <div className="overflow-x-auto rounded-lg border border-border">
+                      <table className="min-w-full divide-y divide-border text-sm">
+                        <thead className="bg-muted/40">
                           <tr>
-                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Bill</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium text-slate-600">Date</th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-600">
+                            <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Bill</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Date</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                               Balance due
                             </th>
-                            <th className="px-3 py-2 text-right text-xs font-medium text-slate-600">
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                               Allocate
                             </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
+                        <tbody className="divide-y divide-border/70 bg-white">
                           {madeLines.map((bill) => {
                             const key = madeRowKey(bill)
                             const allocated = madeAlloc[key] ?? 0
@@ -866,23 +866,23 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                             const draft = isDraftBillRow(bill)
                             return (
                               <tr key={key}>
-                                <td className="max-w-[14rem] px-3 py-2 font-medium text-slate-900">
+                                <td className="max-w-[14rem] px-3 py-2 font-medium text-foreground">
                                   {bill.bill_number}
                                   {draft ? (
-                                    <span className="ml-1 text-xs font-normal text-amber-800">
+                                    <span className="ml-1 text-xs font-normal text-warning-foreground">
                                       (Draft — approve on Bills to pay)
                                     </span>
                                   ) : null}
                                   {isMadeOnAccount(bill) ? (
-                                    <span className="ml-1 text-xs font-normal text-slate-500">
+                                    <span className="ml-1 text-xs font-normal text-muted-foreground">
                                       (on-account / advance)
                                     </span>
                                   ) : null}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                                   {formatDateOnly(bill.bill_date)}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-800">
+                                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
                                   {currencySymbol}
                                   {bal.toLocaleString(undefined, {
                                     minimumFractionDigits: 2,
@@ -922,9 +922,9 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                       </table>
                     </div>
                   )}
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-muted-foreground">
                     Allocated total{' '}
-                    <span className="font-medium tabular-nums text-slate-700">
+                    <span className="font-medium tabular-nums text-foreground/85">
                       {currencySymbol}
                       {(detail?.payment_type === 'received'
                         ? receivedAllocatedTotal
@@ -945,18 +945,18 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <div className="flex justify-end gap-2 border-t border-border/70 pt-4">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Save changes

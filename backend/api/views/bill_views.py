@@ -34,6 +34,7 @@ from api.services.aquaculture_production_cycle_service import (
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.station_stock import receipt_station_id_for_vendor
 from api.services.document_posting_lifecycle import (
+    assert_bill_edit_allowed,
     body_has_material_bill_change,
     reconcile_bill_after_material_edit,
 )
@@ -49,7 +50,7 @@ from api.utils.transaction_filters import (
     apply_transaction_amount_range,
     apply_transaction_date_range,
 )
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, _serialize_quantity
 from api.services.aquaculture_bill_defaults import (
     apply_aquaculture_expense_category_to_bill_line_row,
     expense_category_from_cost_bucket,
@@ -472,12 +473,12 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         "item_name": ((item.name or "").strip() if item else ""),
         "item_pos_category": ((item.pos_category or "").strip() if item else ""),
         "item_pieces_per_kg": (
-            str(item.pieces_per_kg)
+            _serialize_quantity(item.pieces_per_kg)
             if item and getattr(item, "pieces_per_kg", None) is not None
             else None
         ),
         "description": l.description or "",
-        "quantity": str(l.quantity),
+        "quantity": _serialize_quantity(l.quantity),
         "unit_price": str(l.unit_price),
         "unit_cost": str(l.unit_price),
         "amount": str(l.amount),
@@ -904,6 +905,9 @@ def bill_detail(request, bill_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
+        ok_edit, err_edit = assert_bill_edit_allowed(b)
+        if not ok_edit:
+            return JsonResponse({"detail": err_edit}, status=409)
         if "receipt_station_id" in body or "station_id" in body:
             raw_rs = (
                 body.get("receipt_station_id")

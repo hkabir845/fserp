@@ -368,6 +368,10 @@ urlpatterns = [
     path("bank-accounts/<int:account_id>/", bank_accounts_views.bank_account_detail),
     path("bank-accounts/<int:account_id>/statement/", bank_accounts_views.bank_account_statement),
     path("journal-entries/", journal_entries_views.journal_entries_list_or_create),
+    path(
+        "journal-entries/entity-directory/",
+        journal_entries_views.journal_entries_entity_directory,
+    ),
     path("journal-entries/<int:entry_id>/", journal_entries_views.journal_entry_detail),
     path("journal-entries/<int:entry_id>/post/", journal_entries_views.journal_entry_post),
     path("journal-entries/<int:entry_id>/unpost/", journal_entries_views.journal_entry_unpost),
@@ -513,6 +517,14 @@ urlpatterns = [
         aquaculture_views.aquaculture_medicine_catalog_ensure,
     ),
     path("aquaculture/ponds/<int:pond_id>/", aquaculture_views.aquaculture_pond_detail),
+    path(
+        "aquaculture/ponds/<int:pond_id>/economics-snapshot/",
+        aquaculture_views.aquaculture_pond_economics_snapshot,
+    ),
+    path(
+        "aquaculture/pond-economics-portfolio/",
+        aquaculture_views.aquaculture_pond_economics_portfolio,
+    ),
     path(
         "aquaculture/ponds/<int:pond_id>/warehouse-stock/",
         aquaculture_views.aquaculture_pond_warehouse_stock,

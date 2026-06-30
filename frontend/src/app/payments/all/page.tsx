@@ -307,16 +307,16 @@ export default function AllPaymentsPage() {
 
   if (loading && payments.length === 0 && !listError) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-slate-400" aria-hidden />
+          <Loader2 className="h-10 w-10 animate-spin text-muted-foreground/70" aria-hidden />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -334,7 +334,7 @@ export default function AllPaymentsPage() {
         }
       >
           {listError && (
-            <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <div className="mb-6 flex items-center gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
               {listError}
             </div>
@@ -364,25 +364,25 @@ export default function AllPaymentsPage() {
             </div>
           )}
 
-          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-6 rounded-xl border border-border bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground/85">
                 <BookOpen className="h-6 w-6" aria-hidden />
               </div>
-              <div className="min-w-0 flex-1 space-y-2 text-sm text-slate-600">
-                <h2 className="text-base font-semibold text-slate-900">Accounting context</h2>
+              <div className="min-w-0 flex-1 space-y-2 text-sm text-muted-foreground">
+                <h2 className="text-base font-semibold text-foreground">Accounting context</h2>
                 <p>
-                  <strong className="font-medium text-slate-800">Receipts</strong> reduce customer balances and
+                  <strong className="font-medium text-foreground">Receipts</strong> reduce customer balances and
                   debit cash or clearing (e.g. undeposited funds until you use{' '}
-                  <Link href="/payments/deposits" className="font-medium text-indigo-600 hover:underline">
+                  <Link href="/payments/deposits" className="font-medium text-primary hover:underline">
                     Record deposits
                   </Link>
-                  ). <strong className="font-medium text-slate-800">Payments made</strong> reduce vendor balances
+                  ). <strong className="font-medium text-foreground">Payments made</strong> reduce vendor balances
                   and credit the selected bank or clearing account. Detail lines below show invoice or bill
                   applications where recorded. Use the row actions to edit or delete: both run under{' '}
-                  <strong className="font-medium text-slate-800">database transactions</strong> so either the
+                  <strong className="font-medium text-foreground">database transactions</strong> so either the
                   rollback and re-post succeed together, or nothing changes. Receipts already moved via{' '}
-                  <strong className="font-medium text-slate-800">bank deposit</strong> stay locked until the
+                  <strong className="font-medium text-foreground">bank deposit</strong> stay locked until the
                   deposit is adjusted.
                 </p>
               </div>
@@ -390,47 +390,47 @@ export default function AllPaymentsPage() {
           </div>
 
           <div className="mb-6 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 <Receipt className="h-4 w-4 text-emerald-600" aria-hidden />
                 AR — Received
               </div>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+              <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">
                 {formatMoney(currencySymbol, stats.arSum)}
               </p>
-              <p className="text-sm text-slate-500">{stats.arCount} transaction{stats.arCount === 1 ? '' : 's'}</p>
+              <p className="text-sm text-muted-foreground">{stats.arCount} transaction{stats.arCount === 1 ? '' : 's'}</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <CreditCard className="h-4 w-4 text-blue-600" aria-hidden />
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <CreditCard className="h-4 w-4 text-primary" aria-hidden />
                 AP — Made
               </div>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+              <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">
                 {formatMoney(currencySymbol, stats.apSum)}
               </p>
-              <p className="text-sm text-slate-500">{stats.apCount} transaction{stats.apCount === 1 ? '' : 's'}</p>
+              <p className="text-sm text-muted-foreground">{stats.apCount} transaction{stats.apCount === 1 ? '' : 's'}</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                <Landmark className="h-4 w-4 text-slate-500" aria-hidden />
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <Landmark className="h-4 w-4 text-muted-foreground" aria-hidden />
                 In view
               </div>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-900">{stats.total}</p>
-              <p className="text-sm text-slate-500">Rows match current filters</p>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">{stats.total}</p>
+              <p className="text-sm text-muted-foreground">Rows match current filters</p>
             </div>
           </div>
 
-          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-6 rounded-xl border border-border bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Filter className="h-4 w-4 text-slate-500" aria-hidden />
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Filter className="h-4 w-4 text-muted-foreground" aria-hidden />
                 Filters
               </div>
               {hasActiveFilters && (
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40"
                 >
                   <X className="h-3.5 w-3.5" aria-hidden />
                   Clear filters
@@ -453,8 +453,8 @@ export default function AllPaymentsPage() {
                     onClick={() => setTypeFilter(v)}
                     className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
                       typeFilter === v
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        ? 'bg-foreground text-white shadow-sm'
+                        : 'bg-muted text-foreground/85 hover:bg-muted'
                     }`}
                   >
                     {label}
@@ -463,7 +463,7 @@ export default function AllPaymentsPage() {
               </div>
               <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 lg:max-w-md">
                 <div>
-                  <label htmlFor="pay-all-start" className="mb-1 block text-xs font-medium text-slate-500">
+                  <label htmlFor="pay-all-start" className="mb-1 block text-xs font-medium text-muted-foreground">
                     From date
                   </label>
                   <input
@@ -471,11 +471,11 @@ export default function AllPaymentsPage() {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 <div>
-                  <label htmlFor="pay-all-end" className="mb-1 block text-xs font-medium text-slate-500">
+                  <label htmlFor="pay-all-end" className="mb-1 block text-xs font-medium text-muted-foreground">
                     To date
                   </label>
                   <input
@@ -483,11 +483,11 @@ export default function AllPaymentsPage() {
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 <div>
-                  <label htmlFor="pay-all-min" className="mb-1 block text-xs font-medium text-slate-500">
+                  <label htmlFor="pay-all-min" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Min amount
                   </label>
                   <input
@@ -497,11 +497,11 @@ export default function AllPaymentsPage() {
                     step="0.01"
                     value={minAmount}
                     onChange={(e) => setMinAmount(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 <div>
-                  <label htmlFor="pay-all-max" className="mb-1 block text-xs font-medium text-slate-500">
+                  <label htmlFor="pay-all-max" className="mb-1 block text-xs font-medium text-muted-foreground">
                     Max amount
                   </label>
                   <input
@@ -511,74 +511,74 @@ export default function AllPaymentsPage() {
                     step="0.01"
                     value={maxAmount}
                     onChange={(e) => setMaxAmount(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
               </div>
               <div className="min-w-[min(100%,20rem)] flex-1">
-                <label htmlFor="pay-all-search" className="mb-1 block text-xs font-medium text-slate-500">
+                <label htmlFor="pay-all-search" className="mb-1 block text-xs font-medium text-muted-foreground">
                   Search (all dates)
                 </label>
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
                   <input
                     id="pay-all-search"
                     type="search"
                     value={searchQ}
                     onChange={(e) => setSearchQ(e.target.value)}
                     placeholder="Reference, memo, party…"
-                    className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 {hasTextSearch && (startDate || endDate) ? (
-                  <p className="mt-1 text-xs text-slate-500">Date range paused while searching.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Date range paused while searching.</p>
                 ) : null}
               </div>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
+              <table className="min-w-full divide-y divide-border text-sm">
+                <thead className="bg-muted/40">
                   <tr>
                     <th className="w-10 px-3 py-3 text-left" aria-hidden />
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       #
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Date
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Type
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Party
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Site
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Bank / register
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Method
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Reference
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Amount
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Cash status
                     </th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-border/70 bg-white">
                   {payments.map((payment) => {
                     const isReceived = payment.payment_type === 'received'
                     const isMade = payment.payment_type === 'made'
@@ -588,12 +588,12 @@ export default function AllPaymentsPage() {
                     const canMutate = payment.can_delete === true
                     return (
                       <Fragment key={payment.id}>
-                        <tr className="hover:bg-slate-50/80">
+                        <tr className="hover:bg-muted/50">
                           <td className="px-3 py-2.5">
                             <button
                               type="button"
                               onClick={() => toggleExpand(payment.id)}
-                              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                               aria-expanded={open}
                               aria-label={open ? 'Collapse details' : 'Expand details'}
                             >
@@ -604,10 +604,10 @@ export default function AllPaymentsPage() {
                               )}
                             </button>
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-900">
+                          <td className="whitespace-nowrap px-3 py-2.5 font-medium text-foreground">
                             {payment.payment_number}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">
+                          <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
                             {formatDateOnly(payment.payment_date)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2.5">
@@ -622,29 +622,29 @@ export default function AllPaymentsPage() {
                               </span>
                             )}
                             {!isReceived && !isMade && (
-                              <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                              <span className="inline-flex rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground/85">
                                 {payment.payment_type}
                               </span>
                             )}
                           </td>
-                          <td className="max-w-[10rem] truncate px-3 py-2.5 text-slate-800" title={payment.customer_name || payment.vendor_name}>
+                          <td className="max-w-[10rem] truncate px-3 py-2.5 text-foreground" title={payment.customer_name || payment.vendor_name}>
                             {isReceived && (payment.customer_name || '—')}
                             {isMade && (payment.vendor_name || '—')}
                             {!isReceived && !isMade && '—'}
                           </td>
-                          <td className="max-w-[8rem] truncate px-3 py-2.5 text-slate-600" title={payment.station_name || ''}>
+                          <td className="max-w-[8rem] truncate px-3 py-2.5 text-muted-foreground" title={payment.station_name || ''}>
                             {payment.station_name?.trim() || (isReceived || isMade ? '—' : '')}
                           </td>
-                          <td className="max-w-[9rem] truncate px-3 py-2.5 text-slate-600" title={payment.bank_account_name ?? ''}>
+                          <td className="max-w-[9rem] truncate px-3 py-2.5 text-muted-foreground" title={payment.bank_account_name ?? ''}>
                             {payment.bank_account_name || '—'}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2.5 capitalize text-slate-600">
+                          <td className="whitespace-nowrap px-3 py-2.5 capitalize text-muted-foreground">
                             {(payment.payment_method ?? 'unspecified').replace(/_/g, ' ')}
                           </td>
-                          <td className="max-w-[8rem] truncate px-3 py-2.5 text-slate-600" title={payment.reference_number || payment.reference || ''}>
+                          <td className="max-w-[8rem] truncate px-3 py-2.5 text-muted-foreground" title={payment.reference_number || payment.reference || ''}>
                             {payment.reference_number || payment.reference || '—'}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-slate-900">
+                          <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums text-foreground">
                             {formatMoney(currencySymbol, amt)}
                           </td>
                           <td className="px-4 py-2.5 text-center">
@@ -653,7 +653,7 @@ export default function AllPaymentsPage() {
                                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
                                   payment.deposit_status === 'deposited'
                                     ? 'bg-emerald-100 text-emerald-900'
-                                    : 'bg-amber-100 text-amber-900'
+                                    : 'bg-amber-100 text-warning-foreground'
                                 }`}
                               >
                                 {payment.deposit_status === 'deposited' ? 'At bank / deposited' : 'Undeposited'}
@@ -676,7 +676,7 @@ export default function AllPaymentsPage() {
                                     ? 'Edit payment (reverses and reposts GL)'
                                     : payment.immutable_reason || 'Cannot edit this payment'
                                 }
-                                className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Edit ${payment.payment_number}`}
                               >
                                 <Pencil className="h-4 w-4" aria-hidden />
@@ -690,7 +690,7 @@ export default function AllPaymentsPage() {
                                     ? 'Delete payment and roll back GL / subledgers'
                                     : payment.immutable_reason || 'Cannot delete this payment'
                                 }
-                                className="rounded-lg p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Delete ${payment.payment_number}`}
                               >
                                 <Trash2 className="h-4 w-4" aria-hidden />
@@ -699,31 +699,31 @@ export default function AllPaymentsPage() {
                           </td>
                         </tr>
                         {open && (
-                          <tr className="bg-slate-50/90">
-                            <td colSpan={11} className="px-4 py-4 text-sm text-slate-700">
+                          <tr className="bg-muted/50">
+                            <td colSpan={11} className="px-4 py-4 text-sm text-foreground/85">
                               <div className="ml-8 space-y-3">
                                 {!canMutate && payment.immutable_reason ? (
-                                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                                  <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-warning-foreground">
                                     <span className="font-semibold">Locked: </span>
                                     {payment.immutable_reason}
                                   </p>
                                 ) : null}
                                 {(payment.memo || '').trim() ? (
                                   <div>
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                       Memo
                                     </span>
-                                    <p className="mt-0.5 whitespace-pre-wrap text-slate-800">{payment.memo}</p>
+                                    <p className="mt-0.5 whitespace-pre-wrap text-foreground">{payment.memo}</p>
                                   </div>
                                 ) : null}
                                 <div>
-                                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                     Applications
                                   </span>
                                   {allocs.length === 0 ? (
-                                    <p className="mt-0.5 text-slate-600">Unallocated or no line detail on file.</p>
+                                    <p className="mt-0.5 text-muted-foreground">Unallocated or no line detail on file.</p>
                                   ) : (
-                                    <ul className="mt-1 list-inside list-disc space-y-0.5 text-slate-800">
+                                    <ul className="mt-1 list-inside list-disc space-y-0.5 text-foreground">
                                       {allocs.map((a, i) => (
                                         <li key={i}>
                                           {a.invoice_id != null && (
@@ -755,15 +755,15 @@ export default function AllPaymentsPage() {
             </div>
             {payments.length === 0 && !loading && (
               <div className="px-6 py-14 text-center">
-                <Receipt className="mx-auto h-10 w-10 text-slate-300" aria-hidden />
-                <p className="mt-3 font-medium text-slate-900">No payments in this view</p>
-                <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
+                <Receipt className="mx-auto h-10 w-10 text-muted-foreground/40" aria-hidden />
+                <p className="mt-3 font-medium text-foreground">No payments in this view</p>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                   Try adjusting filters, or record activity from{' '}
-                  <Link href="/payments/received" className="font-medium text-indigo-600 hover:underline">
+                  <Link href="/payments/received" className="font-medium text-primary hover:underline">
                     Payments received
                   </Link>{' '}
                   or{' '}
-                  <Link href="/payments/made" className="font-medium text-indigo-600 hover:underline">
+                  <Link href="/payments/made" className="font-medium text-primary hover:underline">
                     Payments made
                   </Link>
                   .
@@ -772,7 +772,7 @@ export default function AllPaymentsPage() {
             )}
           </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mt-4 rounded-lg border border-border bg-white px-4 py-3 shadow-sm">
             <OffsetPaginationControls
               page={listPage}
               pageSize={pageSize}
@@ -784,7 +784,7 @@ export default function AllPaymentsPage() {
           </div>
 
           {loading && payments.length > 0 && (
-            <p className="mt-4 flex items-center justify-center gap-2 text-sm text-slate-500">
+            <p className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
               Updating…
             </p>

@@ -1,9 +1,16 @@
 """Shared helpers for API views: JSON serialization, company scoping."""
 import json
 from datetime import date, datetime
+from decimal import Decimal
 from django.http import JsonResponse
 
 from api.utils.auth import company_context_error_response, get_company_id
+from api.utils.measured_quantity import format_measured_quantity_for_api
+
+
+def query_include_inactive(request) -> bool:
+    """True when list endpoints should return inactive (soft-deleted) rows."""
+    return (request.GET.get("include_inactive") or "").strip().lower() in ("true", "1", "yes")
 
 
 def parse_json_body(request):
@@ -37,6 +44,15 @@ def _serialize_decimal(d):
     if d is None:
         return None
     return str(d)
+
+
+def _serialize_quantity(d):
+    """Measuring units (inventory qty, kg, L, etc.) — always two fractional digits in JSON."""
+    if d is None:
+        return None
+    if isinstance(d, Decimal):
+        return format_measured_quantity_for_api(d)
+    return format_measured_quantity_for_api(Decimal(str(d)))
 
 
 def parse_optional_company_station_id(request_get, company_id: int):

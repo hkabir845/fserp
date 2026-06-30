@@ -16,7 +16,7 @@ import {
 
 const menubarTabClass = (active: boolean) =>
   `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-    active ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+    active ? 'bg-primary text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
   }`
 
 export default function AquacultureStockLayout({ children }: { children: React.ReactNode }) {
@@ -48,7 +48,7 @@ export default function AquacultureStockLayout({ children }: { children: React.R
     >
       <nav className="space-y-2" aria-label={aquacultureT('pondStockSections', lang)}>
         <div
-          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1 shadow-inner"
           role="tablist"
           aria-label={aquacultureT('fishStockViews', lang)}
         >
@@ -73,7 +73,7 @@ export default function AquacultureStockLayout({ children }: { children: React.R
         </div>
 
         <div
-          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1 shadow-inner"
           role="tablist"
           aria-label={aquacultureT('pondWarehouseViews', lang)}
         >
@@ -98,7 +98,7 @@ export default function AquacultureStockLayout({ children }: { children: React.R
         </div>
 
         <div
-          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-inner"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1 shadow-inner"
           role="tablist"
           aria-label={aquacultureT('stockOptions', lang)}
         >

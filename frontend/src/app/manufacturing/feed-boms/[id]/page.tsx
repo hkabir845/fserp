@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
+import { formatQuantity } from '@/utils/quantity'
 
 interface FeedBom {
   id: number
@@ -183,8 +184,8 @@ export default function FeedBomDetailPage() {
     return (
               <div className="bg-white rounded-lg shadow p-6 flex items-center justify-center min-h-[400px]">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading BOM...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading BOM...</p>
           </div>
         </div>
     )
@@ -193,7 +194,7 @@ export default function FeedBomDetailPage() {
   if (!bom) {
     return (
               <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-red-600">BOM not found</p>
+          <p className="text-destructive">BOM not found</p>
         </div>
     )
   }
@@ -205,16 +206,16 @@ export default function FeedBomDetailPage() {
           <div className="flex justify-between items-start mb-4">
             <div>
               <h2 className="text-2xl font-bold">{bom.bom_code} v{bom.version}</h2>
-              <p className="text-gray-600 mt-1">Process: {bom.process_type}</p>
+              <p className="text-muted-foreground mt-1">Process: {bom.process_type}</p>
             </div>
             <div className="flex gap-2">
               <span
                 className={`px-3 py-1 text-sm font-semibold rounded-full ${
                   bom.status === 'approved'
-                    ? 'bg-green-100 text-green-800'
+                    ? 'bg-success/15 text-success'
                     : bom.status === 'draft'
                     ? 'bg-yellow-100 text-yellow-800'
-                    : 'bg-gray-100 text-gray-800'
+                    : 'bg-muted text-foreground'
                 }`}
               >
                 {bom.status}
@@ -224,18 +225,18 @@ export default function FeedBomDetailPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div>
-              <label className="text-sm text-gray-500">Batch Size</label>
+              <label className="text-sm text-muted-foreground">Batch Size</label>
               <p className="font-medium">{bom.default_batch_size_ton} ton</p>
             </div>
             {bom.pellet_size_mm && (
               <div>
-                <label className="text-sm text-gray-500">Pellet Size</label>
+                <label className="text-sm text-muted-foreground">Pellet Size</label>
                 <p className="font-medium">{bom.pellet_size_mm} mm</p>
               </div>
             )}
             {bom.is_floating && (
               <div>
-                <label className="text-sm text-gray-500">Type</label>
+                <label className="text-sm text-muted-foreground">Type</label>
                 <p className="font-medium">Floating</p>
               </div>
             )}
@@ -246,14 +247,14 @@ export default function FeedBomDetailPage() {
               <button
                 onClick={handleApprove}
                 disabled={approveMutation.isPending}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+                className="bg-success text-white px-4 py-2 rounded-md hover:bg-success/90 disabled:opacity-50"
               >
                 {approveMutation.isPending ? 'Approving...' : 'Approve BOM'}
               </button>
               <button
                 onClick={handleClone}
                 disabled={cloneMutation.isPending}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary disabled:opacity-50"
               >
                 Clone Version
               </button>
@@ -267,38 +268,38 @@ export default function FeedBomDetailPage() {
             <h3 className="font-semibold mb-4">Formula Totals</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <label className="text-sm text-gray-600">Total %</label>
-                <p className={`text-2xl font-bold ${totals.is_valid ? 'text-green-600' : 'text-red-600'}`}>
+                <label className="text-sm text-muted-foreground">Total %</label>
+                <p className={`text-2xl font-bold ${totals.is_valid ? 'text-success' : 'text-destructive'}`}>
                   {totals.total_percent.toFixed(4)}%
                 </p>
               </div>
               <div>
-                <label className="text-sm text-gray-600">Total kg</label>
-                <p className="text-2xl font-bold text-gray-900">
-                  {totals.total_kg.toFixed(3)} kg
+                <label className="text-sm text-muted-foreground">Total kg</label>
+                <p className="text-2xl font-bold text-foreground">
+                  {formatQuantity(totals.total_kg)} kg
                 </p>
               </div>
               {totals.premix_total_g > 0 && (
                 <>
                   <div>
-                    <label className="text-sm text-gray-600">Premix (g/ton)</label>
-                    <p className="text-2xl font-bold text-gray-900">
+                    <label className="text-sm text-muted-foreground">Premix (g/ton)</label>
+                    <p className="text-2xl font-bold text-foreground">
                       {totals.premix_total_g.toFixed(1)} g
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm text-gray-600">Premix (kg)</label>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {totals.premix_total_kg.toFixed(3)} kg
+                    <label className="text-sm text-muted-foreground">Premix (kg)</label>
+                    <p className="text-2xl font-bold text-foreground">
+                      {formatQuantity(totals.premix_total_kg)} kg
                     </p>
                   </div>
                 </>
               )}
             </div>
             {!totals.is_valid && (
-              <div className="mt-4 p-3 bg-red-100 rounded">
-                <p className="text-sm font-semibold text-red-800 mb-2">Validation Errors:</p>
-                <ul className="list-disc list-inside text-sm text-red-700">
+              <div className="mt-4 p-3 bg-destructive/10 rounded">
+                <p className="text-sm font-semibold text-destructive mb-2">Validation Errors:</p>
+                <ul className="list-disc list-inside text-sm text-destructive">
                   {totals.errors.map((error, idx) => (
                     <li key={idx}>{error}</li>
                   ))}
@@ -316,7 +317,7 @@ export default function FeedBomDetailPage() {
               {bom.status === 'draft' && (
                 <button
                   onClick={() => setShowAddLine(!showAddLine)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
                 >
                   {showAddLine ? 'Cancel' : '+ Add Line'}
                 </button>
@@ -325,17 +326,17 @@ export default function FeedBomDetailPage() {
 
             {/* Add Line Form */}
             {showAddLine && bom.status === 'draft' && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+              <div className="mb-6 p-4 bg-muted/40 rounded-lg border">
                 <h4 className="font-semibold mb-3">Add Ingredient Line</h4>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">
                       Ingredient *
                     </label>
                     <select
                       value={newLine.ingredient_id}
                       onChange={(e) => setNewLine({ ...newLine, ingredient_id: parseInt(e.target.value) })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                       required
                     >
                       <option value="0">Select ingredient</option>
@@ -347,13 +348,13 @@ export default function FeedBomDetailPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">
                       Basis *
                     </label>
                     <select
                       value={newLine.inclusion_basis}
                       onChange={(e) => setNewLine({ ...newLine, inclusion_basis: e.target.value })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                     >
                       <option value="percent">%</option>
                       <option value="kg_per_ton">kg/ton</option>
@@ -361,7 +362,7 @@ export default function FeedBomDetailPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">
                       Value *
                     </label>
                     <input
@@ -369,12 +370,12 @@ export default function FeedBomDetailPage() {
                       step="0.0001"
                       value={newLine.inclusion_value}
                       onChange={(e) => setNewLine({ ...newLine, inclusion_value: parseFloat(e.target.value) || 0 })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">
                       Loss Factor %
                     </label>
                     <input
@@ -382,7 +383,7 @@ export default function FeedBomDetailPage() {
                       step="0.01"
                       value={newLine.loss_factor_pct}
                       onChange={(e) => setNewLine({ ...newLine, loss_factor_pct: parseFloat(e.target.value) || 0 })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                      className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                     />
                   </div>
                 </div>
@@ -390,13 +391,13 @@ export default function FeedBomDetailPage() {
                   <button
                     onClick={handleAddLine}
                     disabled={addLineMutation.isPending}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                    className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 disabled:opacity-50"
                   >
                     {addLineMutation.isPending ? 'Adding...' : 'Add Line'}
                   </button>
                   <button
                     onClick={() => setShowAddLine(false)}
-                    className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400"
+                    className="bg-muted text-foreground/85 px-4 py-2 rounded-md hover:bg-muted-foreground/50"
                   >
                     Cancel
                   </button>
@@ -406,23 +407,23 @@ export default function FeedBomDetailPage() {
 
             {/* Lines Table */}
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Seq</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ingredient</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Basis</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Computed %</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Computed kg</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loss %</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phase</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Seq</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Ingredient</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Basis</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Value</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Computed %</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Computed kg</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Loss %</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Phase</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-border">
                   {lines && lines.length > 0 ? (
                     lines.map((line) => (
-                      <tr key={line.id} className="hover:bg-gray-50">
+                      <tr key={line.id} className="hover:bg-muted/40">
                         <td className="px-4 py-3 whitespace-nowrap text-sm">{line.sequence}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">{line.ingredient_id}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
@@ -434,7 +435,7 @@ export default function FeedBomDetailPage() {
                           {line.computed_percent ? line.computed_percent.toFixed(4) + '%' : '-'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {line.computed_kg ? line.computed_kg.toFixed(3) + ' kg' : '-'}
+                          {line.computed_kg ? `${formatQuantity(line.computed_kg)} kg` : '-'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">{line.loss_factor_pct}%</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">{line.phase || '-'}</td>
@@ -442,7 +443,7 @@ export default function FeedBomDetailPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="px-4 py-4 text-center text-sm text-gray-500">
+                      <td colSpan={8} className="px-4 py-4 text-center text-sm text-muted-foreground">
                         No lines added yet. Add ingredients to build the formula.
                       </td>
                     </tr>

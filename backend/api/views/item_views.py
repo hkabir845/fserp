@@ -16,7 +16,7 @@ from django.views.decorators.http import require_GET
 
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
-from api.views.common import parse_json_body, require_company_id, _serialize_decimal
+from api.views.common import parse_json_body, query_include_inactive, require_company_id, _serialize_decimal, _serialize_quantity
 from api.models import (
     AquaculturePond,
     BillLine,
@@ -356,16 +356,16 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
         "tracks_inventory": item_tracks_physical_stock(i),
         "unit_price": _serialize_decimal(i.unit_price),
         "cost": _serialize_decimal(i.cost),
-        "quantity_on_hand": _serialize_decimal(_effective_quantity_on_hand(i)),
+        "quantity_on_hand": _serialize_quantity(_effective_quantity_on_hand(i)),
         "unit": i.unit or "piece",
         "pos_category": i.pos_category or "general",
         "content_weight_kg": (
-            _serialize_decimal(i.content_weight_kg)
+            _serialize_quantity(i.content_weight_kg)
             if getattr(i, "content_weight_kg", None) is not None
             else None
         ),
         "pieces_per_kg": (
-            _serialize_decimal(i.pieces_per_kg)
+            _serialize_quantity(i.pieces_per_kg)
             if getattr(i, "pieces_per_kg", None) is not None
             else None
         ),
@@ -516,6 +516,8 @@ def items_list_or_create(request):
             qs = _items_queryset_for_tank_assignment(qs)
         elif request.GET.get("pos_only") in ("true", "1", "yes"):
             qs = qs.filter(is_pos_available=True, is_active=True)
+        elif not query_include_inactive(request):
+            qs = qs.filter(is_active=True)
         qs = _items_queryset_with_tank_annotations(qs)
         want_loc = request.GET.get("location_stocks") in ("1", "true", "yes")
         cid = int(request.company_id)
@@ -1057,7 +1059,8 @@ def item_detail(request, item_id: int):
             )
         try:
             with transaction.atomic():
-                i.delete()
+                i.is_active = False
+                i.save(update_fields=["is_active", "updated_at"])
         except IntegrityError:
             return JsonResponse(
                 {
@@ -1068,7 +1071,10 @@ def item_detail(request, item_id: int):
                 },
                 status=400,
             )
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        return JsonResponse(
+            {"detail": "Item deleted (soft) successfully", "id": i.id, "is_active": False},
+            status=200,
+        )
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -1288,9 +1294,9 @@ def item_stock_ledger(request, item_id: int):
                 "reference": m["reference"],
                 "counterparty": m["counterparty"],
                 "memo": m["memo"],
-                "qty_in": _serialize_decimal(delta) if delta > 0 else None,
-                "qty_out": _serialize_decimal(-delta) if delta < 0 else None,
-                "balance": _serialize_decimal(running),
+                "qty_in": _serialize_quantity(delta) if delta > 0 else None,
+                "qty_out": _serialize_quantity(-delta) if delta < 0 else None,
+                "balance": _serialize_quantity(running),
             }
         )
 
@@ -1308,7 +1314,7 @@ def item_stock_ledger(request, item_id: int):
             "item_id": item.id,
             "item_name": item.name or "",
             "unit": item.unit or "",
-            "current_quantity_on_hand": _serialize_decimal(current_qoh),
+            "current_quantity_on_hand": _serialize_quantity(current_qoh),
             "opening_balance": _serialize_decimal(opening_balance),
             "period": {
                 "start_date": start.isoformat() if start else None,
@@ -1317,9 +1323,9 @@ def item_stock_ledger(request, item_id: int):
             "summary": {
                 "movement_count": len(movements),
                 "visible_count": len(visible),
-                "total_in": _serialize_decimal(total_in),
-                "total_out": _serialize_decimal(total_out),
-                "net": _serialize_decimal(net_all),
+                "total_in": _serialize_quantity(total_in),
+                "total_out": _serialize_quantity(total_out),
+                "net": _serialize_quantity(net_all),
             },
             "rows": visible,
         }

@@ -41,14 +41,12 @@ function OverviewPageContent() {
       return
     }
 
-    // Get user role
     const userStr = localStorage.getItem('user')
     if (userStr && userStr !== 'undefined' && userStr !== 'null') {
       try {
         const user = JSON.parse(userStr)
         const role = user.role?.toLowerCase() || null
-        
-        // Only allow SUPER_ADMIN to access this page
+
         if (role !== 'super_admin') {
           toast.error('Access denied. Super Admin access required.')
           router.push('/dashboard')
@@ -59,29 +57,24 @@ function OverviewPageContent() {
       }
     }
 
-    // If mode is FSMS ERP, show message instead of redirecting
-    // This allows user to see the page and switch mode if needed
     if (mode === 'fsms_erp') {
       setLoading(false)
       return
     }
 
-    // Only fetch if in SaaS Dashboard mode
     if (mode === 'saas_dashboard') {
       fetchPlatformStats()
     } else {
-      // If mode is not set yet, set loading to false immediately
-      // This ensures the page renders even if mode hasn't initialized
       setLoading(false)
     }
-  }, [mode, router]) // Only depend on mode to avoid infinite loops
+  }, [mode, router])
 
   const fetchPlatformStats = async () => {
     try {
       setLoading(true)
-      
+
       const response = await api.get('/admin/stats')
-      
+
       if (response.data) {
         setStats(response.data)
       } else {
@@ -90,12 +83,10 @@ function OverviewPageContent() {
         }
       }
     } catch (error: any) {
-      // Silently handle connection errors - backend may not be running
-      // Browser will still log network errors, but we won't add to the noise
       if (!isConnectionError(error)) {
         safeLogError('[Overview] Error fetching platform stats:', error)
       }
-      
+
       if (error.response?.status === 403) {
         toast.error('Access denied. Super Admin access required.')
         router.push('/dashboard')
@@ -104,30 +95,26 @@ function OverviewPageContent() {
           toast.error('Server error. Please check backend logs.')
         }
       } else if (!isConnectionError(error)) {
-        // Only show toast for non-connection errors
         if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
           toast.error('Request timed out. The server may be slow or unresponsive.')
         } else {
           toast.error(`Failed to load platform statistics: ${error.message || 'Unknown error'}`)
         }
       }
-      // Connection errors are handled silently - no toast needed
     } finally {
       setLoading(false)
     }
   }
 
-  // Show message if not in SaaS Dashboard mode
-  // Also handle case where mode might not be initialized yet
   if (!mode || mode !== 'saas_dashboard') {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="app-scroll-pad">
-          <div className="w-full rounded-2xl border border-slate-200/90 bg-white p-6 text-center shadow-sm sm:p-8">
-            <Building2 className="mx-auto mb-4 h-12 w-12 text-slate-400" />
-            <h2 className="mb-2 text-xl font-semibold text-slate-900">{pageMeta.title}</h2>
-            <p className="mb-4 text-slate-600">Please switch to SaaS Dashboard mode to view platform overview.</p>
-            <p className="text-sm text-slate-500">Use the mode switcher in the sidebar to switch to SaaS Dashboard mode.</p>
+          <div className="erp-empty-state w-full">
+            <Building2 className="mx-auto mb-4 h-12 w-12 text-muted-foreground/60" />
+            <h2 className="mb-2 text-xl font-semibold text-foreground">{pageMeta.title}</h2>
+            <p className="mb-4 text-muted-foreground">Please switch to SaaS Dashboard mode to view platform overview.</p>
+            <p className="text-sm text-muted-foreground/80">Use the mode switcher in the sidebar to switch to SaaS Dashboard mode.</p>
           </div>
         </div>
       </PageLayout>
@@ -135,7 +122,7 @@ function OverviewPageContent() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -147,152 +134,142 @@ function OverviewPageContent() {
           maxWidthClass="max-w-[1600px]"
           contentClassName="mt-4"
           actions={
-            <Link
-              href="/admin/subscription-billing"
-              className="group flex max-w-md items-center gap-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 shadow-sm transition-all hover:border-indigo-300 hover:shadow"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
+            <Link href="/admin/subscription-billing" className="erp-action-card group">
+              <div className="erp-action-card-icon">
                 <CreditCard className="h-5 w-5" />
               </div>
               <div className="min-w-0 text-left">
-                <p className="text-sm font-semibold text-indigo-950">Subscription &amp; Billing</p>
-                <p className="text-xs text-indigo-800/90">
+                <p className="erp-action-card-title">Subscription &amp; Billing</p>
+                <p className="erp-action-card-desc">
                   Manage tenant cycles, renewals, and SaaS ledger invoices in one place.
                 </p>
               </div>
-              <ChevronRight className="h-5 w-5 shrink-0 text-indigo-400 transition-transform group-hover:translate-x-0.5" />
+              <ChevronRight className="h-5 w-5 shrink-0 text-primary/50 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
             </Link>
           }
         >
           {loading ? (
-            <div className="rounded-2xl border border-slate-200/90 bg-white p-8 text-center shadow-sm">
-              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
-              <p className="text-slate-600">Loading platform statistics...</p>
+            <div className="erp-surface p-8 text-center">
+              <div className="erp-loading-spinner" />
+              <p className="text-muted-foreground">Loading platform statistics...</p>
             </div>
           ) : stats ? (
             <>
-              {/* Platform Statistics */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div className="bg-white rounded-lg shadow p-6">
+              <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                <div className="erp-stat-card">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-600">Total Companies</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total_companies}</p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="erp-stat-label">Total Companies</p>
+                      <p className="erp-stat-value">{stats.total_companies}</p>
+                      <p className="erp-stat-meta">
                         {stats.active_companies} active, {stats.inactive_companies} inactive
                       </p>
                     </div>
-                    <div className="p-3 bg-blue-100 rounded-full">
-                      <Building2 className="h-6 w-6 text-blue-600" />
+                    <div className="erp-metric-icon erp-metric-icon--primary">
+                      <Building2 className="h-6 w-6" />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow p-6">
+                <div className="erp-stat-card">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-600">Total Users</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total_users}</p>
-                      <p className="text-xs text-gray-500 mt-1">Across all companies</p>
+                      <p className="erp-stat-label">Total Users</p>
+                      <p className="erp-stat-value">{stats.total_users}</p>
+                      <p className="erp-stat-meta">Across all companies</p>
                     </div>
-                    <div className="p-3 bg-green-100 rounded-full">
-                      <Users className="h-6 w-6 text-green-600" />
+                    <div className="erp-metric-icon erp-metric-icon--success">
+                      <Users className="h-6 w-6" />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow p-6">
+                <div className="erp-stat-card">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-600">Total Stations</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total_stations}</p>
-                      <p className="text-xs text-gray-500 mt-1">Across all companies</p>
+                      <p className="erp-stat-label">Total Stations</p>
+                      <p className="erp-stat-value">{stats.total_stations}</p>
+                      <p className="erp-stat-meta">Across all companies</p>
                     </div>
-                    <div className="p-3 bg-purple-100 rounded-full">
-                      <MapPin className="h-6 w-6 text-purple-600" />
+                    <div className="erp-metric-icon erp-metric-icon--accent">
+                      <MapPin className="h-6 w-6" />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow p-6">
+                <div className="erp-stat-card">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-600">Total Sales</p>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">
-                        {formatCurrency(stats.total_sales, 'BDT')}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">All companies, all time</p>
+                      <p className="erp-stat-label">Total Sales</p>
+                      <p className="erp-stat-value">{formatCurrency(stats.total_sales, 'BDT')}</p>
+                      <p className="erp-stat-meta">All companies, all time</p>
                     </div>
-                    <div className="p-3 bg-yellow-100 rounded-full">
-                      <TrendingUp className="h-6 w-6 text-yellow-600" />
+                    <div className="erp-metric-icon erp-metric-icon--warning">
+                      <TrendingUp className="h-6 w-6" />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Additional Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Users by Role</h3>
+              <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div className="erp-surface p-6">
+                  <h3 className="mb-4 text-lg font-semibold text-foreground">Users by Role</h3>
                   <div className="space-y-2">
                     {Object.entries(stats.users_by_role).map(([role, count]) => (
-                      <div key={role} className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600 capitalize">{role.replace('_', ' ')}</span>
-                        <span className="text-sm font-semibold text-gray-900">{count}</span>
+                      <div key={role} className="flex items-center justify-between">
+                        <span className="text-sm capitalize text-muted-foreground">{role.replace('_', ' ')}</span>
+                        <span className="text-sm font-semibold text-foreground">{count}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Resource Summary</h3>
+                <div className="erp-surface p-6">
+                  <h3 className="mb-4 text-lg font-semibold text-foreground">Resource Summary</h3>
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Customers</span>
-                      <span className="text-sm font-semibold text-gray-900">{stats.total_customers}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Customers</span>
+                      <span className="text-sm font-semibold text-foreground">{stats.total_customers}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Vendors</span>
-                      <span className="text-sm font-semibold text-gray-900">{stats.total_vendors}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Vendors</span>
+                      <span className="text-sm font-semibold text-foreground">{stats.total_vendors}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Invoices</span>
-                      <span className="text-sm font-semibold text-gray-900">{stats.total_invoices}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Invoices</span>
+                      <span className="text-sm font-semibold text-foreground">{stats.total_invoices}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Company Status</h3>
+                <div className="erp-surface p-6">
+                  <h3 className="mb-4 text-lg font-semibold text-foreground">Company Status</h3>
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Active</span>
-                      <span className="text-sm font-semibold text-green-600">{stats.active_companies}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Active</span>
+                      <span className="text-sm font-semibold text-success">{stats.active_companies}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Inactive</span>
-                      <span className="text-sm font-semibold text-red-600">{stats.inactive_companies}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Inactive</span>
+                      <span className="text-sm font-semibold text-destructive">{stats.inactive_companies}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">With Subscription</span>
-                      <span className="text-sm font-semibold text-blue-600">{stats.active_companies}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">With Subscription</span>
+                      <span className="text-sm font-semibold text-primary">{stats.active_companies}</span>
                     </div>
                   </div>
                 </div>
               </div>
             </>
           ) : (
-            <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-              <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Platform Overview</h2>
-              <p className="text-gray-600 text-lg mb-2">No statistics available</p>
-              <p className="text-gray-500 text-sm mb-4">
+            <div className="erp-empty-state">
+              <Building2 className="mx-auto mb-4 h-12 w-12 text-muted-foreground/60" />
+              <h2 className="mb-2 text-xl font-semibold text-foreground">Platform Overview</h2>
+              <p className="mb-2 text-lg text-muted-foreground">No statistics available</p>
+              <p className="mb-4 text-sm text-muted-foreground/80">
                 Backend server is not running. Please start the backend server to view platform statistics.
               </p>
-              <button
-                onClick={fetchPlatformStats}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
+              <button type="button" onClick={fetchPlatformStats} className="erp-btn-primary">
                 Retry
               </button>
             </div>
@@ -310,4 +287,3 @@ export default function OverviewPage() {
     </CompanyProvider>
   )
 }
-

@@ -53,7 +53,7 @@ export default function AppsPage() {
   )
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <AquaculturePageShell
             showBackLink={false}
             titleId="apps-title"
@@ -130,11 +130,11 @@ export default function AppsPage() {
           >
             {!navReady ? (
               <div
-                className="flex items-center justify-center gap-3 rounded-2xl border border-slate-200/90 bg-white py-16 text-sm text-slate-500 shadow-sm"
+                className="flex items-center justify-center gap-3 rounded-2xl border border-border/80 bg-white py-16 text-sm text-muted-foreground shadow-sm"
                 aria-busy="true"
               >
                 <div
-                  className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600"
+                  className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-primary"
                   aria-hidden
                 />
                 {aquacultureT('appsLoading', lang)}
@@ -142,7 +142,7 @@ export default function AppsPage() {
             ) : null}
 
             {navReady && appsInView.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
+              <div className="rounded-2xl border border-border/80 bg-white p-8 text-center text-sm text-muted-foreground shadow-sm">
                 {aquacultureT('appsNoMatch', lang)}
               </div>
             ) : null}
@@ -154,12 +154,12 @@ export default function AppsPage() {
                   return (
                     <section
                       key={section.id}
-                      className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:p-5"
+                      className="erp-panel"
                       aria-labelledby={`apps-section-${section.id}`}
                     >
                       <h2
                         id={`apps-section-${section.id}`}
-                        className="text-sm font-semibold tracking-tight text-slate-800"
+                        className="text-sm font-semibold tracking-tight text-foreground"
                       >
                         {section.label}
                       </h2>
@@ -170,14 +170,14 @@ export default function AppsPage() {
                             <Link
                               key={`${item.href}-${item.label}`}
                               href={item.href}
-                              className="group flex flex-col items-center rounded-2xl border border-slate-200/90 bg-slate-50/50 p-4 text-center transition hover:border-teal-300 hover:bg-white hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+                              className="group erp-quick-app-tile"
                             >
                               <div
                                 className={`mb-3 flex h-14 w-14 items-center justify-center rounded-2xl ${item.tileClass} transition group-hover:opacity-90 sm:h-16 sm:w-16`}
                               >
                                 <Icon className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.75} aria-hidden />
                               </div>
-                              <span className="line-clamp-2 text-sm font-medium leading-snug text-slate-700 sm:text-base">
+                              <span className="line-clamp-2 text-sm font-medium leading-snug text-foreground/85 sm:text-base">
                                 {item.label}
                               </span>
                             </Link>

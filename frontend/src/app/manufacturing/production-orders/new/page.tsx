@@ -70,12 +70,12 @@ export default function NewProductionOrderPage() {
 
   return (
           <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold mb-6">Create Production Order</h2>
+        <h2 className="mb-6 text-2xl font-bold text-foreground">Create Production Order</h2>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/85 mb-1">
                 BOM * (Approved only)
               </label>
               <select
@@ -89,7 +89,7 @@ export default function NewProductionOrderPage() {
                     batch_size_ton: bom?.default_batch_size_ton || 1.0
                   })
                 }}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                 required
               >
                 <option value="0">Select BOM</option>
@@ -100,14 +100,14 @@ export default function NewProductionOrderPage() {
                 ))}
               </select>
               {selectedBom && (
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-muted-foreground">
                   Default batch: {selectedBom.default_batch_size_ton} ton
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/85 mb-1">
                 Batch Size (ton) *
               </label>
               <input
@@ -115,22 +115,22 @@ export default function NewProductionOrderPage() {
                 step="0.001"
                 value={formData.batch_size_ton}
                 onChange={(e) => setFormData({ ...formData, batch_size_ton: parseFloat(e.target.value) || 0 })}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                 required
               />
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Output: {(formData.batch_size_ton * 1000).toFixed(2)} kg
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/85 mb-1">
                 Warehouse *
               </label>
               <select
                 value={formData.warehouse_id}
                 onChange={(e) => setFormData({ ...formData, warehouse_id: parseInt(e.target.value) })}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                 required
               >
                 <option value="0">Select warehouse</option>
@@ -143,27 +143,27 @@ export default function NewProductionOrderPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/85 mb-1">
                 Planned Date
               </label>
               <input
                 type="datetime-local"
                 value={formData.planned_date}
                 onChange={(e) => setFormData({ ...formData, planned_date: e.target.value })}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground/85 mb-1">
               Notes
             </label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
-              className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              className="w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
             />
           </div>
 
@@ -171,14 +171,14 @@ export default function NewProductionOrderPage() {
             <button
               type="submit"
               disabled={createMutation.isPending}
-              className="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+              className="bg-primary text-primary-foreground px-6 py-2 rounded-md hover:bg-primary/90 disabled:opacity-50"
             >
               {createMutation.isPending ? 'Creating...' : 'Create Order'}
             </button>
             <button
               type="button"
               onClick={() => router.back()}
-              className="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400"
+              className="bg-muted text-foreground/85 px-6 py-2 rounded-md hover:bg-muted-foreground/50"
             >
               Cancel
             </button>

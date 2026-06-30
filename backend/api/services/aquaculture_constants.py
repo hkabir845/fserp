@@ -5,13 +5,12 @@ from __future__ import annotations
 # Inter-pond fish transfers (nursing phase → grow-out): documented on P&L API and transfers UI.
 INTER_POND_FISH_TRANSFER_PL_NOTE = (
     "Inter-pond fish transfers: each line carries cost_amount (biological production cost moved with the fish). "
-    "Pond P&L treats this as moving biological cost — operating expenses increase on receiving ponds and "
-    "decrease on the source pond by the same totals, so company-wide direct costs are unchanged. "
-    "When account 1581 (Biological Inventory) is seeded, saving a transfer posts GL AUTO-AQ-FISH-XFER-{id}: "
-    "Dr 1581 on each destination pond and Cr 1581 on the source pond "
-    "(capped at source pond 1581 book balance when management cost exceeds fry capitalized in GL). "
-    "Each line requires weight_kg and fish_count (heads), both greater than zero; pcs_per_kg is optional. "
-    "Source is usually the nursing pond; destinations are grow-out ponds on the same site."
+    "Nursing → grow-out: cost/head = (fry + feed + medicine + pond care + other direct costs on source pond) "
+    "÷ live fingerlings still in the nursing pond (survivors after mortality — not original stocked count). "
+    "Line cost = heads transferred × cost/head. Weight (kg), pcs/kg, and biomass derive from stock position "
+    "and latest biomass sample. Pond P&L increases operating cost on receiving ponds and decreases on the source "
+    "by the same totals. GL AUTO-AQ-FISH-XFER-{id} moves account 1581 between pond tags when seeded. "
+    "Each line requires weight_kg and fish_count (heads), both greater than zero."
 )
 
 # Pond role (management / UX; not GL).

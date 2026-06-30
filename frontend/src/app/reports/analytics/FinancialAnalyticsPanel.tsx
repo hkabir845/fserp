@@ -193,7 +193,7 @@ function AnalyticsKpiCard({
   iconClass: string
 }) {
   return (
-    <div className="rounded-xl border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ring-1 ring-slate-200/40">
+    <div className="rounded-xl border border-border/80 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm ring-1 ring-border/40">
       <div className="flex gap-3">
         <div
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
@@ -684,7 +684,7 @@ export function FinancialAnalyticsPanel({
       className={
         embedInReports
           ? 'w-full min-w-0 min-h-0'
-          : 'w-full min-w-0 min-h-[600px] rounded-lg border border-gray-200 bg-white'
+          : 'w-full min-w-0 min-h-[600px] rounded-lg border border-border bg-white'
       }
     >
             {loading ? (
@@ -697,7 +697,7 @@ export function FinancialAnalyticsPanel({
               >
                 <div className="text-center">
                   <RefreshCw className="mx-auto mb-4 h-12 w-12 animate-spin text-blue-500" />
-                  <p className="text-gray-600">Loading report…</p>
+                  <p className="text-muted-foreground">Loading report…</p>
                 </div>
               </div>
             ) : (
@@ -710,14 +710,14 @@ export function FinancialAnalyticsPanel({
               >
                 <div className="mb-6 flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Analytics &amp; KPIs</h2>
-                    <p className="mt-1 text-sm text-gray-500">Generated on {formatDate(new Date())}</p>
+                    <h2 className="text-2xl font-bold text-foreground">Analytics &amp; KPIs</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Generated on {formatDate(new Date())}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => window.print()}
-                      className="flex items-center space-x-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
+                      className="flex items-center space-x-2 rounded-lg bg-success px-4 py-2 text-white transition-colors hover:bg-success/90"
                       title="Print"
                     >
                       <Printer className="h-4 w-4" />
@@ -726,7 +726,7 @@ export function FinancialAnalyticsPanel({
                     <button
                       type="button"
                       onClick={downloadAnalyticsCsv}
-                      className="flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+                      className="flex items-center space-x-2 rounded-lg bg-primary px-4 py-2 text-white transition-colors hover:bg-primary"
                       title="Export as CSV"
                     >
                       <Download className="h-4 w-4" />
@@ -735,7 +735,7 @@ export function FinancialAnalyticsPanel({
                     <button
                       type="button"
                       onClick={downloadAnalyticsJson}
-                      className="flex items-center space-x-2 rounded-lg bg-gray-600 px-4 py-2 text-white transition-colors hover:bg-gray-700"
+                      className="flex items-center space-x-2 rounded-lg bg-muted-foreground px-4 py-2 text-white transition-colors hover:bg-muted-foreground"
                       title="Export as JSON"
                     >
                       <Download className="h-4 w-4" />
@@ -744,19 +744,19 @@ export function FinancialAnalyticsPanel({
                   </div>
                 </div>
 
-                <div className="mb-6 flex gap-3 rounded-lg border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-sm text-amber-950 shadow-sm">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+                <div className="mb-6 flex gap-3 rounded-lg border border-warning/30/90 bg-warning/10/95 px-4 py-3 text-sm text-warning-foreground shadow-sm">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" aria-hidden />
                   <div>
-                    <p className="font-semibold text-amber-950">{glSiteBanner.headline}</p>
-                    <p className="mt-0.5 text-amber-900/90">{glSiteBanner.detail}</p>
+                    <p className="font-semibold text-warning-foreground">{glSiteBanner.headline}</p>
+                    <p className="mt-0.5 text-warning-foreground/90">{glSiteBanner.detail}</p>
                   </div>
                 </div>
 
-                <div className="mb-6 bg-blue-50 rounded-lg border border-blue-200 p-4">
+                <div className="mb-6 bg-blue-50 rounded-lg border border-primary/25 p-4">
                   <div className="flex flex-col gap-4">
                     <div className="flex flex-wrap items-end justify-between gap-4">
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                        <label className="whitespace-nowrap text-sm font-medium text-blue-800">
+                        <label className="whitespace-nowrap text-sm font-medium text-primary">
                           Report Period:
                         </label>
                         <input
@@ -764,15 +764,15 @@ export function FinancialAnalyticsPanel({
                           value={startDate}
                           max={endDate}
                           onChange={(e) => onStartChange(e.target.value)}
-                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground/85 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring"
                         />
-                        <span className="text-sm font-medium text-blue-600">to</span>
+                        <span className="text-sm font-medium text-primary">to</span>
                         <input
                           type="date"
                           value={endDate}
                           max={toDateInputValue(new Date())}
                           onChange={(e) => onEndChange(e.target.value)}
-                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground/85 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                         <button
                           type="button"
@@ -786,7 +786,7 @@ export function FinancialAnalyticsPanel({
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium text-blue-800">Quick period:</span>
+                      <span className="text-xs font-medium text-primary">Quick period:</span>
                       {QUICK_PERIODS.map((d) => (
                         <button
                           key={d}
@@ -794,25 +794,25 @@ export function FinancialAnalyticsPanel({
                           onClick={() => applyQuickPeriod(d)}
                           className={`rounded-md px-3 py-1.5 text-xs font-semibold tabular-nums transition-colors ${
                             matchingQuickPeriod === d
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-blue-100/80 text-blue-800 hover:bg-blue-100'
+                              ? 'bg-primary text-white shadow-sm'
+                              : 'bg-blue-100/80 text-primary hover:bg-blue-100'
                           }`}
                         >
                           {d}d
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-blue-600">
+                    <p className="text-xs text-primary">
                       {daysSelected} day{daysSelected === 1 ? '' : 's'} selected · max {MAX_RANGE_DAYS} days
                       {' · '}
                       {formatDateOnly(startDate)} → {formatDateOnly(endDate)}
                     </p>
-                    {rangeError ? <p className="text-xs text-amber-800">{rangeError}</p> : null}
+                    {rangeError ? <p className="text-xs text-warning-foreground">{rangeError}</p> : null}
                   </div>
                 </div>
 
                 {error ? (
-                  <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                  <div className="mb-6 rounded-lg border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">
                     {error}
                   </div>
                 ) : null}
@@ -919,7 +919,7 @@ export function FinancialAnalyticsPanel({
                 />
               ) : null}
 
-              <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
+              <div className="overflow-hidden rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-border/50 md:p-6">
                 <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold tracking-tight text-neutral-900">
@@ -1088,7 +1088,7 @@ export function FinancialAnalyticsPanel({
                 )}
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
+              <div className="overflow-hidden rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-border/50 md:p-6">
                 <div className="mb-4">
                   <h2 className="text-lg font-semibold tracking-tight text-neutral-900">
                     Sale vs COGS vs Expense vs Purchase vs Net income — chart comparison
@@ -1442,7 +1442,7 @@ export function FinancialAnalyticsPanel({
 
               {timeseries.length > 0 && (
                 <>
-                  <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
+                  <div className="min-w-0 overflow-hidden rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-border/50 md:p-6">
                     <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-neutral-900">
                       <BarChart3 className="h-5 w-5 shrink-0 text-neutral-600" />
                       Sales vs purchases (monthly)
@@ -1483,7 +1483,7 @@ export function FinancialAnalyticsPanel({
                     </div>
                   </div>
 
-                  <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
+                  <div className="min-w-0 overflow-hidden rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-border/50 md:p-6">
                     <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-neutral-900">
                       <TrendingUp className="h-5 w-5 shrink-0 text-neutral-600" />
                       Profitability (gross &amp; net)
@@ -1529,7 +1529,7 @@ export function FinancialAnalyticsPanel({
                     </div>
                   </div>
 
-                  <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-slate-200/50 md:p-6">
+                  <div className="min-w-0 overflow-hidden rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-border/50 md:p-6">
                     <h3 className="mb-4 flex items-center gap-2 text-base font-semibold tracking-tight text-neutral-900">
                       <LineChart className="h-5 w-5 shrink-0 text-neutral-600" />
                       P&amp;L from journals (income, COGS, expenses)
@@ -1586,11 +1586,11 @@ export function FinancialAnalyticsPanel({
               )}
             </>
           ) : !error ? (
-            <p className="text-sm text-gray-600">No KPI data returned for this range.</p>
+            <p className="text-sm text-muted-foreground">No KPI data returned for this range.</p>
           ) : null}
 
               {note ? (
-                <p className="max-w-4xl border-t border-gray-200 pt-4 text-xs leading-relaxed text-gray-500">
+                <p className="max-w-4xl border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
                   {note}
                 </p>
               ) : null}

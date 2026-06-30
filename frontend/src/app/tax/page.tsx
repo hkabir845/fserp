@@ -42,15 +42,15 @@ interface Tax {
 function inferTaxKind(name: string): { label: string; className: string } {
   const n = name.toUpperCase()
   if (n.includes('VAT') || n.includes('VALUE ADDED')) {
-    return { label: 'VAT', className: 'bg-blue-100 text-blue-800 ring-1 ring-blue-200/60' }
+    return { label: 'VAT', className: 'bg-blue-100 text-primary ring-1 ring-blue-200/60' }
   }
   if (n.includes('SUPPLEMENTARY') || /\bSD\b/.test(n) || n.includes('PETROL') || n.includes('DIESEL')) {
     return { label: 'SD', className: 'bg-violet-100 text-violet-800 ring-1 ring-violet-200/60' }
   }
   if (n.includes('AIT') || n.includes('ADVANCE INCOME')) {
-    return { label: 'AIT', className: 'bg-amber-100 text-amber-900 ring-1 ring-amber-200/60' }
+    return { label: 'AIT', className: 'bg-amber-100 text-warning-foreground ring-1 ring-amber-200/60' }
   }
-  return { label: 'Tax', className: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200/60' }
+  return { label: 'Tax', className: 'bg-muted text-foreground/85 ring-1 ring-border/60' }
 }
 
 const BD_PRESETS = [
@@ -326,10 +326,10 @@ export default function TaxPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
           <div
-            className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
+            className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-blue-600"
             aria-label="Loading"
           />
         </div>
@@ -338,7 +338,7 @@ export default function TaxPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -360,7 +360,7 @@ export default function TaxPage() {
               <button
                 type="button"
                 onClick={initBangladesh}
-                className="inline-flex items-center gap-2 rounded-full bg-emerald-400/90 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-300"
+                className="inline-flex items-center gap-2 rounded-full bg-emerald-400/90 px-4 py-2 text-sm font-semibold text-foreground hover:bg-emerald-300"
               >
                 <Building2 className="h-4 w-4 shrink-0" />
                 Bangladesh defaults
@@ -370,7 +370,7 @@ export default function TaxPage() {
               <button
                 type="button"
                 onClick={openCreate}
-                className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+                className="erp-btn-cta"
               >
                 <Plus className="h-4 w-4 shrink-0" />
                 New tax
@@ -380,13 +380,13 @@ export default function TaxPage() {
         }
       >
           {/* Info */}
-          <div className="mb-6 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
+          <div className="mb-6 rounded-xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-slate-900/5">
             <div className="flex gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <Percent className="h-4 w-4" />
               </div>
-              <div className="min-w-0 text-sm text-slate-600">
-                <span className="font-medium text-slate-800">Bangladesh context — </span>
+              <div className="min-w-0 text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">Bangladesh context — </span>
                 VAT, supplementary duty (SD), and AIT are commonly used for fuel retail. Confirm percentages with
                 current NBR rules before go-live. Badges below are inferred from the tax name for readability only.
               </div>
@@ -396,45 +396,45 @@ export default function TaxPage() {
           {/* Toolbar */}
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative max-w-md flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
               <input
                 type="search"
                 placeholder="Search by name or description…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-lg border border-border bg-white py-2 pl-9 pr-3 text-sm shadow-sm placeholder:text-muted-foreground/70 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
               />
             </div>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-muted-foreground">
               {filtered.length} of {taxes.length} shown
             </p>
           </div>
 
           {/* Table */}
           {filtered.length > 0 ? (
-            <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-900/5">
+            <div className="overflow-hidden rounded-xl border border-border/80 bg-white shadow-sm ring-1 ring-slate-900/5">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                  <thead className="bg-slate-50/90">
+                <table className="min-w-full divide-y divide-border text-left text-sm">
+                  <thead className="bg-muted/50">
                     <tr>
-                      <th className="px-4 py-3 font-semibold text-slate-700">Tax</th>
-                      <th className="hidden px-4 py-3 font-semibold text-slate-700 md:table-cell">Kind</th>
-                      <th className="px-4 py-3 font-semibold text-slate-700">Rates</th>
-                      <th className="hidden px-4 py-3 font-semibold text-slate-700 lg:table-cell">Status</th>
+                      <th className="px-4 py-3 font-semibold text-foreground/85">Tax</th>
+                      <th className="hidden px-4 py-3 font-semibold text-foreground/85 md:table-cell">Kind</th>
+                      <th className="px-4 py-3 font-semibold text-foreground/85">Rates</th>
+                      <th className="hidden px-4 py-3 font-semibold text-foreground/85 lg:table-cell">Status</th>
                       {canManageTax && (
-                        <th className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>
+                        <th className="px-4 py-3 text-right font-semibold text-foreground/85">Actions</th>
                       )}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-border/70">
                     {filtered.map((tax) => {
                       const kind = inferTaxKind(tax.name)
                       return (
-                        <tr key={tax.id} className="transition hover:bg-slate-50/80">
+                        <tr key={tax.id} className="transition hover:bg-muted/50">
                           <td className="px-4 py-3 align-top">
-                            <div className="font-medium text-slate-900">{tax.name}</div>
+                            <div className="font-medium text-foreground">{tax.name}</div>
                             {tax.description ? (
-                              <p className="mt-0.5 line-clamp-2 max-w-md text-xs text-slate-500">{tax.description}</p>
+                              <p className="mt-0.5 line-clamp-2 max-w-md text-xs text-muted-foreground">{tax.description}</p>
                             ) : null}
                             <span className="mt-1 inline-flex md:hidden">
                               <span
@@ -453,7 +453,7 @@ export default function TaxPage() {
                           </td>
                           <td className="px-4 py-3 align-top">
                             {tax.rates.length === 0 ? (
-                              <span className="text-xs italic text-slate-400">No rates yet</span>
+                              <span className="text-xs italic text-muted-foreground/70">No rates yet</span>
                             ) : (
                               <ul className="space-y-1.5">
                                 {tax.rates.map((r) => (
@@ -461,10 +461,10 @@ export default function TaxPage() {
                                     key={r.id}
                                     className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm"
                                   >
-                                    <span className="font-semibold tabular-nums text-blue-700">
+                                    <span className="font-semibold tabular-nums text-primary">
                                       {formatNumber(Number(r.rate))}%
                                     </span>
-                                    <span className="inline-flex items-center gap-1 text-slate-500">
+                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
                                       <CalendarRange className="h-3.5 w-3.5 shrink-0" />
                                       {r.effective_from || '—'}
                                       {r.effective_to ? ` → ${r.effective_to}` : ''}
@@ -473,7 +473,7 @@ export default function TaxPage() {
                                       <button
                                         type="button"
                                         onClick={() => deleteRate(r.id)}
-                                        className="ml-1 rounded p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                                        className="ml-1 rounded p-1 text-muted-foreground/70 transition hover:bg-destructive/5 hover:text-destructive"
                                         title="Delete rate"
                                         aria-label={`Delete rate ${r.rate}%`}
                                       >
@@ -490,7 +490,7 @@ export default function TaxPage() {
                               className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                                 tax.is_active
                                   ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/60'
-                                  : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200/80'
+                                  : 'bg-muted text-muted-foreground ring-1 ring-border/80'
                               }`}
                             >
                               {tax.is_active ? 'Active' : 'Inactive'}
@@ -502,7 +502,7 @@ export default function TaxPage() {
                                 <button
                                   type="button"
                                   onClick={() => openEdit(tax)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/80 hover:text-blue-800"
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:border-primary/25 hover:bg-accent/80 hover:text-primary/80"
                                 >
                                   <Pencil className="h-3.5 w-3.5" aria-hidden />
                                   Edit
@@ -510,7 +510,7 @@ export default function TaxPage() {
                                 <button
                                   type="button"
                                   onClick={() => openAddRate(tax.id)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 shadow-sm transition hover:border-violet-200 hover:bg-violet-50/80 hover:text-violet-900"
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:border-violet-200 hover:bg-violet-50/80 hover:text-violet-900"
                                 >
                                   <Percent className="h-3.5 w-3.5" aria-hidden />
                                   Add rate
@@ -519,7 +519,7 @@ export default function TaxPage() {
                                   <button
                                     type="button"
                                     onClick={() => deleteTax(tax)}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 shadow-sm transition hover:bg-red-50"
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-100 bg-white px-2.5 py-1.5 text-xs font-medium text-destructive shadow-sm transition hover:bg-destructive/5"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
                                     Delete
@@ -536,10 +536,10 @@ export default function TaxPage() {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center shadow-sm">
-              <FileText className="mx-auto h-12 w-12 text-slate-300" />
-              <p className="mt-4 text-base font-medium text-slate-700">No taxes match your search</p>
-              <p className="mt-1 text-sm text-slate-500">
+            <div className="rounded-xl border border-dashed border-border bg-white px-6 py-16 text-center shadow-sm">
+              <FileText className="mx-auto h-12 w-12 text-muted-foreground/40" />
+              <p className="mt-4 text-base font-medium text-foreground/85">No taxes match your search</p>
+              <p className="mt-1 text-sm text-muted-foreground">
                 {taxes.length === 0
                   ? 'Create a tax or apply Bangladesh defaults to get started.'
                   : 'Try a different search term.'}
@@ -559,7 +559,7 @@ export default function TaxPage() {
                   <button
                     type="button"
                     onClick={openCreate}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary"
                   >
                     <Plus className="h-4 w-4" />
                     New tax
@@ -570,18 +570,18 @@ export default function TaxPage() {
           )}
       {/* Tax modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[1px]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-4 backdrop-blur-[1px]">
           <div
             className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10"
             role="dialog"
             aria-labelledby="tax-modal-title"
           >
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <div className="flex items-center justify-between border-b border-border/70 px-6 py-4">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white">
                   <Percent className="h-4 w-4" />
                 </div>
-                <h2 id="tax-modal-title" className="text-lg font-semibold text-slate-900">
+                <h2 id="tax-modal-title" className="text-lg font-semibold text-foreground">
                   {editingId ? 'Edit tax' : 'New tax'}
                 </h2>
               </div>
@@ -591,7 +591,7 @@ export default function TaxPage() {
                   setShowModal(false)
                   resetForm()
                 }}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-lg p-2 text-muted-foreground/70 hover:bg-muted hover:text-foreground/85"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -600,11 +600,11 @@ export default function TaxPage() {
             <form onSubmit={submitTax} className="space-y-5 px-6 py-5">
               {!editingId && (
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Quick preset (optional)</label>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground/85">Quick preset (optional)</label>
                   <select
                     value={selectedPreset}
                     onChange={(e) => applyPreset(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   >
                     <option value="">— Custom —</option>
                     {BD_PRESETS.map((p, i) => (
@@ -613,11 +613,11 @@ export default function TaxPage() {
                       </option>
                     ))}
                   </select>
-                  <p className="mt-1 text-xs text-slate-500">Fills name and description; optional default rate after create.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Fills name and description; optional default rate after create.</p>
                 </div>
               )}
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label className="mb-1.5 block text-sm font-medium text-foreground/85">
                   Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -627,12 +627,12 @@ export default function TaxPage() {
                     setFormData({ ...formData, name: e.target.value })
                     setSelectedPreset('')
                   }}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   placeholder="e.g. VAT"
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Description</label>
+                <label className="mb-1.5 block text-sm font-medium text-foreground/85">Description</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => {
@@ -640,33 +640,33 @@ export default function TaxPage() {
                     setSelectedPreset('')
                   }}
                   rows={3}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   placeholder="Notes for your team (optional)"
                 />
               </div>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground/85">
                 <input
                   type="checkbox"
                   checked={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
                 />
                 Active
               </label>
-              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <div className="flex justify-end gap-2 border-t border-border/70 pt-4">
                 <button
                   type="button"
                   onClick={() => {
                     setShowModal(false)
                     resetForm()
                   }}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary"
                 >
                   {editingId ? 'Save changes' : 'Create tax'}
                 </button>
@@ -678,14 +678,14 @@ export default function TaxPage() {
 
       {/* Rate modal */}
       {showRateModal && rateTargetTaxId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[1px]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-4 backdrop-blur-[1px]">
           <div
             className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-900/10"
             role="dialog"
             aria-labelledby="rate-modal-title"
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 id="rate-modal-title" className="text-lg font-semibold text-slate-900">
+              <h2 id="rate-modal-title" className="text-lg font-semibold text-foreground">
                 Add rate
               </h2>
               <button
@@ -694,7 +694,7 @@ export default function TaxPage() {
                   setShowRateModal(false)
                   setRateTargetTaxId(null)
                 }}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                className="rounded-lg p-2 text-muted-foreground/70 hover:bg-muted"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />
@@ -702,7 +702,7 @@ export default function TaxPage() {
             </div>
             <form onSubmit={submitRate} className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label className="mb-1.5 block text-sm font-medium text-foreground/85">
                   Rate (%) <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -713,31 +713,31 @@ export default function TaxPage() {
                   max={100}
                   value={rateForm.rate}
                   onChange={(e) => setRateForm({ ...rateForm, rate: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   placeholder="15.00"
                 />
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Effective from</label>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground/85">Effective from</label>
                   <input
                     type="date"
                     value={rateForm.effective_from}
                     onChange={(e) => setRateForm({ ...rateForm, effective_from: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">Effective to</label>
+                  <label className="mb-1.5 block text-sm font-medium text-foreground/85">Effective to</label>
                   <input
                     type="date"
                     value={rateForm.effective_to}
                     onChange={(e) => setRateForm({ ...rateForm, effective_to: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                   />
                 </div>
               </div>
-              <p className="text-xs text-slate-500">Leave dates empty if your deployment does not require schedule boundaries.</p>
+              <p className="text-xs text-muted-foreground">Leave dates empty if your deployment does not require schedule boundaries.</p>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -745,13 +745,13 @@ export default function TaxPage() {
                     setShowRateModal(false)
                     setRateTargetTaxId(null)
                   }}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary"
                 >
                   Add rate
                 </button>

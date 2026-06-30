@@ -44,7 +44,7 @@ export function BillLineEntityTagging({
   billFuelCategories,
   billExpenseCoaOptions = [],
   onFieldChange,
-  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500',
+  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring',
   showHeadOffice = true,
   companyName,
   billPurpose,
@@ -108,9 +108,9 @@ export function BillLineEntityTagging({
   if (!showHeadOffice && stations.length === 0 && ponds.length === 0) return null
 
   return (
-    <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-slate-200 pt-2">
+    <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-border pt-2">
       <div className="min-w-[12rem] flex-1">
-        <label className="block text-xs font-medium text-gray-700 mb-1">
+        <label className="block text-xs font-medium text-foreground/85 mb-1">
           {line.item_id ? 'Entity (P&L / cost tag)' : 'Entity (who this expense is for)'}
         </label>
         <BillLineEntitySelect
@@ -123,13 +123,13 @@ export function BillLineEntityTagging({
           companyName={companyName}
         />
         {isShopHubEntity ? (
-          <p className="mt-1 text-xs text-teal-800 leading-snug">
+          <p className="mt-1 text-xs text-primary leading-snug">
             <strong>Shop / aquaculture hub</strong> — use aquaculture expense categories (feed, medicine,
             pond care, equipment). Stock is received here for your ponds and walk-in sales; this site does
             not sell fuel.
           </p>
         ) : billPurpose === 'pond' && entityKind === 'station' ? (
-          <p className="mt-1 text-xs text-amber-800 leading-snug">
+          <p className="mt-1 text-xs text-warning-foreground leading-snug">
             This line tags a <strong>fuel station</strong> for site P&amp;L. For feed and pond costs, pick a{' '}
             <strong>pond</strong> under Entity, or tag a <strong>shop hub</strong> (e.g. Premium Agro) when
             buying inventory for the aquaculture shop.
@@ -138,7 +138,7 @@ export function BillLineEntityTagging({
       </div>
       {showCategory && expenseReportingKind === 'aquaculture' ? (
         <div className="min-w-[12rem] flex-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">
+          <label className="block text-xs font-medium text-foreground/85 mb-1">
             {isShopHubEntity ? 'Shop / aquaculture expense category' : 'Pond expense category'}
           </label>
           <ReportingCategoryCombobox
@@ -152,7 +152,7 @@ export function BillLineEntityTagging({
       ) : null}
       {showCategory && expenseReportingKind === 'fuel_station' ? (
         <div className="min-w-[12rem] flex-1">
-          <label className="block text-xs font-medium text-gray-700 mb-1">Station expense category</label>
+          <label className="block text-xs font-medium text-foreground/85 mb-1">Station expense category</label>
           <ReportingCategoryCombobox
             categories={fuelCategories}
             value={line.fuel_station_expense_category || ''}

@@ -95,18 +95,18 @@ const AQUACULTURE_TILE_BY_HREF: Record<string, string> = {
   '/aquaculture/ponds': tile('bg-sky-100', 'text-sky-700'),
   '/aquaculture/sales': tile('bg-emerald-100', 'text-emerald-800'),
   '/aquaculture/expenses': tile('bg-stone-100', 'text-stone-800'),
-  '/aquaculture/landlords': tile('bg-amber-100', 'text-amber-900'),
+  '/aquaculture/landlords': tile('bg-amber-100', 'text-warning-foreground'),
   '/aquaculture/cycles': tile('bg-sky-100', 'text-sky-800'),
   '/aquaculture/transfers': tile('bg-cyan-100', 'text-cyan-800'),
-  '/aquaculture/stock': tile('bg-teal-100', 'text-teal-800'),
-  '/aquaculture/stock/options': tile('bg-teal-50', 'text-teal-800'),
+  '/aquaculture/stock': tile('bg-teal-100', 'text-primary'),
+  '/aquaculture/stock/options': tile('bg-accent', 'text-primary'),
   '/aquaculture/sampling': tile('bg-lime-100', 'text-lime-800'),
-  '/aquaculture/feeding': tile('bg-amber-100', 'text-amber-800'),
+  '/aquaculture/feeding': tile('bg-amber-100', 'text-warning-foreground'),
   '/aquaculture/medicine': tile('bg-violet-100', 'text-violet-800'),
   '/aquaculture/financing': tile('bg-emerald-100', 'text-emerald-800'),
-  '/aquaculture/data-bank': tile('bg-amber-100', 'text-amber-900'),
-  '/aquaculture/report': tile('bg-indigo-100', 'text-indigo-700'),
-  '/reports?report=aquaculture-pl-management&category=aquaculture': tile('bg-indigo-100', 'text-indigo-700'),
+  '/aquaculture/data-bank': tile('bg-amber-100', 'text-warning-foreground'),
+  '/aquaculture/report': tile('bg-accent', 'text-primary'),
+  '/reports?report=aquaculture-pl-management&category=aquaculture': tile('bg-accent', 'text-primary'),
 }
 
 const PERM_WILDCARD = '*'
@@ -179,7 +179,7 @@ function fsmsNavItem(
  */
 export function getFsmsErpMenuItems(lang: AppLanguage = 'en'): ErpAppMenuItem[] {
   return [
-    fsmsNavItem('/apps', 'main', LayoutGrid, tile('bg-slate-100', 'text-slate-600'), lang),
+    fsmsNavItem('/apps', 'main', LayoutGrid, tile('bg-muted', 'text-muted-foreground'), lang),
     fsmsNavItem('/dashboard', 'main', LayoutDashboard, tile('bg-sky-100', 'text-sky-600'), lang),
     fsmsNavItem('/cashier', 'main', ShoppingCart, tile('bg-cyan-100', 'text-cyan-600'), lang),
 
@@ -188,33 +188,33 @@ export function getFsmsErpMenuItems(lang: AppLanguage = 'en'): ErpAppMenuItem[] 
     fsmsNavItem('/islands', 'station', MapPin, tile('bg-yellow-100', 'text-yellow-700'), lang),
     fsmsNavItem('/dispensers', 'station', Zap, tile('bg-lime-100', 'text-lime-700'), lang),
     fsmsNavItem('/meters', 'station', Gauge, tile('bg-emerald-100', 'text-emerald-600'), lang),
-    fsmsNavItem('/nozzles', 'station', Fuel, tile('bg-teal-100', 'text-teal-600'), lang),
+    fsmsNavItem('/nozzles', 'station', Fuel, tile('bg-teal-100', 'text-primary'), lang),
 
     fsmsNavItem('/shift-management', 'operations', Clock, tile('bg-violet-100', 'text-violet-600'), lang),
     fsmsNavItem('/tank-dips', 'operations', Droplet, tile('bg-fuchsia-100', 'text-fuchsia-600'), lang),
 
-    fsmsNavItem('/chart-of-accounts', 'accounting', BookOpen, tile('bg-indigo-100', 'text-indigo-600'), lang),
+    fsmsNavItem('/chart-of-accounts', 'accounting', BookOpen, tile('bg-accent', 'text-primary'), lang),
     fsmsNavItem('/journal-entries', 'accounting', Receipt, tile('bg-purple-100', 'text-purple-600'), lang),
-    fsmsNavItem('/fund-transfers', 'accounting', TrendingUp, tile('bg-blue-100', 'text-blue-600'), lang),
-    fsmsNavItem('/loans', 'accounting', Landmark, tile('bg-slate-100', 'text-slate-700'), lang),
+    fsmsNavItem('/fund-transfers', 'accounting', TrendingUp, tile('bg-blue-100', 'text-primary'), lang),
+    fsmsNavItem('/loans', 'accounting', Landmark, tile('bg-muted', 'text-foreground/85'), lang),
     fsmsNavItem('/fixed-assets', 'accounting', Boxes, tile('bg-stone-100', 'text-stone-700'), lang),
 
-    fsmsNavItem('/customers', 'sales', Users, tile('bg-green-100', 'text-green-600'), lang),
+    fsmsNavItem('/customers', 'sales', Users, tile('bg-success/15', 'text-success'), lang),
     fsmsNavItem('/vendors', 'sales', Users, tile('bg-emerald-100', 'text-emerald-700'), lang),
     fsmsNavItem('/invoices', 'sales', FileText, tile('bg-rose-100', 'text-rose-600'), lang),
     fsmsNavItem('/bills', 'sales', Receipt, tile('bg-pink-100', 'text-pink-600'), lang),
-    fsmsNavItem('/payments', 'sales', DollarSign, tile('bg-green-100', 'text-green-700'), lang),
+    fsmsNavItem('/payments', 'sales', DollarSign, tile('bg-success/15', 'text-success'), lang),
 
     fsmsNavItem('/items', 'inventory', Package, tile('bg-cyan-100', 'text-cyan-700'), lang),
-    fsmsNavItem('/inventory', 'inventory', ArrowRightLeft, tile('bg-teal-100', 'text-teal-700'), lang),
+    fsmsNavItem('/inventory', 'inventory', ArrowRightLeft, tile('bg-teal-100', 'text-primary'), lang),
 
     fsmsNavItem('/employees', 'hr', Users, tile('bg-orange-100', 'text-orange-700'), lang),
-    fsmsNavItem('/payroll', 'hr', DollarSign, tile('bg-amber-100', 'text-amber-700'), lang),
+    fsmsNavItem('/payroll', 'hr', DollarSign, tile('bg-amber-100', 'text-warning-foreground'), lang),
 
-    fsmsNavItem('/company', 'management', Building2, tile('bg-slate-100', 'text-slate-600'), lang),
+    fsmsNavItem('/company', 'management', Building2, tile('bg-muted', 'text-muted-foreground'), lang),
     fsmsNavItem('/subscriptions', 'management', Crown, tile('bg-amber-100', 'text-amber-600'), lang),
     fsmsNavItem('/users', 'management', Users, tile('bg-zinc-100', 'text-zinc-600'), lang),
-    fsmsNavItem('/roles', 'management', Shield, tile('bg-indigo-100', 'text-indigo-700'), lang),
+    fsmsNavItem('/roles', 'management', Shield, tile('bg-accent', 'text-primary'), lang),
     fsmsNavItem('/tax', 'management', Receipt, tile('bg-stone-100', 'text-stone-600'), lang),
     fsmsNavItem('/reporting-categories', 'management', Tags, tile('bg-sky-100', 'text-sky-800'), lang),
     fsmsNavItem('/backup', 'management', Database, tile('bg-neutral-100', 'text-neutral-600'), lang),
@@ -224,7 +224,7 @@ export function getFsmsErpMenuItems(lang: AppLanguage = 'en'): ErpAppMenuItem[] 
         item.href,
         'aquaculture',
         item.icon,
-        AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-slate-100', 'text-slate-700'),
+        AQUACULTURE_TILE_BY_HREF[item.href] ?? tile('bg-muted', 'text-foreground/85'),
         lang,
         {
           subGroupId: item.groupId,
@@ -239,7 +239,7 @@ export function getFsmsErpMenuItems(lang: AppLanguage = 'en'): ErpAppMenuItem[] 
             sub.href,
             'aquaculture',
             sub.icon,
-            AQUACULTURE_TILE_BY_HREF[sub.href] ?? tile('bg-teal-50', 'text-teal-800'),
+            AQUACULTURE_TILE_BY_HREF[sub.href] ?? tile('bg-accent', 'text-primary'),
             lang,
             {
               subGroupId: item.groupId,
@@ -276,7 +276,7 @@ export function getSaasMenuItems(
     fsmsNavItem('/admin/contracts', 'saas', FileText, tile('bg-emerald-100', 'text-emerald-600'), lang),
     fsmsNavItem('/admin/subscription-ledger', 'saas', Receipt, tile('bg-fuchsia-100', 'text-fuchsia-600'), lang),
     fsmsNavItem('/admin/broadcasting', 'saas', Megaphone, tile('bg-orange-100', 'text-orange-600'), lang),
-    fsmsNavItem('/admin/backup', 'saas', Database, tile('bg-slate-100', 'text-slate-600'), lang),
+    fsmsNavItem('/admin/backup', 'saas', Database, tile('bg-muted', 'text-muted-foreground'), lang),
   ]
 }
 

@@ -277,16 +277,16 @@ export default function FundTransfersPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-border border-t-blue-600" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -300,7 +300,7 @@ export default function FundTransfersPage() {
               resetForm()
               setShowModal(true)
             }}
-            className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+            className="erp-btn-cta"
           >
             <Plus className="h-5 w-5" />
             <span>New Transfer</span>
@@ -309,42 +309,42 @@ export default function FundTransfersPage() {
       >
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b-2 border-gray-200">
+              <thead className="bg-muted/40 border-b-2 border-border">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Transfer #</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">From Account</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">To Account</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Memo</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Status</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-foreground/85 uppercase">Transfer #</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-foreground/85 uppercase">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-foreground/85 uppercase">From Account</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-foreground/85 uppercase">To Account</th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-foreground/85 uppercase">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-foreground/85 uppercase">Memo</th>
+                  <th className="px-6 py-3 text-center text-xs font-semibold text-foreground/85 uppercase">Status</th>
+                  <th className="px-6 py-3 text-center text-xs font-semibold text-foreground/85 uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-border">
                 {transfers.map((transfer) => (
-                  <tr key={transfer.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr key={transfer.id} className="hover:bg-muted/40">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                       {transfer.transfer_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateOnly(transfer.transfer_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {transfer.from_account_name || 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {transfer.to_account_name || 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900 text-right">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-foreground text-right">
                       {currencySymbol}{formatNumber(Number(transfer.amount))}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
+                    <td className="px-6 py-4 text-sm text-muted-foreground max-w-xs truncate">
                       {transfer.memo || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       {transfer.is_posted ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-success/15 text-success">
                           <CheckCircle className="h-3 w-3 mr-1" />
                           Posted
                         </span>
@@ -361,21 +361,21 @@ export default function FundTransfersPage() {
                           <>
                             <button
                               onClick={() => handlePost(transfer.id)}
-                              className="text-green-600 hover:text-green-900"
+                              className="text-success hover:text-green-900"
                               title="Post Transfer"
                             >
                               <CheckCircle className="h-5 w-5" />
                             </button>
                             <button
                               onClick={() => handleEdit(transfer)}
-                              className="text-blue-600 hover:text-blue-900"
+                              className="text-primary hover:text-blue-900"
                               title="Edit"
                             >
                               <Edit2 className="h-5 w-5" />
                             </button>
                             <button
                               onClick={() => setShowDeleteConfirm(transfer.id)}
-                              className="text-red-600 hover:text-red-900"
+                              className="text-destructive hover:text-red-900"
                               title="Delete"
                             >
                               <Trash2 className="h-5 w-5" />
@@ -399,8 +399,8 @@ export default function FundTransfersPage() {
 
             {transfers.length === 0 && (
               <div className="p-12 text-center">
-                <ArrowRightLeft className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">No fund transfers found. Create your first transfer to get started.</p>
+                <ArrowRightLeft className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <p className="text-muted-foreground">No fund transfers found. Create your first transfer to get started.</p>
               </div>
             )}
           </div>
@@ -408,11 +408,11 @@ export default function FundTransfersPage() {
 
       {/* Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="erp-modal-backdrop">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
+            <div className="p-6 border-b border-border">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">
+                <h2 className="text-2xl font-bold text-foreground">
                   {editingTransfer ? 'Edit Fund Transfer' : 'New Fund Transfer'}
                 </h2>
                 <button
@@ -420,7 +420,7 @@ export default function FundTransfersPage() {
                     setShowModal(false)
                     resetForm()
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -429,26 +429,26 @@ export default function FundTransfersPage() {
 
             <div className="p-6 space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Transfer Date <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
                   value={formData.transfer_date}
                   onChange={(e) => setFormData({ ...formData, transfer_date: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     From Account <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.from_account_id}
                     onChange={(e) => setFormData({ ...formData, from_account_id: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   >
                     <option value="">Select Account</option>
                     {renderTransferAccountOptions(bankAccounts, currencySymbol)}
@@ -456,13 +456,13 @@ export default function FundTransfersPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     To Account <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formData.to_account_id}
                     onChange={(e) => setFormData({ ...formData, to_account_id: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   >
                     <option value="">Select Account</option>
                     {renderTransferAccountOptions(bankAccounts, currencySymbol)}
@@ -471,11 +471,11 @@ export default function FundTransfersPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Amount <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500">{currencySymbol}</span>
+                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground">{currencySymbol}</span>
                   <input
                     type="number"
                     step="0.01"
@@ -489,32 +489,32 @@ export default function FundTransfersPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Memo
                 </label>
                 <textarea
                   value={formData.memo}
                   onChange={(e) => setFormData({ ...formData, memo: e.target.value })}
                   rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                   placeholder="Optional memo or description"
                 />
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 flex items-center justify-end space-x-3">
+            <div className="p-6 border-t border-border flex items-center justify-end space-x-3">
               <button
                 onClick={() => {
                   setShowModal(false)
                   resetForm()
                 }}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={editingTransfer ? handleUpdate : handleCreate}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="erp-btn-primary transition-colors"
               >
                 {editingTransfer ? 'Update Transfer' : 'Create Transfer'}
               </button>
@@ -525,23 +525,23 @@ export default function FundTransfersPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="erp-modal-backdrop">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
-              <p className="text-gray-600 mb-6">
+              <h3 className="text-lg font-semibold text-foreground mb-4">Confirm Delete</h3>
+              <p className="text-muted-foreground mb-6">
                 Are you sure you want to delete this fund transfer? This action cannot be undone.
               </p>
               <div className="flex items-center justify-end space-x-3">
                 <button
                   onClick={() => setShowDeleteConfirm(null)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleDelete(showDeleteConfirm)}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  className="px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors"
                 >
                   Delete
                 </button>

@@ -35,9 +35,9 @@ const PLAN_THEME: Record<
 > = {
   free: {
     gradient: 'from-slate-100 via-white to-slate-50',
-    ring: 'ring-slate-200/80',
-    badge: 'bg-slate-100 text-slate-700 border-slate-200',
-    accent: 'text-slate-600',
+    ring: 'ring-border/80',
+    badge: 'bg-muted text-foreground/85 border-border',
+    accent: 'text-muted-foreground',
   },
   basic: {
     gradient: 'from-sky-50 via-white to-cyan-50',
@@ -52,16 +52,16 @@ const PLAN_THEME: Record<
     accent: 'text-violet-700',
   },
   enterprise: {
-    gradient: 'from-indigo-50 via-white to-blue-50',
+    gradient: 'from-accent via-white to-accent',
     ring: 'ring-indigo-300/80',
-    badge: 'bg-indigo-100 text-indigo-900 border-indigo-200',
-    accent: 'text-indigo-700',
+    badge: 'bg-accent text-foreground/85 border-primary/25',
+    accent: 'text-primary',
   },
   custom: {
     gradient: 'from-amber-50 via-white to-orange-50',
     ring: 'ring-amber-300/70',
-    badge: 'bg-amber-100 text-amber-900 border-amber-200',
-    accent: 'text-amber-800',
+    badge: 'bg-amber-100 text-warning-foreground border-warning/30',
+    accent: 'text-warning-foreground',
   },
 }
 
@@ -266,17 +266,17 @@ export default function PlatformPlansPage() {
 
   return (
     <PlatformLayout>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-violet-50/40">
+      <div className="min-h-screen bg-gradient-to-b from-muted/40 via-white to-violet-50/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-14">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8 mb-12">
             <div className="max-w-2xl">
               <p className="text-sm font-semibold uppercase tracking-wider text-violet-600 mb-2">
                 Subscription catalog
               </p>
-              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+              <h1 className="text-3xl sm:text-4xl font-bold text-foreground tracking-tight">
                 Plans that scale with every tenant
               </h1>
-              <p className="mt-3 text-lg text-slate-600 leading-relaxed">
+              <p className="mt-3 text-lg text-muted-foreground leading-relaxed">
                 Edit pricing and limits, or archive plans you no longer sell. Archiving does not move existing tenants—
                 reassign them under{' '}
                 <Link href="/platform/subscriptions" className="font-semibold text-violet-700 hover:text-violet-900 underline underline-offset-2">
@@ -286,7 +286,7 @@ export default function PlatformPlansPage() {
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 flex-wrap">
-              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700">
+              <label className="inline-flex items-center gap-2 rounded-xl border border-border bg-white/90 px-3 py-2 text-sm text-foreground/85">
                 <input
                   type="checkbox"
                   checked={hideArchived}
@@ -295,7 +295,7 @@ export default function PlatformPlansPage() {
                 Hide archived
               </label>
               <div
-                className="inline-flex rounded-xl border border-slate-200/80 bg-white/90 p-1 shadow-sm backdrop-blur"
+                className="inline-flex rounded-xl border border-border/80 bg-white/90 p-1 shadow-sm backdrop-blur"
                 role="group"
                 aria-label="Billing period"
               >
@@ -304,7 +304,7 @@ export default function PlatformPlansPage() {
                   onClick={() => setCycle('monthly')}
                   className={clsx(
                     'px-4 py-2 rounded-lg text-sm font-semibold transition-all',
-                    cycle === 'monthly' ? 'bg-violet-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+                    cycle === 'monthly' ? 'bg-violet-600 text-white shadow' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
                   Monthly
@@ -314,7 +314,7 @@ export default function PlatformPlansPage() {
                   onClick={() => setCycle('yearly')}
                   className={clsx(
                     'px-4 py-2 rounded-lg text-sm font-semibold transition-all',
-                    cycle === 'yearly' ? 'bg-violet-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+                    cycle === 'yearly' ? 'bg-violet-600 text-white shadow' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
                   Yearly
@@ -323,7 +323,7 @@ export default function PlatformPlansPage() {
               <button
                 type="button"
                 onClick={() => refetch()}
-                className="inline-flex justify-center items-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                className="inline-flex justify-center items-center rounded-xl border border-border bg-white px-4 py-2.5 text-sm font-semibold text-foreground/85 hover:bg-muted/40 transition-colors"
               >
                 Refresh data
               </button>
@@ -333,12 +333,12 @@ export default function PlatformPlansPage() {
           {isLoading && (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="rounded-2xl border border-slate-200/80 bg-white p-8 animate-pulse">
-                  <div className="h-6 bg-slate-200 rounded w-1/3 mb-4" />
-                  <div className="h-10 bg-slate-100 rounded w-2/3 mb-6" />
+                <div key={i} className="rounded-2xl border border-border/80 bg-white p-8 animate-pulse">
+                  <div className="h-6 bg-muted rounded w-1/3 mb-4" />
+                  <div className="h-10 bg-muted rounded w-2/3 mb-6" />
                   <div className="space-y-2">
-                    <div className="h-4 bg-slate-100 rounded" />
-                    <div className="h-4 bg-slate-100 rounded w-5/6" />
+                    <div className="h-4 bg-muted rounded" />
+                    <div className="h-4 bg-muted rounded w-5/6" />
                   </div>
                 </div>
               ))}
@@ -346,29 +346,29 @@ export default function PlatformPlansPage() {
           )}
 
           {isError && (
-            <div className="rounded-2xl border border-red-200 bg-red-50/90 px-6 py-5 text-red-900">
+            <div className="rounded-2xl border border-destructive/25 bg-destructive/5/90 px-6 py-5 text-red-900">
               <p className="font-semibold">Unable to load plans</p>
               <p className="text-sm mt-1 opacity-90">{String(errDetail)}</p>
-              <button type="button" onClick={() => refetch()} className="mt-4 text-sm font-semibold text-red-800 underline">
+              <button type="button" onClick={() => refetch()} className="mt-4 text-sm font-semibold text-destructive underline">
                 Try again
               </button>
             </div>
           )}
 
           {!isLoading && !isError && plansRaw.length === 0 && (
-            <div className="text-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-8 py-16">
+            <div className="text-center rounded-2xl border border-dashed border-border bg-white/60 px-8 py-16">
               <div className="text-4xl mb-4" aria-hidden>
                 📦
               </div>
-              <h2 className="text-xl font-semibold text-slate-900">No plans yet</h2>
-              <p className="mt-2 text-slate-600 max-w-md mx-auto">
+              <h2 className="text-xl font-semibold text-foreground">No plans yet</h2>
+              <p className="mt-2 text-muted-foreground max-w-md mx-auto">
                 Seed subscription plans in your database, then refresh this page.
               </p>
             </div>
           )}
 
           {!isLoading && !isError && plansRaw.length > 0 && plans.length === 0 && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-6 py-4 text-amber-950 text-sm">
+            <div className="rounded-2xl border border-warning/30 bg-warning/10/90 px-6 py-4 text-warning-foreground text-sm">
               All plans are archived. Uncheck <strong>Hide archived</strong> to see them, or restore a plan via Edit →
               &quot;Plan is active&quot;.
             </div>
@@ -413,7 +413,7 @@ export default function PlatformPlansPage() {
                             setFormError(null)
                             setEditing(plan)
                           }}
-                          className="rounded-lg p-2 text-slate-600 hover:bg-white/80 hover:text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-card/80 hover:text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
                         >
                           <IconPencil className="block" />
                           <span className="sr-only">Edit</span>
@@ -423,7 +423,7 @@ export default function PlatformPlansPage() {
                             type="button"
                             title="Archive plan"
                             onClick={() => setArchiving(plan)}
-                            className="rounded-lg p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-400"
+                            className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-red-400"
                           >
                             <IconTrash className="block" />
                             <span className="sr-only">Archive</span>
@@ -437,7 +437,7 @@ export default function PlatformPlansPage() {
                         </span>
                       )}
                       {!plan.is_active && (
-                        <span className="absolute -top-3 left-4 rounded-full bg-slate-600 px-2 py-0.5 text-xs font-bold uppercase text-white">
+                        <span className="absolute -top-3 left-4 rounded-full bg-muted-foreground px-2 py-0.5 text-xs font-bold uppercase text-white">
                           Archived
                         </span>
                       )}
@@ -452,17 +452,17 @@ export default function PlatformPlansPage() {
                           >
                             {plan.plan_type.replace('_', ' ')}
                           </span>
-                          <h2 className="mt-3 text-2xl font-bold text-slate-900">{plan.name}</h2>
+                          <h2 className="mt-3 text-2xl font-bold text-foreground">{plan.name}</h2>
                         </div>
                       </div>
 
                       <div className="mb-6">
                         <div className="flex items-baseline gap-1">
-                          <span className="text-4xl font-bold tabular-nums text-slate-900">{formatBdt(displayAmount)}</span>
-                          <span className="text-slate-500 font-medium">/ mo</span>
+                          <span className="text-4xl font-bold tabular-nums text-foreground">{formatBdt(displayAmount)}</span>
+                          <span className="text-muted-foreground font-medium">/ mo</span>
                         </div>
                         {cycle === 'yearly' && yearly != null && (
-                          <p className="text-sm text-slate-500 mt-1">
+                          <p className="text-sm text-muted-foreground mt-1">
                             {formatBdt(yearly)} billed annually
                             {savingsPct != null && savingsPct > 0 && (
                               <span className="ml-2 text-emerald-600 font-semibold">Save ~{savingsPct}%</span>
@@ -472,16 +472,16 @@ export default function PlatformPlansPage() {
                       </div>
 
                       {plan.description && (
-                        <p className="text-sm text-slate-600 leading-relaxed mb-6 flex-1">{plan.description}</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed mb-6 flex-1">{plan.description}</p>
                       )}
 
-                      <ul className="space-y-3 mb-8 text-sm text-slate-700">
+                      <ul className="space-y-3 mb-8 text-sm text-foreground/85">
                         <li className="flex gap-2">
                           <span className="text-emerald-500 font-bold" aria-hidden>
                             ✓
                           </span>
                           <span>
-                            <strong className="text-slate-900">Users:</strong>{' '}
+                            <strong className="text-foreground">Users:</strong>{' '}
                             {plan.max_users != null ? `Up to ${plan.max_users}` : 'Custom'}
                           </span>
                         </li>
@@ -490,7 +490,7 @@ export default function PlatformPlansPage() {
                             ✓
                           </span>
                           <span>
-                            <strong className="text-slate-900">Storage:</strong>{' '}
+                            <strong className="text-foreground">Storage:</strong>{' '}
                             {plan.max_storage_gb != null ? `${plan.max_storage_gb} GB` : 'Custom'}
                           </span>
                         </li>
@@ -499,13 +499,13 @@ export default function PlatformPlansPage() {
                       <div
                         className={clsx(
                           'mt-auto rounded-xl border px-4 py-3 text-sm',
-                          'border-slate-200/80 bg-white/70 backdrop-blur-sm'
+                          'border-border/80 bg-white/70 backdrop-blur-sm'
                         )}
                       >
                         <p className={clsx('font-semibold', t.accent)}>Live usage</p>
-                        <p className="text-slate-700 mt-1">
-                          <span className="font-bold text-slate-900">{counts.total}</span> subscriptions
-                          <span className="text-slate-400 mx-1">·</span>
+                        <p className="text-foreground/85 mt-1">
+                          <span className="font-bold text-foreground">{counts.total}</span> subscriptions
+                          <span className="text-muted-foreground/70 mx-1">·</span>
                           <span className="font-bold text-emerald-700">{counts.active}</span> active or trial
                         </p>
                       </div>
@@ -515,20 +515,20 @@ export default function PlatformPlansPage() {
               </div>
 
               <div className="mt-16 hidden lg:block">
-                <h3 className="text-lg font-bold text-slate-900 mb-4">At a glance</h3>
-                <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white/90 shadow-sm">
+                <h3 className="text-lg font-bold text-foreground mb-4">At a glance</h3>
+                <div className="overflow-x-auto rounded-2xl border border-border/80 bg-white/90 shadow-sm">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/90 text-left">
-                        <th className="px-4 py-4 font-semibold text-slate-700 w-24">Actions</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Plan</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Type</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Monthly</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Yearly (total)</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Users</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Storage</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Tenants</th>
-                        <th className="px-4 py-4 font-semibold text-slate-700">Status</th>
+                      <tr className="border-b border-border bg-muted/50 text-left">
+                        <th className="px-4 py-4 font-semibold text-foreground/85 w-24">Actions</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Plan</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Type</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Monthly</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Yearly (total)</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Users</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Storage</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Tenants</th>
+                        <th className="px-4 py-4 font-semibold text-foreground/85">Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -536,7 +536,7 @@ export default function PlatformPlansPage() {
                         const c = countsByPlan.get(plan.id) ?? { total: 0, active: 0 }
                         const yr = plan.price_yearly != null ? Number(plan.price_yearly) : null
                         return (
-                          <tr key={plan.id} className="border-b border-slate-100 hover:bg-violet-50/40">
+                          <tr key={plan.id} className="border-b border-border/70 hover:bg-violet-50/40">
                             <td className="px-4 py-3 whitespace-nowrap">
                               <div className="flex items-center gap-1">
                                 <button
@@ -546,7 +546,7 @@ export default function PlatformPlansPage() {
                                     setFormError(null)
                                     setEditing(plan)
                                   }}
-                                  className="rounded-md p-1.5 text-slate-600 hover:bg-violet-100 hover:text-violet-800"
+                                  className="rounded-md p-1.5 text-muted-foreground hover:bg-violet-100 hover:text-violet-800"
                                 >
                                   <IconPencil />
                                   <span className="sr-only">Edit {plan.name}</span>
@@ -556,7 +556,7 @@ export default function PlatformPlansPage() {
                                     type="button"
                                     title="Archive"
                                     onClick={() => setArchiving(plan)}
-                                    className="rounded-md p-1.5 text-slate-600 hover:bg-red-100 hover:text-red-800"
+                                    className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                   >
                                     <IconTrash />
                                     <span className="sr-only">Archive {plan.name}</span>
@@ -564,24 +564,24 @@ export default function PlatformPlansPage() {
                                 )}
                               </div>
                             </td>
-                            <td className="px-4 py-3 font-medium text-slate-900">{plan.name}</td>
-                            <td className="px-4 py-3 capitalize text-slate-600">{plan.plan_type}</td>
+                            <td className="px-4 py-3 font-medium text-foreground">{plan.name}</td>
+                            <td className="px-4 py-3 capitalize text-muted-foreground">{plan.plan_type}</td>
                             <td className="px-4 py-3 tabular-nums">{formatBdt(Number(plan.price_monthly) || 0)}</td>
-                            <td className="px-4 py-3 tabular-nums text-slate-600">{yr != null ? formatBdt(yr) : '—'}</td>
+                            <td className="px-4 py-3 tabular-nums text-muted-foreground">{yr != null ? formatBdt(yr) : '—'}</td>
                             <td className="px-4 py-3">{plan.max_users ?? '—'}</td>
                             <td className="px-4 py-3">
                               {plan.max_storage_gb != null ? `${plan.max_storage_gb} GB` : '—'}
                             </td>
                             <td className="px-4 py-3">
-                              <span className="font-semibold text-slate-900">{c.total}</span>
-                              <span className="text-slate-400"> / </span>
+                              <span className="font-semibold text-foreground">{c.total}</span>
+                              <span className="text-muted-foreground/70"> / </span>
                               <span className="text-emerald-700 font-medium">{c.active} active</span>
                             </td>
                             <td className="px-4 py-3">
                               {plan.is_active ? (
                                 <span className="text-emerald-700 font-medium">Active</span>
                               ) : (
-                                <span className="text-slate-500">Archived</span>
+                                <span className="text-muted-foreground">Archived</span>
                               )}
                             </td>
                           </tr>
@@ -592,7 +592,7 @@ export default function PlatformPlansPage() {
                 </div>
               </div>
 
-              <p className="mt-10 text-center text-sm text-slate-500">
+              <p className="mt-10 text-center text-sm text-muted-foreground">
                 Changes sync to the API; failed saves roll back the list automatically. Archive hides the plan from new
                 sign-ups only.
               </p>
@@ -604,7 +604,7 @@ export default function PlatformPlansPage() {
       {/* Edit modal */}
       {editing && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-foreground/50"
           role="dialog"
           aria-modal
           onClick={() => {
@@ -616,16 +616,16 @@ export default function PlatformPlansPage() {
             className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-slate-900">Edit plan</h3>
-            <p className="text-sm text-slate-600 mt-1">Updates apply immediately for operators; tenants keep current billing until you change subscriptions.</p>
+            <h3 className="text-lg font-bold text-foreground">Edit plan</h3>
+            <p className="text-sm text-muted-foreground mt-1">Updates apply immediately for operators; tenants keep current billing until you change subscriptions.</p>
             <form onSubmit={handleSaveEdit} className="mt-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600">Name</label>
-                <input name="name" required defaultValue={editing.name} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <label className="block text-xs font-semibold text-muted-foreground">Name</label>
+                <input name="name" required defaultValue={editing.name} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600">Plan type</label>
-                <select name="plan_type" defaultValue={editing.plan_type} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm capitalize">
+                <label className="block text-xs font-semibold text-muted-foreground">Plan type</label>
+                <select name="plan_type" defaultValue={editing.plan_type} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm capitalize">
                   {PLAN_TYPES.map((pt) => (
                     <option key={pt} value={pt}>
                       {pt}
@@ -634,12 +634,12 @@ export default function PlatformPlansPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600">Description</label>
-                <textarea name="description" rows={2} defaultValue={editing.description ?? ''} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                <label className="block text-xs font-semibold text-muted-foreground">Description</label>
+                <textarea name="description" rows={2} defaultValue={editing.description ?? ''} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600">Price (monthly) BDT</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Price (monthly) BDT</label>
                   <input
                     name="price_monthly"
                     type="number"
@@ -647,11 +647,11 @@ export default function PlatformPlansPage() {
                     min="0"
                     required
                     defaultValue={editing.price_monthly}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600">Price (yearly total) BDT</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Price (yearly total) BDT</label>
                   <input
                     name="price_yearly"
                     type="number"
@@ -659,39 +659,39 @@ export default function PlatformPlansPage() {
                     min="0"
                     defaultValue={editing.price_yearly ?? ''}
                     placeholder="Optional"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600">Max users</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Max users</label>
                   <input
                     name="max_users"
                     type="number"
                     min="0"
                     defaultValue={editing.max_users ?? ''}
                     placeholder="Unlimited"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600">Max storage (GB)</label>
+                  <label className="block text-xs font-semibold text-muted-foreground">Max storage (GB)</label>
                   <input
                     name="max_storage_gb"
                     type="number"
                     min="0"
                     defaultValue={editing.max_storage_gb ?? ''}
                     placeholder="Unlimited"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm text-slate-800">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input type="checkbox" name="is_active" defaultChecked={editing.is_active} />
                 Plan is active (visible for new subscriptions)
               </label>
-              {formError && <p className="text-sm text-red-600">{formError}</p>}
+              {formError && <p className="text-sm text-destructive">{formError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -699,7 +699,7 @@ export default function PlatformPlansPage() {
                     setEditing(null)
                     setFormError(null)
                   }}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
                 >
                   Cancel
                 </button>
@@ -719,15 +719,15 @@ export default function PlatformPlansPage() {
       {/* Archive confirm */}
       {archiving && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-foreground/50"
           role="dialog"
           aria-modal
           onClick={() => setArchiving(null)}
         >
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-900">Archive this plan?</h3>
-            <p className="text-sm text-slate-600 mt-2">
-              <strong className="text-slate-800">{archiving.name}</strong> will be hidden from new subscriptions.
+            <h3 className="text-lg font-bold text-foreground">Archive this plan?</h3>
+            <p className="text-sm text-muted-foreground mt-2">
+              <strong className="text-foreground">{archiving.name}</strong> will be hidden from new subscriptions.
               {subCountForArchive > 0 ? (
                 <>
                   {' '}
@@ -738,7 +738,7 @@ export default function PlatformPlansPage() {
                 <> No tenants are currently on this plan.</>
               )}
             </p>
-            <p className="text-xs text-slate-500 mt-3">
+            <p className="text-xs text-muted-foreground mt-3">
               You can turn edits back on later by editing the plan and checking &quot;Plan is active&quot; (rollback in the UI
               restores the previous row if the request fails).
             </p>
@@ -746,7 +746,7 @@ export default function PlatformPlansPage() {
               <button
                 type="button"
                 onClick={() => setArchiving(null)}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
               >
                 Cancel
               </button>
@@ -754,7 +754,7 @@ export default function PlatformPlansPage() {
                 type="button"
                 onClick={() => archiveMutation.mutate(archiving.id)}
                 disabled={archiveMutation.isPending}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50"
               >
                 {archiveMutation.isPending ? 'Archiving…' : 'Archive plan'}
               </button>

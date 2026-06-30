@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.db.models import Sum
 
 from api.models import AquaculturePond, AquacultureWarehouseGroup, Item, ItemPondStock
+from api.utils.measured_quantity import format_measured_quantity_for_api
 
 
 def warehouse_group_for_pond(pond: AquaculturePond) -> AquacultureWarehouseGroup | None:
@@ -108,7 +109,7 @@ def warehouse_group_pool_rows(company_id: int, *, group_id: int | None = None) -
                 "item_id": it.id,
                 "item_name": (it.name or "").strip(),
                 "unit": (it.unit or "").strip() or "unit",
-                "quantity": str(q.quantize(Decimal("0.0001"))),
+                "quantity": format_measured_quantity_for_api(q),
                 "pos_category": (getattr(it, "pos_category", None) or "general").strip().lower(),
                 "reporting_category": (getattr(it, "category", None) or "").strip() or "General",
                 "unit_cost": str(uc.quantize(Decimal("0.0001"))),

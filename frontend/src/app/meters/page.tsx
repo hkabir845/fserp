@@ -239,7 +239,7 @@ export default function MetersPage() {
   })
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -250,7 +250,7 @@ export default function MetersPage() {
         actions={
           <button
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+            className="erp-btn-cta"
           >
             <Plus className="h-5 w-5" />
             <span>Add Meter</span>
@@ -258,7 +258,7 @@ export default function MetersPage() {
         }
       >
         {dispensers.length > 0 && fuelForecourtDispensers.length === 0 ? (
-          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="erp-alert-warning mb-6">
             No dispensers on fuel sites — add islands &amp; dispensers under a fuel forecourt station first.
           </div>
         ) : null}
@@ -266,20 +266,20 @@ export default function MetersPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4 flex-1">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <Search className="erp-search-icon" />
               <input
                 type="text"
                 placeholder="Search meters..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="erp-field pl-10"
               />
             </div>
             
             <select
               value={selectedDispenser}
               onChange={(e) => setSelectedDispenser(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="erp-field w-auto min-w-[12rem]"
             >
               <option value="">All fuel dispensers</option>
               {fuelForecourtDispensers.map((dispenser) => (
@@ -293,16 +293,16 @@ export default function MetersPage() {
 
         {loading ? (
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="erp-loading-spinner h-12 w-12"></div>
           </div>
         ) : filteredMeters.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <Gauge className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No meters found</h3>
-            <p className="text-gray-600 mb-4">Get started by creating your first fuel meter</p>
+          <div className="erp-empty-state">
+            <Gauge className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No meters found</h3>
+            <p className="text-muted-foreground mb-4">Get started by creating your first fuel meter</p>
             <button
               onClick={() => setShowModal(true)}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>Add Meter</span>
@@ -377,19 +377,19 @@ export default function MetersPage() {
             return (
               <div className={`grid ${gridCols} ${cardGap} overflow-y-auto max-h-[calc(100vh-250px)] pr-2`}>
                 {filteredMeters.map((meter) => (
-                  <div key={meter.id} className={`bg-white rounded-xl border-2 border-gray-200 shadow hover:shadow-lg transition-shadow ${cardPadding}`}>
+                  <div key={meter.id} className={`erp-surface-interactive border-2 ${cardPadding}`}>
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
-                        <div className="p-3 bg-indigo-100 rounded-lg">
-                          <Gauge className={`${fontSize.icon} text-indigo-600`} />
+                        <div className="p-3 bg-accent rounded-lg">
+                          <Gauge className={`${fontSize.icon} text-primary`} />
                         </div>
                         <div>
-                          <h3 className={`font-bold ${fontSize.title} text-gray-900`}>{meter.meter_name}</h3>
-                          <p className={`${fontSize.subtitle} text-gray-500`}>{meter.meter_number}</p>
+                          <h3 className={`font-bold ${fontSize.title} text-foreground`}>{meter.meter_name}</h3>
+                          <p className={`${fontSize.subtitle} text-muted-foreground`}>{meter.meter_number}</p>
                         </div>
                       </div>
                       <span className={`px-2 py-1 rounded-full ${fontSize.label} font-semibold ${
-                        meter.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        meter.is_active ? 'erp-badge--success' : 'erp-badge--danger'
                       }`}>
                         {meter.is_active ? 'Active' : 'Inactive'}
                       </span>
@@ -397,17 +397,17 @@ export default function MetersPage() {
                     
                     <div className="space-y-3 mb-4">
                       <div>
-                        <p className={`${fontSize.label} text-gray-500 mb-1`}>Dispenser</p>
-                        <p className={`${fontSize.subtitle} font-medium text-gray-900`}>{meter.dispenser_name || 'N/A'}</p>
+                        <p className={`${fontSize.label} text-muted-foreground mb-1`}>Dispenser</p>
+                        <p className={`${fontSize.subtitle} font-medium text-foreground`}>{meter.dispenser_name || 'N/A'}</p>
                       </div>
                       
                       <div>
-                        <p className={`${fontSize.label} text-gray-500 mb-1`}>Island / Station</p>
-                        <p className={`${fontSize.subtitle} text-gray-700`}>{meter.island_name} / {meter.station_name}</p>
+                        <p className={`${fontSize.label} text-muted-foreground mb-1`}>Island / Station</p>
+                        <p className={`${fontSize.subtitle} text-foreground/85`}>{meter.island_name} / {meter.station_name}</p>
                       </div>
                       
                       <div className="bg-blue-50 p-3 rounded-lg">
-                        <p className={`${fontSize.label} text-gray-600 mb-1`}>Current Reading</p>
+                        <p className={`${fontSize.label} text-muted-foreground mb-1`}>Current Reading</p>
                         <p className={`${fontSize.reading} font-bold text-blue-900`}>
                           {Number(meter.current_reading || 0).toLocaleString()} L
                         </p>
@@ -415,17 +415,17 @@ export default function MetersPage() {
                       
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t">
                         <div>
-                          <p className={`${fontSize.label} text-gray-500`}>Reset Count</p>
-                          <p className={`${fontSize.value} font-bold text-gray-700`}>{meter.reset_count || 0}</p>
+                          <p className={`${fontSize.label} text-muted-foreground`}>Reset Count</p>
+                          <p className={`${fontSize.value} font-bold text-foreground/85`}>{meter.reset_count || 0}</p>
                         </div>
                         <div>
-                          <p className={`${fontSize.label} text-gray-500`}>Nozzles</p>
-                          <p className={`${fontSize.value} font-bold text-blue-600`}>{meter.nozzle_count || 0}</p>
+                          <p className={`${fontSize.label} text-muted-foreground`}>Nozzles</p>
+                          <p className={`${fontSize.value} erp-stat-highlight`}>{meter.nozzle_count || 0}</p>
                         </div>
                       </div>
                       
                       {meter.last_reset_date && (
-                        <div className={fontSize.label + ' text-gray-500'}>
+                        <div className={fontSize.label + ' text-muted-foreground'}>
                           Last reset: {formatDateOnly(meter.last_reset_date)}
                         </div>
                       )}
@@ -444,13 +444,13 @@ export default function MetersPage() {
                       </button>
                       <button
                         onClick={() => router.push(`/nozzles?meter=${meter.id}`)}
-                        className={`flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ${fontSize.label}`}
+                        className={`erp-btn-primary flex-1 ${fontSize.label}`}
                       >
                         Nozzles
                       </button>
                       <button 
                         onClick={() => handleEdit(meter)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                        className="erp-icon-btn-primary"
                         title="Edit Meter"
                       >
                         <Edit className={`${fontSize.icon}`} />
@@ -460,7 +460,7 @@ export default function MetersPage() {
                           setDeleteId(meter.id)
                           setShowDeleteConfirm(true)
                         }}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded"
+                        className="erp-icon-btn-danger"
                         title="Delete Meter"
                       >
                         <Trash2 className={`${fontSize.icon}`} />
@@ -475,13 +475,13 @@ export default function MetersPage() {
 
         {/* Create/Edit Modal */}
         {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full">
-              <h2 className="text-2xl font-bold mb-6">{editingId ? 'Edit Meter' : 'Add New Meter'}</h2>
+          <div className="erp-modal-backdrop">
+            <div className="erp-modal max-w-2xl">
+              <h2 className="mb-6 text-2xl font-bold text-foreground">{editingId ? 'Edit Meter' : 'Add New Meter'}</h2>
               <form onSubmit={editingId ? handleUpdate : handleCreate}>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Meter Name *
                     </label>
                     <input
@@ -489,20 +489,20 @@ export default function MetersPage() {
                       required
                       value={formData.meter_name}
                       onChange={(e) => setFormData({ ...formData, meter_name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="e.g., Meter 1, Main Meter"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Dispenser *
                     </label>
                     <select
                       required
                       value={formData.dispenser_id}
                       onChange={(e) => setFormData({ ...formData, dispenser_id: parseInt(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     >
                       <option value={0}>Select Dispenser</option>
                       {fuelForecourtDispensers.map((dispenser) => (
@@ -514,7 +514,7 @@ export default function MetersPage() {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       {editingId ? 'Current Reading (Liters)' : 'Initial Reading (Liters)'}
                     </label>
                     <input
@@ -523,7 +523,7 @@ export default function MetersPage() {
                       min="0"
                       value={formData.current_reading}
                       onChange={(e) => setFormData({ ...formData, current_reading: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
@@ -532,9 +532,9 @@ export default function MetersPage() {
                         type="checkbox"
                         checked={formData.is_active}
                         onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-input text-primary focus:ring-ring"
                       />
-                      <span className="text-sm font-medium text-gray-700">Meter active</span>
+                      <span className="text-sm font-medium text-foreground/85">Meter active</span>
                     </label>
                   </div>
                 </div>
@@ -543,13 +543,13 @@ export default function MetersPage() {
                   <button
                     type="button"
                     onClick={handleCloseModal}
-                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="erp-btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="erp-btn-primary"
                   >
                     {editingId ? 'Update Meter' : 'Create Meter'}
                   </button>
@@ -561,10 +561,10 @@ export default function MetersPage() {
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg app-modal-pad max-w-md w-full">
-              <h2 className="text-2xl font-bold mb-4 text-red-600">Delete Meter</h2>
-              <p className="text-gray-700 mb-6">
+          <div className="erp-modal-backdrop">
+            <div className="erp-modal max-w-md">
+              <h2 className="mb-4 text-2xl font-bold text-destructive">Delete Meter</h2>
+              <p className="mb-6 text-foreground/85">
                 Are you sure you want to delete this meter? This action cannot be undone.
               </p>
               <div className="flex justify-end space-x-3">
@@ -573,13 +573,13 @@ export default function MetersPage() {
                     setShowDeleteConfirm(false)
                     setDeleteId(null)
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="erp-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="erp-btn-danger"
                 >
                   Delete
                 </button>
@@ -590,8 +590,8 @@ export default function MetersPage() {
 
         {/* Reset Modal */}
         {showResetModal && selectedMeter && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg app-modal-pad max-w-md w-full">
+          <div className="erp-modal-backdrop">
+            <div className="erp-modal max-w-md">
               <h2 className="text-2xl font-bold mb-6 text-yellow-600">Reset Meter</h2>
               <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
@@ -601,18 +601,18 @@ export default function MetersPage() {
               <form onSubmit={handleResetMeter}>
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm text-gray-600 mb-2">Meter: <strong>{selectedMeter.meter_name}</strong></p>
-                    <p className="text-sm text-gray-600 mb-2">Current Reading: <strong>{Number(selectedMeter.current_reading).toLocaleString()} L</strong></p>
+                    <p className="text-sm text-muted-foreground mb-2">Meter: <strong>{selectedMeter.meter_name}</strong></p>
+                    <p className="text-sm text-muted-foreground mb-2">Current Reading: <strong>{Number(selectedMeter.current_reading).toLocaleString()} L</strong></p>
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Reason for reset (optional, for your records)
                     </label>
                     <textarea
                       value={resetData.reason}
                       onChange={(e) => setResetData({ reason: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
+                      className="erp-field"
                       rows={3}
                       placeholder="e.g., Maintenance, Calibration, Equipment upgrade"
                     />
@@ -627,7 +627,7 @@ export default function MetersPage() {
                       setSelectedMeter(null)
                       setResetData({ reason: '' })
                     }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="erp-btn-secondary"
                   >
                     Cancel
                   </button>

@@ -187,7 +187,7 @@ export default function TanksPage() {
     if (percentage >= 75) return 'bg-green-500'
     if (percentage >= 50) return 'bg-blue-500'
     if (percentage >= 25) return 'bg-yellow-500'
-    return 'bg-red-500'
+    return 'bg-destructive/50'
   }
 
   const isLowStock = (current: number, reorder: number) => {
@@ -266,7 +266,7 @@ export default function TanksPage() {
 
   return (
     <CompanyProvider>
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <ErpPageShell
           showBackLink={false}
           title={pageMeta.title}
@@ -282,7 +282,7 @@ export default function TanksPage() {
                 setCreateCodeNonce((n) => n + 1)
                 setShowModal(true)
               }}
-              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>Add Tank</span>
@@ -290,7 +290,7 @@ export default function TanksPage() {
           }
         >
           {stations.length > 0 && fuelForecourtStations.length === 0 ? (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <div className="erp-alert-warning mb-6">
               No fuel-forecourt sites are defined. Edit a station and enable &quot;Fuel forecourt&quot; (shown when
               Aquaculture is licensed), or add a traditional filling-station location before creating tanks.
             </div>
@@ -299,20 +299,20 @@ export default function TanksPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4 flex-1">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <Search className="erp-search-icon" />
               <input
                 type="text"
                 placeholder="Search tanks..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
               />
             </div>
             
             <select
               value={selectedStation}
               onChange={(e) => setSelectedStation(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="erp-field w-auto min-w-[12rem]"
             >
               <option value="">All fuel forecourt stations</option>
               {fuelForecourtStations.map((station) => (
@@ -327,52 +327,52 @@ export default function TanksPage() {
         {loading ? (
           <div className="space-y-4">
             {/* Loading Skeleton */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="bg-white rounded-lg shadow-sm border border-border p-6">
               <div className="animate-pulse space-y-4">
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                <div className="h-4 bg-muted rounded w-3/4"></div>
+                <div className="h-4 bg-muted rounded w-1/2"></div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 animate-pulse">
-                  <div className="h-32 bg-gray-200 rounded"></div>
+                <div key={i} className="bg-white rounded-lg shadow-sm border border-border p-6 animate-pulse">
+                  <div className="h-32 bg-muted rounded"></div>
                 </div>
               ))}
             </div>
           </div>
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 sm:p-6 md:p-8">
+          <div className="bg-destructive/5 border border-destructive/25 rounded-lg p-4 sm:p-6 md:p-8">
             <div className="text-center mb-6">
-              <AlertTriangle className="h-16 w-16 text-red-600 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-red-800 mb-2">Backend Connection Error</h3>
-              <p className="text-red-700 whitespace-pre-line text-left max-w-2xl mx-auto mb-6">{error}</p>
+              <AlertTriangle className="h-16 w-16 text-destructive mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-destructive mb-2">Backend Connection Error</h3>
+              <p className="text-destructive whitespace-pre-line text-left max-w-2xl mx-auto mb-6">{error}</p>
             </div>
             {error.includes('ERR_CONNECTION_REFUSED') || error.includes('ERR_NETWORK') || error.includes('connection') || error.includes('timeout') ? (
-              <div className="bg-white border border-red-300 rounded-lg p-6 mb-6 text-left max-w-3xl mx-auto">
-                <p className="text-sm font-semibold text-red-800 mb-4">Backend server is not running. To start it:</p>
+              <div className="bg-white border border-destructive/30 rounded-lg p-6 mb-6 text-left max-w-3xl mx-auto">
+                <p className="text-sm font-semibold text-destructive mb-4">Backend server is not running. To start it:</p>
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm font-medium text-red-700 mb-2">Option 1: Use Start Script (Easiest)</p>
-                    <ol className="text-sm text-red-700 list-decimal list-inside space-y-1 ml-2">
-                      <li>Go to the project root folder: <code className="bg-red-100 px-1 rounded text-xs">d:\Cursor_Projects\ERP_Filling_Station</code></li>
-                      <li>Double-click <code className="bg-red-100 px-2 py-1 rounded font-mono text-xs">backend\run.bat</code> (or run <code className="bg-red-100 px-1 rounded">python manage.py runserver 8000</code> in the backend folder)</li>
+                    <p className="text-sm font-medium text-destructive mb-2">Option 1: Use Start Script (Easiest)</p>
+                    <ol className="text-sm text-destructive list-decimal list-inside space-y-1 ml-2">
+                      <li>Go to the project root folder: <code className="bg-destructive/10 px-1 rounded text-xs">d:\Cursor_Projects\ERP_Filling_Station</code></li>
+                      <li>Double-click <code className="bg-destructive/10 px-2 py-1 rounded font-mono text-xs">backend\run.bat</code> (or run <code className="bg-destructive/10 px-1 rounded">python manage.py runserver 8000</code> in the backend folder)</li>
                       <li>A command window will open and show server starting</li>
-                      <li>Wait until you see: <code className="bg-green-100 px-1 rounded text-xs">Starting development server at {backendOrigin}/</code></li>
+                      <li>Wait until you see: <code className="bg-success/15 px-1 rounded text-xs">Starting development server at {backendOrigin}/</code></li>
                       <li>Come back here and click <strong>"Retry Connection"</strong> button below</li>
                     </ol>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-red-700 mb-2">Option 2: Command Line</p>
-                    <div className="bg-gray-100 p-3 rounded font-mono text-xs text-gray-800">
+                    <p className="text-sm font-medium text-destructive mb-2">Option 2: Command Line</p>
+                    <div className="bg-muted p-3 rounded font-mono text-xs text-foreground">
                       cd backend<br />
                       python manage.py runserver 8000
                     </div>
-                    <p className="text-xs text-gray-600 mt-1">Or double-click <code>backend\run.bat</code></p>
+                    <p className="text-xs text-muted-foreground mt-1">Or double-click <code>backend\run.bat</code></p>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                    <p className="text-xs text-blue-800">
-                      <strong>💡 Tip:</strong> Once started, verify at <a href={apiDocsUrl} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 hover:text-blue-800">{apiDocsUrl}</a> (DEBUG mode)
+                  <div className="bg-blue-50 border border-primary/25 rounded p-3">
+                    <p className="text-xs text-primary">
+                      <strong>💡 Tip:</strong> Once started, verify at <a href={apiDocsUrl} target="_blank" rel="noopener noreferrer" className="underline text-primary hover:text-primary/80">{apiDocsUrl}</a> (DEBUG mode)
                     </p>
                   </div>
                 </div>
@@ -382,7 +382,7 @@ export default function TanksPage() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
                 onClick={fetchData}
-                className="inline-flex items-center space-x-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                className="inline-flex items-center space-x-2 px-6 py-3 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors font-medium"
               >
                 <RefreshCw className="h-5 w-5" />
                 <span>Retry Connection</span>
@@ -391,7 +391,7 @@ export default function TanksPage() {
                 href={apiDocsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center space-x-2 px-6 py-3 border border-red-300 text-red-700 rounded-lg hover:bg-red-100 transition-colors font-medium"
+                className="inline-flex items-center space-x-2 px-6 py-3 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/10 transition-colors font-medium"
               >
                 <span>Check Backend Status</span>
               </a>
@@ -407,28 +407,28 @@ export default function TanksPage() {
             </div>
           </div>
         ) : filteredTanks.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <Droplet className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No tanks found</h3>
+          <div className="erp-empty-state">
+            <Droplet className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No tanks found</h3>
             {tanks.length === 0 ? (
               <>
-                <p className="text-gray-600 mb-2">No tanks found for your company.</p>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-left max-w-md mx-auto">
-                  <p className="text-sm text-blue-800 mb-2">
+                <p className="text-muted-foreground mb-2">No tanks found for your company.</p>
+                <div className="bg-blue-50 border border-primary/25 rounded-lg p-4 mb-4 text-left max-w-md mx-auto">
+                  <p className="text-sm text-primary mb-2">
                     <strong>Possible reasons:</strong>
                   </p>
-                  <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
+                  <ul className="text-sm text-primary list-disc list-inside space-y-1">
                     <li>Sample data not initialized for your company</li>
                     <li>You're logged in with a different company</li>
                     <li>Tanks haven't been created yet</li>
                   </ul>
-                  <p className="text-sm text-blue-800 mt-3">
+                  <p className="text-sm text-primary mt-3">
                     <strong>Backend is Django.</strong> Ensure a default company exists: <code className="bg-blue-100 px-1 rounded">python manage.py create_default_company</code>. Tanks can be added via the API or Django admin once CRUD is implemented.
                   </p>
                 </div>
               </>
             ) : (
-              <p className="text-gray-600 mb-4">No tanks match your current search or filter criteria.</p>
+              <p className="text-muted-foreground mb-4">No tanks match your current search or filter criteria.</p>
             )}
             <button
               type="button"
@@ -437,7 +437,7 @@ export default function TanksPage() {
                 setCreateCodeNonce((n) => n + 1)
                 setShowModal(true)
               }}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>Add Tank</span>
@@ -516,67 +516,67 @@ export default function TanksPage() {
                   const lowStock = isLowStock(tank.current_stock, tank.reorder_level)
                   
                   return (
-                    <div key={tank.id} className={`bg-white rounded-xl border-2 border-gray-200 shadow hover:shadow-lg transition-shadow ${cardPadding}`}>
+                    <div key={tank.id} className={`erp-surface-interactive border-2 ${cardPadding}`}>
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center space-x-3">
-                      <div className={`p-3 rounded-lg ${lowStock ? 'bg-red-100' : 'bg-blue-100'}`}>
-                        <Droplet className={`${fontSize.icon} ${lowStock ? 'text-red-600' : 'text-blue-600'}`} />
+                      <div className={`p-3 rounded-lg ${lowStock ? 'bg-destructive/10' : 'bg-blue-100'}`}>
+                        <Droplet className={`${fontSize.icon} ${lowStock ? 'text-destructive' : 'text-primary'}`} />
                       </div>
                       <div>
-                        <h3 className={`font-bold ${fontSize.title} text-gray-900`}>{tank.tank_name}</h3>
-                        <p className={`${fontSize.subtitle} text-gray-500`}>{tank.tank_number}</p>
+                        <h3 className={`font-bold ${fontSize.title} text-foreground`}>{tank.tank_name}</h3>
+                        <p className={`${fontSize.subtitle} text-muted-foreground`}>{tank.tank_number}</p>
                       </div>
                     </div>
                     <span className={`px-2 py-1 rounded-full ${fontSize.label} font-semibold ${
-                      tank.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      tank.is_active ? 'erp-badge--success' : 'erp-badge--danger'
                     }`}>
                       {tank.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                   
                   {lowStock && (
-                    <div className={`mb-4 p-2 bg-red-50 border border-red-200 rounded flex items-center space-x-2`}>
-                      <AlertTriangle className={`${fontSize.icon} text-red-600`} />
-                      <span className={`${fontSize.label} text-red-800 font-medium`}>Low Stock Alert!</span>
+                    <div className={`mb-4 p-2 bg-destructive/5 border border-destructive/25 rounded flex items-center space-x-2`}>
+                      <AlertTriangle className={`${fontSize.icon} text-destructive`} />
+                      <span className={`${fontSize.label} text-destructive font-medium`}>Low Stock Alert!</span>
                     </div>
                   )}
                   
                   <div className="space-y-3 mb-4">
                     <div>
-                      <p className={`${fontSize.label} text-gray-500 mb-1`}>Product</p>
-                      <p className={`${fontSize.subtitle} font-medium text-gray-900`}>{tank.product_name || 'N/A'}</p>
+                      <p className={`${fontSize.label} text-muted-foreground mb-1`}>Product</p>
+                      <p className={`${fontSize.subtitle} font-medium text-foreground`}>{tank.product_name || 'N/A'}</p>
                     </div>
                     
                     <div>
-                      <p className={`${fontSize.label} text-gray-500 mb-1`}>Station</p>
-                      <p className={`${fontSize.subtitle} text-gray-700`}>{tank.station_name || 'N/A'}</p>
+                      <p className={`${fontSize.label} text-muted-foreground mb-1`}>Station</p>
+                      <p className={`${fontSize.subtitle} text-foreground/85`}>{tank.station_name || 'N/A'}</p>
                     </div>
                     
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <span className={`${fontSize.label} text-gray-500`}>Current Stock</span>
-                        <span className={`${fontSize.value} font-bold text-gray-900`}>
+                        <span className={`${fontSize.label} text-muted-foreground`}>Current Stock</span>
+                        <span className={`${fontSize.value} font-bold text-foreground`}>
                           {formatNumber(Number(tank.current_stock || 0))} L
                         </span>
                       </div>
                       
                       {/* Progress Bar */}
-                      <div className={`w-full bg-gray-200 rounded-full ${fontSize.progressBar} mb-1`}>
+                      <div className={`w-full bg-muted rounded-full ${fontSize.progressBar} mb-1`}>
                         <div
                           className={`${fontSize.progressBar} rounded-full transition-all ${getFillColor(fillPercentage)}`}
                           style={{ width: `${Math.min(fillPercentage, 100)}%` }}
                         ></div>
                       </div>
                       
-                      <div className={`flex justify-between ${fontSize.label} text-gray-500`}>
+                      <div className={`flex justify-between ${fontSize.label} text-muted-foreground`}>
                         <span>{formatNumber(fillPercentage, 2)}% Full</span>
                         <span>Capacity: {Number(tank.capacity || 0).toLocaleString()} L</span>
                       </div>
                     </div>
                     
                     <div className={`flex justify-between ${fontSize.label} pt-2 border-t`}>
-                      <span className="text-gray-500">Reorder Level:</span>
-                      <span className="font-medium text-gray-700">
+                      <span className="text-muted-foreground">Reorder Level:</span>
+                      <span className="font-medium text-foreground/85">
                         {Number(tank.reorder_level || 0).toLocaleString()} L
                       </span>
                     </div>
@@ -585,21 +585,21 @@ export default function TanksPage() {
                   <div className="flex items-center justify-between pt-4 border-t">
                     <button
                       onClick={() => router.push(`/tank-dips?tank=${tank.id}`)}
-                      className={`${fontSize.label} text-blue-600 hover:text-blue-800 font-medium`}
+                      className={`erp-link ${fontSize.label}`}
                     >
                       Record Dip →
                     </button>
                     <div className="flex items-center space-x-2">
                       <button 
                         onClick={() => handleEdit(tank)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                        className="erp-icon-btn-primary"
                         title="Edit Tank"
                       >
                         <Edit className={`${fontSize.icon}`} />
                       </button>
                       <button 
                         onClick={() => handleDelete(tank.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded"
+                        className="erp-icon-btn-danger"
                         title="Delete Tank"
                       >
                         <Trash2 className={`${fontSize.icon}`} />
@@ -616,9 +616,9 @@ export default function TanksPage() {
 
         {/* Create/Edit Modal */}
         {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="erp-modal-backdrop">
             <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-bold mb-6">
+              <h2 className="mb-6 text-2xl font-bold text-foreground">
                 {editingId ? 'Edit Tank' : 'Add New Tank'}
               </h2>
               <form onSubmit={handleSubmit}>
@@ -645,7 +645,7 @@ export default function TanksPage() {
                 )}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Tank Name *
                     </label>
                     <input
@@ -653,13 +653,13 @@ export default function TanksPage() {
                       required
                       value={formData.tank_name}
                       onChange={(e) => setFormData({ ...formData, tank_name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="e.g., Diesel Tank 1"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Station *
                     </label>
                     <select
@@ -669,7 +669,7 @@ export default function TanksPage() {
                         const n = parseInt(e.target.value, 10)
                         setFormData({ ...formData, station_id: Number.isFinite(n) ? n : 0 })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     >
                       <option value={0}>Select Station</option>
                       {fuelForecourtStations.map((station) => (
@@ -681,7 +681,7 @@ export default function TanksPage() {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Product (Fuel) *
                     </label>
                     <select
@@ -691,7 +691,7 @@ export default function TanksPage() {
                         const n = parseInt(e.target.value, 10)
                         setFormData({ ...formData, product_id: Number.isFinite(n) ? n : 0 })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     >
                       <option value={0}>Select Product</option>
                       {products.map((product) => (
@@ -701,7 +701,7 @@ export default function TanksPage() {
                       ))}
                     </select>
                     {!loading && products.length === 0 ? (
-                      <p className="mt-2 text-xs text-amber-700">
+                      <p className="mt-2 text-xs text-warning-foreground">
                         No tank-eligible fuels yet. Add an inventory product with POS category Fuel (covers liquid and
                         gas fuels).
                       </p>
@@ -709,7 +709,7 @@ export default function TanksPage() {
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Capacity (Liters) *
                     </label>
                     <input
@@ -726,12 +726,12 @@ export default function TanksPage() {
                           capacity: v === '' ? 0 : Number.isFinite(n) ? n : formData.capacity,
                         })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Current Stock (Liters)
                     </label>
                     <input
@@ -747,12 +747,12 @@ export default function TanksPage() {
                           current_stock: v === '' ? 0 : Number.isFinite(n) ? n : formData.current_stock,
                         })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Minimum Stock Level (Liters)
                     </label>
                     <input
@@ -768,7 +768,7 @@ export default function TanksPage() {
                           min_stock_level: v === '' ? 0 : Number.isFinite(n) ? n : formData.min_stock_level,
                         })
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div className="col-span-2">
@@ -777,20 +777,20 @@ export default function TanksPage() {
                         type="checkbox"
                         checked={formData.is_active}
                         onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-input text-primary focus:ring-ring"
                       />
-                      <span className="text-sm font-medium text-gray-700">Tank active</span>
+                      <span className="text-sm font-medium text-foreground/85">Tank active</span>
                     </label>
                   </div>
                 </div>
                 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 space-y-2">
-                  <p className="text-sm text-blue-800">
+                <div className="bg-blue-50 border border-primary/25 rounded-lg p-4 mb-6 space-y-2">
+                  <p className="text-sm text-primary">
                     <strong>Note:</strong> Each tank holds one product. The list includes inventory fuels:
                     liquid grades (diesel, petrol, etc.), petroleum gas (LPG/CNG/LNG), and similar—prefer POS
                     category <strong>Fuel</strong> so naming does not matter.
                   </p>
-                  <p className="text-sm text-blue-800">
+                  <p className="text-sm text-primary">
                     Missing a product? In <strong>Products</strong>, use Inventory, set POS category to{' '}
                     <strong>Fuel</strong> (or a category like <em>Petroleum gas</em>), and keep it active.
                   </p>
@@ -803,13 +803,13 @@ export default function TanksPage() {
                       setShowModal(false)
                       resetForm()
                     }}
-                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="erp-btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="erp-btn-primary"
                   >
                     {editingId ? 'Update Tank' : 'Add Tank'}
                   </button>

@@ -195,7 +195,7 @@ export function MedicineProductSelect({
           type="button"
           tabIndex={-1}
           aria-label="Show medicine products"
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600"
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground/70 hover:text-muted-foreground"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             if (open) {
@@ -216,10 +216,10 @@ export function MedicineProductSelect({
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-50 mt-1 max-h-56 w-full min-w-[16rem] overflow-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg"
+          className="absolute z-50 mt-1 max-h-56 w-full min-w-[16rem] overflow-auto rounded-lg border border-border bg-white py-1 text-sm shadow-lg"
         >
           {flatOptions.length === 0 ? (
-            <li className="px-3 py-2 text-slate-500">
+            <li className="px-3 py-2 text-muted-foreground">
               No matches. Try another word from the product name or SKU.
             </li>
           ) : (
@@ -239,7 +239,7 @@ export function MedicineProductSelect({
                     role="option"
                     aria-selected={active}
                     className={`cursor-pointer px-3 py-1.5 truncate ${
-                      active ? 'bg-teal-50 text-teal-950' : 'text-slate-900 hover:bg-slate-50'
+                      active ? 'bg-accent text-teal-950' : 'text-foreground hover:bg-muted/40'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActiveIndex(flatIdx)}
@@ -251,8 +251,8 @@ export function MedicineProductSelect({
               })}
               {showOtherGroup ? (
                 <li
-                  className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 ${
-                    showBuiltinGroup ? 'mt-1 border-t border-slate-100' : ''
+                  className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ${
+                    showBuiltinGroup ? 'mt-1 border-t border-border/70' : ''
                   }`}
                 >
                   {showBuiltinGroup ? 'Other medicine & treatment' : 'Medicine & treatment'}
@@ -268,7 +268,7 @@ export function MedicineProductSelect({
                     role="option"
                     aria-selected={active}
                     className={`cursor-pointer px-3 py-1.5 truncate ${
-                      active ? 'bg-teal-50 text-teal-950' : 'text-slate-900 hover:bg-slate-50'
+                      active ? 'bg-accent text-teal-950' : 'text-foreground hover:bg-muted/40'
                     }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setActiveIndex(flatIdx)}

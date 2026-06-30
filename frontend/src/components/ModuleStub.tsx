@@ -19,9 +19,9 @@ export function ModuleStub({
   layout?: 'bare' | 'platform' | 'erp'
 }) {
   const inner = (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-8 shadow-sm">
-      <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
-      <p className="mt-2 text-gray-700">
+    <div className="rounded-xl border border-warning/30 bg-warning/10/60 p-8 shadow-sm">
+      <h1 className="text-xl font-semibold text-foreground">{title}</h1>
+      <p className="mt-2 text-foreground/85">
         {description ??
           'This screen is reserved for upcoming functionality. The route is stable so you can build and deep-link while developing.'}
       </p>

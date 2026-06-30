@@ -1212,6 +1212,16 @@ def post_aquaculture_shop_stock_issue_journal(
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
         return True
 
+    from api.services.aquaculture_pond_bio_capitalization import (
+        bio_inventory_account,
+        company_capitalizes_pond_production,
+    )
+
+    capitalize_bio = company_capitalizes_pond_production(company_id)
+    bio_debit = bio_inventory_account(company_id) if capitalize_bio else None
+    if capitalize_bio and not bio_debit:
+        capitalize_bio = False
+
     buckets: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
     for it, qty in line_rows:
         if not item_tracks_physical_stock(it):
@@ -1224,10 +1234,16 @@ def post_aquaculture_shop_stock_issue_journal(
         if amt <= 0:
             continue
         inv_acc = _inventory_account_for_item(company_id, it)
-        cogs_acc = _cogs_account_for_item(company_id, it)
-        if not inv_acc or not cogs_acc:
+        if not inv_acc:
             continue
-        key = (cogs_acc.id, inv_acc.id)
+        if capitalize_bio and bio_debit:
+            debit_acc_id = bio_debit.id
+        else:
+            cogs_acc = _cogs_account_for_item(company_id, it)
+            if not cogs_acc:
+                continue
+            debit_acc_id = cogs_acc.id
+        key = (debit_acc_id, inv_acc.id)
         buckets[key] = buckets.get(key, Decimal("0")) + amt
 
     if not buckets:
@@ -1245,17 +1261,17 @@ def post_aquaculture_shop_stock_issue_journal(
                 exp_row.expense_category, company_id=company_id
             ),
         }
-    for (cogs_id, inv_id), amt in buckets.items():
-        cogs = ChartOfAccount.objects.filter(
-            id=cogs_id, company_id=company_id, is_active=True
+    for (debit_id, inv_id), amt in buckets.items():
+        debit = ChartOfAccount.objects.filter(
+            id=debit_id, company_id=company_id, is_active=True
         ).first()
         inv_a = ChartOfAccount.objects.filter(
             id=inv_id, company_id=company_id, is_active=True
         ).first()
-        if not cogs or not inv_a:
+        if not debit or not inv_a:
             continue
         memo = f"Aquaculture shop issue (expense {expense_id})"[:300]
-        lines.append((cogs, amt, Decimal("0"), memo))
+        lines.append((debit, amt, Decimal("0"), memo))
         lines.append((inv_a, Decimal("0"), amt, memo))
         aq_costing.append(aq_meta)
         aq_costing.append(aq_meta)
@@ -1267,7 +1283,10 @@ def post_aquaculture_shop_stock_issue_journal(
     if debit != credit or debit <= 0:
         return False
 
-    desc = f"Aquaculture — shop stock to pond (operating expense #{expense_id})"[:500]
+    if capitalize_bio:
+        desc = f"Aquaculture — shop stock to pond biological inventory (expense #{expense_id})"[:500]
+    else:
+        desc = f"Aquaculture — shop stock to pond (operating expense #{expense_id})"[:500]
     inv_st = _gl_station_id(company_id, station_id)
     return (
         _create_posted_entry(
@@ -1430,9 +1449,31 @@ def post_aquaculture_manual_expense_journal(
     if amt <= 0:
         return False
 
-    expense_code = coa_account_code_for_aquaculture_expense_category(
+    from api.services.aquaculture_pond_bio_capitalization import (
+        company_capitalizes_pond_production,
+        pond_cost_bucket_capitalizes_to_bio,
+    )
+    from api.services.tenant_reporting_categories import resolve_aquaculture_expense_to_builtin
+
+    builtin_cat = resolve_aquaculture_expense_to_builtin(company_id, exp_row.expense_category)
+    cost_bucket = aquaculture_expense_category_to_cost_bucket(
         exp_row.expense_category, company_id=company_id
     )
+    bio_acc = ChartOfAccount.objects.filter(
+        company_id=company_id, account_code=CODE_INV_BIO, is_active=True
+    ).first()
+    if (
+        company_capitalizes_pond_production(company_id)
+        and bio_acc
+        and pond_cost_bucket_capitalizes_to_bio(cost_bucket)
+    ):
+        expense_code = CODE_INV_BIO
+    elif builtin_cat == "fry_stocking" and bio_acc:
+        expense_code = CODE_INV_BIO
+    else:
+        expense_code = coa_account_code_for_aquaculture_expense_category(
+            exp_row.expense_category, company_id=company_id
+        )
     exp_acc = ChartOfAccount.objects.filter(
         company_id=company_id, account_code=expense_code, is_active=True
     ).first()
@@ -1632,11 +1673,16 @@ def delete_aquaculture_fish_sale_bio_relief_journal(company_id: int, sale_id: in
 
 
 def delete_aquaculture_fish_pond_transfer_journal(company_id: int, transfer_id: int) -> int:
+    from api.services.aquaculture_pond_bio_capitalization import delete_pond_expense_reclass_to_1581
+
+    n = delete_pond_expense_reclass_to_1581(
+        company_id, f"AUTO-AQ-FISH-XFER-{transfer_id}-RECLASS"
+    )
     deleted, _ = JournalEntry.objects.filter(
         company_id=company_id,
         entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}",
     ).delete()
-    return deleted
+    return n + deleted
 
 
 def post_aquaculture_fish_pond_transfer_journal(
@@ -2492,6 +2538,10 @@ def _bill_line_expense_debit_account(
         acc = ChartOfAccount.objects.filter(pk=lid, company_id=company_id, is_active=True).first()
         if acc and normalize_chart_account_type(acc.account_type) in _EXP_DEBIT_TYPES:
             return acc
+    if getattr(line, "aquaculture_pond_id", None):
+        from api.services.aquaculture_pond_bio_capitalization import expense_account_for_pond_bill_line
+
+        return expense_account_for_pond_bill_line(company_id, line, fallback=office_exp)
     if not getattr(line, "aquaculture_pond_id", None):
         fs_cat = (getattr(line, "fuel_station_expense_category", None) or "").strip()
         if fs_cat or getattr(line, "tenant_reporting_category_id", None):
@@ -2581,7 +2631,24 @@ def _build_bill_journal_lines(
             debit_rows.append((debit_acc, amt, memo, meta, line_st))
             continue
         if _item_receives_physical_stock(item):
-            inv_acc = _inventory_account_for_item(company_id, item)
+            inv_acc = None
+            if getattr(line, "aquaculture_pond_id", None):
+                from api.services.aquaculture_pond_bio_capitalization import (
+                    bio_inventory_account,
+                    company_capitalizes_pond_production,
+                    pond_cost_bucket_capitalizes_to_bio,
+                )
+
+                bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
+                if not bucket:
+                    bucket = item_shop_issue_cost_bucket(item)
+                if (
+                    company_capitalizes_pond_production(company_id)
+                    and pond_cost_bucket_capitalizes_to_bio(bucket)
+                ):
+                    inv_acc = bio_inventory_account(company_id)
+            if not inv_acc:
+                inv_acc = _inventory_account_for_item(company_id, item)
             if inv_acc:
                 debit_rows.append((inv_acc, amt, memo, meta, line_st))
             else:

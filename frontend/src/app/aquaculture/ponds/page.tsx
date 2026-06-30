@@ -203,11 +203,11 @@ function tilapiaLoadBadgeClass(level: string | null | undefined): string {
     case 'moderate':
       return 'bg-emerald-50 text-emerald-800'
     case 'full':
-      return 'bg-amber-50 text-amber-900'
+      return 'bg-warning/10 text-warning-foreground'
     case 'high_risk':
-      return 'bg-red-50 text-red-900'
+      return 'bg-destructive/5 text-red-900'
     default:
-      return 'bg-slate-100 text-slate-600'
+      return 'bg-muted text-muted-foreground'
   }
 }
 
@@ -226,31 +226,31 @@ function PondTilapiaLoadCell({ p }: { p: Pond }) {
     (kpd == null || Number.isNaN(kpd)) &&
     !label
   ) {
-    return <span className="text-slate-400">—</span>
+    return <span className="text-muted-foreground/70">—</span>
   }
 
   return (
-    <div className="space-y-1 text-xs text-slate-700">
+    <div className="space-y-1 text-xs text-foreground/85">
       <p className="tabular-nums">
         {fish != null && !Number.isNaN(Number(fish)) ? (
           <span>{formatNumber(Number(fish), 0)} tilapia</span>
         ) : (
-          <span className="text-slate-400">Fish —</span>
+          <span className="text-muted-foreground/70">Fish —</span>
         )}
-        <span className="text-slate-300"> · </span>
+        <span className="text-muted-foreground/40"> · </span>
         {kg != null && !Number.isNaN(kg) ? (
           <span>{formatNumber(kg, 2)} kg pond</span>
         ) : (
-          <span className="text-slate-400">kg —</span>
+          <span className="text-muted-foreground/70">kg —</span>
         )}
       </p>
-      <p className="tabular-nums text-slate-600">
+      <p className="tabular-nums text-muted-foreground">
         {kpd != null && !Number.isNaN(kpd) ? (
           <span title="Kilograms of tilapia biomass per decimal of water surface">
             {formatNumber(kpd, 3)} kg/dec
           </span>
         ) : (
-          <span className="text-slate-400" title="Set water area (decimal) on the pond to compute kg per decimal">
+          <span className="text-muted-foreground/70" title="Set water area (decimal) on the pond to compute kg per decimal">
             kg/dec —
           </span>
         )}
@@ -338,12 +338,12 @@ function parseOptionalNumber(s: string | null | undefined): number | null {
 }
 
 function balanceTone(balanceStr: string | null | undefined): string {
-  if (balanceStr === null || balanceStr === undefined) return 'text-slate-600'
+  if (balanceStr === null || balanceStr === undefined) return 'text-muted-foreground'
   const bal = Number(balanceStr)
-  if (Number.isNaN(bal)) return 'text-slate-600'
-  if (bal > 0) return 'text-amber-800'
+  if (Number.isNaN(bal)) return 'text-muted-foreground'
+  if (bal > 0) return 'text-warning-foreground'
   if (bal < 0) return 'text-emerald-800'
-  return 'text-slate-700'
+  return 'text-foreground/85'
 }
 
 function PondLeaseCell({ p }: { p: Pond }) {
@@ -358,27 +358,27 @@ function PondLeaseCell({ p }: { p: Pond }) {
       : null
 
   if (!hasPeriod && annual === null && paid === 0 && (bal === null || Number.isNaN(bal))) {
-    return <span className="text-slate-400">—</span>
+    return <span className="text-muted-foreground/70">—</span>
   }
 
   return (
-    <div className="space-y-1.5 text-xs text-slate-700">
+    <div className="space-y-1.5 text-xs text-foreground/85">
       {hasPeriod ? (
-        <p className="font-medium text-slate-800">
+        <p className="font-medium text-foreground">
           {formatDateOnly(p.lease_contract_start)} → {formatDateOnly(p.lease_contract_end)}
         </p>
       ) : null}
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 tabular-nums sm:grid-cols-3">
         <p>
-          <span className="text-slate-500">Annual</span>{' '}
-          <span className="font-medium text-slate-900">{fmtMoney(annual)}</span>
+          <span className="text-muted-foreground">Annual</span>{' '}
+          <span className="font-medium text-foreground">{fmtMoney(annual)}</span>
         </p>
         <p>
-          <span className="text-slate-500">Paid</span>{' '}
-          <span className="font-medium text-slate-900">{fmtMoney(paid)}</span>
+          <span className="text-muted-foreground">Paid</span>{' '}
+          <span className="font-medium text-foreground">{fmtMoney(paid)}</span>
         </p>
         <p className="col-span-2 sm:col-span-1">
-          <span className="text-slate-500">Balance</span>{' '}
+          <span className="text-muted-foreground">Balance</span>{' '}
           <span className={`font-semibold ${balanceTone(p.lease_balance_due)}`}>
             {bal === null || Number.isNaN(bal)
               ? '—'
@@ -391,8 +391,8 @@ function PondLeaseCell({ p }: { p: Pond }) {
         </p>
       </div>
       {rem ? (
-        <p className="text-[11px] text-slate-500">
-          Remaining <span className="font-medium text-slate-700">{rem}</span>
+        <p className="text-[11px] text-muted-foreground">
+          Remaining <span className="font-medium text-foreground/85">{rem}</span>
         </p>
       ) : null}
     </div>
@@ -835,7 +835,7 @@ export default function AquaculturePondsPage() {
     <div className="flex shrink-0 gap-1">
       <Link
         href={`/aquaculture/ponds/${p.id}`}
-        className="rounded p-2 text-teal-700 hover:bg-teal-50"
+        className="rounded p-2 text-primary hover:bg-accent"
         aria-label={`View ${p.name}`}
         title="View pond details, growth & FCR"
       >
@@ -844,7 +844,7 @@ export default function AquaculturePondsPage() {
       <button
         type="button"
         onClick={() => openEdit(p)}
-        className="rounded p-2 text-slate-600 hover:bg-slate-100"
+        className="rounded p-2 text-muted-foreground hover:bg-muted"
         aria-label={`Edit ${p.name}`}
       >
         <Edit2 className="h-4 w-4" />
@@ -852,7 +852,7 @@ export default function AquaculturePondsPage() {
       <button
         type="button"
         onClick={() => void remove(p)}
-        className="rounded p-2 text-red-600 hover:bg-red-50"
+        className="rounded p-2 text-destructive hover:bg-destructive/5"
         aria-label={`Delete ${p.name}`}
       >
         <Trash2 className="h-4 w-4" />
@@ -897,7 +897,7 @@ export default function AquaculturePondsPage() {
                   onClick={() => setStatusFilter(key)}
                   aria-pressed={statusFilter === key}
                   className={`rounded-md px-2.5 py-1.5 text-xs font-semibold capitalize sm:text-sm ${
-                    statusFilter === key ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                    statusFilter === key ? 'bg-white text-primary shadow-sm' : 'text-teal-100 hover:bg-white/10'
                   }`}
                 >
                   {key}
@@ -914,7 +914,7 @@ export default function AquaculturePondsPage() {
                 onClick={() => setViewMode('list')}
                 aria-pressed={viewMode === 'list'}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
-                  viewMode === 'list' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                  viewMode === 'list' ? 'bg-white text-primary shadow-sm' : 'text-teal-100 hover:bg-white/10'
                 }`}
               >
                 <List className="h-3.5 w-3.5" aria-hidden />
@@ -926,7 +926,7 @@ export default function AquaculturePondsPage() {
                 onClick={() => setViewMode('cards')}
                 aria-pressed={viewMode === 'cards'}
                 className={`inline-flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-semibold ${
-                  viewMode === 'cards' ? 'bg-white text-teal-900 shadow-sm' : 'text-teal-100 hover:bg-white/10'
+                  viewMode === 'cards' ? 'bg-white text-primary shadow-sm' : 'text-teal-100 hover:bg-white/10'
                 }`}
               >
                 <LayoutGrid className="h-3.5 w-3.5" aria-hidden />
@@ -993,26 +993,26 @@ export default function AquaculturePondsPage() {
         }
       >
         {!pageMeta.description ? (
-          <p className="mb-4 max-w-3xl text-sm leading-snug text-slate-600">
+          <p className="mb-4 max-w-3xl text-sm leading-snug text-muted-foreground">
             Each pond is a reporting unit for stocking, tilapia load, landlord lease math, and (usually) a linked POS
             customer for on-account feed and supplies.{' '}
             <Link
               href="/aquaculture/sales"
-              className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+              className="font-medium text-primary underline decoration-teal-600/35 underline-offset-2 hover:text-primary"
             >
               Sales
             </Link>
-            <span className="text-slate-400"> · </span>
+            <span className="text-muted-foreground/70"> · </span>
             <Link
               href="/aquaculture/expenses"
-              className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+              className="font-medium text-primary underline decoration-teal-600/35 underline-offset-2 hover:text-primary"
             >
               Expenses
             </Link>
-            <span className="text-slate-400"> · </span>
+            <span className="text-muted-foreground/70"> · </span>
             <Link
               href="/aquaculture/stock"
-              className="font-medium text-teal-800 underline decoration-teal-600/35 underline-offset-2 hover:text-teal-900"
+              className="font-medium text-primary underline decoration-teal-600/35 underline-offset-2 hover:text-primary"
             >
               Stock
             </Link>
@@ -1027,11 +1027,11 @@ export default function AquaculturePondsPage() {
         />
 
         {!loading && ponds.length > 0 ? (
-          <p className="mb-4 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2.5 text-xs leading-snug text-teal-950/90">
-            <span className="font-semibold uppercase tracking-wide text-teal-900">Tip: </span>
+          <p className="mb-4 rounded-lg border border-teal-100 bg-accent/60 px-3 py-2.5 text-xs leading-snug text-teal-950/90">
+            <span className="font-semibold uppercase tracking-wide text-primary">Tip: </span>
             Use <span className="font-semibold">Cards</span> on small screens; <span className="font-semibold">Table</span>{' '}
             fits wide monitors. Open a pond for economics, FCR, and detail charts.{' '}
-            <span className="text-teal-900/80">
+            <span className="text-primary/80">
               (
               {filteredPonds.length === ponds.length
                 ? `${pondStats.total} total · ${pondStats.active} active`
@@ -1041,37 +1041,37 @@ export default function AquaculturePondsPage() {
           </p>
         ) : null}
 
-        <details className="group mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-slate-800 marker:content-none [&::-webkit-details-marker]:hidden">
-                <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden />
+        <details className="group mb-4 overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-foreground marker:content-none [&::-webkit-details-marker]:hidden">
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
                 <Sparkles className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
                 How ponds, POS customers, and leases work together
               </summary>
-              <div className="border-t border-slate-100 px-4 py-3 text-sm leading-relaxed text-slate-600">
+              <div className="border-t border-border/70 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
                 <ul className="list-disc space-y-2 pl-5">
                   <li>
-                    <strong className="font-semibold text-slate-800">POS customer:</strong> New ponds usually get an
+                    <strong className="font-semibold text-foreground">POS customer:</strong> New ponds usually get an
                     auto-created &quot;Aquaculture — …&quot; customer so you can sell feed, medicine, and supplies on account from{' '}
-                    <strong className="font-medium text-slate-800">Cashier</strong> with correct inventory and GL.
+                    <strong className="font-medium text-foreground">Cashier</strong> with correct inventory and GL.
                   </li>
                   <li>
-                    <strong className="font-semibold text-slate-800">Two areas:</strong>{' '}
+                    <strong className="font-semibold text-foreground">Two areas:</strong>{' '}
                     <em>Water surface</em> drives stocking and tilapia load; <em>leasing decimals</em> drive landlord rent when
                     you enter price per decimal per year.
                   </li>
                   <li>
-                    <strong className="font-semibold text-slate-800">Non-POS costs:</strong> Leases, power, labour, and cash
-                    purchases go through <Link href="/aquaculture/expenses" className="font-medium text-teal-800 underline">Aquaculture expenses</Link>.
+                    <strong className="font-semibold text-foreground">Non-POS costs:</strong> Leases, power, labour, and cash
+                    purchases go through <Link href="/aquaculture/expenses" className="font-medium text-primary underline">Aquaculture expenses</Link>.
                   </li>
                   <li>
-                    <strong className="font-semibold text-slate-800">Internal issues:</strong> The expenses page optional at-cost stock issue is only for deliberate moves without ringing POS.
+                    <strong className="font-semibold text-foreground">Internal issues:</strong> The expenses page optional at-cost stock issue is only for deliberate moves without ringing POS.
                   </li>
                   <li>
-                    <strong className="font-semibold text-slate-800">Go-live openings:</strong>{' '}
+                    <strong className="font-semibold text-foreground">Go-live openings:</strong>{' '}
                     <strong>Go-live setup</strong> — cutover checklist: prior P&amp;L, A/R, fish biomass, feed on hand, lease
                     A/R for on-account sales, and advanced vendor/employee/loan links.{' '}
                     <strong>Landlord rent</strong> is set only on{' '}
-                    <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+                    <Link href="/aquaculture/landlords" className="font-medium text-primary underline">
                       Landlords
                     </Link>
                     .
@@ -1081,12 +1081,12 @@ export default function AquaculturePondsPage() {
             </details>
 
             {!loading && pondsMissingPosCustomer.length > 0 ? (
-              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <div className="mb-4 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
                 <p className="font-medium">
                   {pondsMissingPosCustomer.length} pond{pondsMissingPosCustomer.length === 1 ? '' : 's'}{' '}
                   {pondsMissingPosCustomer.length === 1 ? 'has' : 'have'} no POS customer
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+                <p className="mt-1 text-xs leading-relaxed text-warning-foreground/90">
                   On-account feed and supplies from your shop station (e.g. Premium Agro) need an
                   &quot;Aquaculture — [pond name]&quot; customer in Cashier. Create the missing customers now — they
                   default to your shop-only station when one exists.
@@ -1104,22 +1104,22 @@ export default function AquaculturePondsPage() {
 
             {loading ? (
               <div className="flex justify-center py-16" aria-busy="true">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
               </div>
             ) : ponds.length === 0 ? (
               <div
-                className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm"
+                className="rounded-xl border border-dashed border-border bg-white p-10 text-center shadow-sm"
                 aria-labelledby="aq-ponds-title"
               >
-                <p className="text-sm font-medium text-slate-700">No ponds yet</p>
-                <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+                <p className="text-sm font-medium text-foreground/85">No ponds yet</p>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
                   Create your first production unit to unlock aquaculture expenses, sales, sampling, and pond-level
                   reporting.
                 </p>
                 <button
                   type="button"
                   onClick={openNew}
-                  className="mt-6 inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-teal-700"
+                  className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-primary"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                   Add your first pond
@@ -1127,11 +1127,11 @@ export default function AquaculturePondsPage() {
               </div>
             ) : filteredPonds.length === 0 ? (
               <div
-                className="rounded-xl border border-amber-200/80 bg-amber-50/80 p-8 text-center shadow-sm"
+                className="rounded-xl border border-warning/30/80 bg-warning/10/80 p-8 text-center shadow-sm"
                 aria-live="polite"
               >
-                <p className="text-sm font-semibold text-amber-950">No ponds match this view</p>
-                <p className="mx-auto mt-2 max-w-md text-sm text-amber-900/90">
+                <p className="text-sm font-semibold text-warning-foreground">No ponds match this view</p>
+                <p className="mx-auto mt-2 max-w-md text-sm text-warning-foreground/90">
                   Try another search keyword, set status to &quot;all&quot;, or clear the search box.
                 </p>
                 <button
@@ -1140,19 +1140,19 @@ export default function AquaculturePondsPage() {
                     setSearchQuery('')
                     setStatusFilter('all')
                   }}
-                  className="mt-4 rounded-lg border border-amber-300/80 bg-white px-4 py-2 text-sm font-medium text-amber-950 shadow-sm hover:bg-amber-50"
+                  className="mt-4 rounded-lg border border-amber-300/80 bg-white px-4 py-2 text-sm font-medium text-warning-foreground shadow-sm hover:bg-warning/10"
                 >
                   Clear search &amp; filters
                 </button>
               </div>
             ) : viewMode === 'list' ? (
               <div
-                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+                className="overflow-hidden rounded-xl border border-border bg-white shadow-sm"
                 aria-labelledby="aq-ponds-title"
               >
                 <div className="overflow-x-auto">
                   <table className="min-w-[860px] w-full text-left text-sm">
-                    <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 text-xs font-semibold uppercase tracking-wide text-slate-500 backdrop-blur-sm">
+                    <thead className="sticky top-0 z-10 border-b border-border bg-muted/40/95 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
                       <tr>
                         <th className="px-3 py-3 lg:px-4">Pond</th>
                         <th className="px-3 py-3 lg:px-4">Role &amp; status</th>
@@ -1163,23 +1163,23 @@ export default function AquaculturePondsPage() {
                         <th className="px-3 py-3 text-right lg:px-4">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-border/70">
                       {filteredPonds.map((p) => (
-                        <tr key={p.id} className="align-top text-slate-800 transition-colors hover:bg-teal-50/30">
+                        <tr key={p.id} className="align-top text-foreground transition-colors hover:bg-accent/30">
                           <td className="px-3 py-3 lg:px-4">
                             <Link
                               href={`/aquaculture/ponds/${p.id}`}
                               className="group block min-w-[7.5rem] max-w-[16rem]"
                               title="Open pond dashboard"
                             >
-                              <span className="font-semibold text-teal-900 underline decoration-teal-500/0 underline-offset-2 transition group-hover:decoration-teal-600/70">
+                              <span className="font-semibold text-primary underline decoration-teal-500/0 underline-offset-2 transition group-hover:decoration-teal-600/70">
                                 {p.name}
                               </span>
-                              <span className="mt-0.5 block text-xs text-slate-500">
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
                                 {p.code ? `${p.code} · ` : ''}Order {p.sort_order}
                               </span>
                               {p.notes?.trim() ? (
-                                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{p.notes.trim()}</p>
+                                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{p.notes.trim()}</p>
                               ) : null}
                               {goLiveByPondId.has(p.id) ? (
                                 <div className="mt-1.5">
@@ -1193,13 +1193,13 @@ export default function AquaculturePondsPage() {
                           </td>
                           <td className="px-3 py-3 lg:px-4">
                             <div className="flex flex-col gap-1.5">
-                              <span className="w-fit rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800">
+                              <span className="w-fit rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
                                 {p.pond_role_label || (p.pond_role === 'nursing' ? 'Nursing' : 'Grow-out')}
                                 {p.physical_site_name ? ` · ${p.physical_site_name}` : ''}
                               </span>
                               <span
                                 className={`w-fit rounded-full px-2 py-0.5 text-xs font-medium ${
-                                  p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                  p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-muted text-muted-foreground'
                                 }`}
                               >
                                 {p.is_active ? 'Active' : 'Inactive'}
@@ -1209,18 +1209,18 @@ export default function AquaculturePondsPage() {
                           <td className="max-w-[10rem] px-3 py-3 lg:max-w-none lg:px-4">
                             <PondTilapiaLoadCell p={p} />
                           </td>
-                          <td className="max-w-[11rem] px-3 py-3 text-xs text-slate-600 lg:px-4">
+                          <td className="max-w-[11rem] px-3 py-3 text-xs text-muted-foreground lg:px-4">
                             {p.pos_customer_id ? (
                               <div className="space-y-1.5">
                                 <span className="flex flex-wrap items-center gap-1.5">
                                   <span
-                                    className="line-clamp-2 font-medium text-teal-900"
+                                    className="line-clamp-2 font-medium text-primary"
                                     title={p.pos_customer_display?.trim() || `Customer #${p.pos_customer_id}`}
                                   >
                                     {p.pos_customer_display?.trim() || `Customer #${p.pos_customer_id}`}
                                   </span>
                                   {p.pos_customer_auto_managed ? (
-                                    <span className="shrink-0 rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-900">
+                                    <span className="shrink-0 rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                                       Auto
                                     </span>
                                   ) : null}
@@ -1228,18 +1228,18 @@ export default function AquaculturePondsPage() {
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                   <Link
                                     href={`/cashier?customer=${p.pos_customer_id}`}
-                                    className="inline-flex items-center gap-0.5 font-medium text-teal-800 underline decoration-teal-800/40 underline-offset-2 hover:decoration-teal-800"
+                                    className="inline-flex items-center gap-0.5 font-medium text-primary underline decoration-teal-800/40 underline-offset-2 hover:decoration-teal-800"
                                     title="Cashier with this customer"
                                   >
                                     <Store className="h-3 w-3 shrink-0" aria-hidden />
                                     POS
                                   </Link>
-                                  <span className="text-slate-300" aria-hidden>
+                                  <span className="text-muted-foreground/40" aria-hidden>
                                     ·
                                   </span>
                                   <Link
                                     href={`/customers/${p.pos_customer_id}/ledger`}
-                                    className="inline-flex items-center gap-0.5 font-medium text-slate-700 underline decoration-slate-400 underline-offset-2 hover:text-slate-900"
+                                    className="inline-flex items-center gap-0.5 font-medium text-foreground/85 underline decoration-slate-400 underline-offset-2 hover:text-foreground"
                                     title="A/R ledger"
                                   >
                                     <BookOpen className="h-3 w-3 shrink-0" aria-hidden />
@@ -1248,10 +1248,10 @@ export default function AquaculturePondsPage() {
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-slate-400">—</span>
+                              <span className="text-muted-foreground/70">—</span>
                             )}
                           </td>
-                          <td className="max-w-[13rem] px-3 py-3 text-xs leading-snug text-slate-700 lg:px-4">
+                          <td className="max-w-[13rem] px-3 py-3 text-xs leading-snug text-foreground/85 lg:px-4">
                             <span className="break-words">{pondAreasCell(p)}</span>
                           </td>
                           <td className="min-w-[11rem] px-3 py-3 lg:px-4">
@@ -1279,20 +1279,20 @@ export default function AquaculturePondsPage() {
                   return (
                     <li
                       key={p.id}
-                      className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.02] transition-shadow hover:shadow-md"
+                      className="flex flex-col rounded-xl border border-border bg-white p-4 shadow-sm ring-1 ring-slate-900/[0.02] transition-shadow hover:shadow-md"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <Link
                             href={`/aquaculture/ponds/${p.id}`}
-                            className="truncate font-semibold text-teal-900 underline decoration-teal-600/30 underline-offset-2 hover:decoration-teal-700/60"
+                            className="truncate font-semibold text-primary underline decoration-teal-600/30 underline-offset-2 hover:decoration-teal-700/60"
                           >
                             {p.name}
                           </Link>
-                          <p className="mt-0.5 text-xs text-slate-500">
+                          <p className="mt-0.5 text-xs text-muted-foreground">
                             {p.code ? `Code ${p.code} · ` : ''}Sort {p.sort_order}
                           </p>
-                          <p className="mt-1 text-[11px] font-medium text-slate-600">
+                          <p className="mt-1 text-[11px] font-medium text-muted-foreground">
                             {(p.pond_role_label || '').trim() ||
                               (p.pond_role === 'nursing'
                                 ? 'Nursing / nursery'
@@ -1304,7 +1304,7 @@ export default function AquaculturePondsPage() {
                         <div className="flex shrink-0 flex-col items-end gap-1">
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                              p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                              p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-muted text-muted-foreground'
                             }`}
                           >
                             {p.is_active ? 'Active' : 'Inactive'}
@@ -1320,45 +1320,45 @@ export default function AquaculturePondsPage() {
 
                       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                         <div className="col-span-2">
-                          <dt className="text-slate-500">Tilapia load</dt>
-                          <dd className="mt-0.5 font-medium text-slate-800">
+                          <dt className="text-muted-foreground">Tilapia load</dt>
+                          <dd className="mt-0.5 font-medium text-foreground">
                             <PondTilapiaLoadCell p={p} />
                           </dd>
                         </div>
                         <div className="col-span-2 sm:col-span-1">
-                          <dt className="text-slate-500">Lease / water / depth</dt>
-                          <dd className="font-medium text-slate-800">{pondAreasCell(p)}</dd>
+                          <dt className="text-muted-foreground">Lease / water / depth</dt>
+                          <dd className="font-medium text-foreground">{pondAreasCell(p)}</dd>
                         </div>
                         <div className="col-span-2 sm:col-span-1">
-                          <dt className="text-slate-500">Price / dec / yr</dt>
-                          <dd className="font-medium tabular-nums text-slate-800">
+                          <dt className="text-muted-foreground">Price / dec / yr</dt>
+                          <dd className="font-medium tabular-nums text-foreground">
                             {p.lease_price_per_decimal_per_year
                               ? fmtMoney(Number(p.lease_price_per_decimal_per_year))
                               : '—'}
                           </dd>
                         </div>
                         <div className="col-span-2">
-                          <dt className="text-slate-500">General POS customer</dt>
-                          <dd className="font-medium text-slate-800">
+                          <dt className="text-muted-foreground">General POS customer</dt>
+                          <dd className="font-medium text-foreground">
                             {p.pos_customer_id ? (
                               <span className="block space-y-1">
-                                <span className="flex flex-wrap items-center gap-2 text-teal-900">
+                                <span className="flex flex-wrap items-center gap-2 text-primary">
                                   <span>{p.pos_customer_display?.trim() || `Customer #${p.pos_customer_id}`}</span>
                                   {p.pos_customer_auto_managed ? (
-                                    <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-teal-900">
+                                    <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
                                       Auto
                                     </span>
                                   ) : null}
                                 </span>
-                                <span className="flex flex-wrap items-center gap-x-2 text-xs font-normal text-slate-600">
+                                <span className="flex flex-wrap items-center gap-x-2 text-xs font-normal text-muted-foreground">
                                   <Link
                                     href={`/cashier?customer=${p.pos_customer_id}`}
-                                    className="inline-flex items-center gap-0.5 text-teal-800 underline"
+                                    className="inline-flex items-center gap-0.5 text-primary underline"
                                   >
                                     <Store className="h-3 w-3" aria-hidden />
                                     Open POS
                                   </Link>
-                                  <span className="text-slate-300">·</span>
+                                  <span className="text-muted-foreground/40">·</span>
                                   <Link
                                     href={`/customers/${p.pos_customer_id}/ledger`}
                                     className="inline-flex items-center gap-0.5 underline"
@@ -1374,41 +1374,41 @@ export default function AquaculturePondsPage() {
                           </dd>
                         </div>
                         <div className="col-span-2">
-                          <dt className="text-slate-500">Lease period</dt>
-                          <dd className="font-medium text-slate-800">
+                          <dt className="text-muted-foreground">Lease period</dt>
+                          <dd className="font-medium text-foreground">
                             {p.lease_contract_start || p.lease_contract_end
                               ? `${formatDateOnly(p.lease_contract_start)} → ${formatDateOnly(p.lease_contract_end)}`
                               : '—'}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-slate-500">Annual lease</dt>
-                          <dd className="font-medium tabular-nums text-slate-800">
+                          <dt className="text-muted-foreground">Annual lease</dt>
+                          <dd className="font-medium tabular-nums text-foreground">
                             {fmtMoney(p.lease_annual_amount ? Number(p.lease_annual_amount) : null)}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-slate-500">Contract total</dt>
-                          <dd className="font-medium tabular-nums text-slate-800">
+                          <dt className="text-muted-foreground">Contract total</dt>
+                          <dd className="font-medium tabular-nums text-foreground">
                             {fmtMoney(p.lease_contract_total ? Number(p.lease_contract_total) : null)}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-slate-500">Paid to landlord</dt>
-                          <dd className="font-medium tabular-nums text-slate-800">
+                          <dt className="text-muted-foreground">Paid to landlord</dt>
+                          <dd className="font-medium tabular-nums text-foreground">
                             {fmtMoney(Number(p.lease_paid_to_landlord))}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-slate-500">Remaining</dt>
-                          <dd className="font-medium text-slate-800">
+                          <dt className="text-muted-foreground">Remaining</dt>
+                          <dd className="font-medium text-foreground">
                             {p.lease_remaining_years !== null && p.lease_remaining_months !== null
                               ? `${p.lease_remaining_years}y ${p.lease_remaining_months}m`
                               : '—'}
                           </dd>
                         </div>
-                        <div className="col-span-2 rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5">
-                          <dt className="text-slate-500">Balance</dt>
+                        <div className="col-span-2 rounded-lg border border-border/70 bg-muted/40 px-2 py-1.5">
+                          <dt className="text-muted-foreground">Balance</dt>
                           <dd className={`text-sm font-semibold tabular-nums ${balanceTone(p.lease_balance_due)}`}>
                             {bal === null || Number.isNaN(bal)
                               ? '—'
@@ -1422,12 +1422,12 @@ export default function AquaculturePondsPage() {
                       </dl>
 
                       {p.notes?.trim() ? (
-                        <p className="mt-2 line-clamp-2 border-t border-slate-100 pt-2 text-xs text-slate-600">
+                        <p className="mt-2 line-clamp-2 border-t border-border/70 pt-2 text-xs text-muted-foreground">
                           {p.notes.trim()}
                         </p>
                       ) : null}
 
-                      <div className="mt-auto flex justify-end border-t border-slate-100 pt-3">
+                      <div className="mt-auto flex justify-end border-t border-border/70 pt-3">
                         <PondActions p={p} />
                       </div>
                     </li>
@@ -1445,20 +1445,20 @@ export default function AquaculturePondsPage() {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-semibold text-slate-900">{editing ? 'Edit pond' : 'New pond'}</h2>
+            <h2 className="text-lg font-semibold text-foreground">{editing ? 'Edit pond' : 'New pond'}</h2>
             <div className="mt-4 space-y-3">
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Name
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 General POS customer (on-account sales)
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                   value={form.pos_customer_id}
                   onChange={(e) => setForm((f) => ({ ...f, pos_customer_id: e.target.value }))}
                   disabled={customersLoading && customers.length === 0}
@@ -1475,25 +1475,25 @@ export default function AquaculturePondsPage() {
                     )
                   })}
                 </select>
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   New ponds: a POS customer is created automatically (name &quot;Aquaculture — [pond name]&quot;) so
                   they appear in Cashier. You can pick a different customer instead; that turns off automatic sync.
                   Renaming the pond or toggling inactive updates an auto-managed customer. Leave the list on
                   &quot;None&quot; only if you pass{' '}
-                  <code className="rounded bg-slate-100 px-1 text-[11px]">skip_auto_pos_customer</code> on create via
+                  <code className="rounded bg-muted px-1 text-[11px]">skip_auto_pos_customer</code> on create via
                   API, or to clear an existing link.
                 </span>
                 {editing?.pos_customer_auto_managed ? (
-                  <p className="mt-2 text-xs text-teal-900">
+                  <p className="mt-2 text-xs text-primary">
                     This customer is auto-managed: display name and active flag follow this pond until you choose
                     another customer.
                   </p>
                 ) : null}
                 {!editing ? (
-                  <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs text-slate-600">
+                  <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
                     <input
                       type="checkbox"
-                      className="mt-0.5 rounded border-slate-300"
+                      className="mt-0.5 rounded border-border"
                       checked={skipAutoPosCustomer}
                       onChange={(e) => {
                         const v = e.target.checked
@@ -1508,18 +1508,18 @@ export default function AquaculturePondsPage() {
                   </label>
                 ) : null}
                 {form.pos_customer_id.trim() ? (
-                  <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+                  <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <Link
                       href={`/cashier?customer=${encodeURIComponent(form.pos_customer_id.trim())}`}
-                      className="inline-flex items-center gap-1 font-medium text-teal-800 underline"
+                      className="inline-flex items-center gap-1 font-medium text-primary underline"
                     >
                       <Store className="h-3.5 w-3.5" aria-hidden />
                       Open cashier for this customer
                     </Link>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-muted-foreground/40">·</span>
                     <Link
                       href={`/customers/${encodeURIComponent(form.pos_customer_id.trim())}/ledger`}
-                      className="inline-flex items-center gap-1 font-medium text-slate-700 underline"
+                      className="inline-flex items-center gap-1 font-medium text-foreground/85 underline"
                     >
                       <BookOpen className="h-3.5 w-3.5" aria-hidden />
                       A/R ledger
@@ -1528,35 +1528,35 @@ export default function AquaculturePondsPage() {
                 ) : null}
               </label>
               {editing ? (
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   Code
                   <input
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono"
                     value={form.code}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
                     placeholder="e.g. P01"
                   />
                 </label>
               ) : (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <p className="text-sm font-medium text-slate-700">Pond code (assigned automatically)</p>
-                  <p className="mt-1 font-mono text-base font-semibold text-slate-900">{form.code}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+                  <p className="text-sm font-medium text-foreground/85">Pond code (assigned automatically)</p>
+                  <p className="mt-1 font-mono text-base font-semibold text-foreground">{form.code}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     Uses the lowest free P-number (P01, P02, …). If a pond is deleted, its code is freed; the next
                     new pond reuses the smallest gap (e.g. only P02 on file → new pond gets P01).
                   </p>
                 </div>
               )}
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Sort order
                 <input
                   type="number"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.sort_order}
                   onChange={(e) => setForm((f) => ({ ...f, sort_order: e.target.value }))}
                 />
               </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <input
                   type="checkbox"
                   checked={form.is_active}
@@ -1564,10 +1564,10 @@ export default function AquaculturePondsPage() {
                 />
                 Active
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Pond role
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                   value={form.pond_role}
                   onChange={(e) => setForm((f) => ({ ...f, pond_role: e.target.value }))}
                 >
@@ -1577,30 +1577,30 @@ export default function AquaculturePondsPage() {
                     </option>
                   ))}
                 </select>
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Any physical pond can act as nursing while fry are held (fry → fingerling). Pair with a grow-out
                   profit center on the same site, or use <strong>Site pair</strong> to create both at once.
                 </span>
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Physical site name
                 <input
                   type="text"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                   value={form.physical_site_name}
                   onChange={(e) => setForm((f) => ({ ...f, physical_site_name: e.target.value }))}
                   placeholder="e.g. Mynuddin"
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Same water body for nursing-phase and grow-out-phase profit centers (e.g. Mynuddin Nursing Pond +
                   Mynuddin Pond).
                 </span>
               </label>
               {form.pond_role === 'nursing' ? (
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   Grow-out pond on same site (remainder after transfers)
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                     value={form.linked_grow_out_pond_id}
                     onChange={(e) => setForm((f) => ({ ...f, linked_grow_out_pond_id: e.target.value }))}
                   >
@@ -1611,7 +1611,7 @@ export default function AquaculturePondsPage() {
                       </option>
                     ))}
                   </select>
-                  <span className="mt-1 block text-xs font-normal text-slate-500">
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
                     When fingerlings are ready (pcs/kg from your latest sample), transfer most to production ponds and the
                     remainder here (e.g. Mynuddin Nursing → Mynuddin Pond).
                   </span>
@@ -1638,10 +1638,10 @@ export default function AquaculturePondsPage() {
                   </ol>
                 </div>
               ) : null}
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Shared warehouse group
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                   value={form.warehouse_group_id}
                   onChange={(e) => setForm((f) => ({ ...f, warehouse_group_id: e.target.value }))}
                 >
@@ -1652,56 +1652,56 @@ export default function AquaculturePondsPage() {
                     </option>
                   ))}
                 </select>
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Ponds on the same physical feed/medicine shed (e.g. Ashari-1 and Ashari-2). Create groups under{' '}
                   <strong>Stock → Feed &amp; supplies</strong>. Reallocate with Move between ponds.
                 </span>
               </label>
 
-              <div className="border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aquaculture (production)</p>
+              <div className="border-t border-border pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Aquaculture (production)</p>
               </div>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Water area (decimal)
                 <input
                   inputMode="decimal"
                   step="0.01"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   placeholder="e.g. 2.40"
                   value={form.water_area_decimal}
                   onChange={(e) => setForm((f) => ({ ...f, water_area_decimal: e.target.value }))}
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Effective water surface for stocking, density (fish per decimal), and comparisons with extension
                   guides (e.g. tilapia); can differ from leased land if banks or unused strips are not fully watered.
                 </span>
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Average depth (feet)
                 <input
                   inputMode="decimal"
                   step="0.01"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   placeholder="e.g. 5.50"
                   value={form.pond_depth_ft}
                   onChange={(e) => setForm((f) => ({ ...f, pond_depth_ft: e.target.value }))}
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Used with water area (decimals): 435.6 sq ft per decimal × depth → water volume in cubic feet for
                   stocking density hints on the Stock page.
                 </span>
               </label>
 
               {editing ? (
-                <div className="rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4">
+                <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-teal-50 to-card p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h3 className="text-sm font-semibold text-teal-950">Go-live opening balances</h3>
-                      <p className="mt-1 text-xs leading-relaxed text-slate-700">
+                      <p className="mt-1 text-xs leading-relaxed text-foreground/85">
                         Prior P&amp;L by income type and expense category, customer A/R (unpaid on-account sales),
                         vendors, employees, and fish biomass are <strong>not</strong> entered on this pond form. Landlord
                         rent ledger openings are on{' '}
-                        <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+                        <Link href="/aquaculture/landlords" className="font-medium text-primary underline">
                           Aquaculture → Landlords
                         </Link>
                         .
@@ -1714,7 +1714,7 @@ export default function AquaculturePondsPage() {
                         setEditing(null)
                         setOpeningModal(true)
                       }}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90"
                     >
                       <Wallet className="h-4 w-4" aria-hidden />
                       Open go-live setup
@@ -1722,85 +1722,85 @@ export default function AquaculturePondsPage() {
                   </div>
                 </div>
               ) : (
-                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+                <p className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
                   After you save the new pond, use <strong>Go-live setup</strong> on the toolbar above for prior
                   P&amp;L, customer A/R, and other go-live amounts.
                 </p>
               )}
 
-              <div className="border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lease contract (rent math)</p>
-                <p className="mt-1 text-xs text-slate-500">
+              <div className="border-t border-border pt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lease contract (rent math)</p>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Figures below adjust the lease balance due on this pond. They are separate from landlord ledger
                   openings and from P&amp;L / A/R go-live balances.
                 </p>
               </div>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Leasing area (decimal)
                 <input
                   inputMode="decimal"
                   step="0.01"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   placeholder="e.g. 2.50"
                   value={form.leasing_area_decimal}
                   onChange={(e) => setForm((f) => ({ ...f, leasing_area_decimal: e.target.value }))}
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Land area your lease is priced on — used only with &quot;price per decimal per year&quot; below for rent.
                 </span>
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   Contract start
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                     value={form.lease_contract_start}
                     onChange={(e) => setForm((f) => ({ ...f, lease_contract_start: e.target.value }))}
                   />
                 </label>
-                <label className="block text-sm font-medium text-slate-700">
+                <label className="block text-sm font-medium text-foreground/85">
                   Contract end
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                     value={form.lease_contract_end}
                     onChange={(e) => setForm((f) => ({ ...f, lease_contract_end: e.target.value }))}
                   />
                 </label>
               </div>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Lease price per decimal per year
                 <input
                   inputMode="decimal"
                   step="0.01"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   placeholder="e.g. 18500.00"
                   value={form.lease_price_per_decimal_per_year}
                   onChange={(e) => setForm((f) => ({ ...f, lease_price_per_decimal_per_year: e.target.value }))}
                 />
               </label>
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
-                <p className="font-medium text-slate-700">Calculated (from entries above)</p>
-                <ul className="mt-2 space-y-1 text-slate-600">
+              <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">
+                <p className="font-medium text-foreground/85">Calculated (from entries above)</p>
+                <ul className="mt-2 space-y-1 text-muted-foreground">
                   <li>
                     Annual lease (leasing area × price):{' '}
-                    <span className="font-medium text-slate-900">{fmtMoney(preview.annual)}</span>
+                    <span className="font-medium text-foreground">{fmtMoney(preview.annual)}</span>
                   </li>
                   <li>
                     Contract length (years, rounded):{' '}
-                    <span className="font-medium text-slate-900">
+                    <span className="font-medium text-foreground">
                       {preview.contractYearsRounded !== null ? `${preview.contractYearsRounded} yr` : '—'}
                     </span>
                   </li>
                   <li>
                     Total for contract term:{' '}
-                    <span className="font-medium text-slate-900">{fmtMoney(preview.total)}</span>
+                    <span className="font-medium text-foreground">{fmtMoney(preview.total)}</span>
                   </li>
                   <li>
                     Remaining on lease:{' '}
-                    <span className="font-medium text-slate-900">
+                    <span className="font-medium text-foreground">
                       {preview.remY !== null && preview.remM !== null
                         ? `${preview.remY} yr, ${preview.remM} mo (from today or contract start)`
                         : '—'}
@@ -1809,18 +1809,18 @@ export default function AquaculturePondsPage() {
                 </ul>
               </div>
 
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Already paid on lease (before go-live)
                 <input
                   inputMode="decimal"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   placeholder="0"
                   value={form.lease_paid_to_landlord}
                   onChange={(e) => setForm((f) => ({ ...f, lease_paid_to_landlord: e.target.value }))}
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   Total rent you had already paid on this lease contract before recording payments in{' '}
-                  <Link href="/aquaculture/landlords" className="font-medium text-teal-800 underline">
+                  <Link href="/aquaculture/landlords" className="font-medium text-primary underline">
                     Landlords
                   </Link>
                   . This reduces &quot;balance after landlord payments&quot; below — it is <strong>not</strong> the same
@@ -1831,12 +1831,12 @@ export default function AquaculturePondsPage() {
               <div
                 className={`rounded-lg border p-3 text-sm ${
                   preview.balance === null
-                    ? 'border-slate-200 bg-slate-50 text-slate-600'
+                    ? 'border-border bg-muted/40 text-muted-foreground'
                     : preview.balance > 0
-                      ? 'border-amber-200 bg-amber-50 text-amber-950'
+                      ? 'border-warning/30 bg-warning/10 text-warning-foreground'
                       : preview.balance < 0
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
-                        : 'border-slate-200 bg-slate-50 text-slate-800'
+                        : 'border-border bg-muted/40 text-foreground'
                 }`}
               >
                 <p className="font-medium">Balance after landlord payments</p>
@@ -1851,10 +1851,10 @@ export default function AquaculturePondsPage() {
                 </p>
               </div>
 
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Notes
                 <textarea
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   rows={2}
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
@@ -1865,14 +1865,14 @@ export default function AquaculturePondsPage() {
               <button
                 type="button"
                 onClick={() => setModal(false)}
-                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => void save()}
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
               >
                 Save
               </button>
@@ -1884,17 +1884,17 @@ export default function AquaculturePondsPage() {
       {sitePairModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-bold text-slate-900">Create physical site pair</h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <h2 className="text-lg font-bold text-foreground">Create physical site pair</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               One water body, two profit centers: nursing phase (fry → fingerling) and grow-out phase (remainder +
               production).
             </p>
-            <div className="mt-4 flex gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <div className="mt-4 flex gap-2 rounded-lg border border-border bg-muted/40 p-1">
               <button
                 type="button"
                 onClick={() => setSitePairMode('create')}
                 className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
-                  sitePairMode === 'create' ? 'bg-white text-teal-900 shadow-sm' : 'text-slate-600'
+                  sitePairMode === 'create' ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'
                 }`}
               >
                 Create new pair
@@ -1903,17 +1903,17 @@ export default function AquaculturePondsPage() {
                 type="button"
                 onClick={() => setSitePairMode('link')}
                 className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
-                  sitePairMode === 'link' ? 'bg-white text-teal-900 shadow-sm' : 'text-slate-600'
+                  sitePairMode === 'link' ? 'bg-white text-primary shadow-sm' : 'text-muted-foreground'
                 }`}
               >
                 Link existing ponds
               </button>
             </div>
             <div className="mt-4 space-y-3">
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Physical site name *
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   placeholder="e.g. Mynuddin"
                   value={sitePairForm.physical_site_name}
                   onChange={(e) => {
@@ -1932,10 +1932,10 @@ export default function AquaculturePondsPage() {
               </label>
               {sitePairMode === 'link' ? (
                 <>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Nursing-phase pond *
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                       value={sitePairForm.existing_nursing_pond_id}
                       onChange={(e) => {
                         const id = e.target.value
@@ -1958,10 +1958,10 @@ export default function AquaculturePondsPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Grow-out pond on same site *
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                       value={sitePairForm.existing_grow_out_pond_id}
                       onChange={(e) =>
                         setSitePairForm((f) => ({ ...f, existing_grow_out_pond_id: e.target.value }))
@@ -1977,7 +1977,7 @@ export default function AquaculturePondsPage() {
                     {sitePairForm.physical_site_name.trim() &&
                     sitePairGrowOutOptions.length === 0 &&
                     sitePairForm.existing_nursing_pond_id ? (
-                      <span className="mt-1 block text-xs text-amber-700">
+                      <span className="mt-1 block text-xs text-warning-foreground">
                         No grow-out ponds on this site yet — switch to Create new pair or clear the site name to see all
                         grow-out ponds.
                       </span>
@@ -1986,28 +1986,28 @@ export default function AquaculturePondsPage() {
                 </>
               ) : (
                 <>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Nursing-phase name
                     <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                       placeholder="Mynuddin Nursing Pond"
                       value={sitePairForm.nursing_name}
                       onChange={(e) => setSitePairForm((f) => ({ ...f, nursing_name: e.target.value }))}
                     />
                   </label>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Grow-out-phase name
                     <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                       placeholder="Mynuddin Pond"
                       value={sitePairForm.grow_out_name}
                       onChange={(e) => setSitePairForm((f) => ({ ...f, grow_out_name: e.target.value }))}
                     />
                   </label>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Water area (decimal, optional)
                     <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                       value={sitePairForm.water_area_decimal}
                       onChange={(e) => setSitePairForm((f) => ({ ...f, water_area_decimal: e.target.value }))}
                     />
@@ -2019,7 +2019,7 @@ export default function AquaculturePondsPage() {
               <button
                 type="button"
                 onClick={() => setSitePairModal(false)}
-                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
               >
                 Cancel
               </button>
@@ -2027,7 +2027,7 @@ export default function AquaculturePondsPage() {
                 type="button"
                 disabled={sitePairSaving}
                 onClick={() => void saveSitePair()}
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
               >
                 {sitePairSaving ? 'Saving…' : sitePairMode === 'link' ? 'Link ponds' : 'Create pair'}
               </button>

@@ -88,13 +88,13 @@ export function Layout({ children }: LayoutProps) {
         </div>
         
         {/* Top Navigation Bar */}
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30 print:hidden">
+        <header className="bg-white shadow-sm border-b border-border sticky top-0 z-30 print:hidden">
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
               {/* Mobile menu button */}
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                className="lg:hidden p-2 rounded-md text-muted-foreground hover:text-foreground/85 hover:bg-muted"
                 aria-label="Toggle sidebar"
               >
                 <svg
@@ -114,7 +114,7 @@ export function Layout({ children }: LayoutProps) {
 
               {/* Page title - can be dynamic based on route */}
               <div className="flex-1 lg:ml-0 flex items-center gap-3">
-                <h1 className="text-lg font-semibold text-gray-900">
+                <h1 className="text-lg font-semibold text-foreground">
                   Multi-Tenant ERP
                 </h1>
                 {isMasterMode && (
@@ -138,13 +138,13 @@ export function Layout({ children }: LayoutProps) {
 
               {/* User menu */}
               <div className="flex items-center space-x-4">
-                <div className="hidden sm:block text-sm text-gray-700">
+                <div className="hidden sm:block text-sm text-foreground/85">
                   <span className="font-medium">{user?.full_name || 'User'}</span>
-                  <span className="text-gray-500 ml-2">{user?.email}</span>
+                  <span className="text-muted-foreground ml-2">{user?.email}</span>
                 </div>
                 <button
                   onClick={logout}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md transition-colors shadow-sm"
+                  className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary/90 rounded-md transition-colors shadow-sm"
                 >
                   Logout
                 </button>

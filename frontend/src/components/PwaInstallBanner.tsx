@@ -111,19 +111,19 @@ export function PwaInstallBanner() {
 
   return (
     <div
-      className="fixed bottom-4 left-1/2 z-[100] w-[min(100%-1.5rem,28rem)] -translate-x-1/2 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-lg shadow-gray-200/80"
+      className="fixed bottom-4 left-1/2 z-[100] w-[min(100%-1.5rem,28rem)] -translate-x-1/2 rounded-2xl border border-border/70 bg-white px-4 py-3 shadow-lg shadow-gray-200/80"
       role="region"
       aria-label="Install app"
     >
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900">Install Fuel Station ERP</p>
-          <p className="mt-0.5 text-xs text-gray-500">Add to your home screen for quick access</p>
+          <p className="text-sm font-semibold text-foreground">Install Fuel Station ERP</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">Add to your home screen for quick access</p>
           {showIos && iosHelpOpen && (
-            <p className="mt-2 text-xs leading-relaxed text-gray-600">
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
               Tap the Share button{' '}
-              <span className="whitespace-nowrap font-medium text-gray-800">Share</span>, then{' '}
-              <span className="font-medium text-gray-800">Add to Home Screen</span>.
+              <span className="whitespace-nowrap font-medium text-foreground">Share</span>, then{' '}
+              <span className="font-medium text-foreground">Add to Home Screen</span>.
             </p>
           )}
         </div>
@@ -132,7 +132,7 @@ export function PwaInstallBanner() {
           <button
             type="button"
             onClick={onInstallClick}
-            className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-primary px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
             <Download className="h-4 w-4" aria-hidden />
             Install
@@ -143,7 +143,7 @@ export function PwaInstallBanner() {
           <button
             type="button"
             onClick={() => setIosHelpOpen((o) => !o)}
-            className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-primary px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
             <Download className="h-4 w-4" aria-hidden />
             {iosHelpOpen ? 'Got it' : 'How to add'}
@@ -153,7 +153,7 @@ export function PwaInstallBanner() {
         <button
           type="button"
           onClick={dismiss}
-          className="shrink-0 rounded-lg p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-300"
+          className="shrink-0 rounded-lg p-1 text-muted-foreground/70 transition hover:bg-muted hover:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-gray-300"
           aria-label="Dismiss install suggestion"
         >
           <X className="h-5 w-5" />

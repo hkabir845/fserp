@@ -27,20 +27,20 @@ export function OffsetPaginationControls({
   const to = Math.min(total, safePage * pageSize)
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
       <div>
-        Showing <span className="font-medium text-gray-900">{from}</span>–
-        <span className="font-medium text-gray-900">{to}</span> of{' '}
-        <span className="font-medium text-gray-900">{total}</span>
+        Showing <span className="font-medium text-foreground">{from}</span>–
+        <span className="font-medium text-foreground">{to}</span> of{' '}
+        <span className="font-medium text-foreground">{total}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5">
-          <span className="text-gray-500">Rows</span>
+          <span className="text-muted-foreground">Rows</span>
           <select
             value={pageSize}
             disabled={disabled}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="rounded-md border border-border bg-white px-2 py-1.5 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {pageSizeOptions.map((n) => (
               <option key={n} value={n}>
@@ -53,18 +53,18 @@ export function OffsetPaginationControls({
           type="button"
           disabled={disabled || safePage <= 1}
           onClick={() => onPageChange(safePage - 1)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md border border-border bg-white px-3 py-1.5 font-medium text-foreground/85 shadow-sm hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Previous
         </button>
-        <span className="tabular-nums text-gray-700">
+        <span className="tabular-nums text-foreground/85">
           Page {safePage} / {totalPages}
         </span>
         <button
           type="button"
           disabled={disabled || safePage >= totalPages}
           onClick={() => onPageChange(safePage + 1)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md border border-border bg-white px-3 py-1.5 font-medium text-foreground/85 shadow-sm hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next
         </button>

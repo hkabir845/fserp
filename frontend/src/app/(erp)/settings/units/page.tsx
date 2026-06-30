@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { formatQuantity } from '@/utils/quantity'
 
 interface UOM {
   code: string
@@ -44,46 +45,46 @@ export default function SettingsUnitsPage() {
   )
 
   if (isLoading) {
-    return <div className="text-sm text-gray-500">Loading units…</div>
+    return <div className="text-sm text-muted-foreground">Loading units…</div>
   }
 
   return (
     <div className="space-y-6">
       {Object.entries(uomsByCategory).map(([category, categoryUOMs]) => (
         <div key={category} className="rounded-lg bg-white shadow">
-          <div className="border-b border-gray-200 px-6 py-4">
-            <h3 className="text-lg font-semibold capitalize text-gray-900">
+          <div className="border-b border-border px-6 py-4">
+            <h3 className="text-lg font-semibold capitalize text-foreground">
               {category.replace('_', ' ')}
             </h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Code
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Base Unit
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Conversion
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Example
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
+              <tbody className="divide-y divide-border bg-white">
                 {categoryUOMs.map((uom) => {
                   let exampleText = '-'
                   if (uom.base_unit && uom.conversion_factor !== 1.0) {
@@ -98,26 +99,24 @@ export default function SettingsUnitsPage() {
                   }
 
                   return (
-                    <tr key={uom.code} className="hover:bg-gray-50">
+                    <tr key={uom.code} className="hover:bg-muted/40">
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className="font-mono text-sm font-medium text-gray-900">{uom.code}</span>
+                        <span className="font-mono text-sm font-medium text-foreground">{uom.code}</span>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">{uom.name}</td>
-                      <td className="whitespace-nowrap px-6 py-4 font-mono text-sm text-gray-500">
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-foreground">{uom.name}</td>
+                      <td className="whitespace-nowrap px-6 py-4 font-mono text-sm text-muted-foreground">
                         {uom.base_unit || 'N/A'}
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
-                        {uom.conversion_factor !== 1.0
-                          ? uom.conversion_factor.toFixed(6).replace(/\.?0+$/, '')
-                          : '1.0'}
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
+                        {uom.conversion_factor !== 1.0 ? formatQuantity(uom.conversion_factor) : '1.00'}
                       </td>
-                      <td className="max-w-xs truncate px-6 py-4 text-sm text-gray-500" title={exampleText}>
+                      <td className="max-w-xs truncate px-6 py-4 text-sm text-muted-foreground" title={exampleText}>
                         {exampleText}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
                         <span
                           className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold leading-5 ${
-                            uom.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            uom.is_active ? 'bg-success/15 text-success' : 'bg-muted text-foreground'
                           }`}
                         >
                           {uom.is_active ? 'Active' : 'Inactive'}
@@ -130,7 +129,7 @@ export default function SettingsUnitsPage() {
                           className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                             uom.is_active
                               ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-success/15 text-success hover:bg-green-200'
                           }`}
                           title={uom.is_active ? 'Disable this unit' : 'Enable this unit'}
                         >

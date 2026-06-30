@@ -265,24 +265,24 @@ export function isPosStaffRole(role: string | null | undefined): boolean {
 }
 
 export function getRoleBadgeColor(role: UserRole | string | null): string {
-  if (!role) return 'bg-gray-100 text-gray-800'
+  if (!role) return 'bg-muted text-foreground/85'
 
   const colorMap: Record<string, string> = {
     super_admin: 'bg-purple-100 text-purple-800',
-    admin: 'bg-blue-100 text-blue-800',
-    manager: 'bg-indigo-100 text-indigo-800',
-    accountant: 'bg-green-100 text-green-800',
+    admin: 'bg-blue-100 text-primary',
+    manager: 'bg-accent text-primary',
+    accountant: 'bg-success/15 text-success',
     auditor: 'bg-emerald-100 text-emerald-900',
     forecourt_supervisor: 'bg-sky-100 text-sky-800',
     supervisor: 'bg-cyan-100 text-cyan-800',
-    inventory_clerk: 'bg-teal-100 text-teal-900',
+    inventory_clerk: 'bg-teal-100 text-primary',
     sales_clerk: 'bg-rose-100 text-rose-800',
-    shopkeeper: 'bg-amber-100 text-amber-900',
+    shopkeeper: 'bg-amber-100 text-warning-foreground',
     cashier: 'bg-orange-100 text-orange-800',
     pump_attendant: 'bg-lime-100 text-lime-900',
-    operator: 'bg-teal-100 text-teal-800',
+    operator: 'bg-teal-100 text-primary',
     hr_officer: 'bg-violet-100 text-violet-800',
   }
 
-  return colorMap[role.toLowerCase()] || 'bg-gray-100 text-gray-800'
+  return colorMap[role.toLowerCase()] || 'bg-muted text-foreground/85'
 }

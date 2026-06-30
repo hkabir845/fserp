@@ -209,7 +209,7 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
         ? 'border-r-2 border-purple-800 bg-purple-600 text-white'
         : parentActive
           ? 'border-r-2 border-purple-600 bg-purple-50 text-purple-700'
-          : 'text-gray-700 hover:bg-gray-50'
+          : 'text-foreground/85 hover:bg-muted/40'
 
       return (
         <div key={item.title}>
@@ -238,7 +238,7 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
               className={
                 hubActive
                   ? 'flex shrink-0 items-center px-2 text-purple-100 hover:text-white'
-                  : 'flex shrink-0 items-center px-2 text-gray-500 hover:text-gray-800'
+                  : 'flex shrink-0 items-center px-2 text-muted-foreground hover:text-foreground'
               }
               aria-expanded={isExpanded}
               aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.title}`}
@@ -254,7 +254,7 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
             </button>
           </div>
           {isExpanded && (
-            <div className="bg-gray-50">
+            <div className="bg-muted/40">
               {item.children?.map((child) => renderMenuItem(child, level + 1))}
             </div>
           )}
@@ -273,7 +273,7 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
           transition-colors duration-150
           ${active
             ? 'bg-purple-600 text-white border-r-2 border-purple-800'
-            : 'text-gray-700 hover:bg-gray-50'
+            : 'text-foreground/85 hover:bg-muted/40'
           }
           ${level > 0 ? 'pl-8' : ''}
           min-w-0
@@ -299,7 +299,7 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
       <aside
         ref={sidebarRef}
         className={`
-          fixed top-0 left-0 h-screen bg-white border-r border-gray-200
+          fixed top-0 left-0 h-screen bg-white border-r border-border
           z-50 transform transition-transform duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           lg:translate-x-0 lg:fixed
@@ -312,12 +312,12 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
           transition: isResizing ? 'none' : 'width 0.2s ease-in-out'
         }}
       >
-        <div className="p-4 border-b border-gray-200 flex-shrink-0">
+        <div className="p-4 border-b border-border flex-shrink-0">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-purple-600 whitespace-nowrap">SaaS Platform</h2>
             <button
               onClick={onClose}
-              className="lg:hidden text-gray-500 hover:text-gray-700"
+              className="lg:hidden text-muted-foreground hover:text-foreground/85"
             >
               ✕
             </button>
@@ -336,7 +336,7 @@ export function PlatformSidebar({ isOpen, onClose, width, onWidthChange }: Platf
           className={`
             hidden lg:block absolute top-0 right-0 h-full cursor-col-resize
             hover:bg-purple-300 hover:bg-opacity-60 transition-colors
-            ${isResizing ? 'bg-purple-500 bg-opacity-80' : 'bg-gray-300 bg-opacity-50'}
+            ${isResizing ? 'bg-purple-500 bg-opacity-80' : 'bg-muted bg-opacity-50'}
             group
           `}
           style={{ 

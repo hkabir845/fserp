@@ -310,6 +310,23 @@ def compute_pond_biological_asset_summary(
     settlement = pond_biological_settlement(company_id, pond_id, as_of)
     gl_1581_balance = _money_q(Decimal(str(settlement.get("settlement_bioasset_value") or 0)))
 
+    from api.services.aquaculture_pond_bio_capitalization import company_capitalizes_pond_production
+
+    capitalize = company_capitalizes_pond_production(company_id)
+    recon_note: str | None = None
+    if gl_1581_balance != total_bio_asset_value:
+        if capitalize:
+            recon_note = (
+                "GL 1581 and management biological asset value differ — check lease/shop costs, "
+                "harvest relief timing, or entries before capitalization was enabled."
+            )
+        else:
+            recon_note = (
+                "GL 1581 primarily capitalizes fry purchases; feed/medicine post to operating expense. "
+                "Enable “Capitalize pond consumption to bio-asset” in company settings so all direct "
+                "pond inputs accumulate in 1581 and align with management biological asset value."
+            )
+
     return {
         "pond_id": pond_id,
         "production_cycle_id": cycle_id,
@@ -335,12 +352,7 @@ def compute_pond_biological_asset_summary(
         "cost_per_fish": cost_per_fish,
         "cost_per_kg": cost_per_kg,
         "gl_1581_balance": str(gl_1581_balance),
-        "gl_reconciliation_note": (
-            "GL 1581 primarily capitalizes fry purchases; feed/medicine post to operating expense. "
-            "Management biological asset value includes all direct pond production costs."
-            if gl_1581_balance != total_bio_asset_value
-            else None
-        ),
+        "gl_reconciliation_note": recon_note,
         "prior_pl_opening_income": str(_money_q(prior_income)),
         "prior_pl_opening_expense": str(_money_q(prior_expense)),
         "cost_buckets": bucket_lines,

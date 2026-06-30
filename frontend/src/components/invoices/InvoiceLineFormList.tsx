@@ -190,7 +190,7 @@ export function InvoiceLineFormList({
   }, [lines, availabilityByItem])
 
   const selectClass =
-    'w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500'
+    'w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring'
 
   return (
     <div className="space-y-3">
@@ -208,7 +208,7 @@ export function InvoiceLineFormList({
           (selectedItem.item_type || 'inventory').toLowerCase() !== 'service'
 
         return (
-          <div key={index} className="space-y-2 p-3 border border-gray-200 rounded-lg">
+          <div key={index} className="space-y-2 p-3 border border-border rounded-lg">
             <div className="grid grid-cols-12 gap-2">
               <div className="col-span-12 md:col-span-3">
                 <InvoiceLineTypePicker
@@ -221,13 +221,13 @@ export function InvoiceLineFormList({
                   className={selectClass}
                 />
                 {loadingItems ? (
-                  <p className="mt-1 text-xs text-gray-500">Loading catalog…</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Loading catalog…</p>
                 ) : null}
                 {!loadingItems && catalogItems.length === 0 && serviceItems.length === 0 ? (
-                  <p className="mt-1 text-xs text-red-600">No items in catalog. Create items first.</p>
+                  <p className="mt-1 text-xs text-destructive">No items in catalog. Create items first.</p>
                 ) : null}
                 {showQtyHint ? (
-                  <p className="mt-1 text-xs text-slate-600">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {availQty != null ? (
                       <>
                         Available at {availLabel}:{' '}
@@ -235,21 +235,21 @@ export function InvoiceLineFormList({
                           {formatNumber(availQty, 2)} {unit}
                         </span>
                         {line.quantity > availQty ? (
-                          <span className="ml-1 text-amber-700">(exceeds on-hand)</span>
+                          <span className="ml-1 text-warning-foreground">(exceeds on-hand)</span>
                         ) : null}
                       </>
                     ) : avail?.tracks_per_station === false ? (
-                      <span className="text-gray-500">Stock tracked in tanks, not shop bins.</span>
+                      <span className="text-muted-foreground">Stock tracked in tanks, not shop bins.</span>
                     ) : (
-                      <span className="text-gray-500">Select entity to see site quantity.</span>
+                      <span className="text-muted-foreground">Select entity to see site quantity.</span>
                     )}
                   </p>
                 ) : kind === 'service' ? (
-                  <p className="mt-1 text-xs text-gray-500">Services do not reduce inventory.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Services do not reduce inventory.</p>
                 ) : null}
               </div>
               <div className="col-span-12 md:col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <label className="block text-xs font-medium text-foreground/85 mb-1">Description</label>
                 <input
                   type="text"
                   value={line.description || ''}
@@ -258,7 +258,7 @@ export function InvoiceLineFormList({
                 />
               </div>
               <div className="col-span-6 md:col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
+                <label className="block text-xs font-medium text-foreground/85 mb-1">Quantity</label>
                 <input
                   type="number"
                   step="0.01"
@@ -269,7 +269,7 @@ export function InvoiceLineFormList({
                 />
               </div>
               <div className="col-span-6 md:col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Unit Price</label>
+                <label className="block text-xs font-medium text-foreground/85 mb-1">Unit Price</label>
                 <input
                   type="number"
                   step="0.01"
@@ -280,7 +280,7 @@ export function InvoiceLineFormList({
                 />
               </div>
               <div className="col-span-12 md:col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
+                <label className="block text-xs font-medium text-foreground/85 mb-1">Amount</label>
                 <input
                   type="text"
                   value={formatNumber(line.amount)}
@@ -293,7 +293,7 @@ export function InvoiceLineFormList({
                 <button
                   type="button"
                   onClick={() => onRemoveLine(index)}
-                  className="w-full px-2 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                  className="w-full px-2 py-1 text-sm text-destructive hover:text-destructive hover:bg-destructive/5 rounded"
                 >
                   <Trash2 className="h-4 w-4 mx-auto" />
                 </button>
@@ -319,7 +319,7 @@ export function InvoiceLineFormList({
 
             <div className="grid grid-cols-12 gap-2">
               <div className="col-span-12 md:col-span-10">
-                <label className="block text-xs font-medium text-gray-700 mb-1">
+                <label className="block text-xs font-medium text-foreground/85 mb-1">
                   Revenue account (optional)
                 </label>
                 <select
@@ -342,7 +342,7 @@ export function InvoiceLineFormList({
                     </option>
                   ))}
                 </select>
-                <p className="mt-0.5 text-[11px] text-gray-500">
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
                   Tag entity and income category for P&amp;L; revenue GL auto-fills from item or income tag.
                 </p>
               </div>

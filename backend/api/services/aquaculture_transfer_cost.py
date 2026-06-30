@@ -101,7 +101,7 @@ def _bio_asset_transfer_share(
     live_kg = Decimal(str(summary.get("live_weight_kg") or 0))
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
     if live_c <= 0:
-        live_c = _nursing_stocked_heads_basis(
+        live_c = _live_fingerling_heads_basis(
             company_id=company_id,
             pond_id=from_pond_id,
             cycle_filter_id=cycle_filter_id,
@@ -226,6 +226,40 @@ def lookup_transfer_cost_per_kg(
     return per_kg, note
 
 
+def _live_fingerling_heads_basis(
+    *,
+    company_id: int,
+    pond_id: int,
+    cycle_filter_id: int | None,
+) -> int:
+    """
+    Live fingerlings at source pond (survivors after mortality/sales), for per-head transfer cost.
+
+    Uses implied net fish count from stock position; falls back to latest biomass sample estimate.
+    Never uses original vendor-bill stocked count — mortality cost stays on survivors.
+    """
+    pos_rows = compute_fish_stock_position_rows(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=cycle_filter_id,
+    )
+    if not pos_rows:
+        return 0
+    row = pos_rows[0]
+    live = int(row.get("implied_net_fish_count") or 0)
+    if live > 0:
+        return live
+    samp_fc = row.get("latest_sample_estimated_fish_count")
+    if samp_fc is not None:
+        try:
+            n = int(samp_fc)
+            if n > 0:
+                return n
+        except (TypeError, ValueError):
+            pass
+    return 0
+
+
 def _nursing_stocked_heads_basis(
     *,
     company_id: int,
@@ -340,19 +374,19 @@ def _production_cost_share_for_line(
         heads = int(fish_count or 0)
         if heads <= 0:
             return Decimal("0")
-        stocked_heads = _nursing_stocked_heads_basis(
+        live_heads = _live_fingerling_heads_basis(
             company_id=company_id,
             pond_id=from_pond_id,
             cycle_filter_id=cycle_filter_id,
         )
-        if stocked_heads <= 0:
+        if live_heads <= 0:
             return Decimal("0")
-        return _money_q(bio_total * Decimal(heads) / Decimal(stocked_heads))
+        return _money_q(bio_total * Decimal(heads) / Decimal(live_heads))
 
     pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
     role = (pond.pond_role or "").strip().lower() if pond else ""
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
-    stocked_heads = _nursing_stocked_heads_basis(
+    live_heads = _live_fingerling_heads_basis(
         company_id=company_id,
         pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
@@ -360,8 +394,8 @@ def _production_cost_share_for_line(
     use_head_basis = (
         fish_count
         and int(fish_count) > 0
-        and stocked_heads > 0
-        and (role == "nursing" or stocked_heads >= 10000)
+        and live_heads > 0
+        and (role == "nursing" or live_heads >= 10000)
     )
     if use_head_basis:
         share = _nursing_share_for_scope(from_cycle)
@@ -386,20 +420,25 @@ def _transfer_uses_head_cost_basis(
     from_cycle: AquacultureProductionCycle | None,
     fish_count: int | None = None,
 ) -> tuple[bool, int]:
-    """Whether inter-pond transfer cost uses stocked-fingerling head share (nursing-style)."""
+    """Whether inter-pond transfer cost uses live-fingerling head share (nursing-style)."""
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    live_heads = _live_fingerling_heads_basis(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
     stocked_heads = _nursing_stocked_heads_basis(
         company_id=company_id,
         pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
     )
     heads = int(fish_count or 0)
-    if heads <= 0 or stocked_heads <= 0:
-        return False, stocked_heads
+    if heads <= 0 or live_heads <= 0:
+        return False, live_heads or stocked_heads
     pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
     role = (pond.pond_role or "").strip().lower() if pond else ""
-    use_head = role == "nursing" or stocked_heads >= 10000
-    return use_head, stocked_heads
+    use_head = role == "nursing" or live_heads >= 10000
+    return use_head, live_heads
 
 
 def _bio_total_for_transfer_scope(
@@ -438,6 +477,63 @@ def _bio_total_for_transfer_scope(
     return _biological_production_cost_total(cpk.get("costing_lines") or [])
 
 
+def _transfer_cost_context(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+) -> dict:
+    """Live fish, biomass, and movable cost pool for transfer UI and cost preview."""
+    from api.services.aquaculture_biological_asset_service import compute_pond_biological_asset_summary
+
+    cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    summary = compute_pond_biological_asset_summary(
+        company_id,
+        pond_id=from_pond_id,
+        as_of_date=transfer_date,
+        production_cycle=from_cycle,
+    )
+    movable = _transferable_bio_asset_total(summary)
+    if movable <= 0:
+        movable = _bio_total_for_transfer_scope(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+            transfer_date=transfer_date,
+            from_cycle=from_cycle,
+        )
+    live_heads = int(summary.get("live_fish_count") or 0)
+    if live_heads <= 0:
+        live_heads = _live_fingerling_heads_basis(
+            company_id=company_id,
+            pond_id=from_pond_id,
+            cycle_filter_id=cycle_filter_id,
+        )
+    stocked_heads = _nursing_stocked_heads_basis(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
+    pos_rows = compute_fish_stock_position_rows(
+        company_id,
+        pond_id=from_pond_id,
+        production_cycle_id=cycle_filter_id,
+    )
+    row = pos_rows[0] if pos_rows else {}
+    return {
+        "live_fingerling_count": live_heads if live_heads > 0 else None,
+        "stocked_fingerling_count": stocked_heads if stocked_heads > 0 else None,
+        "movable_bio_asset_total": str(_money_q(movable)) if movable > 0 else None,
+        "implied_net_weight_kg": row.get("implied_net_weight_kg"),
+        "effective_net_weight_kg": row.get("effective_net_weight_kg"),
+        "current_fish_per_kg": row.get("current_fish_per_kg"),
+        "current_avg_weight_kg": row.get("current_avg_weight_kg"),
+        "cost_per_fish": summary.get("cost_per_fish"),
+        "cost_per_kg": summary.get("cost_per_kg"),
+        "stock_density_kg_per_decimal": row.get("stock_density_kg_per_decimal"),
+    }
+
+
 def lookup_transfer_cost_per_head(
     *,
     company_id: int,
@@ -467,7 +563,7 @@ def lookup_transfer_cost_per_head(
         return None, "No fry/feed/medicine/preparation costs recorded for this pond in the selected period."
     live_heads = int(summary.get("live_fish_count") or 0)
     if live_heads <= 0:
-        live_heads = _nursing_stocked_heads_basis(
+        live_heads = _live_fingerling_heads_basis(
             company_id=company_id,
             pond_id=from_pond_id,
             cycle_filter_id=cycle_filter_id,
@@ -477,8 +573,8 @@ def lookup_transfer_cost_per_head(
     per_head = _money_q(bio_total / Decimal(live_heads))
     note = (
         f"Transfer cost/head = movable biological asset ({bio_total}) ÷ {live_heads} live fingerlings "
-        "(fry vendor bills Dr 1581, feed, medicine, labour on pond; lease stays on source pond). "
-        "Shop supplies are not moved with fish."
+        "(fry + feed + medicine + pond care and other direct production costs on the nursing pond; "
+        "mortality cost is retained on survivors). Lease and shop supplies stay on the source pond."
     )
     return per_head, note
 
@@ -506,11 +602,17 @@ def preview_transfer_line_costs(
 
     total_w = _money_q(sum(wk for wk, _ in parsed if wk > 0))
     sample_heads = next((fc for _, fc in parsed if fc and fc > 0), None)
-    use_head, stocked_heads = _transfer_uses_head_cost_basis(
+    use_head, live_heads = _transfer_uses_head_cost_basis(
         company_id=company_id,
         from_pond_id=from_pond_id,
         from_cycle=from_cycle,
         fish_count=sample_heads,
+    )
+    ctx = _transfer_cost_context(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        transfer_date=transfer_date,
+        from_cycle=from_cycle,
     )
 
     transfer_cost_per_kg: str | None = None
@@ -559,7 +661,17 @@ def preview_transfer_line_costs(
 
     return {
         "cost_basis": "per_head" if use_head else "per_kg",
-        "stocked_heads_basis": stocked_heads if use_head else None,
+        "live_fingerling_count": ctx.get("live_fingerling_count"),
+        "stocked_fingerling_count": ctx.get("stocked_fingerling_count"),
+        "stocked_heads_basis": live_heads if use_head else None,
+        "movable_bio_asset_total": ctx.get("movable_bio_asset_total"),
+        "implied_net_weight_kg": ctx.get("implied_net_weight_kg"),
+        "effective_net_weight_kg": ctx.get("effective_net_weight_kg"),
+        "current_fish_per_kg": ctx.get("current_fish_per_kg"),
+        "current_avg_weight_kg": ctx.get("current_avg_weight_kg"),
+        "pond_cost_per_fish": ctx.get("cost_per_fish"),
+        "pond_cost_per_kg": ctx.get("cost_per_kg"),
+        "stock_density_kg_per_decimal": ctx.get("stock_density_kg_per_decimal"),
         "transfer_cost_per_kg": transfer_cost_per_kg,
         "transfer_cost_per_head": transfer_cost_per_head,
         "transfer_cost_basis_note": basis_note or None,

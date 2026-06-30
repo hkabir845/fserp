@@ -453,28 +453,28 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-2 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="pond-opening-balances-title"
     >
-      <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-teal-50 via-white to-slate-50 px-4 py-4 sm:px-6">
+      <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 via-white to-slate-50 px-4 py-4 sm:px-6">
           <div className="min-w-0">
-            <h2 id="pond-opening-balances-title" className="text-xl font-bold tracking-tight text-slate-900">
+            <h2 id="pond-opening-balances-title" className="text-xl font-bold tracking-tight text-foreground">
               Pond go-live setup
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
               Enter each pond&apos;s state as of cutover: prior P&amp;L, A/R and A/P, fish biomass, feed on hand, and
               lease. Landlord rent ledger is on Aquaculture → Landlords.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <Calendar className="h-4 w-4 text-teal-700" aria-hidden />
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
+                <Calendar className="h-4 w-4 text-primary" aria-hidden />
                 <span className="font-medium">Cutover date</span>
                 <input
                   type="date"
-                  className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm"
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-sm"
                   value={cutoverDate}
                   onChange={(e) => setCutoverDate(e.target.value)}
                 />
@@ -482,7 +482,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
               <button
                 type="button"
                 onClick={applyCutoverToDrafts}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-border bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/85 hover:bg-muted/40"
               >
                 Apply date to all as-of fields
               </button>
@@ -490,7 +490,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
                 <button
                   type="button"
                   onClick={() => setFocusPondId(null)}
-                  className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-700"
+                  className="rounded-lg bg-muted px-2.5 py-1.5 text-xs font-medium text-foreground/85"
                 >
                   Show all ponds
                 </button>
@@ -501,14 +501,14 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="shrink-0 overflow-x-auto border-b border-slate-100 bg-slate-50/90 px-3 py-2 sm:px-5">
+        <div className="shrink-0 overflow-x-auto border-b border-border/70 bg-muted/50 px-3 py-2 sm:px-5">
           <div className="flex min-w-max gap-1.5" role="tablist">
             {TAB_META.map(({ id, label, icon: Icon }) => (
               <button
@@ -519,8 +519,8 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
                 onClick={() => setTab(id)}
                 className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium sm:text-sm ${
                   tab === id
-                    ? 'bg-teal-700 text-white shadow-sm'
-                    : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-white text-foreground/85 ring-1 ring-border hover:bg-muted/40'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -533,10 +533,10 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           {loading ? (
             <div className="flex justify-center py-16">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
             </div>
           ) : sorted.length === 0 ? (
-            <p className="py-12 text-center text-sm text-slate-600">No ponds to show. Create ponds first.</p>
+            <p className="py-12 text-center text-sm text-muted-foreground">No ponds to show. Create ponds first.</p>
           ) : (
             <>
               {tab === 'overview' ? (
@@ -617,11 +617,11 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/90 px-4 py-3 sm:px-6">
-          <p className="text-xs text-slate-600">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/50 px-4 py-3 sm:px-6">
+          <p className="text-xs text-muted-foreground">
             {pendingCount > 0 ? (
               <>
-                <span className="font-medium text-slate-800">{pendingCount} pond(s)</span> with unsaved monetary
+                <span className="font-medium text-foreground">{pendingCount} pond(s)</span> with unsaved monetary
                 edits. Fish and feed use their tabs; landlords on Landlords screen.
               </>
             ) : (
@@ -633,7 +633,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40"
             >
               {pendingCount ? 'Cancel' : 'Close'}
             </button>
@@ -641,7 +641,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
               type="button"
               onClick={() => void save()}
               disabled={saving}
-              className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
             >
               {saving ? 'Saving…' : pendingCount > 0 ? 'Save changes' : 'Save cutover date'}
             </button>
@@ -665,18 +665,18 @@ function LeasePaidTab({
 }) {
   return (
     <>
-      <p className="mb-3 text-xs text-slate-600">
+      <p className="mb-3 text-xs text-muted-foreground">
         Cumulative rent paid on the pond lease contract <strong>before</strong> go-live (reduces contract balance due).
         Distinct from landlord sub-ledger opening on the Landlords tab.
       </p>
       <table className="w-full min-w-[480px] text-left text-sm">
-        <thead className="border-b border-slate-200 text-xs font-semibold uppercase text-slate-500">
+        <thead className="border-b border-border text-xs font-semibold uppercase text-muted-foreground">
           <tr>
             <th className="py-2">Pond</th>
             <th className="py-2">Prepaid / paid ({sym})</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-border/70">
           {ponds.map((p) => (
             <tr key={p.pond_id}>
               <td className="py-2 font-medium">{p.pond_name}</td>
@@ -684,7 +684,7 @@ function LeasePaidTab({
                 <input
                   type="text"
                   inputMode="decimal"
-                  className="w-full max-w-[10rem] rounded-lg border border-slate-300 px-2.5 py-1.5 tabular-nums"
+                  className="w-full max-w-[10rem] rounded-lg border border-border px-2.5 py-1.5 tabular-nums"
                   value={leaseDrafts[p.pond_id]?.leasePaid ?? ''}
                   onChange={(e) =>
                     setLeaseDrafts((prev) => ({ ...prev, [p.pond_id]: { leasePaid: e.target.value } }))
@@ -724,7 +724,7 @@ function EditablePartyTab({
 
   return (
     <>
-      <p className="mb-3 text-xs text-slate-600">
+      <p className="mb-3 text-xs text-muted-foreground">
         {kind === 'customer'
           ? 'Positive = they owe you (A/R). Linked via pond POS customer.'
           : kind === 'vendor'
@@ -732,10 +732,10 @@ function EditablePartyTab({
             : 'Positive = you owe employee (payroll A/P). Employees with home pond set here.'}
       </p>
       {rows.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">No {kind} openings linked to any pond yet.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">No {kind} openings linked to any pond yet.</p>
       ) : (
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="border-b border-slate-200 text-xs font-semibold uppercase text-slate-500">
+          <thead className="border-b border-border text-xs font-semibold uppercase text-muted-foreground">
             <tr>
               <th className="py-2">Pond</th>
               <th className="py-2">Party</th>
@@ -745,7 +745,7 @@ function EditablePartyTab({
               <th className="py-2 text-right">Signed</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border/70">
             {rows.map(({ pond, line }) => {
               const key = draftKeyFn(pond.pond_id, line.party_id)
               const d = drafts[key]
@@ -754,10 +754,10 @@ function EditablePartyTab({
                 <tr key={`${pond.pond_id}-${line.party_id}`}>
                   <td className="py-2 font-medium">{pond.pond_name}</td>
                   <td className="py-2">
-                    <span className="font-medium text-slate-900">{line.name}</span>
+                    <span className="font-medium text-foreground">{line.name}</span>
                     <Link
                       href={partyEditHref(kind, line.party_id)}
-                      className="ml-2 inline-flex items-center gap-0.5 text-xs text-teal-800 underline"
+                      className="ml-2 inline-flex items-center gap-0.5 text-xs text-primary underline"
                     >
                       <BookOpen className="h-3 w-3" aria-hidden />
                       {linkLabel}
@@ -767,7 +767,7 @@ function EditablePartyTab({
                     <input
                       type="text"
                       inputMode="decimal"
-                      className="w-full max-w-[9rem] rounded-lg border border-slate-300 px-2.5 py-1.5 tabular-nums"
+                      className="w-full max-w-[9rem] rounded-lg border border-border px-2.5 py-1.5 tabular-nums"
                       value={d?.opening ?? ''}
                       onChange={(e) =>
                         setDrafts((prev) => ({
@@ -780,7 +780,7 @@ function EditablePartyTab({
                   <td className="py-2">
                     <input
                       type="date"
-                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                      className="rounded-lg border border-border px-2 py-1.5 text-sm"
                       value={d?.asOf ?? ''}
                       onChange={(e) =>
                         setDrafts((prev) => ({
@@ -792,10 +792,10 @@ function EditablePartyTab({
                   </td>
                   {kind === 'vendor' || kind === 'employee' ? (
                     <td className="py-2">
-                      <label className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+                      <label className="inline-flex items-center gap-1.5 text-xs text-foreground/85">
                         <input
                           type="checkbox"
-                          className="rounded border-slate-300"
+                          className="rounded border-border"
                           checked={d?.postToGl !== false}
                           disabled={Boolean(line.opening_balance_journal_id)}
                           onChange={(e) =>
@@ -808,7 +808,7 @@ function EditablePartyTab({
                         {kind === 'vendor' ? 'Dr/Cr AP + equity' : 'Dr/Cr payroll + equity'}
                       </label>
                       {line.opening_balance_journal_number ? (
-                        <p className="mt-0.5 text-[10px] text-slate-500">{line.opening_balance_journal_number}</p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">{line.opening_balance_journal_number}</p>
                       ) : null}
                     </td>
                   ) : null}
@@ -841,14 +841,14 @@ function ReadOnlyPartyTab({
 
   return (
     <>
-      <p className="mb-3 text-xs text-slate-600">
+      <p className="mb-3 text-xs text-muted-foreground">
         Loan counterparty openings linked to this pond — edit on Loans (posts to principal + opening equity).
       </p>
       {rows.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">No loan lines for these ponds.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">No loan lines for these ponds.</p>
       ) : (
         <table className="w-full min-w-[600px] text-left text-sm">
-          <thead className="border-b border-slate-200 text-xs font-semibold uppercase text-slate-500">
+          <thead className="border-b border-border text-xs font-semibold uppercase text-muted-foreground">
             <tr>
               <th className="py-2">Pond</th>
               <th className="py-2">Party</th>
@@ -857,7 +857,7 @@ function ReadOnlyPartyTab({
               <th className="py-2 text-right" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border/70">
             {rows.map(({ pond, line }) => {
               const signed = parseMoney(line.signed_contribution)
               return (
@@ -865,13 +865,13 @@ function ReadOnlyPartyTab({
                   <td className="py-2 font-medium">{pond.pond_name}</td>
                   <td className="py-2">
                     <span className="font-medium">{line.name}</span>
-                    {line.code ? <span className="ml-1 text-xs text-slate-500">{line.code}</span> : null}
-                    {line.label ? <p className="text-[11px] text-slate-500">{line.label}</p> : null}
+                    {line.code ? <span className="ml-1 text-xs text-muted-foreground">{line.code}</span> : null}
+                    {line.label ? <p className="text-[11px] text-muted-foreground">{line.label}</p> : null}
                   </td>
                   <td className="py-2 text-right tabular-nums">
                     {fmtMoney(parseMoney(line.opening_balance))}
                     {line.opening_balance_date ? (
-                      <span className="block text-[11px] text-slate-500">
+                      <span className="block text-[11px] text-muted-foreground">
                         {formatDateOnly(line.opening_balance_date)}
                       </span>
                     ) : null}
@@ -882,7 +882,7 @@ function ReadOnlyPartyTab({
                   <td className="py-2 text-right">
                     <Link
                       href={partyEditHref('loan', line.party_id)}
-                      className="inline-flex items-center gap-0.5 text-xs font-medium text-teal-800 hover:text-teal-950"
+                      className="inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:text-teal-950"
                     >
                       {line.locked ? 'View' : 'Set opening'}
                       <ChevronRight className="h-3.5 w-3.5" aria-hidden />
@@ -902,25 +902,25 @@ function LandlordsTab({ ponds }: { ponds: PondOpeningSummary[] }) {
   const note = ponds[0]?.landlord_note
   return (
     <>
-      <p className="mb-3 text-xs text-slate-600">
+      <p className="mb-3 text-xs text-muted-foreground">
         {note ||
           'Landlord / lease rent opening balances are managed on Aquaculture → Landlords, not on this screen.'}
       </p>
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-xs font-semibold uppercase text-slate-500">
+        <thead className="border-b border-border text-xs font-semibold uppercase text-muted-foreground">
           <tr>
             <th className="py-2">Pond</th>
             <th className="py-2 text-right">Action</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-border/70">
           {ponds.map((p) => (
             <tr key={p.pond_id}>
               <td className="py-2 font-medium">{p.pond_name}</td>
               <td className="py-2 text-right">
                 <Link
                   href="/aquaculture/landlords"
-                  className="inline-flex items-center gap-0.5 text-xs font-medium text-teal-800 underline"
+                  className="inline-flex items-center gap-0.5 text-xs font-medium text-primary underline"
                 >
                   <Landmark className="h-3.5 w-3.5" aria-hidden />
                   Open landlords
@@ -947,8 +947,8 @@ function CustomerOpeningTab({
 }) {
   return (
     <>
-      <p className="mb-4 text-sm text-slate-700">
-        <strong className="text-slate-900">On-account A/R opening</strong> — unpaid feed and supplies sold to the
+      <p className="mb-4 text-sm text-foreground/85">
+        <strong className="text-foreground">On-account A/R opening</strong> — unpaid feed and supplies sold to the
         pond&apos;s POS customer before go-live. This is separate from income-type P&amp;L openings on the Income tab.
       </p>
       <div className="space-y-4">
@@ -958,35 +958,35 @@ function CustomerOpeningTab({
           return (
             <div
               key={p.pond_id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="rounded-xl border border-border bg-white p-4 shadow-sm"
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/70 pb-3">
                 <div>
-                  <h3 className="font-semibold text-slate-900">{p.pond_name}</h3>
-                  {p.pond_code ? <p className="text-xs text-slate-500">Code {p.pond_code}</p> : null}
+                  <h3 className="font-semibold text-foreground">{p.pond_name}</h3>
+                  {p.pond_code ? <p className="text-xs text-muted-foreground">Code {p.pond_code}</p> : null}
                 </div>
                 {!hasCustomer ? (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-warning-foreground">
                     No POS customer
                   </span>
                 ) : null}
               </div>
               {!hasCustomer ? (
-                <p className="mt-3 text-xs text-slate-600">
+                <p className="mt-3 text-xs text-muted-foreground">
                   Link or create an &quot;Aquaculture — …&quot; customer on the pond profile, or use{' '}
                   <strong>Create missing POS customers</strong> on the ponds list.
                 </p>
               ) : (
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <p className="text-xs font-medium text-slate-500">POS customer</p>
-                    <p className="text-sm font-medium text-teal-900">
+                    <p className="text-xs font-medium text-muted-foreground">POS customer</p>
+                    <p className="text-sm font-medium text-primary">
                       {p.pos_customer_display?.trim() || `Customer #${p.pos_customer_id}`}
                     </p>
                     {p.pos_customer_id ? (
                       <Link
                         href={`/customers/${p.pos_customer_id}/ledger`}
-                        className="mt-1 inline-flex items-center gap-0.5 text-xs text-teal-800 underline"
+                        className="mt-1 inline-flex items-center gap-0.5 text-xs text-primary underline"
                       >
                         <BookOpen className="h-3 w-3" aria-hidden />
                         View A/R ledger
@@ -994,14 +994,14 @@ function CustomerOpeningTab({
                     ) : null}
                   </div>
                   <label className="block text-sm">
-                    <span className="font-medium text-slate-800">Opening balance ({sym})</span>
-                    <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                    <span className="font-medium text-foreground">Opening balance ({sym})</span>
+                    <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                       Positive = they owe you for past on-account sales
                     </span>
                     <input
                       type="text"
                       inputMode="decimal"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                      className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 tabular-nums focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                       placeholder="0.00"
                       value={d?.opening ?? ''}
                       onChange={(e) =>
@@ -1013,13 +1013,13 @@ function CustomerOpeningTab({
                     />
                   </label>
                   <label className="block text-sm">
-                    <span className="font-medium text-slate-800">As-of date</span>
-                    <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                    <span className="font-medium text-foreground">As-of date</span>
+                    <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                       Required when balance is not zero
                     </span>
                     <input
                       type="date"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                      className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                       value={d?.asOf ?? ''}
                       onChange={(e) =>
                         setDrafts((prev) => ({
@@ -1032,7 +1032,7 @@ function CustomerOpeningTab({
                   <label className="flex items-start gap-2 text-sm sm:col-span-2">
                     <input
                       type="checkbox"
-                      className="mt-1 rounded border-slate-300"
+                      className="mt-1 rounded border-border"
                       checked={d?.postToGl !== false}
                       disabled={Boolean(linesOfKind(p, 'customer')[0]?.opening_balance_journal_id)}
                       onChange={(e) =>
@@ -1043,8 +1043,8 @@ function CustomerOpeningTab({
                       }
                     />
                     <span>
-                      <span className="font-medium text-slate-800">Post to general ledger</span>
-                      <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                      <span className="font-medium text-foreground">Post to general ledger</span>
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                         Dr 1100 A/R, Cr 3200 Opening Balance Equity when balance is non-zero
                       </span>
                     </span>
@@ -1108,7 +1108,7 @@ function PlOpeningTab({
 
   return (
     <>
-      <p className="mb-3 text-sm text-slate-700">
+      <p className="mb-3 text-sm text-foreground/85">
         {convention ||
           (kind === 'income'
             ? 'Enter prior revenue for each income type, per pond.'
@@ -1116,7 +1116,7 @@ function PlOpeningTab({
         As-of date defaults to cutover <strong>{cutoverDate}</strong>.
       </p>
       {kind === 'expense' && catalog?.expense_excluded?.length ? (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+        <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
           <strong>Lease / landlord rent</strong> is not entered here — use{' '}
           <Link href="/aquaculture/landlords" className="font-semibold underline">
             Aquaculture → Landlords
@@ -1125,24 +1125,24 @@ function PlOpeningTab({
         </div>
       ) : null}
 
-      <div className="mb-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">General ledger (optional)</p>
+      <div className="mb-4 space-y-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">General ledger (optional)</p>
         {ponds.map((p) => (
-          <label key={`pl-gl-${p.pond_id}`} className="flex items-start gap-2 text-sm text-slate-800">
+          <label key={`pl-gl-${p.pond_id}`} className="flex items-start gap-2 text-sm text-foreground">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-slate-300"
+              className="mt-0.5 rounded border-border"
               checked={Boolean(plPostGlDrafts[p.pond_id])}
               disabled={Boolean(p.pl_openings?.pl_opening_gl_locked)}
               onChange={(e) => setPlPostGlForPond(p.pond_id, e.target.checked)}
             />
             <span>
               Post prior P&amp;L to G/L for <strong>{p.pond_name}</strong>
-              <span className="mt-0.5 block text-xs font-normal text-slate-600">
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                 Per category: Dr/Cr income or expense accounts with 3200 Opening Balance Equity
               </span>
               {p.pl_openings?.pl_opening_journal_number ? (
-                <span className="mt-0.5 block text-[10px] text-slate-500">
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
                   {p.pl_openings.pl_opening_journal_number}
                 </span>
               ) : null}
@@ -1152,10 +1152,10 @@ function PlOpeningTab({
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-slate-700">
+        <label className="flex items-center gap-2 text-sm text-foreground/85">
           <span className="font-medium">Pond</span>
           <select
-            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm"
+            className="rounded-lg border border-border bg-white px-2.5 py-1.5 text-sm"
             value={pondFilter}
             onChange={(e) => setPondFilter(e.target.value)}
           >
@@ -1168,10 +1168,10 @@ function PlOpeningTab({
             ))}
           </select>
         </label>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
-            className="rounded border-slate-300"
+            className="rounded border-border"
             checked={showAllCategories}
             onChange={(e) => setShowAllCategories(e.target.checked)}
           />
@@ -1191,25 +1191,25 @@ function PlOpeningTab({
               })
           if (toShow.length === 0 && !showAllCategories) {
             return (
-              <div key={pond.pond_id} className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                <p className="font-medium text-slate-700">{pond.pond_name}</p>
+              <div key={pond.pond_id} className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground/85">{pond.pond_name}</p>
                 <p className="mt-1 text-xs">No amounts entered yet. Turn on &quot;Show all categories&quot; to add lines.</p>
               </div>
             )
           }
           return (
-            <section key={pond.pond_id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-              <h3 className="mb-3 text-base font-semibold text-slate-900">
+            <section key={pond.pond_id} className="rounded-xl border border-border bg-muted/40 p-4">
+              <h3 className="mb-3 text-base font-semibold text-foreground">
                 {pond.pond_name}
                 {pond.pond_code ? (
-                  <span className="ml-2 text-sm font-normal text-slate-500">{pond.pond_code}</span>
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">{pond.pond_code}</span>
                 ) : null}
               </h3>
               {kind === 'income' ? (
-                <label className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-slate-800">
+                <label className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 text-sm text-foreground">
                   <input
                     type="checkbox"
-                    className="mt-0.5 rounded border-slate-300"
+                    className="mt-0.5 rounded border-border"
                     checked={Boolean(plZeroConfirmDrafts[pond.pond_id])}
                     disabled={Boolean(pond.pl_openings?.pl_opening_gl_locked)}
                     onChange={(e) => setPlZeroConfirmForPond(pond.pond_id, e.target.checked)}
@@ -1235,19 +1235,19 @@ function PlOpeningTab({
                   return (
                     <div
                       key={key}
-                      className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                      className="rounded-lg border border-border bg-white p-3 shadow-sm"
                     >
-                      <p className="text-sm font-semibold text-slate-900">{row.category_label}</p>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-sm font-semibold text-foreground">{row.category_label}</p>
+                      <p className="text-[11px] text-muted-foreground">
                         {kindLabel}: {row.category_code}
                       </p>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <label className="block text-xs sm:col-span-1">
-                          <span className="font-medium text-slate-700">Prior amount ({sym})</span>
+                          <span className="font-medium text-foreground/85">Prior amount ({sym})</span>
                           <input
                             type="text"
                             inputMode="decimal"
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm tabular-nums"
+                            className="mt-1 w-full rounded-md border border-border px-2.5 py-2 text-sm tabular-nums"
                             placeholder="0"
                             value={d?.amount ?? ''}
                             onChange={(e) =>
@@ -1263,10 +1263,10 @@ function PlOpeningTab({
                           />
                         </label>
                         <label className="block text-xs sm:col-span-1">
-                          <span className="font-medium text-slate-700">As-of date</span>
+                          <span className="font-medium text-foreground/85">As-of date</span>
                           <input
                             type="date"
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm"
+                            className="mt-1 w-full rounded-md border border-border px-2.5 py-2 text-sm"
                             value={d?.asOf ?? ''}
                             onChange={(e) =>
                               setDrafts((prev) => ({

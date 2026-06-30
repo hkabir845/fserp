@@ -22,18 +22,18 @@ import {
 export function AdviceRichText({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*|_[^_]+_)/g)
   return (
-    <span className="block whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+    <span className="block whitespace-pre-wrap text-sm leading-relaxed text-foreground/85">
       {parts.map((p, i) => {
         if (p.startsWith('**') && p.endsWith('**')) {
           return (
-            <strong key={i} className="font-semibold text-slate-900">
+            <strong key={i} className="font-semibold text-foreground">
               {p.slice(2, -2)}
             </strong>
           )
         }
         if (p.startsWith('_') && p.endsWith('_') && p.length > 2) {
           return (
-            <em key={i} className="text-slate-600">
+            <em key={i} className="text-muted-foreground">
               {p.slice(1, -1)}
             </em>
           )
@@ -60,10 +60,10 @@ export function WorkflowRail({ status }: { status: string }) {
   if (status === 'cancelled') {
     return (
       <div
-        className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-100/80 px-3 py-2.5"
+        className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/80 px-3 py-2.5"
         aria-label="Advice cancelled"
       >
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-600 px-2.5 py-1 text-xs font-semibold text-white">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted-foreground px-2.5 py-1 text-xs font-semibold text-white">
           <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
           Cancelled
         </span>
@@ -74,7 +74,7 @@ export function WorkflowRail({ status }: { status: string }) {
   const labels = ['Review & edit', 'Approve', 'Apply in field'] as const
   return (
     <div
-      className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-100 bg-gradient-to-r from-slate-50 to-teal-50/40 px-3 py-2.5"
+      className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-gradient-to-r from-muted/40 to-teal-50/40 px-3 py-2.5"
       role="list"
       aria-label="Advice workflow"
     >
@@ -88,14 +88,14 @@ export function WorkflowRail({ status }: { status: string }) {
                 done
                   ? 'bg-emerald-100 text-emerald-900'
                   : current
-                    ? 'bg-teal-600 text-white shadow-sm'
-                    : 'bg-white text-slate-500 ring-1 ring-slate-200'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-white text-muted-foreground ring-1 ring-border'
               }`}
             >
               {done ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
               {label}
             </span>
-            {i < labels.length - 1 ? <ChevronRight className="h-3.5 w-3.5 text-slate-300" aria-hidden /> : null}
+            {i < labels.length - 1 ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" aria-hidden /> : null}
           </div>
         )
       })}
@@ -122,7 +122,7 @@ export function FeedingInsightHero({
   const sackLabel = kg ? feedKgToSackLabel(kg, sackKg) : null
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-teal-200/70 bg-gradient-to-br from-teal-600 via-teal-700 to-emerald-800 p-5 text-white shadow-lg">
+    <div className="overflow-hidden rounded-2xl border border-primary/25/70 bg-gradient-to-br from-teal-600 via-teal-700 to-emerald-800 p-5 text-white shadow-lg">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
@@ -182,12 +182,12 @@ export function StatusFilterTabs(props: {
           onClick={() => onChange(t.id)}
           className={`rounded-full px-3 py-1.5 text-xs font-semibold transition outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 ${
             filterStatus === t.id
-              ? 'bg-teal-700 text-white shadow-sm'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              ? 'bg-primary text-white shadow-sm'
+              : 'bg-muted text-foreground/85 hover:bg-muted'
           }`}
         >
           {t.label}
-          <span className={`ml-1 tabular-nums ${filterStatus === t.id ? 'text-white/85' : 'text-slate-500'}`}>
+          <span className={`ml-1 tabular-nums ${filterStatus === t.id ? 'text-white/85' : 'text-muted-foreground'}`}>
             {statusTabCounts[t.id]}
           </span>
         </button>
@@ -201,22 +201,22 @@ export function DoseSummary({ row, compact }: { row: FeedingAdviceRow; compact?:
   const { kgLine, sackLine, rateLine, mealsLine } = feedingDoseParts(row)
   const hasAny = kgLine || sackLine || rateLine || mealsLine
   if (!hasAny) {
-    return <p className="text-xs text-slate-500">No dose data — add sampling or regenerate.</p>
+    return <p className="text-xs text-muted-foreground">No dose data — add sampling or regenerate.</p>
   }
   return (
     <div
-      className={`space-y-1 rounded-lg border border-slate-200/80 bg-slate-50/90 ${
+      className={`space-y-1 rounded-lg border border-border/80 bg-muted/50 ${
         compact ? 'px-2.5 py-2' : 'px-3 py-2.5'
       }`}
     >
       {kgLine ? (
-        <p className={`font-semibold tabular-nums text-slate-900 ${compact ? 'text-sm' : 'text-base'}`}>
+        <p className={`font-semibold tabular-nums text-foreground ${compact ? 'text-sm' : 'text-base'}`}>
           {kgLine}
         </p>
       ) : null}
-      {sackLine ? <p className="text-xs leading-snug text-slate-700">{sackLine}</p> : null}
-      {rateLine ? <p className="text-xs leading-snug text-teal-900/90">{rateLine}</p> : null}
-      {mealsLine ? <p className="text-xs leading-relaxed text-slate-600 break-words">{mealsLine}</p> : null}
+      {sackLine ? <p className="text-xs leading-snug text-foreground/85">{sackLine}</p> : null}
+      {rateLine ? <p className="text-xs leading-snug text-primary/90">{rateLine}</p> : null}
+      {mealsLine ? <p className="text-xs leading-relaxed text-muted-foreground break-words">{mealsLine}</p> : null}
     </div>
   )
 }
@@ -238,17 +238,17 @@ export function AdvicePlanCard(props: {
       aria-pressed={selected}
       className={`group w-full rounded-xl border p-3.5 text-left shadow-sm transition outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 sm:p-4 ${
         selected
-          ? 'border-teal-400 bg-gradient-to-br from-teal-50 to-white ring-2 ring-teal-500/25'
-          : 'border-slate-200/90 bg-white hover:border-teal-200/80 hover:shadow-md'
+          ? 'border-teal-400 bg-gradient-to-br from-teal-50 to-card ring-2 ring-primary/20'
+          : 'border-border/80 bg-white hover:border-primary/25/80 hover:shadow-md'
       }`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium tabular-nums text-slate-800">
+          <span className="text-sm font-medium tabular-nums text-foreground">
             {formatDateOnly(row.target_date)}
           </span>
           {isToday ? (
-            <span className="rounded-full bg-teal-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
               Today
             </span>
           ) : null}
@@ -256,11 +256,11 @@ export function AdvicePlanCard(props: {
         <span className={statusPill(row.status)}>{row.status_label}</span>
       </div>
 
-      <p className="mt-2.5 text-base font-semibold tracking-tight text-slate-900 break-words">{row.pond_name}</p>
+      <p className="mt-2.5 text-base font-semibold tracking-tight text-foreground break-words">{row.pond_name}</p>
 
       {cycle ? (
-        <p className="mt-1 text-xs leading-relaxed text-slate-600 break-words">
-          <span className="font-medium text-slate-500">Cycle · </span>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground break-words">
+          <span className="font-medium text-muted-foreground">Cycle · </span>
           {cycle}
         </p>
       ) : null}
@@ -269,7 +269,7 @@ export function AdvicePlanCard(props: {
         <DoseSummary row={row} />
       </div>
 
-      <p className="mt-2.5 text-[11px] font-medium text-teal-800 opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+      <p className="mt-2.5 text-[11px] font-medium text-primary opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
         Open full plan →
       </p>
     </button>
@@ -298,38 +298,38 @@ export function FeedingDoseEditor(props: {
       sacks.trim() !== '')
 
   return (
-    <section className="rounded-xl border border-teal-200/80 bg-teal-50/40 p-4 shadow-sm">
+    <section className="rounded-xl border border-primary/25/80 bg-accent/40 p-4 shadow-sm">
       <h3 className="text-sm font-semibold text-teal-950">Daily feed amount</h3>
-      <p className="mt-1 text-xs leading-relaxed text-teal-900/90">
+      <p className="mt-1 text-xs leading-relaxed text-primary/90">
         {hint ??
           'Accept the AI suggested total or enter your own kg (or sacks). Per-meal amounts below keep the same split ratio.'}
       </p>
       <div className="mt-3">{sackSelect}</div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-medium text-slate-700">
+        <label className="block text-xs font-medium text-foreground/85">
           Total kg / day
           <input
             type="text"
             inputMode="decimal"
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
             value={kg}
             onChange={(e) => onKgChange(e.target.value)}
           />
         </label>
-        <label className="block text-xs font-medium text-slate-700">
+        <label className="block text-xs font-medium text-foreground/85">
           Sacks ({sackKg} kg/sack)
           <input
             type="text"
             inputMode="numeric"
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
             value={sacks}
             onChange={(e) => onSacksChange(e.target.value)}
           />
         </label>
       </div>
       {suggested ? (
-        <p className="mt-2 text-xs text-slate-600">
-          AI suggested: <strong className="tabular-nums text-slate-900">{suggested} kg</strong>
+        <p className="mt-2 text-xs text-muted-foreground">
+          AI suggested: <strong className="tabular-nums text-foreground">{suggested} kg</strong>
           {feedKgToSackLabel(suggested, sackKg) ? ` (${feedKgToSackLabel(suggested, sackKg)})` : ''}
         </p>
       ) : null}
@@ -338,7 +338,7 @@ export function FeedingDoseEditor(props: {
           <button
             type="button"
             onClick={onUseSuggested}
-            className="rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-50"
+            className="rounded-lg border border-primary/35 bg-white px-3 py-1.5 text-xs font-medium text-primary hover:bg-accent"
           >
             Use suggested dose
           </button>
@@ -358,9 +358,9 @@ export function MealPlanTable(props: {
   const { rows, totalKg, sackKg, appliedKg } = props
   if (rows.length === 0) return null
   return (
-    <div className="overflow-x-auto rounded-xl border border-teal-200/80 bg-white">
+    <div className="overflow-x-auto rounded-xl border border-primary/25/80 bg-white">
       <table className="min-w-full text-left text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
+        <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
           <tr>
             <th className="px-3 py-2">#</th>
             <th className="px-3 py-2">Time</th>
@@ -370,19 +370,19 @@ export function MealPlanTable(props: {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.mealIndex} className="border-b border-slate-100">
-              <td className="px-3 py-2 font-medium text-slate-900">{r.mealIndex}</td>
-              <td className="px-3 py-2 text-xs leading-relaxed text-slate-700 break-words sm:text-sm">{r.timePlain}</td>
-              <td className="px-3 py-2 text-right font-medium tabular-nums text-slate-900">{r.kg}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+            <tr key={r.mealIndex} className="border-b border-border/70">
+              <td className="px-3 py-2 font-medium text-foreground">{r.mealIndex}</td>
+              <td className="px-3 py-2 text-xs leading-relaxed text-foreground/85 break-words sm:text-sm">{r.timePlain}</td>
+              <td className="px-3 py-2 text-right font-medium tabular-nums text-foreground">{r.kg}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-foreground">
                 {kgCellToSackCount(r.kg, sackKg)}
               </td>
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-t border-slate-200 bg-teal-50/50">
+        <tfoot className="border-t border-border bg-accent/50">
           <tr>
-            <td colSpan={2} className="px-3 py-2 text-right text-xs font-semibold text-slate-700">
+            <td colSpan={2} className="px-3 py-2 text-right text-xs font-semibold text-foreground/85">
               Total
             </td>
             <td className="px-3 py-2 text-right text-sm font-bold tabular-nums text-teal-950">
@@ -394,7 +394,7 @@ export function MealPlanTable(props: {
           </tr>
           {appliedKg ? (
             <tr>
-              <td colSpan={2} className="px-3 py-2 text-right text-xs font-medium text-slate-600">
+              <td colSpan={2} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
                 Applied
               </td>
               <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-emerald-800">
@@ -413,14 +413,14 @@ export function MealPlanTable(props: {
 
 export function PageTipsAside() {
   return (
-    <aside className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4 text-sm text-slate-700">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <aside className="rounded-2xl border border-border/80 bg-muted/50 p-4 text-sm text-foreground/85">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <HelpCircle className="h-3.5 w-3.5" aria-hidden />
         Quick tips
       </h3>
-      <ul className="mt-2 space-y-2 text-xs leading-relaxed text-slate-600">
+      <ul className="mt-2 space-y-2 text-xs leading-relaxed text-muted-foreground">
         <li>
-          <Link href="/aquaculture/sampling" className="font-medium text-teal-800 underline">
+          <Link href="/aquaculture/sampling" className="font-medium text-primary underline">
             Biomass sampling
           </Link>{' '}
           improves kg/day accuracy.
@@ -428,15 +428,15 @@ export function PageTipsAside() {
         <li>Optional water °C adjusts meal timing for hot or cold ponds.</li>
         <li>Sacks are for crews; kilograms stay in the system.</li>
       </ul>
-      <details className="mt-3 rounded-lg border border-slate-200 bg-white/90 p-2.5 text-xs">
-        <summary className="cursor-pointer font-semibold text-slate-800">WorldFish reference</summary>
-        <p className="mt-2 leading-relaxed text-slate-600">
+      <details className="mt-3 rounded-lg border border-border bg-white/90 p-2.5 text-xs">
+        <summary className="cursor-pointer font-semibold text-foreground">WorldFish reference</summary>
+        <p className="mt-2 leading-relaxed text-muted-foreground">
           Rations follow Nile tilapia grow-out tables (~28&nbsp;°C).{' '}
           <a
             href="https://digitalarchive.worldfishcenter.org/"
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-teal-800 underline"
+            className="font-medium text-primary underline"
           >
             WorldFish archive
           </a>

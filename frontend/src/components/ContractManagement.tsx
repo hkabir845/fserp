@@ -248,14 +248,14 @@ export default function ContractManagement() {
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-800',
-      active: 'bg-green-100 text-green-800',
+      draft: 'bg-muted text-foreground',
+      active: 'bg-success/15 text-success',
       suspended: 'bg-yellow-100 text-yellow-800',
-      expired: 'bg-red-100 text-red-800',
-      cancelled: 'bg-gray-100 text-gray-800',
-      renewed: 'bg-blue-100 text-blue-800'
+      expired: 'bg-destructive/10 text-destructive',
+      cancelled: 'bg-muted text-foreground',
+      renewed: 'bg-blue-100 text-primary'
     }
-    return styles[status] || 'bg-gray-100 text-gray-800'
+    return styles[status] || 'bg-muted text-foreground'
   }
 
   const isExpiringSoon = (expiryDate: string) => {
@@ -268,7 +268,7 @@ export default function ContractManagement() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="erp-loading-spinner h-12 w-12"></div>
       </div>
     )
   }
@@ -278,15 +278,15 @@ export default function ContractManagement() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+          <h2 className="text-2xl font-bold text-foreground flex items-center space-x-2">
             <FileText className="h-6 w-6" />
             <span>Contract Management</span>
           </h2>
-          <p className="text-gray-600 mt-1">Manage contracts between platform and companies</p>
+          <p className="text-muted-foreground mt-1">Manage contracts between platform and companies</p>
         </div>
         <button
           onClick={handleCreate}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary"
         >
           <Plus className="h-5 w-5" />
           <span>New Contract</span>
@@ -296,11 +296,11 @@ export default function ContractManagement() {
       {/* Filters */}
       <div className="bg-white p-4 rounded-lg shadow">
         <div className="flex items-center space-x-4">
-          <label className="text-sm font-medium text-gray-700">Filter by Status:</label>
+          <label className="text-sm font-medium text-foreground/85">Filter by Status:</label>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-2"
+            className="border border-border rounded-md px-3 py-2"
           >
             <option value="all">All</option>
             <option value="draft">Draft</option>
@@ -316,56 +316,56 @@ export default function ContractManagement() {
       {/* Contracts Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-muted/40">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contract #</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dates</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">License</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Contract #</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Company</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Dates</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">License</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Amount</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-border">
               {contracts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
                     No contracts found. Create your first contract.
                   </td>
                 </tr>
               ) : (
                 contracts.map((contract) => (
-                  <tr key={contract.id} className="hover:bg-gray-50">
+                  <tr key={contract.id} className="hover:bg-muted/40">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{contract.contract_number}</div>
+                      <div className="text-sm font-medium text-foreground">{contract.contract_number}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{contract.company_name || `Company ID: ${contract.company_id}`}</div>
+                      <div className="text-sm text-foreground">{contract.company_name || `Company ID: ${contract.company_id}`}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
+                      <div className="text-sm text-foreground">
                         <div>Start: {formatDateOnly(contract.contract_date)}</div>
-                        <div className={`text-xs ${isExpiringSoon(contract.expiry_date) ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                        <div className={`text-xs ${isExpiringSoon(contract.expiry_date) ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
                           Expires: {formatDateOnly(contract.expiry_date)}
                           {isExpiringSoon(contract.expiry_date) && <AlertCircle className="h-3 w-3 inline ml-1" />}
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{contract.license_type || 'N/A'}</div>
-                      <div className="text-xs text-gray-500">{contract.billing_period}</div>
+                      <div className="text-sm text-foreground">{contract.license_type || 'N/A'}</div>
+                      <div className="text-xs text-muted-foreground">{contract.billing_period}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className="text-sm font-medium text-foreground">
                         {contract.currency} {contract.total_contract_value.toLocaleString()}
                       </div>
                       {contract.amount_per_month && (
-                        <div className="text-xs text-gray-500">Monthly: {contract.currency} {contract.amount_per_month}</div>
+                        <div className="text-xs text-muted-foreground">Monthly: {contract.currency} {contract.amount_per_month}</div>
                       )}
                       {contract.amount_per_year && (
-                        <div className="text-xs text-gray-500">Yearly: {contract.currency} {contract.amount_per_year}</div>
+                        <div className="text-xs text-muted-foreground">Yearly: {contract.currency} {contract.amount_per_year}</div>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -377,21 +377,21 @@ export default function ContractManagement() {
                       <div className="flex items-center justify-end space-x-2">
                         <button
                           onClick={() => handlePrint(contract)}
-                          className="p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                          className="p-1.5 text-primary hover:text-blue-900 hover:bg-accent rounded"
                           title="Print Contract"
                         >
                           <Printer className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleEdit(contract)}
-                          className="p-1.5 text-green-600 hover:text-green-900 hover:bg-green-50 rounded"
+                          className="p-1.5 text-success hover:text-green-900 hover:bg-green-50 rounded"
                           title="Edit Contract"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(contract)}
-                          className="p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded"
+                          className="p-1.5 text-destructive hover:text-red-900 hover:bg-destructive/5 rounded"
                           title="Delete Contract"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -412,12 +412,12 @@ export default function ContractManagement() {
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">
+                <h3 className="text-xl font-bold text-foreground">
                   {editingContract ? 'Edit Contract' : 'Create New Contract'}
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   ✕
                 </button>
@@ -427,13 +427,13 @@ export default function ContractManagement() {
                 <div className="grid grid-cols-2 gap-4">
                   {/* Company */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Company *
                     </label>
                     <select
                       value={formData.company_id}
                       onChange={(e) => setFormData({ ...formData, company_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       required
                       disabled={!!editingContract}
                     >
@@ -448,13 +448,13 @@ export default function ContractManagement() {
 
                   {/* Status */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Status *
                     </label>
                     <select
                       value={formData.status}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       required
                     >
                       <option value="draft">Draft</option>
@@ -468,82 +468,82 @@ export default function ContractManagement() {
 
                   {/* Contract Date */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Contract Date *
                     </label>
                     <input
                       type="date"
                       value={formData.contract_date}
                       onChange={(e) => setFormData({ ...formData, contract_date: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       required
                     />
                   </div>
 
                   {/* Expiry Date */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Expiry Date *
                     </label>
                     <input
                       type="date"
                       value={formData.expiry_date}
                       onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       required
                     />
                   </div>
 
                   {/* Duration */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Duration (Months)
                     </label>
                     <input
                       type="number"
                       value={formData.duration_months}
                       onChange={(e) => setFormData({ ...formData, duration_months: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       min="0"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Duration (Years)
                     </label>
                     <input
                       type="number"
                       value={formData.duration_years}
                       onChange={(e) => setFormData({ ...formData, duration_years: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       min="0"
                     />
                   </div>
 
                   {/* License Type */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       License Type
                     </label>
                     <input
                       type="text"
                       value={formData.license_type}
                       onChange={(e) => setFormData({ ...formData, license_type: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       placeholder="e.g., Standard, Premium, Enterprise"
                     />
                   </div>
 
                   {/* Billing Period */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Billing Period *
                     </label>
                     <select
                       value={formData.billing_period}
                       onChange={(e) => setFormData({ ...formData, billing_period: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       required
                     >
                       <option value="monthly">Monthly</option>
@@ -554,14 +554,14 @@ export default function ContractManagement() {
                   {/* Amount Per Month */}
                   {formData.billing_period === 'monthly' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Amount Per Month *
                       </label>
                       <input
                         type="number"
                         value={formData.amount_per_month}
                         onChange={(e) => setFormData({ ...formData, amount_per_month: e.target.value })}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2"
+                        className="w-full border border-border rounded-md px-3 py-2"
                         step="0.01"
                         min="0"
                         required={formData.billing_period === 'monthly'}
@@ -572,14 +572,14 @@ export default function ContractManagement() {
                   {/* Amount Per Year */}
                   {formData.billing_period === 'yearly' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Amount Per Year *
                       </label>
                       <input
                         type="number"
                         value={formData.amount_per_year}
                         onChange={(e) => setFormData({ ...formData, amount_per_year: e.target.value })}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2"
+                        className="w-full border border-border rounded-md px-3 py-2"
                         step="0.01"
                         min="0"
                         required={formData.billing_period === 'yearly'}
@@ -589,13 +589,13 @@ export default function ContractManagement() {
 
                   {/* Currency */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Currency *
                     </label>
                     <select
                       value={formData.currency}
                       onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       required
                     >
                       <option value="BDT">BDT</option>
@@ -606,14 +606,14 @@ export default function ContractManagement() {
 
                   {/* Total Contract Value */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Total Contract Value *
                     </label>
                     <input
                       type="number"
                       value={formData.total_contract_value}
                       onChange={(e) => setFormData({ ...formData, total_contract_value: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                       step="0.01"
                       min="0"
                       required
@@ -622,13 +622,13 @@ export default function ContractManagement() {
 
                   {/* Auto Renewal */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Auto Renewal
                     </label>
                     <select
                       value={formData.auto_renewal}
                       onChange={(e) => setFormData({ ...formData, auto_renewal: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
+                      className="w-full border border-border rounded-md px-3 py-2"
                     >
                       <option value="false">No</option>
                       <option value="true">Yes</option>
@@ -638,13 +638,13 @@ export default function ContractManagement() {
 
                 {/* Broadcast Message */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Broadcast Message
                   </label>
                   <textarea
                     value={formData.broadcast_message}
                     onChange={(e) => setFormData({ ...formData, broadcast_message: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full border border-border rounded-md px-3 py-2"
                     rows={3}
                     placeholder="System-wide announcement message"
                   />
@@ -652,13 +652,13 @@ export default function ContractManagement() {
 
                 {/* Payment Reminder Message */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Payment Reminder Message
                   </label>
                   <textarea
                     value={formData.payment_reminder_message}
                     onChange={(e) => setFormData({ ...formData, payment_reminder_message: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full border border-border rounded-md px-3 py-2"
                     rows={3}
                     placeholder="Reminder message for payment due"
                   />
@@ -666,13 +666,13 @@ export default function ContractManagement() {
 
                 {/* Terms and Conditions */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Terms and Conditions
                   </label>
                   <textarea
                     value={formData.terms_and_conditions}
                     onChange={(e) => setFormData({ ...formData, terms_and_conditions: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full border border-border rounded-md px-3 py-2"
                     rows={5}
                     placeholder="Contract terms and conditions"
                   />
@@ -680,13 +680,13 @@ export default function ContractManagement() {
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Notes
                   </label>
                   <textarea
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full border border-border rounded-md px-3 py-2"
                     rows={3}
                     placeholder="Additional notes"
                   />
@@ -697,13 +697,13 @@ export default function ContractManagement() {
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    className="px-4 py-2 border border-border rounded-md text-foreground/85 hover:bg-muted/40"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary"
                   >
                     {editingContract ? 'Update Contract' : 'Create Contract'}
                   </button>

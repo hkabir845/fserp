@@ -32,7 +32,7 @@ export function statusLabel(s: string): string {
 }
 
 export function statusClass(s: string): string {
-  if (s === 'payable') return 'bg-amber-100 text-amber-900'
+  if (s === 'payable') return 'bg-amber-100 text-warning-foreground'
   if (s === 'credit') return 'bg-sky-100 text-sky-900'
   return 'bg-emerald-100 text-emerald-800'
 }

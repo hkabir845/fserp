@@ -105,26 +105,26 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   const getIcon = () => {
     switch (toast.type) {
       case 'success':
-        return <CheckCircle className="h-5 w-5 text-green-600" />
+        return <CheckCircle className="h-5 w-5 text-success" />
       case 'error':
-        return <XCircle className="h-5 w-5 text-red-600" />
+        return <XCircle className="h-5 w-5 text-destructive" />
       case 'warning':
         return <AlertCircle className="h-5 w-5 text-yellow-600" />
       case 'info':
-        return <Info className="h-5 w-5 text-blue-600" />
+        return <Info className="h-5 w-5 text-primary" />
     }
   }
 
   const getBackgroundColor = () => {
     switch (toast.type) {
       case 'success':
-        return 'bg-green-50 border-green-200'
+        return 'bg-green-50 border-success/25'
       case 'error':
-        return 'bg-red-50 border-red-200'
+        return 'bg-destructive/5 border-destructive/25'
       case 'warning':
         return 'bg-yellow-50 border-yellow-200'
       case 'info':
-        return 'bg-blue-50 border-blue-200'
+        return 'bg-blue-50 border-primary/25'
     }
   }
 
@@ -141,11 +141,11 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     >
       <div className="flex-shrink-0">{getIcon()}</div>
       <div className="flex-1">
-        <p className="text-sm font-medium text-gray-900">{messageString}</p>
+        <p className="text-sm font-medium text-foreground">{messageString}</p>
       </div>
       <button
         onClick={onClose}
-        className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+        className="flex-shrink-0 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
       >
         <X className="h-4 w-4" />
       </button>

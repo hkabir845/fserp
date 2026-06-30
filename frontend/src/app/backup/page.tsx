@@ -66,9 +66,9 @@ function TenantBackupRestoreContent() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-border border-t-blue-600" />
         </div>
       </PageLayout>
     )
@@ -76,13 +76,13 @@ function TenantBackupRestoreContent() {
 
   if (!canAccessBackup(userRole)) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center px-4 py-8 sm:p-8">
-          <div className="max-w-lg rounded-xl border border-gray-200 bg-white p-6 text-center shadow-sm">
-            <p className="text-gray-700">
+          <div className="max-w-lg rounded-xl border border-border bg-white p-6 text-center shadow-sm">
+            <p className="text-foreground/85">
               You do not have permission to back up or restore tenant data. Ask a company administrator to grant{' '}
               <strong>Backup &amp; restore</strong> in Roles &amp; access, or use{' '}
-              <Link href="/roles" className="font-medium text-blue-700 hover:underline">
+              <Link href="/roles" className="font-medium text-primary hover:underline">
                 Roles &amp; access
               </Link>{' '}
               if you manage permissions.
@@ -94,7 +94,7 @@ function TenantBackupRestoreContent() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         eyebrow={pageMeta.eyebrow}

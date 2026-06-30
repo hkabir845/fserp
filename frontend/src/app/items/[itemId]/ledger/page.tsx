@@ -42,8 +42,8 @@ type LedgerPayload = {
 
 const TYPE_BADGE: Record<string, string> = {
   purchase: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  sale: 'bg-slate-100 text-slate-700 ring-slate-200',
-  adjustment: 'bg-amber-50 text-amber-700 ring-amber-200',
+  sale: 'bg-muted text-foreground/85 ring-border',
+  adjustment: 'bg-warning/10 text-warning-foreground ring-amber-200',
 }
 
 function num(raw: string | null | undefined): number {
@@ -119,25 +119,25 @@ export default function ItemStockLedgerPage() {
     <PageLayout>
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
         <div className="mb-4 flex items-center gap-2 text-sm">
-          <Link href="/items" className="inline-flex items-center gap-1 text-teal-700 hover:underline">
+          <Link href="/items" className="inline-flex items-center gap-1 text-primary hover:underline">
             <ArrowLeft className="h-4 w-4" /> Back to products
           </Link>
         </div>
 
         <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-semibold text-slate-900">
-              <ScrollText className="h-5 w-5 text-teal-700" />
+            <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              <ScrollText className="h-5 w-5 text-primary" />
               Stock ledger
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               {data?.item_name || 'Product'} — chronological stock in / out with running balance.
             </p>
           </div>
           {data && (
-            <div className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-2 text-right">
-              <div className="text-xs uppercase tracking-wide text-teal-700/80">On hand</div>
-              <div className="text-lg font-semibold tabular-nums text-teal-900">
+            <div className="rounded-lg border border-primary/25 bg-accent/60 px-4 py-2 text-right">
+              <div className="text-xs uppercase tracking-wide text-primary/80">On hand</div>
+              <div className="text-lg font-semibold tabular-nums text-primary">
                 {formatNumber(num(data.current_quantity_on_hand), 2)} {unit}
               </div>
             </div>
@@ -161,7 +161,7 @@ export default function ItemStockLedgerPage() {
           </div>
         )}
 
-        <div className="mb-3 rounded-lg border border-slate-200 bg-white p-3">
+        <div className="mb-3 rounded-lg border border-border bg-white p-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {DATE_PRESETS.map((p) => (
               <button
@@ -170,8 +170,8 @@ export default function ItemStockLedgerPage() {
                 onClick={() => applyPreset(p)}
                 className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
                   activePreset === p.key
-                    ? 'border-teal-600 bg-teal-600 text-white'
-                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                    ? 'border-teal-600 bg-primary text-white'
+                    : 'border-border text-muted-foreground hover:bg-muted/40'
                 }`}
               >
                 {p.label}
@@ -179,7 +179,7 @@ export default function ItemStockLedgerPage() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap items-end gap-3">
-            <label className="flex flex-col text-xs font-medium text-slate-600">
+            <label className="flex flex-col text-xs font-medium text-muted-foreground">
               From
               <input
                 type="date"
@@ -188,10 +188,10 @@ export default function ItemStockLedgerPage() {
                   setStart(e.target.value)
                   setActivePreset('')
                 }}
-                className="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className="mt-1 rounded-md border border-border px-2 py-1.5 text-sm"
               />
             </label>
-            <label className="flex flex-col text-xs font-medium text-slate-600">
+            <label className="flex flex-col text-xs font-medium text-muted-foreground">
               To
               <input
                 type="date"
@@ -200,14 +200,14 @@ export default function ItemStockLedgerPage() {
                   setEnd(e.target.value)
                   setActivePreset('')
                 }}
-                className="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className="mt-1 rounded-md border border-border px-2 py-1.5 text-sm"
               />
             </label>
             {(start || end) && (
               <button
                 type="button"
                 onClick={clearDates}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/40"
               >
                 Clear
               </button>
@@ -215,19 +215,19 @@ export default function ItemStockLedgerPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-lg border border-border bg-white shadow-sm">
           {loading ? (
-            <p className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
+            <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading ledger…
             </p>
           ) : !data || data.rows.length === 0 ? (
-            <p className="py-12 text-center text-sm text-slate-500">
+            <p className="py-12 text-center text-sm text-muted-foreground">
               No stock movements{start || end ? ' in this date range' : ' yet'} for this product.
             </p>
           ) : (
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                <tr className="border-b border-border text-xs uppercase text-muted-foreground">
                   <th className="px-4 py-2.5">Date</th>
                   <th className="px-4 py-2.5">Type</th>
                   <th className="px-4 py-2.5">Reference</th>
@@ -239,21 +239,21 @@ export default function ItemStockLedgerPage() {
               </thead>
               <tbody>
                 {data.rows.map((r, i) => (
-                  <tr key={`${r.type}-${r.reference}-${r.date}-${i}`} className="border-b border-slate-100 hover:bg-slate-50/70">
-                    <td className="whitespace-nowrap px-4 py-2 tabular-nums text-slate-700">
+                  <tr key={`${r.type}-${r.reference}-${r.date}-${i}`} className="border-b border-border/70 hover:bg-muted/40/70">
+                    <td className="whitespace-nowrap px-4 py-2 tabular-nums text-foreground/85">
                       {formatDateOnly(r.date)}
                     </td>
                     <td className="px-4 py-2">
                       <span
                         className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                          TYPE_BADGE[r.type] || 'bg-slate-100 text-slate-700 ring-slate-200'
+                          TYPE_BADGE[r.type] || 'bg-muted text-foreground/85 ring-border'
                         }`}
                       >
                         {r.type_label}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-slate-700">{r.reference || '—'}</td>
-                    <td className="px-4 py-2 text-slate-600">{r.counterparty || '—'}</td>
+                    <td className="px-4 py-2 text-foreground/85">{r.reference || '—'}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{r.counterparty || '—'}</td>
                     <td className="px-4 py-2 text-right tabular-nums text-emerald-700">
                       {r.qty_in ? (
                         <span className="inline-flex items-center gap-1">
@@ -274,7 +274,7 @@ export default function ItemStockLedgerPage() {
                         ''
                       )}
                     </td>
-                    <td className="px-4 py-2 text-right font-medium tabular-nums text-slate-900">
+                    <td className="px-4 py-2 text-right font-medium tabular-nums text-foreground">
                       {formatNumber(num(r.balance), 2)}
                     </td>
                   </tr>
@@ -284,7 +284,7 @@ export default function ItemStockLedgerPage() {
           )}
         </div>
 
-        <p className="mt-3 text-xs text-slate-500">
+        <p className="mt-3 text-xs text-muted-foreground">
           In = posted purchase bills. Out = finalized sales invoices. Adjustments = posted stock counts
           (gain or loss). The opening balance is derived so the running balance reconciles to current on hand.
         </p>
@@ -307,10 +307,10 @@ function SummaryCard({
       ? 'text-emerald-700'
       : tone === 'rose'
         ? 'text-rose-600'
-        : 'text-slate-900'
+        : 'text-foreground'
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="rounded-lg border border-border bg-white px-3 py-2">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`text-base font-semibold tabular-nums ${toneClass}`}>{value}</div>
     </div>
   )

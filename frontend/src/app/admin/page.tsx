@@ -874,7 +874,7 @@ function SuperAdminPageContent() {
   if (userRole !== 'super_admin') {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="erp-loading-spinner h-12 w-12"></div>
       </div>
     )
   }
@@ -882,7 +882,7 @@ function SuperAdminPageContent() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="erp-loading-spinner h-12 w-12"></div>
       </div>
     )
   }
@@ -899,15 +899,15 @@ function SuperAdminPageContent() {
           <div className="p-4 sm:p-6 lg:p-8">
           {/* Info Banner - Mode is controlled from Sidebar */}
           {mode === 'fsms_erp' && (
-            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div className="mb-6 rounded-lg border border-primary/25 bg-blue-50 p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
-                  <Building2 className="h-5 w-5 shrink-0 text-blue-600" />
+                  <Building2 className="h-5 w-5 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-blue-900">
                       FSMS ERP Mode Active
                     </p>
-                    <p className="mt-1 text-xs text-blue-700">
+                    <p className="mt-1 text-xs text-primary">
                       Use the sidebar toggle to switch to SaaS Dashboard mode for platform management
                     </p>
                   </div>
@@ -921,7 +921,7 @@ function SuperAdminPageContent() {
                       <button
                         type="button"
                         onClick={handlePushMasterUpdates}
-                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 sm:w-auto"
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-success px-4 py-2.5 text-sm font-medium text-white hover:bg-success/90 focus:outline-none focus:ring-2 focus:ring-success sm:w-auto"
                       >
                         <Upload className="h-4 w-4 shrink-0" />
                         <span className="text-center leading-tight">Push updates to all companies</span>
@@ -937,15 +937,15 @@ function SuperAdminPageContent() {
           <div className="mb-6 sm:mb-8">
             <div className="mb-2 flex flex-wrap items-center gap-2 sm:gap-3">
               {mode === 'saas_dashboard' ? (
-                <Shield className="h-7 w-7 shrink-0 text-blue-600 sm:h-8 sm:w-8" />
+                <Shield className="h-7 w-7 shrink-0 text-primary sm:h-8 sm:w-8" />
               ) : (
-                <Building2 className="h-7 w-7 shrink-0 text-blue-600 sm:h-8 sm:w-8" />
+                <Building2 className="h-7 w-7 shrink-0 text-primary sm:h-8 sm:w-8" />
               )}
-              <h1 className="min-w-0 text-xl font-bold leading-tight text-gray-900 sm:text-2xl lg:text-3xl">
+              <h1 className="min-w-0 text-xl font-bold leading-tight text-foreground sm:text-2xl lg:text-3xl">
                 {mode === 'saas_dashboard' ? 'SaaS Management Dashboard' : 'FSMS ERP — Company Management'}
               </h1>
             </div>
-            <p className="max-w-3xl text-sm text-gray-600 sm:text-base">
+            <p className="max-w-3xl text-sm text-muted-foreground sm:text-base">
               {mode === 'saas_dashboard'
                 ? 'Manage all companies, users, contracts, and platform-wide settings'
                 : 'Select a company from the sidebar to manage its ERP system, stations, customers, invoices, and more'
@@ -960,19 +960,19 @@ function SuperAdminPageContent() {
             <div className="bg-white rounded-lg shadow app-modal-pad">
               {!selectedCompany ? (
                 <div className="text-center py-12">
-                  <Building2 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Select a Company</h3>
-                  <p className="text-gray-600 mb-6">Choose a company from the sidebar dropdown to manage its ERP system</p>
+                  <Building2 className="h-16 w-16 text-muted-foreground/70 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-foreground mb-2">Select a Company</h3>
+                  <p className="text-muted-foreground mb-6">Choose a company from the sidebar dropdown to manage its ERP system</p>
                   <div className="max-w-md mx-auto">
-                    <p className="text-sm text-gray-500 mb-4">
+                    <p className="text-sm text-muted-foreground mb-4">
                       Use the company switcher in the left sidebar to select Master Company for development or any other company for customization.
                     </p>
                   </div>
                 </div>
               ) : (
                 <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-gray-600 mt-4">Redirecting to {selectedCompany.name} ERP Dashboard...</p>
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                  <p className="text-muted-foreground mt-4">Redirecting to {selectedCompany.name} ERP Dashboard...</p>
                 </div>
               )}
             </div>
@@ -991,14 +991,14 @@ function SuperAdminPageContent() {
                         <div className="bg-white rounded-lg shadow p-6">
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm text-gray-600">Total Companies</p>
-                              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total_companies}</p>
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-sm text-muted-foreground">Total Companies</p>
+                              <p className="text-2xl font-bold text-foreground mt-1">{stats.total_companies}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
                                 {stats.active_companies} active, {stats.inactive_companies} inactive
                               </p>
                             </div>
                             <div className="p-3 bg-blue-100 rounded-full">
-                              <Building2 className="h-6 w-6 text-blue-600" />
+                              <Building2 className="h-6 w-6 text-primary" />
                             </div>
                           </div>
                         </div>
@@ -1006,12 +1006,12 @@ function SuperAdminPageContent() {
                         <div className="bg-white rounded-lg shadow p-6">
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm text-gray-600">Total Users</p>
-                              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total_users}</p>
-                              <p className="text-xs text-gray-500 mt-1">Across all companies</p>
+                              <p className="text-sm text-muted-foreground">Total Users</p>
+                              <p className="text-2xl font-bold text-foreground mt-1">{stats.total_users}</p>
+                              <p className="text-xs text-muted-foreground mt-1">Across all companies</p>
                             </div>
-                            <div className="p-3 bg-green-100 rounded-full">
-                              <Users className="h-6 w-6 text-green-600" />
+                            <div className="p-3 bg-success/15 rounded-full">
+                              <Users className="h-6 w-6 text-success" />
                             </div>
                           </div>
                         </div>
@@ -1019,9 +1019,9 @@ function SuperAdminPageContent() {
                         <div className="bg-white rounded-lg shadow p-6">
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm text-gray-600">Total Stations</p>
-                              <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total_stations}</p>
-                              <p className="text-xs text-gray-500 mt-1">Across all companies</p>
+                              <p className="text-sm text-muted-foreground">Total Stations</p>
+                              <p className="text-2xl font-bold text-foreground mt-1">{stats.total_stations}</p>
+                              <p className="text-xs text-muted-foreground mt-1">Across all companies</p>
                             </div>
                             <div className="p-3 bg-purple-100 rounded-full">
                               <MapPin className="h-6 w-6 text-purple-600" />
@@ -1032,11 +1032,11 @@ function SuperAdminPageContent() {
                         <div className="bg-white rounded-lg shadow p-6">
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm text-gray-600">Total Sales</p>
-                              <p className="text-2xl font-bold text-gray-900 mt-1">
+                              <p className="text-sm text-muted-foreground">Total Sales</p>
+                              <p className="text-2xl font-bold text-foreground mt-1">
                                 {formatCurrency(stats.total_sales, 'BDT')}
                               </p>
-                              <p className="text-xs text-gray-500 mt-1">All companies, all time</p>
+                              <p className="text-xs text-muted-foreground mt-1">All companies, all time</p>
                             </div>
                             <div className="p-3 bg-yellow-100 rounded-full">
                               <TrendingUp className="h-6 w-6 text-yellow-600" />
@@ -1048,49 +1048,49 @@ function SuperAdminPageContent() {
                       {/* Additional Stats */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                         <div className="bg-white rounded-lg shadow p-6">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-4">Users by Role</h3>
+                          <h3 className="text-lg font-semibold text-foreground mb-4">Users by Role</h3>
                           <div className="space-y-2">
                             {Object.entries(stats.users_by_role).map(([role, count]) => (
                               <div key={role} className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600 capitalize">{role.replace('_', ' ')}</span>
-                                <span className="text-sm font-semibold text-gray-900">{count}</span>
+                                <span className="text-sm text-muted-foreground capitalize">{role.replace('_', ' ')}</span>
+                                <span className="text-sm font-semibold text-foreground">{count}</span>
                               </div>
                             ))}
                           </div>
                         </div>
 
                         <div className="bg-white rounded-lg shadow p-6">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-4">Resource Summary</h3>
+                          <h3 className="text-lg font-semibold text-foreground mb-4">Resource Summary</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Customers</span>
-                              <span className="text-sm font-semibold text-gray-900">{stats.total_customers}</span>
+                              <span className="text-sm text-muted-foreground">Customers</span>
+                              <span className="text-sm font-semibold text-foreground">{stats.total_customers}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Vendors</span>
-                              <span className="text-sm font-semibold text-gray-900">{stats.total_vendors}</span>
+                              <span className="text-sm text-muted-foreground">Vendors</span>
+                              <span className="text-sm font-semibold text-foreground">{stats.total_vendors}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Invoices</span>
-                              <span className="text-sm font-semibold text-gray-900">{stats.total_invoices}</span>
+                              <span className="text-sm text-muted-foreground">Invoices</span>
+                              <span className="text-sm font-semibold text-foreground">{stats.total_invoices}</span>
                             </div>
                           </div>
                         </div>
 
                         <div className="bg-white rounded-lg shadow p-6">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-4">Company Status</h3>
+                          <h3 className="text-lg font-semibold text-foreground mb-4">Company Status</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Active</span>
-                              <span className="text-sm font-semibold text-green-600">{stats.active_companies}</span>
+                              <span className="text-sm text-muted-foreground">Active</span>
+                              <span className="text-sm font-semibold text-success">{stats.active_companies}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">Inactive</span>
-                              <span className="text-sm font-semibold text-red-600">{stats.inactive_companies}</span>
+                              <span className="text-sm text-muted-foreground">Inactive</span>
+                              <span className="text-sm font-semibold text-destructive">{stats.inactive_companies}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-600">With Subscription</span>
-                              <span className="text-sm font-semibold text-blue-600">{stats.active_companies}</span>
+                              <span className="text-sm text-muted-foreground">With Subscription</span>
+                              <span className="text-sm font-semibold text-primary">{stats.active_companies}</span>
                             </div>
                           </div>
                         </div>
@@ -1098,8 +1098,8 @@ function SuperAdminPageContent() {
                     </>
                   ) : (
                     <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                      <p className="text-gray-600">Loading platform statistics...</p>
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">Loading platform statistics...</p>
                     </div>
                   )}
                 </div>
@@ -1109,10 +1109,10 @@ function SuperAdminPageContent() {
               {activeTab === 'companies' && (
                 <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">All Companies</h2>
+                <h2 className="text-xl font-bold text-foreground">All Companies</h2>
                 <button
                   onClick={handleCreateCompany}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary flex items-center space-x-2 transition-colors"
                 >
                   <Plus className="h-5 w-5" />
                   <span>New Company</span>
@@ -1120,14 +1120,14 @@ function SuperAdminPageContent() {
               </div>
               
               {/* Info Banner */}
-              <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="mb-6 bg-blue-50 border border-primary/25 rounded-lg p-4">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
-                    <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <Shield className="h-5 w-5 text-primary mt-0.5" />
                   </div>
                   <div className="ml-3">
                     <h3 className="text-sm font-medium text-blue-900">Maintenance & Upgrades</h3>
-                    <div className="mt-2 text-sm text-blue-700">
+                    <div className="mt-2 text-sm text-primary">
                       <p>
                         All subscribed companies receive <strong>free maintenance and upgrades</strong> while their subscription is active and continuing. 
                         This includes system updates, feature enhancements, security patches, and technical support.
@@ -1141,12 +1141,12 @@ function SuperAdminPageContent() {
               <div className="grid grid-cols-1 gap-6">
                 {companies.length === 0 ? (
                   <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-                    <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600 text-lg mb-2">No companies found</p>
-                    <p className="text-gray-500 text-sm mb-4">Create your first company to get started</p>
+                    <Building2 className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                    <p className="text-muted-foreground text-lg mb-2">No companies found</p>
+                    <p className="text-muted-foreground text-sm mb-4">Create your first company to get started</p>
                     <button
                       onClick={handleCreateCompany}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="erp-btn-primary transition-colors"
                     >
                       Create Company
                     </button>
@@ -1161,8 +1161,8 @@ function SuperAdminPageContent() {
                   })
                   .map((company) => {
                     const statusColor = company.is_active 
-                      ? (company.subscription_active ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200')
-                      : 'bg-red-50 border-red-200'
+                      ? (company.subscription_active ? 'bg-green-50 border-success/25' : 'bg-blue-50 border-primary/25')
+                      : 'bg-destructive/5 border-destructive/25'
                     
                     const capacityStations = company.capacity_usage?.stations
                     const capacityUsers = company.capacity_usage?.users
@@ -1178,26 +1178,26 @@ function SuperAdminPageContent() {
                                 {company.is_master === 'true' && (
                                   <Crown className="h-6 w-6 text-yellow-600" />
                                 )}
-                                <h3 className="text-xl font-bold text-gray-900">{company.name}</h3>
+                                <h3 className="text-xl font-bold text-foreground">{company.name}</h3>
                                 {company.is_master === 'true' && (
                                   <span className="px-3 py-1 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded-full">Master</span>
                                 )}
                                 <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
                                   company.is_active 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-red-100 text-red-800'
+                                    ? 'bg-success/15 text-success' 
+                                    : 'bg-destructive/10 text-destructive'
                                 }`}>
                                   {company.is_active ? 'Active' : 'Inactive'}
                                 </span>
                                 {company.subscription_active && (
-                                  <span className="px-3 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full flex items-center">
+                                  <span className="px-3 py-1 text-xs font-semibold bg-blue-100 text-primary rounded-full flex items-center">
                                     <Crown className="h-3 w-3 mr-1" />
                                     Subscribed
                                   </span>
                                 )}
                               </div>
                               {company.legal_name && (
-                                <p className="text-sm text-gray-600">{company.legal_name}</p>
+                                <p className="text-sm text-muted-foreground">{company.legal_name}</p>
                               )}
                             </div>
                             <div className="flex items-center space-x-2">
@@ -1207,7 +1207,7 @@ function SuperAdminPageContent() {
                                   className={`p-2 rounded-lg transition-colors ${
                                     company.subscription.is_expired || (company.subscription.days_until_expiry !== null && company.subscription.days_until_expiry <= 7)
                                       ? 'text-orange-600 hover:bg-orange-50'
-                                      : 'text-green-600 hover:bg-green-50'
+                                      : 'text-success hover:bg-green-50'
                                   }`}
                                   title="Manage Subscription"
                                 >
@@ -1219,14 +1219,14 @@ function SuperAdminPageContent() {
                                   setViewingCompany(company)
                                   setShowCompanyViewModal(true)
                                 }}
-                                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                className="p-2 text-success hover:bg-green-50 rounded-lg transition-colors"
                                 title="View Company Details"
                               >
                                 <Eye className="h-5 w-5" />
                               </button>
                               <button
                                 onClick={() => handleEditCompany(company)}
-                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                className="p-2 text-primary hover:bg-accent rounded-lg transition-colors"
                                 title="Edit Company"
                               >
                                 <Edit2 className="h-5 w-5" />
@@ -1235,7 +1235,7 @@ function SuperAdminPageContent() {
                                 <button
                                   type="button"
                                   onClick={() => handleDeactivateCompany(company)}
-                                  className="p-2 text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                                  className="p-2 text-warning-foreground hover:bg-warning/10 rounded-lg transition-colors"
                                   title="Deactivate company (suspend access, keep all data)"
                                 >
                                   <Ban className="h-5 w-5" />
@@ -1255,7 +1255,7 @@ function SuperAdminPageContent() {
                                 <button
                                   type="button"
                                   onClick={() => openDeleteCompanyModal(company)}
-                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  className="p-2 text-destructive hover:bg-destructive/5 rounded-lg transition-colors"
                                   title="Permanently delete company and all data"
                                 >
                                   <Trash2 className="h-5 w-5" />
@@ -1268,26 +1268,26 @@ function SuperAdminPageContent() {
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             {/* Contact & Domain */}
                             <div className="space-y-3">
-                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact & Domain</h4>
+                              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact & Domain</h4>
                               <div className="space-y-2">
                                 <div className="flex items-center space-x-2">
-                                  <span className="text-sm text-gray-600">Email:</span>
-                                  <span className="text-sm font-medium text-gray-900">{company.email || '-'}</span>
+                                  <span className="text-sm text-muted-foreground">Email:</span>
+                                  <span className="text-sm font-medium text-foreground">{company.email || '-'}</span>
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                  <span className="text-sm text-gray-600">Phone:</span>
-                                  <span className="text-sm font-medium text-gray-900">{company.phone || '-'}</span>
+                                  <span className="text-sm text-muted-foreground">Phone:</span>
+                                  <span className="text-sm font-medium text-foreground">{company.phone || '-'}</span>
                                 </div>
                                 {company.subdomain && (
                                   <div className="flex items-center space-x-2">
-                                    <span className="text-sm text-gray-600">Subdomain:</span>
-                                    <span className="text-sm font-medium text-blue-600">{company.subdomain}.yourdomain.com</span>
+                                    <span className="text-sm text-muted-foreground">Subdomain:</span>
+                                    <span className="text-sm font-medium text-primary">{company.subdomain}.yourdomain.com</span>
                                   </div>
                                 )}
                                 {company.custom_domain && (
                                   <div className="flex items-center space-x-2">
-                                    <span className="text-sm text-gray-600">Domain:</span>
-                                    <span className="text-sm font-medium text-blue-600">{company.custom_domain}</span>
+                                    <span className="text-sm text-muted-foreground">Domain:</span>
+                                    <span className="text-sm font-medium text-primary">{company.custom_domain}</span>
                                   </div>
                                 )}
                               </div>
@@ -1295,21 +1295,21 @@ function SuperAdminPageContent() {
 
                             {/* Statistics & Capacity */}
                             <div className="space-y-3">
-                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Statistics & Capacity</h4>
+                              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Statistics & Capacity</h4>
                               <div className="space-y-3">
                                 {/* Users Capacity */}
                                 <div>
                                   <div className="flex justify-between items-center mb-1">
-                                    <span className="text-sm text-gray-600">Users</span>
-                                    <span className="text-sm font-semibold text-gray-900">
+                                    <span className="text-sm text-muted-foreground">Users</span>
+                                    <span className="text-sm font-semibold text-foreground">
                                       {company.user_count}{capacityUsers ? ` / ${capacityUsers.limit}` : ''}
                                     </span>
                                   </div>
                                   {capacityUsers && (
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div className="w-full bg-muted rounded-full h-2">
                                       <div 
                                         className={`h-2 rounded-full transition-all ${
-                                          capacityUsers.percentage >= 90 ? 'bg-red-500' :
+                                          capacityUsers.percentage >= 90 ? 'bg-destructive/50' :
                                           capacityUsers.percentage >= 70 ? 'bg-yellow-500' :
                                           'bg-green-500'
                                         }`}
@@ -1322,16 +1322,16 @@ function SuperAdminPageContent() {
                                 {/* Stations Capacity */}
                                 <div>
                                   <div className="flex justify-between items-center mb-1">
-                                    <span className="text-sm text-gray-600">Stations</span>
-                                    <span className="text-sm font-semibold text-gray-900">
+                                    <span className="text-sm text-muted-foreground">Stations</span>
+                                    <span className="text-sm font-semibold text-foreground">
                                       {company.station_count}{capacityStations ? ` / ${capacityStations.limit}` : ''}
                                     </span>
                                   </div>
                                   {capacityStations && (
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div className="w-full bg-muted rounded-full h-2">
                                       <div 
                                         className={`h-2 rounded-full transition-all ${
-                                          capacityStations.percentage >= 90 ? 'bg-red-500' :
+                                          capacityStations.percentage >= 90 ? 'bg-destructive/50' :
                                           capacityStations.percentage >= 70 ? 'bg-yellow-500' :
                                           'bg-green-500'
                                         }`}
@@ -1343,71 +1343,71 @@ function SuperAdminPageContent() {
                                 
                                 {/* Customers */}
                                 <div className="flex justify-between items-center">
-                                  <span className="text-sm text-gray-600">Customers</span>
-                                  <span className="text-sm font-semibold text-gray-900">{company.customer_count}</span>
+                                  <span className="text-sm text-muted-foreground">Customers</span>
+                                  <span className="text-sm font-semibold text-foreground">{company.customer_count}</span>
                                 </div>
                               </div>
                             </div>
 
                             {/* SaaS Subscription Ledger */}
                             <div className="space-y-3">
-                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">SaaS Subscription Ledger</h4>
+                              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SaaS Subscription Ledger</h4>
                               <div className="space-y-3">
                                 {/* Subscription Revenue (Total Paid) */}
-                                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                                  <div className="text-xs text-gray-500 mb-1">Subscription Revenue (Total Paid)</div>
-                                  <div className="text-lg font-bold text-green-700">
+                                <div className="bg-green-50 rounded-lg p-3 border border-success/25">
+                                  <div className="text-xs text-muted-foreground mb-1">Subscription Revenue (Total Paid)</div>
+                                  <div className="text-lg font-bold text-success">
                                     {formatCurrency(company.subscription_total_paid || company.ledger_balance || 0, company.currency || 'BDT')}
                                   </div>
-                                  <div className="text-xs text-gray-500 mt-1">Total subscription payments received from tenant</div>
+                                  <div className="text-xs text-muted-foreground mt-1">Total subscription payments received from tenant</div>
                                 </div>
                                 
                                 {/* Outstanding Subscription Payments */}
                                 <div className={`rounded-lg p-3 border ${
                                   (company.subscription_outstanding || company.accounts_receivable || 0) > 0
-                                    ? 'bg-red-50 border-red-200'
-                                    : 'bg-gray-50 border-gray-200'
+                                    ? 'bg-destructive/5 border-destructive/25'
+                                    : 'bg-muted/40 border-border'
                                 }`}>
-                                  <div className="text-xs text-gray-500 mb-1">Outstanding Subscription Payments</div>
+                                  <div className="text-xs text-muted-foreground mb-1">Outstanding Subscription Payments</div>
                                   <div className={`text-lg font-bold ${
                                     (company.subscription_outstanding || company.accounts_receivable || 0) > 0
-                                      ? 'text-red-700'
-                                      : 'text-gray-900'
+                                      ? 'text-destructive'
+                                      : 'text-foreground'
                                   }`}>
                                     {formatCurrency(company.subscription_outstanding || company.accounts_receivable || 0, company.currency || 'BDT')}
                                   </div>
-                                  <div className="text-xs text-gray-500 mt-1">Amount due from tenant for subscriptions</div>
+                                  <div className="text-xs text-muted-foreground mt-1">Amount due from tenant for subscriptions</div>
                                 </div>
                                 
                                 {/* Total Billed */}
-                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                                  <div className="text-xs text-gray-500 mb-1">Total Subscription Billed</div>
-                                  <div className="text-lg font-bold text-blue-700">
+                                <div className="bg-blue-50 rounded-lg p-3 border border-primary/25">
+                                  <div className="text-xs text-muted-foreground mb-1">Total Subscription Billed</div>
+                                  <div className="text-lg font-bold text-primary">
                                     {formatCurrency(company.subscription_total_billed || 0, company.currency || 'BDT')}
                                   </div>
-                                  <div className="text-xs text-gray-500 mt-1">Total amount billed to tenant (all time)</div>
+                                  <div className="text-xs text-muted-foreground mt-1">Total amount billed to tenant (all time)</div>
                                 </div>
                                 
                                 {/* Payment Status Summary */}
-                                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                  <div className="text-xs text-gray-500 mb-2">Payment Status Summary</div>
+                                <div className="bg-muted/40 rounded-lg p-3 border border-border">
+                                  <div className="text-xs text-muted-foreground mb-2">Payment Status Summary</div>
                                   <div className="space-y-1 text-xs">
                                     <div className="flex justify-between">
-                                      <span className="text-gray-600">Total Billed:</span>
-                                      <span className="font-semibold text-gray-900">
+                                      <span className="text-muted-foreground">Total Billed:</span>
+                                      <span className="font-semibold text-foreground">
                                         {formatCurrency(company.subscription_total_billed || 0, company.currency || 'BDT')}
                                       </span>
                                     </div>
                                     <div className="flex justify-between">
-                                      <span className="text-gray-600">Total Paid:</span>
-                                      <span className="font-semibold text-green-700">
+                                      <span className="text-muted-foreground">Total Paid:</span>
+                                      <span className="font-semibold text-success">
                                         {formatCurrency(company.subscription_total_paid || company.ledger_balance || 0, company.currency || 'BDT')}
                                       </span>
                                     </div>
                                     <div className="flex justify-between border-t pt-1 mt-1">
-                                      <span className="text-gray-600">Outstanding:</span>
+                                      <span className="text-muted-foreground">Outstanding:</span>
                                       <span className={`font-semibold ${
-                                        (company.subscription_outstanding || company.accounts_receivable || 0) > 0 ? 'text-red-700' : 'text-gray-900'
+                                        (company.subscription_outstanding || company.accounts_receivable || 0) > 0 ? 'text-destructive' : 'text-foreground'
                                       }`}>
                                         {formatCurrency(company.subscription_outstanding || company.accounts_receivable || 0, company.currency || 'BDT')}
                                       </span>
@@ -1419,16 +1419,16 @@ function SuperAdminPageContent() {
 
                             {/* Subscription & Charges */}
                             <div className="space-y-3">
-                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subscription & Charges</h4>
+                              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subscription & Charges</h4>
                               <div className="space-y-3">
                                 {/* Subscription Status */}
                                 {company.subscription ? (
                                   <div className="bg-blue-50 rounded-lg p-3">
-                                    <div className="text-xs text-gray-500 mb-1">Plan</div>
-                                    <div className="text-sm font-bold text-gray-900 mb-2">{company.subscription.plan_name || 'N/A'}</div>
+                                    <div className="text-xs text-muted-foreground mb-1">Plan</div>
+                                    <div className="text-sm font-bold text-foreground mb-2">{company.subscription.plan_name || 'N/A'}</div>
                                     <div className={`text-xs font-semibold mb-2 ${
-                                      company.subscription.status === 'active' ? 'text-green-600' :
-                                      company.subscription.status === 'expired' ? 'text-red-600' :
+                                      company.subscription.status === 'active' ? 'text-success' :
+                                      company.subscription.status === 'expired' ? 'text-destructive' :
                                       'text-yellow-600'
                                     }`}>
                                       {company.subscription.status.toUpperCase()}
@@ -1436,10 +1436,10 @@ function SuperAdminPageContent() {
                                     {company.subscription.current_period_end && (
                                       <div className={`text-xs flex items-center ${
                                         company.subscription.is_expired 
-                                          ? 'text-red-600 font-semibold' 
+                                          ? 'text-destructive font-semibold' 
                                           : company.subscription.days_until_expiry !== null && company.subscription.days_until_expiry <= 7
                                           ? 'text-orange-600 font-semibold'
-                                          : 'text-gray-600'
+                                          : 'text-muted-foreground'
                                       }`}>
                                         <Calendar className="h-3 w-3 inline mr-1" />
                                         {company.subscription.is_expired ? (
@@ -1457,14 +1457,14 @@ function SuperAdminPageContent() {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="bg-gray-50 rounded-lg p-3">
-                                    <div className="text-xs text-gray-400">No subscription</div>
+                                  <div className="bg-muted/40 rounded-lg p-3">
+                                    <div className="text-xs text-muted-foreground/70">No subscription</div>
                                   </div>
                                 )}
                                 
                                 {/* Charges */}
                                 <div className="bg-purple-50 rounded-lg p-3">
-                                  <div className="text-xs text-gray-500 mb-1">Monthly Charges</div>
+                                  <div className="text-xs text-muted-foreground mb-1">Monthly Charges</div>
                                   {company.monthly_charge ? (
                                     <div className="text-lg font-bold text-purple-900">
                                       {formatCurrency(company.monthly_charge, company.currency || 'BDT')}/mo
@@ -1474,15 +1474,15 @@ function SuperAdminPageContent() {
                                       <div className="text-lg font-bold text-purple-900">
                                         {formatCurrency(company.yearly_charge, company.currency || 'BDT')}/yr
                                       </div>
-                                      <div className="text-xs text-gray-600 mt-1">
+                                      <div className="text-xs text-muted-foreground mt-1">
                                         ({formatCurrency(company.yearly_charge / 12, company.currency || 'BDT')}/mo)
                                       </div>
                                     </>
                                   ) : (
-                                    <div className="text-sm text-gray-400">No charges</div>
+                                    <div className="text-sm text-muted-foreground/70">No charges</div>
                                   )}
                                   {company.has_active_contract && (company.subscription_active || company.subscription?.is_active) && (
-                                    <div className="text-xs text-green-600 mt-2 flex items-center">
+                                    <div className="text-xs text-success mt-2 flex items-center">
                                       <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></span>
                                       Free maintenance & upgrades
                                     </div>
@@ -1513,13 +1513,13 @@ function SuperAdminPageContent() {
               {activeTab === 'broadcasting' && (
                 <div>
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-                      <Megaphone className="h-6 w-6 text-blue-600" />
+                    <h2 className="text-xl font-bold text-foreground flex items-center space-x-2">
+                      <Megaphone className="h-6 w-6 text-primary" />
                       <span>Broadcasting</span>
                     </h2>
                     <button
                       onClick={handleCreateBroadcast}
-                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="erp-btn-primary flex items-center space-x-2 transition-colors"
                     >
                       <Plus className="h-5 w-5" />
                       <span>New Broadcast</span>
@@ -1527,14 +1527,14 @@ function SuperAdminPageContent() {
                   </div>
 
                   {/* Info Banner */}
-                  <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="mb-6 bg-blue-50 border border-primary/25 rounded-lg p-4">
                     <div className="flex items-start">
                       <div className="flex-shrink-0">
-                        <Megaphone className="h-5 w-5 text-blue-600 mt-0.5" />
+                        <Megaphone className="h-5 w-5 text-primary mt-0.5" />
                       </div>
                       <div className="ml-3">
                         <h3 className="text-sm font-medium text-blue-900">Broadcast Messages to All Tenants</h3>
-                        <div className="mt-2 text-sm text-blue-700">
+                        <div className="mt-2 text-sm text-primary">
                           <p>
                             Send important messages to all tenants about payment due, upgrade requests, service expiry dates, maintenance, and more.
                             Messages can be targeted to specific companies or roles, or sent to everyone.
@@ -1548,25 +1548,25 @@ function SuperAdminPageContent() {
                   <div className="bg-white rounded-lg shadow overflow-hidden">
                     {broadcasts.length === 0 ? (
                       <div className="p-12 text-center">
-                        <Megaphone className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Broadcasts Yet</h3>
-                        <p className="text-gray-600 mb-6">Create your first broadcast message to send to all tenants</p>
+                        <Megaphone className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold text-foreground mb-2">No Broadcasts Yet</h3>
+                        <p className="text-muted-foreground mb-6">Create your first broadcast message to send to all tenants</p>
                         <button
                           onClick={handleCreateBroadcast}
-                          className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          className="inline-flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors"
                         >
                           <Plus className="h-5 w-5" />
                           <span>Create Broadcast</span>
                         </button>
                       </div>
                     ) : (
-                      <div className="divide-y divide-gray-200">
+                      <div className="divide-y divide-border">
                         {broadcasts.map((broadcast: any) => {
                           const priorityColors: Record<string, string> = {
-                            urgent: 'bg-red-100 text-red-800 border-red-200',
+                            urgent: 'bg-destructive/10 text-destructive border-destructive/25',
                             high: 'bg-orange-100 text-orange-800 border-orange-200',
                             medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-                            low: 'bg-blue-100 text-blue-800 border-blue-200'
+                            low: 'bg-blue-100 text-primary border-primary/25'
                           }
                           
                           const typeLabels: Record<string, string> = {
@@ -1580,20 +1580,20 @@ function SuperAdminPageContent() {
                           }
 
                           return (
-                            <div key={broadcast.id} className="p-6 hover:bg-gray-50 transition-colors">
+                            <div key={broadcast.id} className="p-6 hover:bg-muted/40 transition-colors">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center space-x-3 mb-2">
-                                    <h3 className="text-lg font-semibold text-gray-900">{broadcast.title}</h3>
+                                    <h3 className="text-lg font-semibold text-foreground">{broadcast.title}</h3>
                                     <span className={`px-2 py-1 text-xs font-semibold rounded border ${priorityColors[broadcast.priority] || priorityColors.medium}`}>
                                       {broadcast.priority.toUpperCase()}
                                     </span>
-                                    <span className="px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded">
+                                    <span className="px-2 py-1 text-xs font-medium text-foreground/85 bg-muted rounded">
                                       {typeLabels[broadcast.broadcast_type] || broadcast.broadcast_type}
                                     </span>
                                   </div>
-                                  <p className="text-gray-700 mb-3 whitespace-pre-wrap">{broadcast.message}</p>
-                                  <div className="flex items-center space-x-4 text-sm text-gray-500">
+                                  <p className="text-foreground/85 mb-3 whitespace-pre-wrap">{broadcast.message}</p>
+                                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                                     <span>Created by: {broadcast.created_by_name || 'System'}</span>
                                     <span>•</span>
                                     <span>{formatDate(broadcast.created_at, true)}</span>
@@ -1620,7 +1620,7 @@ function SuperAdminPageContent() {
                                 <div className="flex items-center space-x-2 ml-4">
                                   <button
                                     onClick={() => handleDeleteBroadcast(broadcast.id)}
-                                    className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                                    className="p-2 text-destructive hover:text-red-900 hover:bg-destructive/5 rounded transition-colors"
                                     title="Delete Broadcast"
                                   >
                                     <Trash2 className="h-4 w-4" />
@@ -1640,10 +1640,10 @@ function SuperAdminPageContent() {
               {activeTab === 'users' && (
             <div>
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">All Users</h2>
+                <h2 className="text-xl font-bold text-foreground">All Users</h2>
                 <button
                   onClick={handleCreateUser}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary flex items-center space-x-2 transition-colors"
                 >
                   <Plus className="h-5 w-5" />
                   <span>New User</span>
@@ -1651,75 +1651,75 @@ function SuperAdminPageContent() {
               </div>
 
               <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">User</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Company</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Joined</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-border">
                     {users.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center">
-                          <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-600 text-lg mb-2">No users found</p>
-                          <p className="text-gray-500 text-sm">Users will appear here once companies are created</p>
+                          <Users className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                          <p className="text-muted-foreground text-lg mb-2">No users found</p>
+                          <p className="text-muted-foreground text-sm">Users will appear here once companies are created</p>
                         </td>
                       </tr>
                     ) : (
                       users.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-50">
+                      <tr key={user.id} className="hover:bg-muted/40">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
-                            <div className="text-xs text-gray-500">{user.username}</div>
-                            <div className="text-xs text-gray-500">{user.email}</div>
+                            <div className="text-sm font-medium text-foreground">{user.full_name}</div>
+                            <div className="text-xs text-muted-foreground">{user.username}</div>
+                            <div className="text-xs text-muted-foreground">{user.email}</div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             user.role === 'super_admin' ? 'bg-purple-100 text-purple-800' :
-                            user.role === 'admin' ? 'bg-blue-100 text-blue-800' :
-                            user.role === 'accountant' ? 'bg-green-100 text-green-800' :
+                            user.role === 'admin' ? 'bg-blue-100 text-primary' :
+                            user.role === 'accountant' ? 'bg-success/15 text-success' :
                             user.role === 'cashier' ? 'bg-yellow-100 text-yellow-800' :
-                            user.role === 'operator' ? 'bg-teal-100 text-teal-800' :
-                            'bg-gray-100 text-gray-800'
+                            user.role === 'operator' ? 'bg-teal-100 text-primary' :
+                            'bg-muted text-foreground'
                           }`}>
                             {user.role.replace('_', ' ').toUpperCase()}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{user.company_name || 'No Company'}</div>
+                          <div className="text-sm text-foreground">{user.company_name || 'No Company'}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             user.is_active
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
+                              ? 'bg-success/15 text-success'
+                              : 'bg-destructive/10 text-destructive'
                           }`}>
                             {user.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                           {user.created_at ? formatDate(user.created_at, true) : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end space-x-2">
                             <button
                               onClick={() => handleEditUser(user)}
-                              className="p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
+                              className="p-1.5 text-primary hover:text-blue-900 hover:bg-accent rounded transition-colors"
                               title="Edit User"
                             >
                               <Edit2 className="h-4 w-4" />
                             </button>
                             <button
                               onClick={() => handleDeleteUser(user)}
-                              className="p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                              className="p-1.5 text-destructive hover:text-red-900 hover:bg-destructive/5 rounded transition-colors"
                               title="Delete User"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1740,7 +1740,7 @@ function SuperAdminPageContent() {
           {showBroadcastModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+                <div className="erp-hero-strip">
                   <h2 className="text-2xl font-bold text-white flex items-center space-x-2">
                     <Megaphone className="h-6 w-6" />
                     <span>Create Broadcast</span>
@@ -1756,7 +1756,7 @@ function SuperAdminPageContent() {
                 <form onSubmit={handleSubmitBroadcast} className="p-6">
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Title <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1764,13 +1764,13 @@ function SuperAdminPageContent() {
                         required
                         value={broadcastFormData.title}
                         onChange={(e) => setBroadcastFormData({ ...broadcastFormData, title: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="e.g., Payment Due Reminder"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Message <span className="text-red-500">*</span>
                       </label>
                       <textarea
@@ -1778,20 +1778,20 @@ function SuperAdminPageContent() {
                         rows={6}
                         value={broadcastFormData.message}
                         onChange={(e) => setBroadcastFormData({ ...broadcastFormData, message: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Enter your message to all tenants..."
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Type
                         </label>
                         <select
                           value={broadcastFormData.broadcast_type}
                           onChange={(e) => setBroadcastFormData({ ...broadcastFormData, broadcast_type: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="general">General</option>
                           <option value="payment_due">Payment Due</option>
@@ -1804,13 +1804,13 @@ function SuperAdminPageContent() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Priority
                         </label>
                         <select
                           value={broadcastFormData.priority}
                           onChange={(e) => setBroadcastFormData({ ...broadcastFormData, priority: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="low">Low</option>
                           <option value="medium">Medium</option>
@@ -1822,13 +1822,13 @@ function SuperAdminPageContent() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Target Company (Optional)
                         </label>
                         <select
                           value={broadcastFormData.target_company_id}
                           onChange={(e) => setBroadcastFormData({ ...broadcastFormData, target_company_id: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="">All Companies</option>
                           {companies.map((company) => (
@@ -1840,13 +1840,13 @@ function SuperAdminPageContent() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Target Role (Optional)
                         </label>
                         <select
                           value={broadcastFormData.target_role}
                           onChange={(e) => setBroadcastFormData({ ...broadcastFormData, target_role: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="">All Roles</option>
                           <option value="admin">Admin</option>
@@ -1859,26 +1859,26 @@ function SuperAdminPageContent() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Schedule At (Optional)
                         </label>
                         <input
                           type="datetime-local"
                           value={broadcastFormData.scheduled_at}
                           onChange={(e) => setBroadcastFormData({ ...broadcastFormData, scheduled_at: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Expires At (Optional)
                         </label>
                         <input
                           type="datetime-local"
                           value={broadcastFormData.expires_at}
                           onChange={(e) => setBroadcastFormData({ ...broadcastFormData, expires_at: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                     </div>
@@ -1888,13 +1888,13 @@ function SuperAdminPageContent() {
                     <button
                       type="button"
                       onClick={() => setShowBroadcastModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors flex items-center space-x-2"
                     >
                       <Send className="h-4 w-4" />
                       <span>Send Broadcast</span>
@@ -1929,46 +1929,46 @@ function SuperAdminPageContent() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Basic Information */}
                     <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Basic Information</h3>
+                      <h3 className="text-lg font-semibold text-foreground border-b pb-2">Basic Information</h3>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Company Name</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.name}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Company Name</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.name}</p>
                         </div>
                         {viewingCompany.legal_name && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Legal Name</label>
-                            <p className="text-base text-gray-900 mt-1">{viewingCompany.legal_name}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Legal Name</label>
+                            <p className="text-base text-foreground mt-1">{viewingCompany.legal_name}</p>
                           </div>
                         )}
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Email</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.email || '-'}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Email</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.email || '-'}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Phone</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.phone || '-'}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.phone || '-'}</p>
                         </div>
                         {viewingCompany.contact_person && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Contact Person</label>
-                            <p className="text-base text-gray-900 mt-1">{viewingCompany.contact_person}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Contact Person</label>
+                            <p className="text-base text-foreground mt-1">{viewingCompany.contact_person}</p>
                           </div>
                         )}
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Currency</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.currency || 'BDT'}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Currency</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.currency || 'BDT'}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Status</label>
-                          <p className={`text-base font-semibold mt-1 ${viewingCompany.is_active ? 'text-green-600' : 'text-red-600'}`}>
+                          <label className="text-sm font-medium text-muted-foreground">Status</label>
+                          <p className={`text-base font-semibold mt-1 ${viewingCompany.is_active ? 'text-success' : 'text-destructive'}`}>
                             {viewingCompany.is_active ? 'Active' : 'Inactive'}
                           </p>
                         </div>
                         {viewingCompany.is_master === 'true' && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Type</label>
-                            <p className="text-base text-gray-900 mt-1 flex items-center space-x-2">
+                            <label className="text-sm font-medium text-muted-foreground">Type</label>
+                            <p className="text-base text-foreground mt-1 flex items-center space-x-2">
                               <Crown className="h-4 w-4 text-yellow-600" />
                               <span>Master Company</span>
                             </p>
@@ -1979,23 +1979,23 @@ function SuperAdminPageContent() {
 
                     {/* Domain & Subdomain */}
                     <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Domain & Access</h3>
+                      <h3 className="text-lg font-semibold text-foreground border-b pb-2">Domain & Access</h3>
                       <div className="space-y-3">
                         {viewingCompany.subdomain && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Subdomain</label>
-                            <p className="text-base text-blue-600 mt-1">{viewingCompany.subdomain}.yourdomain.com</p>
+                            <label className="text-sm font-medium text-muted-foreground">Subdomain</label>
+                            <p className="text-base text-primary mt-1">{viewingCompany.subdomain}.yourdomain.com</p>
                           </div>
                         )}
                         {viewingCompany.custom_domain && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Custom Domain</label>
-                            <p className="text-base text-blue-600 mt-1">{viewingCompany.custom_domain}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Custom Domain</label>
+                            <p className="text-base text-primary mt-1">{viewingCompany.custom_domain}</p>
                           </div>
                         )}
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Created At</label>
-                          <p className="text-base text-gray-900 mt-1">
+                          <label className="text-sm font-medium text-muted-foreground">Created At</label>
+                          <p className="text-base text-foreground mt-1">
                             {formatDate(viewingCompany.created_at, true)}
                           </p>
                         </div>
@@ -2004,50 +2004,50 @@ function SuperAdminPageContent() {
 
                     {/* Statistics */}
                     <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Statistics</h3>
+                      <h3 className="text-lg font-semibold text-foreground border-b pb-2">Statistics</h3>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Users</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.user_count || 0}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Users</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.user_count || 0}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Stations</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.station_count || 0}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Stations</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.station_count || 0}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Customers</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.customer_count || 0}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Customers</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.customer_count || 0}</p>
                         </div>
                       </div>
                     </div>
 
                     {/* Subscription & Financial */}
                     <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Subscription & Financial</h3>
+                      <h3 className="text-lg font-semibold text-foreground border-b pb-2">Subscription & Financial</h3>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Has Subscription</label>
-                          <p className={`text-base font-semibold mt-1 ${viewingCompany.has_subscription ? 'text-green-600' : 'text-gray-600'}`}>
+                          <label className="text-sm font-medium text-muted-foreground">Has Subscription</label>
+                          <p className={`text-base font-semibold mt-1 ${viewingCompany.has_subscription ? 'text-success' : 'text-muted-foreground'}`}>
                             {viewingCompany.has_subscription ? 'Yes' : 'No'}
                           </p>
                         </div>
                         {viewingCompany.subscription && (
                           <>
                             <div>
-                              <label className="text-sm font-medium text-gray-500">Subscription Status</label>
-                              <p className="text-base text-gray-900 mt-1 capitalize">{viewingCompany.subscription.status}</p>
+                              <label className="text-sm font-medium text-muted-foreground">Subscription Status</label>
+                              <p className="text-base text-foreground mt-1 capitalize">{viewingCompany.subscription.status}</p>
                             </div>
                             <div>
-                              <label className="text-sm font-medium text-gray-500">Plan</label>
-                              <p className="text-base text-gray-900 mt-1">{viewingCompany.subscription.plan_name || 'N/A'}</p>
+                              <label className="text-sm font-medium text-muted-foreground">Plan</label>
+                              <p className="text-base text-foreground mt-1">{viewingCompany.subscription.plan_name || 'N/A'}</p>
                             </div>
                             {viewingCompany.subscription.days_until_expiry !== null && (
                               <div>
-                                <label className="text-sm font-medium text-gray-500">Days Until Expiry</label>
+                                <label className="text-sm font-medium text-muted-foreground">Days Until Expiry</label>
                                 <p className={`text-base font-semibold mt-1 ${
-                                  viewingCompany.subscription.days_until_expiry <= 7 ? 'text-red-600' : 
+                                  viewingCompany.subscription.days_until_expiry <= 7 ? 'text-destructive' : 
                                   viewingCompany.subscription.days_until_expiry <= 30 ? 'text-orange-600' : 
-                                  'text-green-600'
+                                  'text-success'
                                 }`}>
                                   {viewingCompany.subscription.days_until_expiry} days
                                 </p>
@@ -2056,43 +2056,43 @@ function SuperAdminPageContent() {
                           </>
                         )}
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Subscription Revenue</label>
-                          <p className="text-base font-semibold text-green-700 mt-1">
+                          <label className="text-sm font-medium text-muted-foreground">Subscription Revenue</label>
+                          <p className="text-base font-semibold text-success mt-1">
                             {formatCurrency(viewingCompany.subscription_total_paid || 0, viewingCompany.currency || 'BDT')}
                           </p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Outstanding Payments</label>
+                          <label className="text-sm font-medium text-muted-foreground">Outstanding Payments</label>
                           <p className={`text-base font-semibold mt-1 ${
-                            (viewingCompany.subscription_outstanding || 0) > 0 ? 'text-red-600' : 'text-gray-600'
+                            (viewingCompany.subscription_outstanding || 0) > 0 ? 'text-destructive' : 'text-muted-foreground'
                           }`}>
                             {formatCurrency(viewingCompany.subscription_outstanding || 0, viewingCompany.currency || 'BDT')}
                           </p>
                         </div>
                         {viewingCompany.payment_type && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Billing Cycle</label>
-                            <p className="text-base text-gray-900 mt-1 capitalize">{viewingCompany.payment_type.replace('_', '-')}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Billing Cycle</label>
+                            <p className="text-base text-foreground mt-1 capitalize">{viewingCompany.payment_type.replace('_', '-')}</p>
                           </div>
                         )}
                         {viewingCompany.payment_amount && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Payment Amount</label>
-                            <p className="text-base font-semibold text-gray-900 mt-1">{viewingCompany.payment_amount}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Payment Amount</label>
+                            <p className="text-base font-semibold text-foreground mt-1">{viewingCompany.payment_amount}</p>
                           </div>
                         )}
                         {viewingCompany.payment_start_date && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Payment Start Date</label>
-                            <p className="text-base text-gray-900 mt-1">
+                            <label className="text-sm font-medium text-muted-foreground">Payment Start Date</label>
+                            <p className="text-base text-foreground mt-1">
                               {formatDateOnly(viewingCompany.payment_start_date)}
                             </p>
                           </div>
                         )}
                         {viewingCompany.payment_end_date && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Payment End Date</label>
-                            <p className="text-base text-gray-900 mt-1">
+                            <label className="text-sm font-medium text-muted-foreground">Payment End Date</label>
+                            <p className="text-base text-foreground mt-1">
                               {formatDateOnly(viewingCompany.payment_end_date)}
                             </p>
                           </div>
@@ -2103,63 +2103,63 @@ function SuperAdminPageContent() {
                     {/* Capacity Usage */}
                     {(viewingCompany.capacity_usage?.stations || viewingCompany.capacity_usage?.users) && (
                       <div className="space-y-4 md:col-span-2">
-                        <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Capacity Usage</h3>
+                        <h3 className="text-lg font-semibold text-foreground border-b pb-2">Capacity Usage</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           {viewingCompany.capacity_usage.stations && (
-                            <div className="bg-gray-50 rounded-lg p-4">
-                              <label className="text-sm font-medium text-gray-500">Stations</label>
-                              <p className="text-base font-semibold text-gray-900 mt-1">
+                            <div className="bg-muted/40 rounded-lg p-4">
+                              <label className="text-sm font-medium text-muted-foreground">Stations</label>
+                              <p className="text-base font-semibold text-foreground mt-1">
                                 {viewingCompany.capacity_usage.stations.used} / {viewingCompany.capacity_usage.stations.limit}
                               </p>
-                              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                              <div className="w-full bg-muted rounded-full h-2 mt-2">
                                 <div 
                                   className={`h-2 rounded-full ${
-                                    viewingCompany.capacity_usage.stations.percentage >= 90 ? 'bg-red-600' :
+                                    viewingCompany.capacity_usage.stations.percentage >= 90 ? 'bg-destructive' :
                                     viewingCompany.capacity_usage.stations.percentage >= 70 ? 'bg-orange-600' :
-                                    'bg-green-600'
+                                    'bg-success'
                                   }`}
                                   style={{ width: `${Math.min(viewingCompany.capacity_usage.stations.percentage, 100)}%` }}
                                 ></div>
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">{viewingCompany.capacity_usage.stations.percentage}% used</p>
+                              <p className="text-xs text-muted-foreground mt-1">{viewingCompany.capacity_usage.stations.percentage}% used</p>
                             </div>
                           )}
                           {viewingCompany.capacity_usage.users && (
-                            <div className="bg-gray-50 rounded-lg p-4">
-                              <label className="text-sm font-medium text-gray-500">Users</label>
-                              <p className="text-base font-semibold text-gray-900 mt-1">
+                            <div className="bg-muted/40 rounded-lg p-4">
+                              <label className="text-sm font-medium text-muted-foreground">Users</label>
+                              <p className="text-base font-semibold text-foreground mt-1">
                                 {viewingCompany.capacity_usage.users.used} / {viewingCompany.capacity_usage.users.limit}
                               </p>
-                              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                              <div className="w-full bg-muted rounded-full h-2 mt-2">
                                 <div 
                                   className={`h-2 rounded-full ${
-                                    viewingCompany.capacity_usage.users.percentage >= 90 ? 'bg-red-600' :
+                                    viewingCompany.capacity_usage.users.percentage >= 90 ? 'bg-destructive' :
                                     viewingCompany.capacity_usage.users.percentage >= 70 ? 'bg-orange-600' :
-                                    'bg-green-600'
+                                    'bg-success'
                                   }`}
                                   style={{ width: `${Math.min(viewingCompany.capacity_usage.users.percentage, 100)}%` }}
                                 ></div>
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">{viewingCompany.capacity_usage.users.percentage}% used</p>
+                              <p className="text-xs text-muted-foreground mt-1">{viewingCompany.capacity_usage.users.percentage}% used</p>
                             </div>
                           )}
                           {viewingCompany.capacity_usage.storage_gb && (
-                            <div className="bg-gray-50 rounded-lg p-4">
-                              <label className="text-sm font-medium text-gray-500">Storage</label>
-                              <p className="text-base font-semibold text-gray-900 mt-1">
+                            <div className="bg-muted/40 rounded-lg p-4">
+                              <label className="text-sm font-medium text-muted-foreground">Storage</label>
+                              <p className="text-base font-semibold text-foreground mt-1">
                                 {viewingCompany.capacity_usage.storage_gb.used} GB / {viewingCompany.capacity_usage.storage_gb.limit} GB
                               </p>
-                              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                              <div className="w-full bg-muted rounded-full h-2 mt-2">
                                 <div 
                                   className={`h-2 rounded-full ${
-                                    viewingCompany.capacity_usage.storage_gb.percentage >= 90 ? 'bg-red-600' :
+                                    viewingCompany.capacity_usage.storage_gb.percentage >= 90 ? 'bg-destructive' :
                                     viewingCompany.capacity_usage.storage_gb.percentage >= 70 ? 'bg-orange-600' :
-                                    'bg-green-600'
+                                    'bg-success'
                                   }`}
                                   style={{ width: `${Math.min(viewingCompany.capacity_usage.storage_gb.percentage, 100)}%` }}
                                 ></div>
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">{viewingCompany.capacity_usage.storage_gb.percentage}% used</p>
+                              <p className="text-xs text-muted-foreground mt-1">{viewingCompany.capacity_usage.storage_gb.percentage}% used</p>
                             </div>
                           )}
                         </div>
@@ -2173,7 +2173,7 @@ function SuperAdminPageContent() {
                         setShowCompanyViewModal(false)
                         setViewingCompany(null)
                       }}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Close
                     </button>
@@ -2183,7 +2183,7 @@ function SuperAdminPageContent() {
                         setViewingCompany(null)
                         handleEditCompany(viewingCompany)
                       }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors flex items-center space-x-2"
                     >
                       <Edit2 className="h-4 w-4" />
                       <span>Edit Company</span>
@@ -2197,37 +2197,37 @@ function SuperAdminPageContent() {
           {deleteModalCompany && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
               <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl">
-                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
-                  <h2 className="text-lg font-bold text-gray-900">Permanently delete company</h2>
+                <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-foreground">Permanently delete company</h2>
                   <button
                     type="button"
                     onClick={() => {
                       setDeleteModalCompany(null)
                       setDeletePhrase('')
                     }}
-                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                    className="rounded-full p-2 text-muted-foreground hover:bg-muted"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
                 <div className="space-y-4 p-4 sm:p-6">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-foreground/85">
                     Company: <strong>{deleteModalCompany.name}</strong> (ID {deleteModalCompany.id})
                   </p>
-                  <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                  <p className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-red-900">
                     This removes the company row, <strong>all users and passwords</strong>, and{' '}
                     <strong>all ERP data</strong> for this tenant. This cannot be undone. To suspend access without
                     deleting data, use <strong>Deactivate</strong> instead.
                   </p>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    <label className="block text-sm font-medium text-foreground/85">
+                      Type <code className="rounded bg-muted px-1">{RESTORE_CONFIRM_PHRASE}</code>
                     </label>
                     <input
                       type="text"
                       value={deletePhrase}
                       onChange={(e) => setDeletePhrase(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      className="mt-2 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm"
                       autoComplete="off"
                     />
                   </div>
@@ -2238,7 +2238,7 @@ function SuperAdminPageContent() {
                         setDeleteModalCompany(null)
                         setDeletePhrase('')
                       }}
-                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                      className="rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                     >
                       Cancel
                     </button>
@@ -2246,7 +2246,7 @@ function SuperAdminPageContent() {
                       type="button"
                       disabled={deleteBusy || deletePhrase.trim() !== RESTORE_CONFIRM_PHRASE}
                       onClick={runPermanentCompanyDelete}
-                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {deleteBusy ? 'Deleting…' : 'Delete permanently'}
                     </button>
@@ -2260,7 +2260,7 @@ function SuperAdminPageContent() {
           {showCompanyModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+                <div className="erp-hero-strip">
                   <h2 className="text-2xl font-bold text-white">
                     {editingCompany ? 'Edit Company' : 'New Company'}
                   </h2>
@@ -2275,7 +2275,7 @@ function SuperAdminPageContent() {
                 <form onSubmit={handleSubmitCompany} className="p-6">
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Company Name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -2283,25 +2283,25 @@ function SuperAdminPageContent() {
                         required
                         value={companyFormData.company_name}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, company_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Legal Name</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Legal Name</label>
                       <input
                         type="text"
                         value={companyFormData.legal_name}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, legal_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
 
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 space-y-3">
-                      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Tenant URL (optional)</p>
+                    <div className="rounded-lg border border-border bg-muted/40/80 p-4 space-y-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tenant URL (optional)</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Subdomain</label>
+                          <label className="mb-2 block text-sm font-medium text-foreground">Subdomain</label>
                           <input
                             type="text"
                             value={companyFormData.subdomain}
@@ -2311,16 +2311,16 @@ function SuperAdminPageContent() {
                                 subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
                               })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                             placeholder="acme"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Used as <span className="font-mono">{'{subdomain}'}.yourplatform.com</span> when you map DNS.
                           </p>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Custom domain</label>
+                          <label className="mb-2 block text-sm font-medium text-foreground">Custom domain</label>
                           <input
                             type="text"
                             value={companyFormData.custom_domain}
@@ -2330,11 +2330,11 @@ function SuperAdminPageContent() {
                               v = v.replace(/[^a-z0-9.-]/g, '')
                               setCompanyFormData({ ...companyFormData, custom_domain: v.slice(0, 253) })
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                             placeholder="erp.client.com"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Full hostname the tenant will use (CNAME to your app). Leave blank if only using subdomain.
                           </p>
                         </div>
@@ -2343,42 +2343,42 @@ function SuperAdminPageContent() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Email</label>
                         <input
                           type="email"
                           value={companyFormData.email}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, email: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Phone</label>
                         <input
                           type="text"
                           value={companyFormData.phone}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, phone: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Person</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Contact Person</label>
                       <input
                         type="text"
                         value={companyFormData.contact_person}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, contact_person: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Name of contact person"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">SaaS billing plan</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">SaaS billing plan</label>
                       <select
                         value={companyFormData.billing_plan_code}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, billing_plan_code: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       >
                         {TENANT_SAAS_PLAN_OPTIONS.map((o) => (
                           <option key={o.code || 'none'} value={o.code}>
@@ -2386,18 +2386,18 @@ function SuperAdminPageContent() {
                           </option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Used for subscription ledger, invoicing, and tenant analytics. You can change it anytime.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Billing Cycle</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Billing Cycle</label>
                         <select
                           value={companyFormData.payment_type}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_type: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="">Select billing cycle</option>
                           <option value="monthly">Monthly</option>
@@ -2407,7 +2407,7 @@ function SuperAdminPageContent() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment Amount</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Payment Amount</label>
                         <input
                           type="text"
                           value={companyFormData.payment_amount}
@@ -2420,31 +2420,31 @@ function SuperAdminPageContent() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment Start Date</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Payment Start Date</label>
                         <input
                           type="date"
                           value={companyFormData.payment_start_date}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_start_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment End Date</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Payment End Date</label>
                         <input
                           type="date"
                           value={companyFormData.payment_end_date}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_end_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Currency</label>
                       <select
                         value={companyFormData.currency}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, currency: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       >
                         {getCurrenciesByCountry().map((currency, index) => (
                           <option key={`${currency.code}-${currency.country}-${index}`} value={currency.code}>
@@ -2452,19 +2452,19 @@ function SuperAdminPageContent() {
                           </option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {getCurrenciesByCountry().length} currencies available (sorted by country name A-Z)
                       </p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Time zone</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Time zone</label>
                       <select
                         value={companyFormData.time_zone}
                         onChange={(e) =>
                           setCompanyFormData({ ...companyFormData, time_zone: e.target.value })
                         }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                       >
                         {COMPANY_TIME_ZONE_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -2477,7 +2477,7 @@ function SuperAdminPageContent() {
                           </option>
                         )}
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">Default: Asia/Dhaka (Bangladesh).</p>
+                      <p className="text-xs text-muted-foreground mt-1">Default: Asia/Dhaka (Bangladesh).</p>
                     </div>
 
                     <div>
@@ -2486,9 +2486,9 @@ function SuperAdminPageContent() {
                           type="checkbox"
                           checked={companyFormData.is_active}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, is_active: e.target.checked })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-primary border-border rounded focus:ring-ring"
                         />
-                        <span className="text-sm text-gray-700">Active</span>
+                        <span className="text-sm text-foreground/85">Active</span>
                       </label>
                     </div>
                   </div>
@@ -2497,13 +2497,13 @@ function SuperAdminPageContent() {
                     <button
                       type="button"
                       onClick={() => setShowCompanyModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="erp-btn-primary transition-colors"
                     >
                       {editingCompany ? 'Update Company' : 'Create Company'}
                     </button>
@@ -2517,7 +2517,7 @@ function SuperAdminPageContent() {
           {showUserModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+                <div className="erp-hero-strip">
                   <h2 className="text-2xl font-bold text-white">
                     {editingUser ? 'Edit User' : 'New User'}
                   </h2>
@@ -2533,7 +2533,7 @@ function SuperAdminPageContent() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Username <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -2541,11 +2541,11 @@ function SuperAdminPageContent() {
                           required
                           value={userFormData.username}
                           onChange={(e) => setUserFormData({ ...userFormData, username: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Full Name <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -2553,13 +2553,13 @@ function SuperAdminPageContent() {
                           required
                           value={userFormData.full_name}
                           onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Email <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -2567,20 +2567,20 @@ function SuperAdminPageContent() {
                         required
                         value={userFormData.email}
                         onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Role <span className="text-red-500">*</span>
                         </label>
                         <select
                           required
                           value={userFormData.role}
                           onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="super_admin">Super Admin</option>
                           <option value="admin">Admin</option>
@@ -2590,13 +2590,13 @@ function SuperAdminPageContent() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Company (map user to)
                         </label>
                         <select
                           value={userFormData.company_id}
                           onChange={(e) => setUserFormData({ ...userFormData, company_id: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="">None (ERP superuser / platform owner)</option>
                           {companies.map((company) => (
@@ -2605,7 +2605,7 @@ function SuperAdminPageContent() {
                             </option>
                           ))}
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           Choose a company to map this user to. Leave as &quot;None&quot; only for ERP superuser.
                         </p>
                       </div>
@@ -2613,8 +2613,8 @@ function SuperAdminPageContent() {
 
                     {(userFormData.role === 'cashier' || userFormData.role === 'operator') &&
                       Boolean(userFormData.company_id) && (
-                        <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-4">
-                          <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-800">
+                        <div className="rounded-lg border border-amber-100 bg-warning/10/50 p-4">
+                          <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground">
                             <MapPin className="h-4 w-4 text-amber-600" />
                             Location (POS site)
                             {adminStationOptions.length > 1 ? (
@@ -2622,7 +2622,7 @@ function SuperAdminPageContent() {
                             ) : null}
                           </label>
                           {adminStationOptions.length === 0 ? (
-                            <p className="text-sm text-amber-900">
+                            <p className="text-sm text-warning-foreground">
                               No active sites for this company. Add sites under the tenant&apos;s Stations, or wait for
                               the list to load.
                             </p>
@@ -2634,7 +2634,7 @@ function SuperAdminPageContent() {
                                 onChange={(e) =>
                                   setUserFormData({ ...userFormData, home_station_id: e.target.value })
                                 }
-                                className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                                className="w-full max-w-md rounded-lg border border-border px-3 py-2 focus:border-ring focus:ring-2 focus:ring-ring"
                               >
                                 {adminStationOptions.length > 1 ? (
                                   <option value="">Select location…</option>
@@ -2645,7 +2645,7 @@ function SuperAdminPageContent() {
                                   </option>
                                 ))}
                               </select>
-                              <p className="mt-1.5 text-xs text-gray-600">
+                              <p className="mt-1.5 text-xs text-muted-foreground">
                                 {adminStationOptions.length > 1
                                   ? 'This user can use the register only at the selected site.'
                                   : 'Only one active site — it is assigned automatically.'}
@@ -2658,7 +2658,7 @@ function SuperAdminPageContent() {
                     {!editingUser && (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Password <span className="text-red-500">*</span>
                           </label>
                           <div className="relative">
@@ -2667,12 +2667,12 @@ function SuperAdminPageContent() {
                               required={!editingUser}
                               value={userFormData.password}
                               onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 py-2 pr-10 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                             />
                             <button
                               type="button"
                               onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground/85 focus:outline-none"
                               aria-label={showPassword ? "Hide password" : "Show password"}
                             >
                               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -2680,7 +2680,7 @@ function SuperAdminPageContent() {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Confirm Password <span className="text-red-500">*</span>
                           </label>
                           <div className="relative">
@@ -2689,12 +2689,12 @@ function SuperAdminPageContent() {
                               required={!editingUser}
                               value={userFormData.confirmPassword}
                               onChange={(e) => setUserFormData({ ...userFormData, confirmPassword: e.target.value })}
-                              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 py-2 pr-10 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                             />
                             <button
                               type="button"
                               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground/85 focus:outline-none"
                               aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                             >
                               {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -2707,7 +2707,7 @@ function SuperAdminPageContent() {
                     {editingUser && (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             New Password (leave blank to keep current)
                           </label>
                           <div className="relative">
@@ -2715,13 +2715,13 @@ function SuperAdminPageContent() {
                               type={showEditPassword ? "text" : "password"}
                               value={userFormData.password}
                               onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
-                              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 py-2 pr-10 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                               placeholder="Enter new password"
                             />
                             <button
                               type="button"
                               onClick={() => setShowEditPassword(!showEditPassword)}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground/85 focus:outline-none"
                               aria-label={showEditPassword ? "Hide password" : "Show password"}
                             >
                               {showEditPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -2729,7 +2729,7 @@ function SuperAdminPageContent() {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Confirm New Password
                             {userFormData.password ? <span className="text-red-500"> *</span> : null}
                           </label>
@@ -2740,20 +2740,20 @@ function SuperAdminPageContent() {
                               onChange={(e) =>
                                 setUserFormData({ ...userFormData, confirmPassword: e.target.value })
                               }
-                              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 py-2 pr-10 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                               placeholder="Confirm new password"
                               aria-required={!!userFormData.password}
                             />
                             <button
                               type="button"
                               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground/85 focus:outline-none"
                               aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                             >
                               {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                             </button>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             Required when setting a new password.
                           </p>
                         </div>
@@ -2765,13 +2765,13 @@ function SuperAdminPageContent() {
                     <button
                       type="button"
                       onClick={() => setShowUserModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="erp-btn-primary transition-colors"
                     >
                       {editingUser ? 'Update User' : 'Create User'}
                     </button>
@@ -2784,22 +2784,22 @@ function SuperAdminPageContent() {
           {/* Modals - Available in both modes */}
           {/* Subscription Extension Modal */}
           {showSubscriptionModal && selectedCompanyForSubscription && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="erp-modal-backdrop">
               <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
                 <div className="p-6 border-b">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-                      <RefreshCw className="h-6 w-6 text-blue-600" />
+                    <h2 className="text-xl font-bold text-foreground flex items-center space-x-2">
+                      <RefreshCw className="h-6 w-6 text-primary" />
                       <span>Extend Subscription</span>
                     </h2>
                     <button
                       onClick={() => setShowSubscriptionModal(false)}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                     >
                       <X className="h-6 w-6" />
                     </button>
                   </div>
-                  <p className="text-sm text-gray-600 mt-2">
+                  <p className="text-sm text-muted-foreground mt-2">
                     {selectedCompanyForSubscription.name}
                   </p>
                 </div>
@@ -2807,21 +2807,21 @@ function SuperAdminPageContent() {
                 <form onSubmit={handleExtendExpiration} className="p-6">
                   {selectedCompanyForSubscription.subscription && (
                     <div className="mb-6 space-y-3">
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <div className="text-sm text-gray-600 mb-2">Current Subscription</div>
-                        <div className="text-lg font-semibold text-gray-900">
+                      <div className="bg-muted/40 rounded-lg p-4">
+                        <div className="text-sm text-muted-foreground mb-2">Current Subscription</div>
+                        <div className="text-lg font-semibold text-foreground">
                           {selectedCompanyForSubscription.subscription.plan_name || 'N/A'}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                           Status: <span className="font-medium">{selectedCompanyForSubscription.subscription.status}</span>
                         </div>
                         {selectedCompanyForSubscription.subscription.current_period_end && (
                           <div className={`text-sm mt-2 flex items-center ${
                             selectedCompanyForSubscription.subscription.is_expired
-                              ? 'text-red-600'
+                              ? 'text-destructive'
                               : selectedCompanyForSubscription.subscription.days_until_expiry !== null && selectedCompanyForSubscription.subscription.days_until_expiry <= 7
                               ? 'text-orange-600'
-                              : 'text-gray-600'
+                              : 'text-muted-foreground'
                           }`}>
                             <Calendar className="h-4 w-4 inline mr-1" />
                             <span>
@@ -2837,35 +2837,35 @@ function SuperAdminPageContent() {
                   )}
 
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Extend by (days)
                     </label>
                     <div className="flex space-x-2">
                       <button
                         type="button"
                         onClick={() => setExtendDays(7)}
-                        className={`px-3 py-1 rounded text-sm ${extendDays === 7 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        className={`px-3 py-1 rounded text-sm ${extendDays === 7 ? 'bg-primary text-white' : 'bg-muted text-foreground/85 hover:bg-muted'}`}
                       >
                         7 days
                       </button>
                       <button
                         type="button"
                         onClick={() => setExtendDays(30)}
-                        className={`px-3 py-1 rounded text-sm ${extendDays === 30 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        className={`px-3 py-1 rounded text-sm ${extendDays === 30 ? 'bg-primary text-white' : 'bg-muted text-foreground/85 hover:bg-muted'}`}
                       >
                         30 days
                       </button>
                       <button
                         type="button"
                         onClick={() => setExtendDays(90)}
-                        className={`px-3 py-1 rounded text-sm ${extendDays === 90 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        className={`px-3 py-1 rounded text-sm ${extendDays === 90 ? 'bg-primary text-white' : 'bg-muted text-foreground/85 hover:bg-muted'}`}
                       >
                         90 days
                       </button>
                       <button
                         type="button"
                         onClick={() => setExtendDays(365)}
-                        className={`px-3 py-1 rounded text-sm ${extendDays === 365 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                        className={`px-3 py-1 rounded text-sm ${extendDays === 365 ? 'bg-primary text-white' : 'bg-muted text-foreground/85 hover:bg-muted'}`}
                       >
                         1 year
                       </button>
@@ -2875,7 +2875,7 @@ function SuperAdminPageContent() {
                       min="1"
                       value={extendDays}
                       onChange={(e) => setExtendDays(parseInt(e.target.value) || 30)}
-                      className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full mt-2 px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       placeholder="Or enter custom days"
                     />
                   </div>
@@ -2884,13 +2884,13 @@ function SuperAdminPageContent() {
                     <button
                       type="button"
                       onClick={() => setShowSubscriptionModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors flex items-center space-x-2"
                     >
                       <RefreshCw className="h-4 w-4" />
                       <span>Extend Subscription</span>
@@ -2904,14 +2904,14 @@ function SuperAdminPageContent() {
       </div>
       
       {showPushUpdateDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="erp-modal-backdrop">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-900">Push Master Company Updates</h3>
+                <h3 className="text-xl font-bold text-foreground">Push Master Company Updates</h3>
                 <button
                   onClick={() => setShowPushUpdateDialog(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -2930,7 +2930,7 @@ function SuperAdminPageContent() {
                 </div>
               )}
 
-              <p className="text-sm font-medium text-gray-800 mb-2">Apply to</p>
+              <p className="text-sm font-medium text-foreground mb-2">Apply to</p>
               <div className="space-y-2 mb-4">
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
@@ -2941,9 +2941,9 @@ function SuperAdminPageContent() {
                       setPushScope('all_tenants')
                       setPushSelectedCompanyIds([])
                     }}
-                    className="text-blue-600"
+                    className="text-primary"
                   />
-                  <span className="text-sm text-gray-700">All tenant companies</span>
+                  <span className="text-sm text-foreground/85">All tenant companies</span>
                 </label>
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
@@ -2951,13 +2951,13 @@ function SuperAdminPageContent() {
                     name="pushScope"
                     checked={pushScope === 'selected'}
                     onChange={() => setPushScope('selected')}
-                    className="text-blue-600"
+                    className="text-primary"
                   />
-                  <span className="text-sm text-gray-700">Selected tenants only</span>
+                  <span className="text-sm text-foreground/85">Selected tenants only</span>
                 </label>
               </div>
               {pushScope === 'selected' && (
-                <div className="mb-4 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 space-y-1">
+                <div className="mb-4 max-h-40 overflow-y-auto border border-border rounded-lg p-2 space-y-1">
                   {companies
                     .filter((c) => c.is_master !== 'true')
                     .map((c) => (
@@ -2972,20 +2972,20 @@ function SuperAdminPageContent() {
                               setPushSelectedCompanyIds(pushSelectedCompanyIds.filter((id) => id !== c.id))
                             }
                           }}
-                          className="w-4 h-4 text-blue-600 rounded"
+                          className="w-4 h-4 text-primary rounded"
                         />
-                        <span className="text-gray-800">
-                          {c.name} <span className="text-gray-500">(#{c.id})</span>
+                        <span className="text-foreground">
+                          {c.name} <span className="text-muted-foreground">(#{c.id})</span>
                         </span>
                       </label>
                     ))}
                   {companies.filter((c) => c.is_master !== 'true').length === 0 && (
-                    <p className="text-xs text-gray-500">No tenant companies in the list.</p>
+                    <p className="text-xs text-muted-foreground">No tenant companies in the list.</p>
                   )}
                 </div>
               )}
               
-              <p className="text-gray-700 mb-3">Select what to apply:</p>
+              <p className="text-foreground/85 mb-3">Select what to apply:</p>
               
               <div className="space-y-3 mb-6">
                 <label className="flex items-center space-x-3 cursor-pointer">
@@ -2995,9 +2995,9 @@ function SuperAdminPageContent() {
                     onChange={(e) =>
                       setPushUpdateOptions({ ...pushUpdateOptions, apply_platform_release: e.target.checked })
                     }
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary rounded focus:ring-ring"
                   />
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-foreground/85">
                     Platform release (deploy tag + release hooks — same as per-tenant Apply release)
                   </span>
                 </label>
@@ -3006,9 +3006,9 @@ function SuperAdminPageContent() {
                     type="checkbox"
                     checked={pushUpdateOptions.sync_chart_of_accounts}
                     onChange={(e) => setPushUpdateOptions({...pushUpdateOptions, sync_chart_of_accounts: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary rounded focus:ring-ring"
                   />
-                  <span className="text-sm text-gray-700">Chart of Accounts (new accounts only)</span>
+                  <span className="text-sm text-foreground/85">Chart of Accounts (new accounts only)</span>
                 </label>
                 
                 <label className="flex items-center space-x-3 cursor-pointer">
@@ -3016,9 +3016,9 @@ function SuperAdminPageContent() {
                     type="checkbox"
                     checked={pushUpdateOptions.sync_items}
                     onChange={(e) => setPushUpdateOptions({...pushUpdateOptions, sync_items: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary rounded focus:ring-ring"
                   />
-                  <span className="text-sm text-gray-700">Items/Products (new items only)</span>
+                  <span className="text-sm text-foreground/85">Items/Products (new items only)</span>
                 </label>
                 
                 <label className="flex items-center space-x-3 cursor-pointer">
@@ -3026,9 +3026,9 @@ function SuperAdminPageContent() {
                     type="checkbox"
                     checked={pushUpdateOptions.sync_tax_codes}
                     onChange={(e) => setPushUpdateOptions({...pushUpdateOptions, sync_tax_codes: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary rounded focus:ring-ring"
                   />
-                  <span className="text-sm text-gray-700">Tax Codes (new codes only)</span>
+                  <span className="text-sm text-foreground/85">Tax Codes (new codes only)</span>
                 </label>
                 
                 <label className="flex items-center space-x-3 cursor-pointer">
@@ -3036,22 +3036,22 @@ function SuperAdminPageContent() {
                     type="checkbox"
                     checked={pushUpdateOptions.sync_company_settings}
                     onChange={(e) => setPushUpdateOptions({...pushUpdateOptions, sync_company_settings: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-primary rounded focus:ring-ring"
                   />
-                  <span className="text-sm text-gray-700">Company Settings (currency, timezone, fiscal year)</span>
+                  <span className="text-sm text-foreground/85">Company Settings (currency, timezone, fiscal year)</span>
                 </label>
               </div>
               
               <div className="flex space-x-3 justify-end">
                 <button
                   onClick={() => setShowPushUpdateDialog(false)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmPushUpdates}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary transition-colors"
                 >
                   Push Updates
                 </button>

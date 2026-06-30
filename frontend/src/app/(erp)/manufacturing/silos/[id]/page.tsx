@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { formatQuantity } from '@/utils/quantity'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useState } from 'react'
@@ -88,7 +89,7 @@ export default function SiloDetailPage() {
 
   if (isLoading || !silo) {
     return (
-              <div className="bg-white rounded-lg border border-gray-200 p-6 min-h-[240px] flex items-center justify-center text-gray-600">
+              <div className="bg-white rounded-lg border border-border p-6 min-h-[240px] flex items-center justify-center text-muted-foreground">
           Loading…
         </div>
     )
@@ -101,35 +102,35 @@ export default function SiloDetailPage() {
 
   return (
           <div className="max-w-4xl space-y-6">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-          <Link href="/manufacturing/silos" className="text-indigo-600 hover:text-indigo-800">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <Link href="/manufacturing/silos" className="text-primary hover:text-primary">
             ← Silos
           </Link>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h1 className="text-2xl font-semibold text-gray-900">{silo.name}</h1>
-          {silo.code ? <p className="text-sm text-gray-500 mt-1">Code: {silo.code}</p> : null}
+        <div className="bg-white rounded-lg border border-border p-6">
+          <h1 className="text-2xl font-semibold text-foreground">{silo.name}</h1>
+          {silo.code ? <p className="text-sm text-muted-foreground mt-1">Code: {silo.code}</p> : null}
           <dl className="mt-4 grid gap-2 sm:grid-cols-2 text-sm">
             <div>
-              <dt className="text-gray-500">Current level</dt>
-              <dd className="font-semibold tabular-nums text-lg text-gray-900">
-                {Number(silo.current_qty_kg).toLocaleString(undefined, { maximumFractionDigits: 3 })} kg
+              <dt className="text-muted-foreground">Current level</dt>
+              <dd className="font-semibold tabular-nums text-lg text-foreground">
+                {formatQuantity(silo.current_qty_kg)} kg
               </dd>
             </div>
             <div>
-              <dt className="text-gray-500">Capacity</dt>
-              <dd className="text-gray-900">{silo.capacity_kg != null ? `${Number(silo.capacity_kg).toLocaleString()} kg` : '—'}</dd>
+              <dt className="text-muted-foreground">Capacity</dt>
+              <dd className="text-foreground">{silo.capacity_kg != null ? `${Number(silo.capacity_kg).toLocaleString()} kg` : '—'}</dd>
             </div>
             <div>
-              <dt className="text-gray-500">Reorder alert</dt>
-              <dd className="text-gray-900">
+              <dt className="text-muted-foreground">Reorder alert</dt>
+              <dd className="text-foreground">
                 {silo.reorder_min_kg != null ? `${Number(silo.reorder_min_kg).toLocaleString()} kg` : '—'}
               </dd>
             </div>
             <div>
-              <dt className="text-gray-500">Integration</dt>
-              <dd className="text-gray-900">
+              <dt className="text-muted-foreground">Integration</dt>
+              <dd className="text-foreground">
                 {silo.integration_source}
                 {silo.external_device_id ? ` · ${silo.external_device_id}` : ''}
               </dd>
@@ -137,20 +138,20 @@ export default function SiloDetailPage() {
           </dl>
           {pct != null ? (
             <div className="mt-4">
-              <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-accent0 rounded-full transition-all" style={{ width: `${pct}%` }} />
               </div>
-              <p className="mt-1 text-xs text-gray-500">{pct.toFixed(1)}% of capacity</p>
+              <p className="mt-1 text-xs text-muted-foreground">{pct.toFixed(1)}% of capacity</p>
             </div>
           ) : null}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
-          <h2 className="text-lg font-medium text-gray-900">Update level</h2>
+        <div className="bg-white rounded-lg border border-border p-6 space-y-6">
+          <h2 className="text-lg font-medium text-foreground">Update level</h2>
           <div className="grid gap-6 sm:grid-cols-3">
             <div>
-              <h3 className="text-sm font-medium text-gray-700">Fill (receive)</h3>
-              <p className="text-xs text-gray-500 mb-2">Add kg after truck unload or transfer in.</p>
+              <h3 className="text-sm font-medium text-foreground/85">Fill (receive)</h3>
+              <p className="text-xs text-muted-foreground mb-2">Add kg after truck unload or transfer in.</p>
               <div className="flex gap-2">
                 <input
                   type="number"
@@ -158,22 +159,22 @@ export default function SiloDetailPage() {
                   step="0.001"
                   value={fillKg}
                   onChange={(e) => setFillKg(e.target.value)}
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="flex-1 rounded-md border border-border px-3 py-2 text-sm"
                   placeholder="kg"
                 />
                 <button
                   type="button"
                   disabled={fillMut.isPending || !fillKg}
                   onClick={() => fillMut.mutate()}
-                  className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
                 >
                   Fill
                 </button>
               </div>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-700">Set absolute level</h3>
-              <p className="text-xs text-gray-500 mb-2">Physical count or full calibration.</p>
+              <h3 className="text-sm font-medium text-foreground/85">Set absolute level</h3>
+              <p className="text-xs text-muted-foreground mb-2">Physical count or full calibration.</p>
               <div className="flex gap-2">
                 <input
                   type="number"
@@ -181,22 +182,22 @@ export default function SiloDetailPage() {
                   step="0.001"
                   value={adjKg}
                   onChange={(e) => setAdjKg(e.target.value)}
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="flex-1 rounded-md border border-border px-3 py-2 text-sm"
                   placeholder="kg"
                 />
                 <button
                   type="button"
                   disabled={adjMut.isPending || !adjKg}
                   onClick={() => adjMut.mutate()}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  className="rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted/40 disabled:opacity-50"
                 >
                   Set
                 </button>
               </div>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-700">Sensor / PLC read</h3>
-              <p className="text-xs text-gray-500 mb-2">Post load-cell or PLC absolute kg (automation hook).</p>
+              <h3 className="text-sm font-medium text-foreground/85">Sensor / PLC read</h3>
+              <p className="text-xs text-muted-foreground mb-2">Post load-cell or PLC absolute kg (automation hook).</p>
               <div className="flex gap-2">
                 <input
                   type="number"
@@ -204,14 +205,14 @@ export default function SiloDetailPage() {
                   step="0.001"
                   value={sensorKg}
                   onChange={(e) => setSensorKg(e.target.value)}
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="flex-1 rounded-md border border-border px-3 py-2 text-sm"
                   placeholder="kg"
                 />
                 <button
                   type="button"
                   disabled={sensorMut.isPending || !sensorKg}
                   onClick={() => sensorMut.mutate()}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  className="rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted/40 disabled:opacity-50"
                 >
                   Apply
                 </button>
@@ -220,21 +221,21 @@ export default function SiloDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Recent movements</h2>
-          <div className="overflow-x-auto border border-gray-100 rounded-md">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
+        <div className="bg-white rounded-lg border border-border p-6">
+          <h2 className="text-lg font-medium text-foreground mb-4">Recent movements</h2>
+          <div className="overflow-x-auto border border-border/70 rounded-md">
+            <table className="min-w-full divide-y divide-border text-sm">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Δ kg</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ref</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">When</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Δ kg</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Ref</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">When</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border/70">
                 {txns.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-3 py-6 text-center text-gray-500">
+                    <td colSpan={3} className="px-3 py-6 text-center text-muted-foreground">
                       No transactions yet.
                     </td>
                   </tr>
@@ -242,11 +243,11 @@ export default function SiloDetailPage() {
                   txns.map((t) => (
                     <tr key={t.id}>
                       <td className="px-3 py-2 font-mono tabular-nums">{t.qty_delta}</td>
-                      <td className="px-3 py-2 text-gray-700">
+                      <td className="px-3 py-2 text-foreground/85">
                         {t.ref_type}
                         {t.ref_id != null ? ` #${t.ref_id}` : ''}
                       </td>
-                      <td className="px-3 py-2 text-gray-500">{t.created_at || '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{t.created_at || '—'}</td>
                     </tr>
                   ))
                 )}

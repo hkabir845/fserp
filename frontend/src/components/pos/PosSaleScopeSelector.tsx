@@ -69,8 +69,8 @@ export function PosSaleScopeSelector({
   return (
     <div className={`space-y-3 ${className}`}>
       <div>
-        <p className="text-sm font-semibold text-gray-900">POS lane — what this login may sell</p>
-        <p className="mt-0.5 text-xs leading-snug text-gray-600">
+        <p className="text-sm font-semibold text-foreground">POS lane — what this login may sell</p>
+        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
           Pick one profile per cashier or operator. Concurrent logins can use different lanes (e.g. shop-only vs
           full lane). Changes apply after the user signs in again.
         </p>
@@ -89,10 +89,10 @@ export function PosSaleScopeSelector({
               key={opt.id}
               className={[
                 'relative flex cursor-pointer flex-col rounded-xl border-2 p-3 transition-colors',
-                disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-gray-300',
+                disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-border',
                 selected
                   ? 'border-violet-500 bg-violet-50/90 shadow-sm'
-                  : 'border-gray-200 bg-white',
+                  : 'border-border bg-white',
               ].join(' ')}
             >
               <input
@@ -107,24 +107,24 @@ export function PosSaleScopeSelector({
               <span className="mb-2 flex items-center gap-2">
                 <span
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                    selected ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600'
+                    selected ? 'bg-violet-600 text-white' : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   <Ico className="h-4 w-4" aria-hidden />
                 </span>
-                <span className="text-sm font-semibold leading-tight text-gray-900">{opt.title}</span>
+                <span className="text-sm font-semibold leading-tight text-foreground">{opt.title}</span>
               </span>
-              <span className="text-xs leading-snug text-gray-600">{opt.subtitle}</span>
+              <span className="text-xs leading-snug text-muted-foreground">{opt.subtitle}</span>
             </label>
           )
         })}
       </div>
 
-      <div className="rounded-lg border border-gray-100 bg-gray-50/90 px-3 py-2 text-xs text-gray-600">
-        <span className="font-medium text-gray-800">Tip:</span> Use{' '}
-        <strong className="font-semibold text-gray-900">Fuel & general</strong> for combined lanes,{' '}
-        <strong className="font-semibold text-gray-900">General only</strong> for a separate shop POS, and{' '}
-        <strong className="font-semibold text-gray-900">Fuel only</strong> for pump-only staff.
+      <div className="rounded-lg border border-border/70 bg-muted/40/90 px-3 py-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">Tip:</span> Use{' '}
+        <strong className="font-semibold text-foreground">Fuel & general</strong> for combined lanes,{' '}
+        <strong className="font-semibold text-foreground">General only</strong> for a separate shop POS, and{' '}
+        <strong className="font-semibold text-foreground">Fuel only</strong> for pump-only staff.
       </div>
     </div>
   )

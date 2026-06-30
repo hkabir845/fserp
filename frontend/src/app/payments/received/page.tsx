@@ -328,16 +328,16 @@ export default function PaymentReceivedPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-border border-t-blue-600" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -355,7 +355,7 @@ export default function PaymentReceivedPage() {
             />
             <Link
               href="/payments/received/new"
-              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>New Payment</span>
@@ -389,16 +389,16 @@ export default function PaymentReceivedPage() {
 
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <div className="flex items-center space-x-2 mb-4">
-              <Filter className="h-5 w-5 text-gray-600" />
-              <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+              <Filter className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold text-foreground">Filters</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Status</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as PaymentFilter)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="all">All</option>
                   <option value="received">Payment Received</option>
@@ -406,40 +406,40 @@ export default function PaymentReceivedPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Search (all dates)</label>
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Search (all dates)</label>
                 <input
                   type="search"
                   value={searchQ}
                   onChange={(e) => setSearchQ(e.target.value)}
                   placeholder="Reference, memo, customer…"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Min amount</label>
-                <input type="number" min="0" step="0.01" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Min amount</label>
+                <input type="number" min="0" step="0.01" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Max amount</label>
-                <input type="number" min="0" step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md" />
+                <label className="block text-sm font-medium text-foreground/85 mb-1">Max amount</label>
+                <input type="number" min="0" step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-full px-3 py-2 border border-border rounded-md" />
               </div>
               <div className="flex items-end">
                 <button
@@ -452,7 +452,7 @@ export default function PaymentReceivedPage() {
                     setMaxAmount('')
                     setFilterStatus('all')
                   }}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  className="w-full px-4 py-2 border border-border rounded-md text-foreground/85 hover:bg-muted/40"
                 >
                   Clear Filters
                 </button>
@@ -484,49 +484,49 @@ export default function PaymentReceivedPage() {
               <div className="p-6">
                 <div className="mb-3">
                   <h2 className="text-xl font-semibold">Payments Received</h2>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     Rows here are only when you <strong>receive</strong> cash, transfer, card, etc.
                     — not the credit sale itself. Use{' '}
-                    <strong className="text-gray-700">Pencil / Trash</strong> for edit and delete; both run
-                    in a <strong className="text-gray-700">single transaction</strong> (reverse AUTO-PAY,
-                    update books, re-post). Receipts on a <strong className="text-gray-700">bank deposit</strong>{' '}
+                    <strong className="text-foreground/85">Pencil / Trash</strong> for edit and delete; both run
+                    in a <strong className="text-foreground/85">single transaction</strong> (reverse AUTO-PAY,
+                    update books, re-post). Receipts on a <strong className="text-foreground/85">bank deposit</strong>{' '}
                     stay locked until the deposit is adjusted.
                   </p>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-border">
+                    <thead className="bg-muted/40">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Payment #
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Date
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Customer
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Method
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Reference
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Status
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Amount
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                           Memo
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-border">
                       {displayedData.payments.map((payment) => {
                         const customer = customers.find((c) => c.id === payment.customer_id)
                         const customerName =
@@ -534,36 +534,36 @@ export default function PaymentReceivedPage() {
                         const canMutate = payment.can_delete === true
 
                         return (
-                          <tr key={payment.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                          <tr key={payment.id} className="hover:bg-muted/40">
+                            <td className="px-4 py-3 text-sm font-medium text-foreground">
                               {payment.payment_number ?? `PAY-${payment.id}`}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               {formatDateOnly(payment.payment_date)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{customerName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600 capitalize">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{customerName}</td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground capitalize">
                               {(payment.payment_method ?? 'unspecified').replace(/_/g, ' ')}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               {payment.reference_number ?? payment.reference ?? '-'}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               <span
                                 className={`px-2 py-1 rounded-full text-xs font-medium ${
                                   payment.deposit_status === 'deposited'
-                                    ? 'bg-green-100 text-green-800'
+                                    ? 'bg-success/15 text-success'
                                     : 'bg-yellow-100 text-yellow-800'
                                 }`}
                               >
                                 {payment.deposit_status === 'deposited' ? 'Deposited' : 'Undeposited'}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                            <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                               {currencySymbol}
                               {formatNumber(Number(payment.amount) || 0)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 max-w-[12rem] truncate" title={payment.memo || ''}>
+                            <td className="px-4 py-3 text-sm text-muted-foreground max-w-[12rem] truncate" title={payment.memo || ''}>
                               {payment.memo || '-'}
                             </td>
                             <td className="px-4 py-3 text-right">
@@ -577,7 +577,7 @@ export default function PaymentReceivedPage() {
                                       ? 'Edit (reverses & reposts GL)'
                                       : payment.immutable_reason || 'Cannot edit'
                                   }
-                                  className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Edit ${payment.payment_number}`}
                                 >
                                   <Pencil className="h-4 w-4" aria-hidden />
@@ -591,7 +591,7 @@ export default function PaymentReceivedPage() {
                                       ? 'Delete with rollback'
                                       : payment.immutable_reason || 'Cannot delete'
                                   }
-                                  className="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/5 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
                                   aria-label={`Delete ${payment.payment_number}`}
                                 >
                                   <Trash2 className="h-4 w-4" aria-hidden />
@@ -604,7 +604,7 @@ export default function PaymentReceivedPage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="border-t border-gray-100 px-4 py-3">
+                <div className="border-t border-border/70 px-4 py-3">
                   <OffsetPaginationControls
                     page={listPage}
                     pageSize={pageSize}
@@ -619,14 +619,14 @@ export default function PaymentReceivedPage() {
 
             {(filterStatus === 'all' || filterStatus === 'outstanding') &&
               displayedData.invoices.length > 0 && (
-                <div className="p-6 border-t border-gray-200">
+                <div className="p-6 border-t border-border">
                   <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                       <h2 className="text-xl font-semibold">Payment Outstanding</h2>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         Open balances (including <strong>on-account / A/R</strong> sales from the
                         cashier). When the customer pays, use{' '}
-                        <Link href="/payments/received/new" className="text-green-700 font-medium underline">
+                        <Link href="/payments/received/new" className="text-success font-medium underline">
                           New Payment
                         </Link>
                         —then the invoice moves toward paid.
@@ -634,36 +634,36 @@ export default function PaymentReceivedPage() {
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-border">
+                      <thead className="bg-muted/40">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Invoice #
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Date
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Due Date
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Customer
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[9rem]">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase min-w-[9rem]">
                             Contact A/R
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Total
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Paid
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Balance Due
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white divide-y divide-border">
                         {displayedData.invoices.map((invoice) => {
                           const cust = customers.find((c) => c.id === invoice.customer_id)
                           return (
@@ -671,35 +671,35 @@ export default function PaymentReceivedPage() {
                             key={invoice.synthetic ? `oa-${invoice.customer_id}` : invoice.id}
                             className={
                               !invoice.synthetic && invoice.days_overdue && invoice.days_overdue > 0
-                                ? 'bg-red-50'
-                                : 'hover:bg-gray-50'
+                                ? 'bg-destructive/5'
+                                : 'hover:bg-muted/40'
                             }
                           >
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                            <td className="px-4 py-3 text-sm font-medium text-foreground">
                               {invoice.invoice_number}
                               {invoice.synthetic ? (
-                                <span className="ml-1 text-xs font-normal text-gray-500">
+                                <span className="ml-1 text-xs font-normal text-muted-foreground">
                                   (A/R not on an invoice)
                                 </span>
                               ) : null}
                               {!invoice.synthetic &&
                                 invoice.days_overdue &&
                                 invoice.days_overdue > 0 && (
-                                <span className="ml-2 text-xs text-red-600">
+                                <span className="ml-2 text-xs text-destructive">
                                   ({invoice.days_overdue}d overdue)
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               {formatDateOnly(invoice.invoice_date)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
                               {invoice.due_date
                                 ? formatDateOnly(invoice.due_date)
                                 : '—'}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{invoice.customer_name}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600 align-top">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{invoice.customer_name}</td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground align-top">
                               {cust ? (
                                 <ContactArApBalances
                                   role="customer"
@@ -713,7 +713,7 @@ export default function PaymentReceivedPage() {
                                 '—'
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-900">
+                            <td className="px-4 py-3 text-sm text-right text-foreground">
                               {invoice.synthetic ? (
                                 '—'
                               ) : (
@@ -723,7 +723,7 @@ export default function PaymentReceivedPage() {
                                 </>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm text-right text-gray-600">
+                            <td className="px-4 py-3 text-sm text-right text-muted-foreground">
                               {invoice.synthetic ? (
                                 '—'
                               ) : (
@@ -733,7 +733,7 @@ export default function PaymentReceivedPage() {
                                 </>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                            <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                               {currencySymbol}
                               {formatNumber(Number(invoice.balance_due) || 0)}
                             </td>
@@ -748,9 +748,9 @@ export default function PaymentReceivedPage() {
 
             {displayedData.payments.length === 0 && displayedData.invoices.length === 0 && (
               <div className="p-12 text-center">
-                <p className="text-gray-500 mb-2">Nothing to show for the current view.</p>
+                <p className="text-muted-foreground mb-2">Nothing to show for the current view.</p>
                 {filterStatus === 'received' && allOutstandingInvoices.length > 0 ? (
-                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 max-w-xl mx-auto">
+                  <p className="text-sm text-warning-foreground bg-warning/10 border border-warning/30 rounded-lg px-4 py-3 max-w-xl mx-auto">
                     You have <strong>{allOutstandingInvoices.length}</strong> open invoice(s)—often
                     including today&apos;s <strong>credit / on-account</strong> sales. They are
                     hidden while Status is <strong>Payment Received</strong>. Switch to{' '}
@@ -758,12 +758,12 @@ export default function PaymentReceivedPage() {
                   </p>
                 ) : null}
                 {(startDate || endDate) && (
-                  <p className="text-sm text-gray-400 mt-3">
+                  <p className="text-sm text-muted-foreground/70 mt-3">
                     Try clearing the date filters to widen the list.
                   </p>
                 )}
-                <p className="text-sm text-gray-500 mt-4">
-                  <Link href="/payments/received/new" className="text-green-700 font-medium underline">
+                <p className="text-sm text-muted-foreground mt-4">
+                  <Link href="/payments/received/new" className="text-success font-medium underline">
                     Record a new payment
                   </Link>
                 </p>

@@ -18,6 +18,10 @@ from app.modules.feed_manufacturing.models import (
     BOMStatus, ProductionStatus, InclusionBasis, Silo, SiloTransaction,
 )
 from app.modules.feed_manufacturing.silo_service import SiloService
+from app.modules.feed_manufacturing.production_rollback_service import (
+    ProductionRollbackError,
+    rollback_production_order,
+)
 from app.modules.feed_manufacturing.bom_service import BomService
 from app.modules.catalog.models import Item, UOM
 from app.modules.inventory.models import Warehouse
@@ -2136,6 +2140,30 @@ async def pack_batch(
 
     db.commit()
     return {"message": "Packing completed successfully"}
+
+
+@router.post("/production-orders/{order_id}/unpost")
+async def unpost_production_order(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Roll back issued/completed production: restore raw materials, remove finished goods
+    from warehouse (when still on hand), reset order to draft.
+    """
+    tenant_id = get_tenant_id(request)
+    try:
+        order = rollback_production_order(db, tenant_id, order_id, current_user.id)
+    except ProductionRollbackError as e:
+        raise HTTPException(status_code=409, detail=e.detail)
+    return {
+        "message": "Production order rolled back to draft; stock movements reversed.",
+        "order_id": order.id,
+        "status": order.status,
+    }
+
 
 # ==================== Traceability ====================
 

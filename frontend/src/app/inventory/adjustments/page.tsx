@@ -16,6 +16,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
+import { formatQuantity } from '@/utils/quantity'
 
 const inputClassName =
   'w-full min-h-10 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -70,9 +71,7 @@ function reasonLabel(value: string): string {
 
 function fmtQty(raw: string | null | undefined): string {
   if (raw == null || raw === '') return '—'
-  const n = Number(raw)
-  if (!Number.isFinite(n)) return String(raw)
-  return n.toLocaleString(undefined, { maximumFractionDigits: 4 })
+  return formatQuantity(raw)
 }
 
 export default function InventoryAdjustmentsPage() {
@@ -413,7 +412,7 @@ export default function InventoryAdjustmentsPage() {
                                 className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                                   posted
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100'
-                                    : 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100'
+                                    : 'bg-amber-100 text-warning-foreground dark:bg-amber-900/40 dark:text-amber-100'
                                 }`}
                               >
                                 {posted ? 'Posted' : 'Draft'}

@@ -142,13 +142,13 @@ export function checkStatusTone(status: GoLiveCheck['status']): string {
     case 'complete':
       return 'text-emerald-800 bg-emerald-50 border-emerald-200'
     case 'warning':
-      return 'text-amber-900 bg-amber-50 border-amber-200'
+      return 'text-warning-foreground bg-warning/10 border-warning/30'
     case 'missing':
       return 'text-rose-900 bg-rose-50 border-rose-200'
     case 'optional':
-      return 'text-slate-600 bg-slate-50 border-slate-200'
+      return 'text-muted-foreground bg-muted/40 border-border'
     default:
-      return 'text-slate-500 bg-slate-50 border-slate-100'
+      return 'text-muted-foreground bg-muted/40 border-border/70'
   }
 }
 
@@ -185,8 +185,8 @@ export function formatSigned(n: number, sym: string): string {
 
 export function signedTone(n: number): string {
   if (n > 0) return 'text-emerald-800'
-  if (n < 0) return 'text-amber-900'
-  return 'text-slate-600'
+  if (n < 0) return 'text-warning-foreground'
+  return 'text-muted-foreground'
 }
 
 export function bsLinesOfKind(lines: BalanceSheetLine[], kind: BalanceSheetKind): BalanceSheetLine[] {

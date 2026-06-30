@@ -592,8 +592,8 @@ export default function AquacultureExpensesPage() {
     if (r.is_shared) {
       const n = r.pond_shares?.length ?? 0
       return (
-        <span className="text-slate-700">
-          Shared <span className="text-slate-500">({n} ponds)</span>
+        <span className="text-foreground/85">
+          Shared <span className="text-muted-foreground">({n} ponds)</span>
         </span>
       )
     }
@@ -696,18 +696,18 @@ export default function AquacultureExpensesPage() {
         ))}
       </datalist>
 
-      <div className="rounded-xl border border-indigo-200/90 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
+      <div className="rounded-xl border border-primary/25/90 bg-accent/80 px-4 py-3 text-sm text-foreground shadow-sm">
         <div className="flex gap-2">
-          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-indigo-700" aria-hidden />
+          <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
           <div>
-            <p className="font-semibold text-indigo-950">{aquacultureT('expensesBillsFirstTitle', lang)}</p>
-            <p className="mt-1 leading-relaxed text-indigo-950/95">
+            <p className="font-semibold text-foreground">{aquacultureT('expensesBillsFirstTitle', lang)}</p>
+            <p className="mt-1 leading-relaxed text-foreground/95">
               {aquacultureT('expensesBillsFirstPart1', lang)}
-              <strong className="text-indigo-950">{aquacultureT('expensesBillsFirstVendorBills', lang)}</strong>
+              <strong className="text-foreground">{aquacultureT('expensesBillsFirstVendorBills', lang)}</strong>
               {aquacultureT('expensesBillsFirstPart2', lang)}
-              <strong className="text-indigo-950">{aquacultureT('expensesBillsFirstPayments', lang)}</strong>
+              <strong className="text-foreground">{aquacultureT('expensesBillsFirstPayments', lang)}</strong>
               {aquacultureT('expensesBillsFirstPart3', lang)}
-              <strong className="text-indigo-950">{aquacultureT('expensesBillsFirstVendorBillLines', lang)}</strong>
+              <strong className="text-foreground">{aquacultureT('expensesBillsFirstVendorBillLines', lang)}</strong>
               {aquacultureT('expensesBillsFirstPart4', lang)}
               <span className="font-medium">{aquacultureT('expensesBillsFirstView', lang)}</span>
               {aquacultureT('expensesBillsFirstPart5', lang)}
@@ -718,30 +718,30 @@ export default function AquacultureExpensesPage() {
 
       {loading ? (
         <div className="mt-10 flex justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       ) : ponds.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
+        <div className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-5 text-sm text-warning-foreground">
           <p className="font-medium">{aquacultureT('createPondFirst', lang)}</p>
-          <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-teal-800 underline">
+          <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-primary underline">
             {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
         <>
-        <div className="mt-6 rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50/90 to-white px-4 py-4 text-sm text-slate-800 shadow-sm">
+        <div className="mt-6 rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50/90 to-card px-4 py-4 text-sm text-foreground shadow-sm">
           <p className="font-semibold text-teal-950">{aquacultureT('expensesPosRecommendedTitle', lang)}</p>
-          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-slate-700">
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-foreground/85">
             <li>
               {aquacultureT('expensesPosStep1EnPrefix', lang)}
-              <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
+              <Link href="/aquaculture/ponds" className="font-medium text-primary underline">
                 {aquacultureT('pondsPage', lang)}
               </Link>
               {aquacultureT('expensesPosStep1Suffix', lang)}
             </li>
             <li>
               {aquacultureT('expensesPosStep2EnPrefix', lang)}
-              <Link href="/cashier" className="inline-flex items-center gap-1 font-medium text-teal-800 underline">
+              <Link href="/cashier" className="inline-flex items-center gap-1 font-medium text-primary underline">
                 <Store className="h-3.5 w-3.5" aria-hidden />
                 {aquacultureT('cashier', lang)}
               </Link>
@@ -749,37 +749,37 @@ export default function AquacultureExpensesPage() {
             </li>
             <li>
               {aquacultureT('expensesPosStep3Prefix', lang)}
-              <span className="font-medium text-slate-800">{aquacultureT('expensesPosLedger', lang)}</span>
+              <span className="font-medium text-foreground">{aquacultureT('expensesPosLedger', lang)}</span>
               {aquacultureT('expensesPosStep3Middle', lang)}
-              <span className="font-medium text-slate-800">{aquacultureT('expensesPosPosShortcut', lang)}</span>
+              <span className="font-medium text-foreground">{aquacultureT('expensesPosPosShortcut', lang)}</span>
               {aquacultureT('expensesPosStep3Suffix', lang)}
             </li>
           </ol>
-          <p className="mt-2 text-xs leading-relaxed text-slate-600">
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
             {aquacultureT('expensesPosFooter', lang)}
           </p>
         </div>
         <details
-          className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-800"
+          className="mt-4 rounded-xl border border-border bg-muted/40/70 px-4 py-3 text-sm text-foreground"
           open={shopIssueOpen}
           onToggle={(e) => setShopIssueOpen((e.target as HTMLDetailsElement).open)}
         >
-          <summary className="cursor-pointer select-none font-medium text-slate-800">
-            <Package className="mr-1 inline h-4 w-4 align-text-bottom text-slate-600" aria-hidden />
+          <summary className="cursor-pointer select-none font-medium text-foreground">
+            <Package className="mr-1 inline h-4 w-4 align-text-bottom text-muted-foreground" aria-hidden />
             {aquacultureT('expensesAdvancedStockIssue', lang)}
           </summary>
-          <p className="mt-2 text-xs leading-relaxed text-slate-600">
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
             {aquacultureT('expensesAdvancedStockIssueBodyPrefix', lang)}
-            <Link href="/stations" className="font-medium text-teal-800 underline">
+            <Link href="/stations" className="font-medium text-primary underline">
               {aquacultureT('stationsPage', lang)}
             </Link>
             {aquacultureT('expensesAdvancedStockIssueBodySuffix', lang)}
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs font-medium text-slate-700">
+            <label className="block text-xs font-medium text-foreground/85">
               Station
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 value={shopStationId}
                 onChange={(e) => setShopStationId(e.target.value)}
               >
@@ -790,10 +790,10 @@ export default function AquacultureExpensesPage() {
                 ))}
               </select>
             </label>
-            <label className="block text-xs font-medium text-slate-700">
+            <label className="block text-xs font-medium text-foreground/85">
               Pond
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 value={shopPondId}
                 onChange={(e) => {
                   setShopPondId(e.target.value)
@@ -808,10 +808,10 @@ export default function AquacultureExpensesPage() {
                 ))}
               </select>
             </label>
-            <label className="block text-xs font-medium text-slate-700 sm:col-span-2">
+            <label className="block text-xs font-medium text-foreground/85 sm:col-span-2">
               Production cycle (optional)
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 value={shopCycleId}
                 onChange={(e) => setShopCycleId(e.target.value)}
                 disabled={!shopPondId}
@@ -824,10 +824,10 @@ export default function AquacultureExpensesPage() {
                 ))}
               </select>
             </label>
-            <label className="block text-xs font-medium text-slate-700 sm:col-span-2">
+            <label className="block text-xs font-medium text-foreground/85 sm:col-span-2">
               Category
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 value={shopCategory}
                 onChange={(e) => {
                   setShopCategory(e.target.value)
@@ -844,25 +844,25 @@ export default function AquacultureExpensesPage() {
             </label>
             {shopCategory === 'feed_purchase' ? (
               <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
-                <label className="block text-xs font-medium text-slate-700">
+                <label className="block text-xs font-medium text-foreground/85">
                   Feed sacks (optional)
                   <input
                     type="number"
                     min="0"
                     step="0.01"
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm tabular-nums"
                     value={shopFeedSackCount}
                     onChange={(e) => setShopFeedSackCount(e.target.value)}
                     placeholder="e.g. 12"
                   />
                 </label>
-                <label className="block text-xs font-medium text-slate-700">
+                <label className="block text-xs font-medium text-foreground/85">
                   Feed total kg (optional)
                   <input
                     type="number"
                     min="0"
                     step="0.01"
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm tabular-nums"
                     value={shopFeedWeightKg}
                     onChange={(e) => setShopFeedWeightKg(e.target.value)}
                     placeholder="Equivalent kg"
@@ -870,19 +870,19 @@ export default function AquacultureExpensesPage() {
                 </label>
               </div>
             ) : null}
-            <label className="block text-xs font-medium text-slate-700">
+            <label className="block text-xs font-medium text-foreground/85">
               Date
               <input
                 type="date"
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 value={shopDate}
                 onChange={(e) => setShopDate(e.target.value)}
               />
             </label>
-            <label className="block text-xs font-medium text-slate-700">
+            <label className="block text-xs font-medium text-foreground/85">
               Vendor (optional)
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 list="aquaculture-vendor-suggestions"
                 autoComplete="off"
                 placeholder={vendors.length ? 'Pick from list or type a name' : 'Type vendor name'}
@@ -890,10 +890,10 @@ export default function AquacultureExpensesPage() {
                 onChange={(e) => setShopVendor(e.target.value)}
               />
             </label>
-            <label className="block text-xs font-medium text-slate-700 sm:col-span-2">
+            <label className="block text-xs font-medium text-foreground/85 sm:col-span-2">
               Memo
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                 value={shopMemo}
                 onChange={(e) => setShopMemo(e.target.value)}
                 placeholder="e.g. Pond A — weekly feed from depot"
@@ -901,16 +901,16 @@ export default function AquacultureExpensesPage() {
             </label>
           </div>
           <div className="mt-3 space-y-2">
-            <p className="text-xs font-medium text-slate-600">Lines (inventory items)</p>
+            <p className="text-xs font-medium text-muted-foreground">Lines (inventory items)</p>
             {shopCatalogLoading ? (
-              <p className="text-xs text-slate-500">Loading items…</p>
+              <p className="text-xs text-muted-foreground">Loading items…</p>
             ) : null}
             {shopLines.map((row, idx) => (
               <div key={idx} className="flex flex-wrap items-end gap-2">
-                <label className="min-w-[10rem] flex-1 text-xs text-slate-600">
+                <label className="min-w-[10rem] flex-1 text-xs text-muted-foreground">
                   Item
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
                     value={row.item_id}
                     onChange={(e) => {
                       const next = [...shopLines]
@@ -927,13 +927,13 @@ export default function AquacultureExpensesPage() {
                     ))}
                   </select>
                 </label>
-                <label className="w-28 text-xs text-slate-600">
+                <label className="w-28 text-xs text-muted-foreground">
                   Qty
                   <input
                     type="number"
                     min="0"
                     step="0.0001"
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+                    className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm tabular-nums"
                     value={row.quantity}
                     onChange={(e) => {
                       const next = [...shopLines]
@@ -945,7 +945,7 @@ export default function AquacultureExpensesPage() {
                 {shopLines.length > 1 ? (
                   <button
                     type="button"
-                    className="text-xs text-red-600 hover:underline"
+                    className="text-xs text-destructive hover:underline"
                     onClick={() => setShopLines((lines) => lines.filter((_, i) => i !== idx))}
                   >
                     Remove
@@ -955,7 +955,7 @@ export default function AquacultureExpensesPage() {
             ))}
             <button
               type="button"
-              className="text-xs font-medium text-teal-800 hover:underline"
+              className="text-xs font-medium text-primary hover:underline"
               onClick={() => setShopLines((lines) => [...lines, { item_id: '', quantity: '' }])}
             >
               Add line
@@ -966,16 +966,16 @@ export default function AquacultureExpensesPage() {
               type="button"
               disabled={shopIssueBusy || !shopPondId}
               onClick={() => void submitShopStockIssue()}
-              className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {shopIssueBusy ? 'Working…' : 'Issue stock & record pond cost'}
             </button>
           </div>
         </details>
-        <div className="mt-6 w-full min-w-0 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-6 w-full min-w-0 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
           <table className="w-full min-w-[1100px] table-auto text-left text-sm" aria-labelledby="aq-expenses-title">
             <caption className="sr-only">Aquaculture operating expenses</caption>
-            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
                 <th scope="col" className="whitespace-nowrap px-4 py-3">
                   Date
@@ -1007,59 +1007,59 @@ export default function AquacultureExpensesPage() {
                 <th scope="col" className="whitespace-nowrap px-4 py-3 text-right">
                   Amount
                 </th>
-                <th scope="col" className="sticky right-0 z-10 min-w-[12rem] whitespace-nowrap border-l border-slate-200 bg-slate-50 px-4 py-3">
+                <th scope="col" className="sticky right-0 z-10 min-w-[12rem] whitespace-nowrap border-l border-border bg-muted/40 px-4 py-3">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={aquacultureExpenseRegisterRowKey(r)} className="group border-b border-slate-100 hover:bg-slate-50/80">
+                <tr key={aquacultureExpenseRegisterRowKey(r)} className="group border-b border-border/70 hover:bg-muted/50">
                   <td className="whitespace-nowrap px-4 py-3">{formatDateOnly(r.expense_date)}</td>
                   <td className="px-4 py-3">{pondCell(r)}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.production_cycle_name || '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{r.production_cycle_name || '—'}</td>
                   <td className="px-4 py-3">
                     <div>{r.expense_category_label || r.expense_category}</div>
                     {r.source === 'bill' ? (
-                      <span className="text-xs text-teal-700">Vendor bill</span>
+                      <span className="text-xs text-primary">Vendor bill</span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-4 py-3 text-muted-foreground">
                     <span className="line-clamp-2" title={r.memo || ''}>
                       {r.memo?.trim() || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {r.feed_sack_count != null && r.feed_sack_count !== '' ? r.feed_sack_count : '—'}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {r.feed_weight_kg != null && r.feed_weight_kg !== '' ? r.feed_weight_kg : '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-4 py-3 text-muted-foreground">
                     {r.source === 'bill' ? (
-                      <span className="text-teal-800">A/P bill</span>
+                      <span className="text-primary">A/P bill</span>
                     ) : r.source_station_name ? (
-                      <span className="text-teal-800">{r.source_station_name}</span>
+                      <span className="text-primary">{r.source_station_name}</span>
                     ) : (
                       '—'
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-800">{r.vendor_name || '—'}</div>
+                    <div className="font-medium text-foreground">{r.vendor_name || '—'}</div>
                     {r.source === 'bill' && r.bill_number ? (
-                      <div className="text-xs text-slate-500">{r.bill_number}</div>
+                      <div className="text-xs text-muted-foreground">{r.bill_number}</div>
                     ) : null}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums font-medium">
                     {sym}
                     {formatNumber(Number(r.amount))}
                   </td>
-                  <td className="sticky right-0 z-[1] border-l border-slate-100 bg-white px-4 py-3 group-hover:bg-slate-50">
+                  <td className="sticky right-0 z-[1] border-l border-border/70 bg-white px-4 py-3 group-hover:bg-muted/40">
                     <div className="flex min-w-[11rem] items-center justify-end gap-2">
                       {r.source === 'bill' && r.bill_id ? (
                         <Link
                           href={`/bills?view=${r.bill_id}`}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-primary hover:bg-accent"
                           title="View vendor bill"
                           aria-label="View vendor bill"
                         >
@@ -1069,7 +1069,7 @@ export default function AquacultureExpensesPage() {
                       {aquacultureExpenseEditAllowed(r) ? (
                         <button
                           type="button"
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-blue-600 hover:bg-blue-50"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-primary hover:bg-accent"
                           onClick={() => openEdit(r)}
                           title="Edit expense"
                           aria-label="Edit expense"
@@ -1078,7 +1078,7 @@ export default function AquacultureExpensesPage() {
                         </button>
                       ) : r.source !== 'bill' ? (
                         <span
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-400"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground/70"
                           title={aquacultureExpenseEditBlockedReason(r)}
                         >
                           <Edit2 className="h-6 w-6 opacity-40" aria-hidden />
@@ -1087,7 +1087,7 @@ export default function AquacultureExpensesPage() {
                       {r.source !== 'bill' ? (
                         <button
                           type="button"
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-destructive hover:bg-destructive/5"
                           title="Delete expense"
                           aria-label="Delete expense"
                           onClick={() => void remove(r)}
@@ -1101,12 +1101,12 @@ export default function AquacultureExpensesPage() {
               ))}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
                     No expenses in this view.
                   </td>
                 </tr>
               ) : (
-                <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-900">
+                <tr className="border-t-2 border-border bg-muted/40 font-semibold text-foreground">
                   <td className="px-4 py-3" colSpan={9}>
                     Total ({rows.length} {rows.length === 1 ? 'row' : 'rows'})
                   </td>
@@ -1114,7 +1114,7 @@ export default function AquacultureExpensesPage() {
                     {sym}
                     {formatNumber(totalAmount)}
                   </td>
-                  <td className="sticky right-0 border-l border-slate-200 bg-slate-50 px-4 py-3" />
+                  <td className="sticky right-0 border-l border-border bg-muted/40 px-4 py-3" />
                 </tr>
               )}
             </tbody>
@@ -1128,9 +1128,9 @@ export default function AquacultureExpensesPage() {
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold">{editing ? 'Edit expense' : 'New expense'}</h2>
             <div className="mt-4 space-y-3">
-              <fieldset className="space-y-2 rounded-lg border border-slate-200 p-3">
-                <legend className="text-xs font-medium uppercase tracking-wide text-slate-500">Cost type</legend>
-                <label className="flex items-center gap-2 text-sm text-slate-800">
+              <fieldset className="space-y-2 rounded-lg border border-border p-3">
+                <legend className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cost type</legend>
+                <label className="flex items-center gap-2 text-sm text-foreground">
                   <input
                     type="radio"
                     name="cost_mode"
@@ -1139,7 +1139,7 @@ export default function AquacultureExpensesPage() {
                   />
                   Direct to one pond
                 </label>
-                <label className="flex items-center gap-2 text-sm text-slate-800">
+                <label className="flex items-center gap-2 text-sm text-foreground">
                   <input
                     type="radio"
                     name="cost_mode"
@@ -1148,7 +1148,7 @@ export default function AquacultureExpensesPage() {
                   />
                   Shared — equal split
                 </label>
-                <label className="flex items-center gap-2 text-sm text-slate-800">
+                <label className="flex items-center gap-2 text-sm text-foreground">
                   <input
                     type="radio"
                     name="cost_mode"
@@ -1161,10 +1161,10 @@ export default function AquacultureExpensesPage() {
 
               {form.cost_mode === 'direct' ? (
                 <>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Pond
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                       value={form.pond_id}
                       onChange={(e) =>
                         setForm((f) => ({ ...f, pond_id: e.target.value, production_cycle_id: '' }))
@@ -1177,10 +1177,10 @@ export default function AquacultureExpensesPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Production cycle (optional)
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                       value={form.production_cycle_id}
                       onChange={(e) => setForm((f) => ({ ...f, production_cycle_id: e.target.value }))}
                     >
@@ -1194,15 +1194,15 @@ export default function AquacultureExpensesPage() {
                   </label>
                 </>
               ) : form.cost_mode === 'shared_equal' ? (
-                <div className="rounded-lg border border-slate-200 p-3">
-                  <p className="text-xs font-medium text-slate-600">Select at least two ponds</p>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Select at least two ponds</p>
                   <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
                     {ponds.map((p) => (
                       <li key={p.id}>
                         <label className="flex items-center gap-2 text-sm">
                           <input
                             type="checkbox"
-                            className="rounded border-slate-300"
+                            className="rounded border-border"
                             checked={form.shared_pond_ids.includes(String(p.id))}
                             onChange={() => toggleSharedPond(String(p.id))}
                           />
@@ -1213,12 +1213,12 @@ export default function AquacultureExpensesPage() {
                   </ul>
                 </div>
               ) : (
-                <div className="space-y-2 rounded-lg border border-slate-200 p-3">
-                  <p className="text-xs text-slate-600">Each line: pond and amount (≥2 rows; amounts must sum to total)</p>
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <p className="text-xs text-muted-foreground">Each line: pond and amount (≥2 rows; amounts must sum to total)</p>
                   {form.manual_shares.map((row, idx) => (
                     <div key={idx} className="flex flex-wrap gap-2">
                       <select
-                        className="min-w-[8rem] flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                        className="min-w-[8rem] flex-1 rounded-lg border border-border px-2 py-1.5 text-sm"
                         value={row.pond_id}
                         onChange={(e) => {
                           const next = [...form.manual_shares]
@@ -1238,7 +1238,7 @@ export default function AquacultureExpensesPage() {
                         min="0"
                         step="0.01"
                         placeholder="Amount"
-                        className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm tabular-nums"
+                        className="w-28 rounded-lg border border-border px-2 py-1.5 text-sm tabular-nums"
                         value={row.amount}
                         onChange={(e) => {
                           const next = [...form.manual_shares]
@@ -1250,7 +1250,7 @@ export default function AquacultureExpensesPage() {
                   ))}
                   <button
                     type="button"
-                    className="text-sm text-teal-800 underline"
+                    className="text-sm text-primary underline"
                     onClick={() =>
                       setForm((f) => ({ ...f, manual_shares: [...f.manual_shares, { pond_id: '', amount: '' }] }))
                     }
@@ -1260,10 +1260,10 @@ export default function AquacultureExpensesPage() {
                 </div>
               )}
 
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Category
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.expense_category}
                   onChange={(e) => {
                     const v = e.target.value
@@ -1282,52 +1282,52 @@ export default function AquacultureExpensesPage() {
                 const hint = cats.find((c) => c.id === form.expense_category)?.hint
                 if (!hint) return null
                 return (
-                  <p className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                  <p className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                     {hint}
                   </p>
                 )
               })()}
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Date
                 <input
                   type="date"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.expense_date}
                   onChange={(e) => setForm((f) => ({ ...f, expense_date: e.target.value }))}
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Amount ({sym})
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={form.amount}
                   onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                 />
               </label>
               {form.expense_category === 'feed_purchase' ? (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Feed sacks (optional)
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 tabular-nums"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 tabular-nums"
                       value={form.feed_sack_count}
                       onChange={(e) => setForm((f) => ({ ...f, feed_sack_count: e.target.value }))}
                       placeholder="Number of sacks"
                     />
                   </label>
-                  <label className="block text-sm font-medium text-slate-700">
+                  <label className="block text-sm font-medium text-foreground/85">
                     Feed total kg (optional)
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 tabular-nums"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 tabular-nums"
                       value={form.feed_weight_kg}
                       onChange={(e) => setForm((f) => ({ ...f, feed_weight_kg: e.target.value }))}
                       placeholder="Equivalent kg"
@@ -1335,10 +1335,10 @@ export default function AquacultureExpensesPage() {
                   </label>
                 </div>
               ) : null}
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Vendor (optional)
                 <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   list="aquaculture-vendor-suggestions"
                   autoComplete="off"
                   placeholder={vendors.length ? 'Pick from list or type a name' : 'Type vendor name'}
@@ -1346,10 +1346,10 @@ export default function AquacultureExpensesPage() {
                   onChange={(e) => setForm((f) => ({ ...f, vendor_name: e.target.value }))}
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-700">
+              <label className="block text-sm font-medium text-foreground/85">
                 Memo
                 <textarea
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   rows={2}
                   value={form.memo}
                   onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
@@ -1360,14 +1360,14 @@ export default function AquacultureExpensesPage() {
               <button
                 type="button"
                 onClick={() => setModal(false)}
-                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => void save()}
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white"
               >
                 Save
               </button>

@@ -50,38 +50,38 @@ export default function ChartOfAccountsPage() {
           <div className="max-w-5xl space-y-6">
         <ReportingHubBreadcrumb current="Chart of accounts" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Chart of accounts</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-foreground">Chart of accounts</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Feed–mill template: current assets (grain, additives, finished feed, fleet), payables, equity, revenue, COGS, distribution, field travel & employee claims, QC, and admin.
             Safe to run on an empty ledger; replacing deletes existing accounts (only use on new companies).
           </p>
         </div>
 
         {error ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="erp-alert-warning">
             {apiErrorDetail(error)}
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/15 bg-accent/50 p-4">
           <button
             type="button"
             disabled={applyTemplate.isPending}
             onClick={() => applyTemplate.mutate(false)}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="erp-btn-primary rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
           >
             Apply feed mill COA template
           </button>
           <button
             type="button"
             onClick={() => setConfirmReplace((v) => !v)}
-            className="text-sm font-medium text-red-700 underline"
+            className="text-sm font-medium text-destructive underline"
           >
             Replace all accounts (danger)
           </button>
         </div>
         {confirmReplace ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4 text-sm text-red-900">
             <p>This deletes existing accounts for this tenant. Only for new tenants with no posted journals.</p>
             <button
               type="button"
@@ -93,24 +93,24 @@ export default function ChartOfAccountsPage() {
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
           {isLoading ? (
-            <div className="p-6 text-sm text-gray-500">Loading…</div>
+            <div className="p-6 text-sm text-muted-foreground">Loading…</div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-600">Code</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-600">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-600">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Code</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-muted-foreground">Type</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border/70">
                 {accounts.map((a) => (
-                  <tr key={a.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 font-mono text-sm text-gray-900">{a.code}</td>
-                    <td className="px-4 py-2 text-sm text-gray-800">{a.name}</td>
-                    <td className="px-4 py-2 text-xs uppercase text-gray-500">{a.type}</td>
+                  <tr key={a.id} className="hover:bg-muted/40">
+                    <td className="px-4 py-2 font-mono text-sm text-foreground">{a.code}</td>
+                    <td className="px-4 py-2 text-sm text-foreground">{a.name}</td>
+                    <td className="px-4 py-2 text-xs uppercase text-muted-foreground">{a.type}</td>
                   </tr>
                 ))}
               </tbody>

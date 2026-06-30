@@ -857,23 +857,23 @@ function CompaniesPageContent() {
         <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-gray-900 sm:text-xl">
+              <h2 className="text-lg font-bold text-foreground sm:text-xl">
                 All Companies
                 {!loading && companies.length > 0 ? (
-                  <span className="ml-2 text-base font-semibold text-gray-500">({companies.length})</span>
+                  <span className="ml-2 text-base font-semibold text-muted-foreground">({companies.length})</span>
                 ) : null}
               </h2>
-              <p className="mt-1 max-w-2xl text-xs text-gray-600 sm:text-sm">
-                Under <strong className="font-medium text-gray-800">Tenant modules</strong>, check{' '}
-                <strong className="font-medium text-gray-800">License Aquaculture</strong> so the tenant Admin can turn
-                Aquaculture on in <strong className="font-medium text-gray-800">Company settings</strong>. The ERP menu
+              <p className="mt-1 max-w-2xl text-xs text-muted-foreground sm:text-sm">
+                Under <strong className="font-medium text-foreground">Tenant modules</strong>, check{' '}
+                <strong className="font-medium text-foreground">License Aquaculture</strong> so the tenant Admin can turn
+                Aquaculture on in <strong className="font-medium text-foreground">Company settings</strong>. The ERP menu
                 shows Aquaculture only after the Admin enables it there.
               </p>
             </div>
             <button
               type="button"
               onClick={handleCreateCompany}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 sm:w-auto"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary sm:w-auto"
             >
               <Plus className="h-5 w-5 shrink-0" />
               <span>New company</span>
@@ -890,19 +890,19 @@ function CompaniesPageContent() {
               value={companySearch}
               onChange={(e) => setCompanySearch(e.target.value)}
               placeholder="Search by company code (e.g. FS-000042), name, or numeric ID…"
-              className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="w-full max-w-md rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/30"
             />
           </div>
 
           {companiesFetchError && (
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
+            <div className="mb-6 rounded-lg border border-destructive/25 bg-destructive/5 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-red-900">Could not load companies from the API</p>
-                  <p className="mt-1 text-sm text-red-800/95">{companiesFetchError}</p>
+                  <p className="mt-1 text-sm text-destructive/95">{companiesFetchError}</p>
                   <p className="mt-2 text-sm text-red-900/90">
-                    Start Django on port 8000 (from the repo: <code className="rounded bg-red-100/80 px-1">backend\run-dev.bat</code>
-                    ), keep this page on <code className="rounded bg-red-100/80 px-1">http://localhost:3000</code>, sign in as{' '}
+                    Start Django on port 8000 (from the repo: <code className="rounded bg-destructive/10/80 px-1">backend\run-dev.bat</code>
+                    ), keep this page on <code className="rounded bg-destructive/10/80 px-1">http://localhost:3000</code>, sign in as{' '}
                     <strong>super_admin</strong>, then click Retry.
                   </p>
                   <p className="mt-2 font-mono text-xs text-red-900/80 break-all">
@@ -912,7 +912,7 @@ function CompaniesPageContent() {
                 <button
                   type="button"
                   onClick={() => fetchCompanies()}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-900 shadow-sm hover:bg-red-100/80"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-destructive/30 bg-white px-3 py-2 text-sm font-medium text-red-900 shadow-sm hover:bg-destructive/10/80"
                 >
                   <RefreshCw className="h-4 w-4" />
                   Retry
@@ -923,8 +923,8 @@ function CompaniesPageContent() {
 
           {/* Companies list first — visible without scrolling past maintenance panels */}
           {!loading && companies.length > 0 && (
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm font-semibold text-slate-900">
+            <div className="mb-6 rounded-lg border border-border bg-white p-4 shadow-sm">
+              <p className="text-sm font-semibold text-foreground">
                 Loaded companies ({filteredCompanies.length}
                 {companySearch.trim() ? ` of ${companies.length}` : ''})
               </p>
@@ -939,16 +939,16 @@ function CompaniesPageContent() {
                     <li key={c.id}>
                       <a
                         href={`#company-card-${c.id}`}
-                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:border-blue-300 hover:bg-blue-50"
+                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm font-medium text-foreground hover:border-blue-300 hover:bg-accent"
                       >
                         {c.is_master === 'true' ? (
                           <Crown className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />
                         ) : (
-                          <Building2 className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                         )}
                         <span className="truncate">{c.name}</span>
                         {c.company_code ? (
-                          <span className="shrink-0 font-mono text-xs text-slate-500">{c.company_code}</span>
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground">{c.company_code}</span>
                         ) : null}
                       </a>
                     </li>
@@ -957,7 +957,7 @@ function CompaniesPageContent() {
               {filteredCompanies.length === 0 && companySearch.trim() ? (
                 <button
                   type="button"
-                  className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                  className="mt-2 text-sm font-medium text-primary hover:text-primary/80"
                   onClick={() => setCompanySearch('')}
                 >
                   Clear search to show all {companies.length} companies
@@ -967,13 +967,13 @@ function CompaniesPageContent() {
           )}
 
           {!loading && companies.length === 0 && !companiesFetchError ? (
-            <div className="mb-6 rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center">
-              <Building2 className="mx-auto mb-3 h-10 w-10 text-slate-400" />
-              <p className="text-slate-700">No companies in this database.</p>
+            <div className="mb-6 rounded-lg border border-dashed border-border bg-white p-6 text-center">
+              <Building2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground/70" />
+              <p className="text-foreground/85">No companies in this database.</p>
               <button
                 type="button"
                 onClick={handleCreateCompany}
-                className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
               >
                 Create company
               </button>
@@ -981,17 +981,17 @@ function CompaniesPageContent() {
           ) : null}
           
           {/* Info Banner */}
-          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="mb-6 rounded-lg border border-warning/30 bg-warning/10 p-4">
             <div className="flex items-start gap-3">
-              <Crown className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-              <div className="text-sm text-amber-950">
-                <p className="font-medium text-amber-900">Looking for Master Filling Station?</p>
-                <p className="mt-1 text-amber-900/90">
+              <Crown className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" />
+              <div className="text-sm text-warning-foreground">
+                <p className="font-medium text-warning-foreground">Looking for Master Filling Station?</p>
+                <p className="mt-1 text-warning-foreground/90">
                   It is the usual <strong>development / master</strong> tenant (yellow <strong>Master</strong> badge).
                   Use the search box above if the list is long. This page only loads in{' '}
                   <strong>SaaS Dashboard</strong> mode (use the sidebar tabs).
                 </p>
-                <p className="mt-2 text-amber-900/85">
+                <p className="mt-2 text-warning-foreground/85">
                   If it is missing from the database, from the <code className="rounded bg-amber-100/80 px-1">backend</code>{' '}
                   folder run{' '}
                   <code className="rounded bg-amber-100/80 px-1 text-xs">
@@ -1007,15 +1007,15 @@ function CompaniesPageContent() {
             </div>
           </div>
 
-          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="mb-6 bg-blue-50 border border-primary/25 rounded-lg p-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 flex-1 items-start">
                 <div className="flex-shrink-0">
-                  <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <Shield className="h-5 w-5 text-primary mt-0.5" />
                 </div>
                 <div className="ml-3 min-w-0">
                   <h3 className="text-sm font-medium text-blue-900">Maintenance & Upgrades</h3>
-                  <div className="mt-2 text-sm text-blue-700 space-y-2">
+                  <div className="mt-2 text-sm text-primary space-y-2">
                     <p>
                       All subscribed companies receive <strong>free maintenance and upgrades</strong> while their subscription is active and continuing.
                       This includes system updates, feature enhancements, security patches, and technical support.
@@ -1044,7 +1044,7 @@ function CompaniesPageContent() {
                   type="button"
                   onClick={handleRolloutPlatformReleaseToAllTenants}
                   disabled={rolloutAllReleaseBusy || loading || rollbackAllBusy || previewRolloutBusy}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Rocket className="h-4 w-4 shrink-0" />
                   {previewRolloutBusy
@@ -1057,7 +1057,7 @@ function CompaniesPageContent() {
                   type="button"
                   onClick={handleRollbackAllTenants}
                   disabled={rollbackAllBusy || loading || rolloutAllReleaseBusy || previewRolloutBusy}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Undo2 className="h-4 w-4 shrink-0" />
                   {rollbackAllBusy ? 'Rolling back…' : 'Rollback last release (all tenants)'}
@@ -1067,15 +1067,15 @@ function CompaniesPageContent() {
           </div>
 
           {platformInfo?.fleet_summary && (
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-slate-900">Fleet release compliance</h3>
-              <p className="mt-1 text-xs text-slate-600">
+            <div className="mb-6 rounded-lg border border-border bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-foreground">Fleet release compliance</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
                 Server target:{' '}
-                <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">
                   {platformInfo.fleet_summary.server_target_release || platformInfo.target_release}
                 </code>{' '}
                 · App version:{' '}
-                <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">{platformInfo.app_version}</code>
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">{platformInfo.app_version}</code>
               </p>
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded-md bg-emerald-50 px-3 py-2 text-center">
@@ -1084,47 +1084,47 @@ function CompaniesPageContent() {
                   </p>
                   <p className="text-xs text-emerald-700">At target</p>
                 </div>
-                <div className="rounded-md bg-amber-50 px-3 py-2 text-center">
-                  <p className="text-2xl font-semibold text-amber-800">
+                <div className="rounded-md bg-warning/10 px-3 py-2 text-center">
+                  <p className="text-2xl font-semibold text-warning-foreground">
                     {platformInfo.fleet_summary.not_at_target}
                   </p>
-                  <p className="text-xs text-amber-800">Not at target</p>
+                  <p className="text-xs text-warning-foreground">Not at target</p>
                 </div>
-                <div className="rounded-md bg-slate-50 px-3 py-2 text-center">
-                  <p className="text-2xl font-semibold text-slate-800">
+                <div className="rounded-md bg-muted/40 px-3 py-2 text-center">
+                  <p className="text-2xl font-semibold text-foreground">
                     {platformInfo.fleet_summary.tenant_count}
                   </p>
-                  <p className="text-xs text-slate-600">Tenants (excl. Master)</p>
+                  <p className="text-xs text-muted-foreground">Tenants (excl. Master)</p>
                 </div>
                 <div className="rounded-md bg-blue-50 px-3 py-2 text-center">
-                  <p className="text-2xl font-semibold text-blue-800">
+                  <p className="text-2xl font-semibold text-primary">
                     {platformInfo.fleet_summary.compliance_pct}%
                   </p>
-                  <p className="text-xs text-blue-700">Compliance</p>
+                  <p className="text-xs text-primary">Compliance</p>
                 </div>
               </div>
               {platformInfo.release_notes?.trim() ? (
-                <p className="mt-3 text-xs text-slate-700 border-t border-slate-100 pt-3 whitespace-pre-wrap">
-                  <span className="font-medium text-slate-800">Release notes (deploy): </span>
+                <p className="mt-3 text-xs text-foreground/85 border-t border-border/70 pt-3 whitespace-pre-wrap">
+                  <span className="font-medium text-foreground">Release notes (deploy): </span>
                   {platformInfo.release_notes}
                 </p>
               ) : null}
               {platformInfo.upgrade_playbook && platformInfo.upgrade_playbook.length > 0 ? (
-                <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-slate-600 border-t border-slate-100 pt-3">
+                <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-muted-foreground border-t border-border/70 pt-3">
                   {platformInfo.upgrade_playbook.map((step, i) => (
                     <li key={i}>{step}</li>
                   ))}
                 </ol>
               ) : null}
               {platformInfo.tenant_upgrade_hooks && platformInfo.tenant_upgrade_hooks.length > 0 ? (
-                <div className="mt-3 border-t border-slate-100 pt-3">
-                  <p className="text-xs font-medium text-slate-800">
+                <div className="mt-3 border-t border-border/70 pt-3">
+                  <p className="text-xs font-medium text-foreground">
                     Tenant upgrade hooks (run on each Apply release)
                   </p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
                     {platformInfo.tenant_upgrade_hooks.map((h) => (
                       <li key={h.name}>
-                        <span className="font-mono text-[11px] text-slate-500">{h.name}</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">{h.name}</span>
                         {h.summary ? ` — ${h.summary}` : ''}
                       </li>
                     ))}
@@ -1135,15 +1135,15 @@ function CompaniesPageContent() {
           )}
 
           {upgradeAuditEvents.length > 0 && (
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-slate-900">Recent upgrade audit</h3>
-              <p className="mt-0.5 text-xs text-slate-500">
+            <div className="mb-6 rounded-lg border border-border bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-foreground">Recent upgrade audit</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Immutable log of platform rollouts (who triggered actions is stored as actor user id when available).
               </p>
               <div className="mt-3 overflow-x-auto">
-                <table className="min-w-full text-left text-xs text-slate-700">
+                <table className="min-w-full text-left text-xs text-foreground/85">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
+                    <tr className="border-b border-border text-muted-foreground">
                       <th className="py-1.5 pr-3 font-medium">When (UTC)</th>
                       <th className="py-1.5 pr-3 font-medium">Company</th>
                       <th className="py-1.5 pr-3 font-medium">Category</th>
@@ -1153,7 +1153,7 @@ function CompaniesPageContent() {
                   </thead>
                   <tbody>
                     {upgradeAuditEvents.map((ev) => (
-                      <tr key={ev.id} className="border-b border-slate-100">
+                      <tr key={ev.id} className="border-b border-border/70">
                         <td className="py-1.5 pr-3 whitespace-nowrap">
                           {ev.created_at ? ev.created_at.slice(0, 19).replace('T', ' ') : '—'}
                         </td>
@@ -1172,38 +1172,38 @@ function CompaniesPageContent() {
           {/* Companies Grid */}
           {loading ? (
             <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading companies...</p>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading companies...</p>
             </div>
           ) : companies.length === 0 ? (
             companiesFetchError ? (
-              <div className="rounded-lg border border-gray-200 bg-white app-modal-pad text-center text-gray-600">
+              <div className="rounded-lg border border-border bg-white app-modal-pad text-center text-muted-foreground">
                 <p className="text-sm">Fix the issue above (API URL, sign-in, or Super Admin role), then use Retry.</p>
               </div>
             ) : (
             <div className="bg-white rounded-lg shadow app-modal-pad text-center">
-              <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 text-lg mb-2">No companies found</p>
-              <p className="text-gray-500 text-sm mb-4">Create your first company to get started</p>
-              <p className="text-gray-500 text-xs mb-4 max-w-lg mx-auto">
+              <Building2 className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+              <p className="text-muted-foreground text-lg mb-2">No companies found</p>
+              <p className="text-muted-foreground text-sm mb-4">Create your first company to get started</p>
+              <p className="text-muted-foreground text-xs mb-4 max-w-lg mx-auto">
                 If you upgraded from an older deployment and expected existing tenants, confirm your database still has
-                rows in the company table with <code className="rounded bg-gray-100 px-1">is_deleted=false</code>, and
-                that this UI points at the same API as that database (<code className="rounded bg-gray-100 px-1">NEXT_PUBLIC_API_BASE_URL</code>).
+                rows in the company table with <code className="rounded bg-muted px-1">is_deleted=false</code>, and
+                that this UI points at the same API as that database (<code className="rounded bg-muted px-1">NEXT_PUBLIC_API_BASE_URL</code>).
               </p>
               <button
                 onClick={handleCreateCompany}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="erp-btn-primary transition-colors"
               >
                 Create Company
               </button>
             </div>
             )
           ) : filteredCompanies.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 bg-white app-modal-pad text-center text-gray-600">
+            <div className="rounded-lg border border-border bg-white app-modal-pad text-center text-muted-foreground">
               <p>No companies match &quot;{companySearch.trim()}&quot;.</p>
               <button
                 type="button"
-                className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-800"
+                className="mt-3 text-sm font-medium text-primary hover:text-primary/80"
                 onClick={() => setCompanySearch('')}
               >
                 Clear search
@@ -1219,8 +1219,8 @@ function CompaniesPageContent() {
                 })
                 .map((company) => {
                   const statusColor = company.is_active 
-                    ? (company.subscription_active ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200')
-                    : 'bg-red-50 border-red-200'
+                    ? (company.subscription_active ? 'bg-green-50 border-success/25' : 'bg-blue-50 border-primary/25')
+                    : 'bg-destructive/5 border-destructive/25'
                   
                   const capacityStations = company.capacity_usage?.stations
                   const capacityUsers = company.capacity_usage?.users
@@ -1239,10 +1239,10 @@ function CompaniesPageContent() {
                               {company.is_master === 'true' && (
                                 <Crown className="h-6 w-6 shrink-0 text-yellow-600" />
                               )}
-                              <h3 className="min-w-0 text-lg font-bold text-gray-900 sm:text-xl">{company.name}</h3>
+                              <h3 className="min-w-0 text-lg font-bold text-foreground sm:text-xl">{company.name}</h3>
                               {company.company_code ? (
                                 <span
-                                  className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs font-semibold text-slate-700"
+                                  className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-foreground/85"
                                   title="Company reference code"
                                 >
                                   {company.company_code}
@@ -1255,31 +1255,31 @@ function CompaniesPageContent() {
                               )}
                               <span
                                 className={`rounded-full px-2 py-0.5 text-xs font-semibold sm:px-3 sm:py-1 ${
-                                  company.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                  company.is_active ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
                                 }`}
                               >
                                 {company.is_active ? 'Active' : 'Inactive'}
                               </span>
                               {company.subscription_active && (
-                                <span className="flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800 sm:px-3 sm:py-1">
+                                <span className="flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-primary sm:px-3 sm:py-1">
                                   <Crown className="mr-1 h-3 w-3" />
                                   Subscribed
                                 </span>
                               )}
                               {company.aquaculture_licensed && !company.aquaculture_enabled && (
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 sm:px-3 sm:py-1">
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground/85 sm:px-3 sm:py-1">
                                   Aquaculture licensed
                                 </span>
                               )}
                               {company.aquaculture_enabled && (
-                                <span className="flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-teal-900 sm:px-3 sm:py-1">
+                                <span className="flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-primary sm:px-3 sm:py-1">
                                   <Fish className="mr-1 h-3 w-3 shrink-0" aria-hidden />
                                   Aquaculture on
                                 </span>
                               )}
                             </div>
                             {company.legal_name && (
-                              <p className="text-sm text-gray-600">{company.legal_name}</p>
+                              <p className="text-sm text-muted-foreground">{company.legal_name}</p>
                             )}
                           </div>
                           <div className="flex shrink-0 flex-wrap items-center gap-1 sm:justify-end sm:gap-2">
@@ -1289,7 +1289,7 @@ function CompaniesPageContent() {
                                 className={`p-2 rounded-lg transition-colors ${
                                   company.subscription.is_expired || (company.subscription.days_until_expiry !== null && company.subscription.days_until_expiry <= 7)
                                     ? 'text-orange-600 hover:bg-orange-50'
-                                    : 'text-green-600 hover:bg-green-50'
+                                    : 'text-success hover:bg-green-50'
                                 }`}
                                 title="Manage Subscription"
                               >
@@ -1301,7 +1301,7 @@ function CompaniesPageContent() {
                                 setViewingCompany(company)
                                 setShowCompanyViewModal(true)
                               }}
-                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                              className="p-2 text-success hover:bg-green-50 rounded-lg transition-colors"
                               title="View Company Details"
                             >
                               <Eye className="h-5 w-5" />
@@ -1310,7 +1310,7 @@ function CompaniesPageContent() {
                               type="button"
                               onClick={() => handleAdminTenantBackupDownload(company)}
                               disabled={backupDownloadBusyId === company.id}
-                              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50"
+                              className="p-2 text-primary hover:bg-accent rounded-lg transition-colors disabled:opacity-50"
                               title="Download tenant backup (JSON)"
                             >
                               <Database className="h-5 w-5" />
@@ -1318,7 +1318,7 @@ function CompaniesPageContent() {
                             <button
                               type="button"
                               onClick={() => openRestoreModal(company)}
-                              className="p-2 text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                              className="p-2 text-warning-foreground hover:bg-warning/10 rounded-lg transition-colors"
                               title="Restore tenant from backup"
                             >
                               <Upload className="h-5 w-5" />
@@ -1333,7 +1333,7 @@ function CompaniesPageContent() {
                             </button>
                             <button
                               onClick={() => handleEditCompany(company)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              className="p-2 text-primary hover:bg-accent rounded-lg transition-colors"
                               title="Edit Company"
                             >
                               <Edit2 className="h-5 w-5" />
@@ -1342,7 +1342,7 @@ function CompaniesPageContent() {
                               <button
                                 type="button"
                                 onClick={() => handleDeactivateCompany(company)}
-                                className="p-2 text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+                                className="p-2 text-warning-foreground hover:bg-warning/10 rounded-lg transition-colors"
                                 title="Deactivate company (suspend access, keep all data)"
                               >
                                 <Ban className="h-5 w-5" />
@@ -1362,7 +1362,7 @@ function CompaniesPageContent() {
                               <button
                                 type="button"
                                 onClick={() => openDeleteCompanyModal(company)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-2 text-destructive hover:bg-destructive/5 rounded-lg transition-colors"
                                 title="Permanently delete company and all data"
                               >
                                 <Trash2 className="h-5 w-5" />
@@ -1372,13 +1372,13 @@ function CompaniesPageContent() {
                         </div>
 
                         {/* Manual platform release (per tenant) */}
-                        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="min-w-0 text-sm">
-                            <span className="font-medium text-slate-700">Platform release</span>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-600">
+                            <span className="font-medium text-foreground/85">Platform release</span>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
                               <span>
                                 Target:{' '}
-                                <code className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-900">
+                                <code className="rounded bg-white px-1.5 py-0.5 font-mono text-foreground">
                                   {company.platform_target_release ||
                                     platformInfo?.target_release ||
                                     '—'}
@@ -1386,12 +1386,12 @@ function CompaniesPageContent() {
                               </span>
                               <span>
                                 This tenant:{' '}
-                                <code className="rounded bg-white px-1.5 py-0.5 font-mono text-slate-900">
+                                <code className="rounded bg-white px-1.5 py-0.5 font-mono text-foreground">
                                   {company.platform_release?.trim() ? company.platform_release : '—'}
                                 </code>
                               </span>
                               {company.release_behind ? (
-                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-warning-foreground">
                                   Behind
                                 </span>
                               ) : (
@@ -1401,15 +1401,15 @@ function CompaniesPageContent() {
                               )}
                             </div>
                             {company.platform_release_applied_at && (
-                              <p className="mt-1 text-xs text-slate-500">
+                              <p className="mt-1 text-xs text-muted-foreground">
                                 Last applied:{' '}
                                 {formatDateTime(company.platform_release_applied_at)}
                               </p>
                             )}
                             {company.release_can_rollback && (
-                              <p className="mt-1 text-xs text-amber-900/90">
+                              <p className="mt-1 text-xs text-warning-foreground/90">
                                 One-step rollback available → previous tag:{' '}
-                                <code className="rounded bg-white px-1 font-mono text-slate-900">
+                                <code className="rounded bg-white px-1 font-mono text-foreground">
                                   {company.platform_release_previous != null &&
                                   String(company.platform_release_previous).trim() !== ''
                                     ? company.platform_release_previous
@@ -1420,7 +1420,7 @@ function CompaniesPageContent() {
                           </div>
                           <div className="flex max-w-xl shrink-0 flex-col items-stretch gap-2 sm:items-end">
                             {company.is_master === 'true' ? (
-                              <p className="text-xs text-slate-600 sm:text-right">
+                              <p className="text-xs text-muted-foreground sm:text-right">
                                 R&amp;D tenant — exercise new behaviour here first, then use{' '}
                                 <strong>Apply upgrade</strong> on each other company when ready (manual
                                 rollout only).
@@ -1438,7 +1438,7 @@ function CompaniesPageContent() {
                                   {applyReleaseBusyId === company.id ? 'Applying…' : 'Apply upgrade'}
                                 </button>
                               ) : (
-                                <span className="self-center text-xs text-slate-500 sm:text-right">
+                                <span className="self-center text-xs text-muted-foreground sm:text-right">
                                   No upgrade action needed.
                                 </span>
                               )}
@@ -1447,7 +1447,7 @@ function CompaniesPageContent() {
                                   type="button"
                                   onClick={() => handleRollbackPlatformRelease(company)}
                                   disabled={rollbackReleaseBusyId === company.id || applyReleaseBusyId === company.id}
-                                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   <Undo2 className="h-4 w-4 shrink-0" />
                                   {rollbackReleaseBusyId === company.id ? 'Rolling back…' : 'Rollback last release'}
@@ -1461,26 +1461,26 @@ function CompaniesPageContent() {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                           {/* Contact & Domain */}
                           <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact & Domain</h4>
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact & Domain</h4>
                             <div className="space-y-2">
                               <div className="flex items-center space-x-2">
-                                <span className="text-sm text-gray-600">Email:</span>
-                                <span className="text-sm font-medium text-gray-900">{company.email || '-'}</span>
+                                <span className="text-sm text-muted-foreground">Email:</span>
+                                <span className="text-sm font-medium text-foreground">{company.email || '-'}</span>
                               </div>
                               <div className="flex items-center space-x-2">
-                                <span className="text-sm text-gray-600">Phone:</span>
-                                <span className="text-sm font-medium text-gray-900">{company.phone || '-'}</span>
+                                <span className="text-sm text-muted-foreground">Phone:</span>
+                                <span className="text-sm font-medium text-foreground">{company.phone || '-'}</span>
                               </div>
                               {company.subdomain && (
                                 <div className="flex items-center space-x-2">
-                                  <span className="text-sm text-gray-600">Subdomain:</span>
-                                  <span className="text-sm font-medium text-blue-600">{company.subdomain}.yourdomain.com</span>
+                                  <span className="text-sm text-muted-foreground">Subdomain:</span>
+                                  <span className="text-sm font-medium text-primary">{company.subdomain}.yourdomain.com</span>
                                 </div>
                               )}
                               {company.custom_domain && (
                                 <div className="flex items-center space-x-2">
-                                  <span className="text-sm text-gray-600">Domain:</span>
-                                  <span className="text-sm font-medium text-blue-600">{company.custom_domain}</span>
+                                  <span className="text-sm text-muted-foreground">Domain:</span>
+                                  <span className="text-sm font-medium text-primary">{company.custom_domain}</span>
                                 </div>
                               )}
                             </div>
@@ -1488,21 +1488,21 @@ function CompaniesPageContent() {
 
                           {/* Statistics & Capacity */}
                           <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Statistics & Capacity</h4>
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Statistics & Capacity</h4>
                             <div className="space-y-3">
                               {/* Users Capacity */}
                               <div>
                                 <div className="flex justify-between items-center mb-1">
-                                  <span className="text-sm text-gray-600">Users</span>
-                                  <span className="text-sm font-semibold text-gray-900">
+                                  <span className="text-sm text-muted-foreground">Users</span>
+                                  <span className="text-sm font-semibold text-foreground">
                                     {company.user_count}{capacityUsers ? ` / ${capacityUsers.limit}` : ''}
                                   </span>
                                 </div>
                                 {capacityUsers && (
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div className="w-full bg-muted rounded-full h-2">
                                     <div 
                                       className={`h-2 rounded-full transition-all ${
-                                        capacityUsers.percentage >= 90 ? 'bg-red-500' :
+                                        capacityUsers.percentage >= 90 ? 'bg-destructive/50' :
                                         capacityUsers.percentage >= 70 ? 'bg-yellow-500' :
                                         'bg-green-500'
                                       }`}
@@ -1515,16 +1515,16 @@ function CompaniesPageContent() {
                               {/* Stations Capacity */}
                               <div>
                                 <div className="flex justify-between items-center mb-1">
-                                  <span className="text-sm text-gray-600">Stations</span>
-                                  <span className="text-sm font-semibold text-gray-900">
+                                  <span className="text-sm text-muted-foreground">Stations</span>
+                                  <span className="text-sm font-semibold text-foreground">
                                     {company.station_count}{capacityStations ? ` / ${capacityStations.limit}` : ''}
                                   </span>
                                 </div>
                                 {capacityStations && (
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div className="w-full bg-muted rounded-full h-2">
                                     <div 
                                       className={`h-2 rounded-full transition-all ${
-                                        capacityStations.percentage >= 90 ? 'bg-red-500' :
+                                        capacityStations.percentage >= 90 ? 'bg-destructive/50' :
                                         capacityStations.percentage >= 70 ? 'bg-yellow-500' :
                                         'bg-green-500'
                                       }`}
@@ -1536,33 +1536,33 @@ function CompaniesPageContent() {
                               
                               {/* Customers */}
                               <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-600">Customers</span>
-                                <span className="text-sm font-semibold text-gray-900">{company.customer_count}</span>
+                                <span className="text-sm text-muted-foreground">Customers</span>
+                                <span className="text-sm font-semibold text-foreground">{company.customer_count}</span>
                               </div>
                             </div>
                           </div>
 
                           {/* SaaS Subscription Ledger */}
                           <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">SaaS Subscription Ledger</h4>
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SaaS Subscription Ledger</h4>
                             <div className="space-y-3">
-                              <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                                <div className="text-xs text-gray-500 mb-1">Subscription Revenue</div>
-                                <div className="text-lg font-bold text-green-700">
+                              <div className="bg-green-50 rounded-lg p-3 border border-success/25">
+                                <div className="text-xs text-muted-foreground mb-1">Subscription Revenue</div>
+                                <div className="text-lg font-bold text-success">
                                   {formatCurrency(company.subscription_total_paid || company.ledger_balance || 0, company.currency || 'BDT')}
                                 </div>
                               </div>
                               
                               <div className={`rounded-lg p-3 border ${
                                 (company.subscription_outstanding || company.accounts_receivable || 0) > 0
-                                  ? 'bg-red-50 border-red-200'
-                                  : 'bg-gray-50 border-gray-200'
+                                  ? 'bg-destructive/5 border-destructive/25'
+                                  : 'bg-muted/40 border-border'
                               }`}>
-                                <div className="text-xs text-gray-500 mb-1">Outstanding</div>
+                                <div className="text-xs text-muted-foreground mb-1">Outstanding</div>
                                 <div className={`text-lg font-bold ${
                                   (company.subscription_outstanding || company.accounts_receivable || 0) > 0
-                                    ? 'text-red-700'
-                                    : 'text-gray-900'
+                                    ? 'text-destructive'
+                                    : 'text-foreground'
                                 }`}>
                                   {formatCurrency(company.subscription_outstanding || company.accounts_receivable || 0, company.currency || 'BDT')}
                                 </div>
@@ -1572,15 +1572,15 @@ function CompaniesPageContent() {
 
                           {/* Subscription & Charges */}
                           <div className="space-y-3">
-                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Subscription & Charges</h4>
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subscription & Charges</h4>
                             <div className="space-y-3">
                               {company.subscription ? (
                                 <div className="bg-blue-50 rounded-lg p-3">
-                                  <div className="text-xs text-gray-500 mb-1">Plan</div>
-                                  <div className="text-sm font-bold text-gray-900 mb-2">{company.subscription.plan_name || 'N/A'}</div>
+                                  <div className="text-xs text-muted-foreground mb-1">Plan</div>
+                                  <div className="text-sm font-bold text-foreground mb-2">{company.subscription.plan_name || 'N/A'}</div>
                                   <div className={`text-xs font-semibold mb-2 ${
-                                    company.subscription.status === 'active' ? 'text-green-600' :
-                                    company.subscription.status === 'expired' ? 'text-red-600' :
+                                    company.subscription.status === 'active' ? 'text-success' :
+                                    company.subscription.status === 'expired' ? 'text-destructive' :
                                     'text-yellow-600'
                                   }`}>
                                     {company.subscription.status.toUpperCase()}
@@ -1588,10 +1588,10 @@ function CompaniesPageContent() {
                                   {company.subscription.current_period_end && (
                                     <div className={`text-xs flex items-center ${
                                       company.subscription.is_expired 
-                                        ? 'text-red-600 font-semibold' 
+                                        ? 'text-destructive font-semibold' 
                                         : company.subscription.days_until_expiry !== null && company.subscription.days_until_expiry <= 7
                                         ? 'text-orange-600 font-semibold'
-                                        : 'text-gray-600'
+                                        : 'text-muted-foreground'
                                     }`}>
                                       <Calendar className="h-3 w-3 inline mr-1" />
                                       {company.subscription.is_expired ? (
@@ -1609,13 +1609,13 @@ function CompaniesPageContent() {
                                   )}
                                 </div>
                               ) : (
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                  <div className="text-xs text-gray-400">No subscription</div>
+                                <div className="bg-muted/40 rounded-lg p-3">
+                                  <div className="text-xs text-muted-foreground/70">No subscription</div>
                                 </div>
                               )}
                               
                               <div className="bg-purple-50 rounded-lg p-3">
-                                <div className="text-xs text-gray-500 mb-1">Monthly Charges</div>
+                                <div className="text-xs text-muted-foreground mb-1">Monthly Charges</div>
                                 {company.monthly_charge ? (
                                   <div className="text-lg font-bold text-purple-900">
                                     {formatCurrency(company.monthly_charge, company.currency || 'BDT')}/mo
@@ -1625,12 +1625,12 @@ function CompaniesPageContent() {
                                     <div className="text-lg font-bold text-purple-900">
                                       {formatCurrency(company.yearly_charge, company.currency || 'BDT')}/yr
                                     </div>
-                                    <div className="text-xs text-gray-600 mt-1">
+                                    <div className="text-xs text-muted-foreground mt-1">
                                       ({formatCurrency(company.yearly_charge / 12, company.currency || 'BDT')}/mo)
                                     </div>
                                   </>
                                 ) : (
-                                  <div className="text-sm text-gray-400">No charges</div>
+                                  <div className="text-sm text-muted-foreground/70">No charges</div>
                                 )}
                               </div>
                             </div>
@@ -1666,60 +1666,60 @@ function CompaniesPageContent() {
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Basic Information</h3>
+                      <h3 className="text-lg font-semibold text-foreground border-b pb-2">Basic Information</h3>
                       <div className="space-y-3">
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Company Name</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.name}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Company Name</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.name}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Company code</label>
-                          <p className="mt-1 font-mono text-base text-gray-900">
+                          <label className="text-sm font-medium text-muted-foreground">Company code</label>
+                          <p className="mt-1 font-mono text-base text-foreground">
                             {displayCompanyCode(viewingCompany)}
                           </p>
-                          <p className="mt-0.5 text-xs text-gray-500">
+                          <p className="mt-0.5 text-xs text-muted-foreground">
                             Use with the company name when referring to this tenant (e.g. support). The master
                             tenant uses the reserved code FS-000001; others follow FS- plus a six-digit id.
                           </p>
                         </div>
                         {viewingCompany.legal_name && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Legal Name</label>
-                            <p className="text-base text-gray-900 mt-1">{viewingCompany.legal_name}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Legal Name</label>
+                            <p className="text-base text-foreground mt-1">{viewingCompany.legal_name}</p>
                           </div>
                         )}
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Email</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.email || '-'}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Email</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.email || '-'}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Phone</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.phone || '-'}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.phone || '-'}</p>
                         </div>
                         {viewingCompany.contact_person && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Contact Person</label>
-                            <p className="text-base text-gray-900 mt-1">{viewingCompany.contact_person}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Contact Person</label>
+                            <p className="text-base text-foreground mt-1">{viewingCompany.contact_person}</p>
                           </div>
                         )}
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Currency</label>
-                          <p className="text-base text-gray-900 mt-1">{viewingCompany.currency || 'BDT'}</p>
+                          <label className="text-sm font-medium text-muted-foreground">Currency</label>
+                          <p className="text-base text-foreground mt-1">{viewingCompany.currency || 'BDT'}</p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Date format</label>
-                          <p className="text-base text-gray-900 mt-1">
+                          <label className="text-sm font-medium text-muted-foreground">Date format</label>
+                          <p className="text-base text-foreground mt-1">
                             {viewingCompany.date_format || DEFAULT_COMPANY_DATE_FORMAT}
-                            <span className="ml-2 text-sm font-normal text-gray-500">
+                            <span className="ml-2 text-sm font-normal text-muted-foreground">
                               (e.g. {formatCompanyDate('2026-04-06', viewingCompany.date_format || DEFAULT_COMPANY_DATE_FORMAT)})
                             </span>
                           </p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Time format</label>
-                          <p className="text-base text-gray-900 mt-1">
+                          <label className="text-sm font-medium text-muted-foreground">Time format</label>
+                          <p className="text-base text-foreground mt-1">
                             {viewingCompany.time_format || DEFAULT_COMPANY_TIME_FORMAT}
-                            <span className="ml-2 text-sm font-normal text-gray-500">
+                            <span className="ml-2 text-sm font-normal text-muted-foreground">
                               (e.g.{' '}
                               {formatCompanyTime(
                                 new Date(2026, 3, 6, 14, 30),
@@ -1730,15 +1730,15 @@ function CompaniesPageContent() {
                           </p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Status</label>
-                          <p className={`text-base font-semibold mt-1 ${viewingCompany.is_active ? 'text-green-600' : 'text-red-600'}`}>
+                          <label className="text-sm font-medium text-muted-foreground">Status</label>
+                          <p className={`text-base font-semibold mt-1 ${viewingCompany.is_active ? 'text-success' : 'text-destructive'}`}>
                             {viewingCompany.is_active ? 'Active' : 'Inactive'}
                           </p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Aquaculture (SaaS license)</label>
+                          <label className="text-sm font-medium text-muted-foreground">Aquaculture (SaaS license)</label>
                           <p
-                            className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_licensed ? 'text-teal-700' : 'text-gray-500'}`}
+                            className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_licensed ? 'text-primary' : 'text-muted-foreground'}`}
                           >
                             {viewingCompany.aquaculture_licensed
                               ? 'Licensed — tenant Admin may enable in Company settings'
@@ -1746,9 +1746,9 @@ function CompaniesPageContent() {
                           </p>
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-gray-500">Aquaculture (Company settings)</label>
+                          <label className="text-sm font-medium text-muted-foreground">Aquaculture (Company settings)</label>
                           <p
-                            className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_enabled ? 'text-teal-700' : 'text-gray-500'}`}
+                            className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_enabled ? 'text-primary' : 'text-muted-foreground'}`}
                           >
                             {viewingCompany.aquaculture_enabled
                               ? 'On in ERP (menu and features)'
@@ -1759,32 +1759,32 @@ function CompaniesPageContent() {
                     </div>
 
                     <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Payment Information</h3>
+                      <h3 className="text-lg font-semibold text-foreground border-b pb-2">Payment Information</h3>
                       <div className="space-y-3">
                         {viewingCompany.payment_type && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Billing Cycle</label>
-                            <p className="text-base text-gray-900 mt-1 capitalize">{viewingCompany.payment_type.replace('_', '-')}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Billing Cycle</label>
+                            <p className="text-base text-foreground mt-1 capitalize">{viewingCompany.payment_type.replace('_', '-')}</p>
                           </div>
                         )}
                         {viewingCompany.payment_amount && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Payment Amount</label>
-                            <p className="text-base font-semibold text-gray-900 mt-1">{viewingCompany.payment_amount}</p>
+                            <label className="text-sm font-medium text-muted-foreground">Payment Amount</label>
+                            <p className="text-base font-semibold text-foreground mt-1">{viewingCompany.payment_amount}</p>
                           </div>
                         )}
                         {viewingCompany.payment_start_date && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Payment Start Date</label>
-                            <p className="text-base text-gray-900 mt-1">
+                            <label className="text-sm font-medium text-muted-foreground">Payment Start Date</label>
+                            <p className="text-base text-foreground mt-1">
                               {formatDateOnly(viewingCompany.payment_start_date)}
                             </p>
                           </div>
                         )}
                         {viewingCompany.payment_end_date && (
                           <div>
-                            <label className="text-sm font-medium text-gray-500">Payment End Date</label>
-                            <p className="text-base text-gray-900 mt-1">
+                            <label className="text-sm font-medium text-muted-foreground">Payment End Date</label>
+                            <p className="text-base text-foreground mt-1">
                               {formatDateOnly(viewingCompany.payment_end_date)}
                             </p>
                           </div>
@@ -1799,7 +1799,7 @@ function CompaniesPageContent() {
                         setShowCompanyViewModal(false)
                         setViewingCompany(null)
                       }}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Close
                     </button>
@@ -1809,7 +1809,7 @@ function CompaniesPageContent() {
                         setViewingCompany(null)
                         handleEditCompany(viewingCompany)
                       }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors flex items-center space-x-2"
                     >
                       <Edit2 className="h-4 w-4" />
                       <span>Edit Company</span>
@@ -1823,36 +1823,36 @@ function CompaniesPageContent() {
           {restoreModalCompany && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
               <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-xl">
-                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
-                  <h2 className="text-lg font-bold text-gray-900">Restore tenant backup</h2>
+                <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-foreground">Restore tenant backup</h2>
                   <button
                     type="button"
                     onClick={() => {
                       setRestoreModalCompany(null)
                       setRestorePhrase('')
                     }}
-                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                    className="rounded-full p-2 text-muted-foreground hover:bg-muted"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
                 <div className="space-y-4 p-4 sm:p-6">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-foreground/85">
                     Company: <strong>{restoreModalCompany.name}</strong> (ID {restoreModalCompany.id})
                   </p>
-                  <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                  <p className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-red-900">
                     The backup file must be for <strong>company_id = {restoreModalCompany.id}</strong>. All current ERP
                     data for this tenant will be deleted before restore.
                   </p>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    <label className="block text-sm font-medium text-foreground/85">
+                      Type <code className="rounded bg-muted px-1">{RESTORE_CONFIRM_PHRASE}</code>
                     </label>
                     <input
                       type="text"
                       value={restorePhrase}
                       onChange={(e) => setRestorePhrase(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      className="mt-2 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm"
                       autoComplete="off"
                     />
                   </div>
@@ -1870,7 +1870,7 @@ function CompaniesPageContent() {
                         setRestoreModalCompany(null)
                         setRestorePhrase('')
                       }}
-                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                      className="rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                     >
                       Cancel
                     </button>
@@ -1891,37 +1891,37 @@ function CompaniesPageContent() {
           {deleteModalCompany && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
               <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-xl">
-                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
-                  <h2 className="text-lg font-bold text-gray-900">Permanently delete company</h2>
+                <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-foreground">Permanently delete company</h2>
                   <button
                     type="button"
                     onClick={() => {
                       setDeleteModalCompany(null)
                       setDeletePhrase('')
                     }}
-                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                    className="rounded-full p-2 text-muted-foreground hover:bg-muted"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
                 <div className="space-y-4 p-4 sm:p-6">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-foreground/85">
                     Company: <strong>{deleteModalCompany.name}</strong> (ID {deleteModalCompany.id})
                   </p>
-                  <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                  <p className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-red-900">
                     This removes the company row, <strong>all users and passwords</strong>, and{' '}
                     <strong>all ERP data</strong> for this tenant. This cannot be undone. To suspend access without
                     deleting data, use <strong>Deactivate</strong> instead.
                   </p>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    <label className="block text-sm font-medium text-foreground/85">
+                      Type <code className="rounded bg-muted px-1">{RESTORE_CONFIRM_PHRASE}</code>
                     </label>
                     <input
                       type="text"
                       value={deletePhrase}
                       onChange={(e) => setDeletePhrase(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      className="mt-2 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm"
                       autoComplete="off"
                     />
                   </div>
@@ -1932,7 +1932,7 @@ function CompaniesPageContent() {
                         setDeleteModalCompany(null)
                         setDeletePhrase('')
                       }}
-                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                      className="rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                     >
                       Cancel
                     </button>
@@ -1940,7 +1940,7 @@ function CompaniesPageContent() {
                       type="button"
                       disabled={deleteBusy || deletePhrase.trim() !== RESTORE_CONFIRM_PHRASE}
                       onClick={runPermanentCompanyDelete}
-                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {deleteBusy ? 'Deleting…' : 'Delete permanently'}
                     </button>
@@ -1953,8 +1953,8 @@ function CompaniesPageContent() {
           {stationPurgeCompany && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
               <div className="w-full max-w-lg rounded-t-2xl bg-white shadow-2xl sm:rounded-xl">
-                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
-                  <h2 className="text-lg font-bold text-gray-900">Purge station (forecourt only)</h2>
+                <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6">
+                  <h2 className="text-lg font-bold text-foreground">Purge station (forecourt only)</h2>
                   <button
                     type="button"
                     onClick={() => {
@@ -1962,17 +1962,17 @@ function CompaniesPageContent() {
                       setStationPurgePhrase('')
                       setStationPurgeStationId('')
                     }}
-                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
+                    className="rounded-full p-2 text-muted-foreground hover:bg-muted"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
                 <div className="space-y-4 p-4 sm:p-6">
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-foreground/85">
                     Company: <strong>{stationPurgeCompany.name}</strong> (ID {stationPurgeCompany.id})
                   </p>
                   {stationPurgeCompany.is_master === 'true' && (
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                    <p className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">
                       This is the <strong>master</strong> tenant. Only purge if you intend to reset demo forecourt
                       data.
                     </p>
@@ -1984,14 +1984,14 @@ function CompaniesPageContent() {
                     their rows; the shift link is cleared.
                   </p>
                   {stationPurgeLoadingList ? (
-                    <p className="text-sm text-gray-600">Loading stations…</p>
+                    <p className="text-sm text-muted-foreground">Loading stations…</p>
                   ) : stationPurgeList.length === 0 ? (
-                    <p className="text-sm text-gray-600">No stations found for this company.</p>
+                    <p className="text-sm text-muted-foreground">No stations found for this company.</p>
                   ) : (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">Station to purge</label>
+                      <label className="block text-sm font-medium text-foreground/85">Station to purge</label>
                       <select
-                        className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm"
                         value={stationPurgeStationId === '' ? '' : String(stationPurgeStationId)}
                         onChange={(e) => {
                           const v = e.target.value
@@ -2013,10 +2013,10 @@ function CompaniesPageContent() {
                       </select>
                     </div>
                   )}
-                  <label className="flex cursor-pointer items-start gap-2 text-sm text-gray-800">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
                     <input
                       type="checkbox"
-                      className="mt-1 rounded border-gray-300"
+                      className="mt-1 rounded border-border"
                       checked={stationPurgeRemoveRow}
                       onChange={(e) => setStationPurgeRemoveRow(e.target.checked)}
                     />
@@ -2026,14 +2026,14 @@ function CompaniesPageContent() {
                     </span>
                   </label>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">
-                      Type <code className="rounded bg-gray-100 px-1">{RESTORE_CONFIRM_PHRASE}</code>
+                    <label className="block text-sm font-medium text-foreground/85">
+                      Type <code className="rounded bg-muted px-1">{RESTORE_CONFIRM_PHRASE}</code>
                     </label>
                     <input
                       type="text"
                       value={stationPurgePhrase}
                       onChange={(e) => setStationPurgePhrase(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"
+                      className="mt-2 w-full rounded-lg border border-border px-3 py-2 font-mono text-sm"
                       autoComplete="off"
                     />
                   </div>
@@ -2045,7 +2045,7 @@ function CompaniesPageContent() {
                         setStationPurgePhrase('')
                         setStationPurgeStationId('')
                       }}
-                      className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
+                      className="rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
                     >
                       Cancel
                     </button>
@@ -2087,7 +2087,7 @@ function CompaniesPageContent() {
                 <form onSubmit={handleSubmitCompany} className="flex-1 overflow-y-auto p-4 sm:p-6">
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Company Name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -2095,25 +2095,25 @@ function CompaniesPageContent() {
                         required
                         value={companyFormData.company_name}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, company_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Legal Name</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Legal Name</label>
                       <input
                         type="text"
                         value={companyFormData.legal_name}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, legal_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
 
-                    <div className="rounded-lg border border-gray-200 bg-gray-50/90 p-4 space-y-3">
-                      <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Tenant URL (optional)</p>
+                    <div className="rounded-lg border border-border bg-muted/40/90 p-4 space-y-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Tenant URL (optional)</p>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Subdomain</label>
+                          <label className="mb-2 block text-sm font-medium text-foreground">Subdomain</label>
                           <input
                             type="text"
                             value={companyFormData.subdomain}
@@ -2123,16 +2123,16 @@ function CompaniesPageContent() {
                                 subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
                               })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                             placeholder="acme"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-muted-foreground mt-1">
                             <span className="font-mono">{'{subdomain}'}.yourplatform.com</span> after DNS is configured.
                           </p>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Custom domain</label>
+                          <label className="mb-2 block text-sm font-medium text-foreground">Custom domain</label>
                           <input
                             type="text"
                             value={companyFormData.custom_domain}
@@ -2142,26 +2142,26 @@ function CompaniesPageContent() {
                               v = v.replace(/[^a-z0-9.-]/g, '')
                               setCompanyFormData({ ...companyFormData, custom_domain: v.slice(0, 253) })
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                             placeholder="erp.client.com"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Hostname only (no https://). CNAME to your app when ready.</p>
+                          <p className="text-xs text-muted-foreground mt-1">Hostname only (no https://). CNAME to your app when ready.</p>
                         </div>
                       </div>
                     </div>
 
                     {!editingCompany && (
-                      <div className="rounded-lg border-2 border-blue-200 bg-blue-50/80 p-4 space-y-4">
+                      <div className="rounded-lg border-2 border-primary/25 bg-blue-50/80 p-4 space-y-4">
                         <div className="flex items-center gap-2 text-blue-900 font-semibold">
                           <UserCog className="h-5 w-5" />
                           Company administrator (first login)
                         </div>
-                        <p className="text-sm text-blue-800">
+                        <p className="text-sm text-primary">
                           This person is the company owner: they log in with the email below (same as username), set a password now, then can add Cashiers and Accountants and change passwords from their dashboard.
                         </p>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-foreground">
                             Admin email (username) <span className="text-red-500">*</span>
                           </label>
                           <input
@@ -2169,23 +2169,23 @@ function CompaniesPageContent() {
                             required={!editingCompany}
                             value={companyFormData.admin_email}
                             onChange={(e) => setCompanyFormData({ ...companyFormData, admin_email: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                             placeholder="owner@theircompany.com"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Admin full name</label>
+                          <label className="mb-2 block text-sm font-medium text-foreground">Admin full name</label>
                           <input
                             type="text"
                             value={companyFormData.admin_full_name}
                             onChange={(e) => setCompanyFormData({ ...companyFormData, admin_full_name: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                            className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                             placeholder="Defaults to contact person or company name if empty"
                           />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-medium text-foreground">
                               Password <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
@@ -2194,21 +2194,21 @@ function CompaniesPageContent() {
                                 required={!editingCompany}
                                 value={companyFormData.admin_password}
                                 onChange={(e) => setCompanyFormData({ ...companyFormData, admin_password: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10 bg-white"
+                                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring pr-10 bg-white"
                                 placeholder="Min. 6 characters"
                                 minLength={6}
                               />
                               <button
                                 type="button"
                                 onClick={() => setShowAdminPassword(!showAdminPassword)}
-                                className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground/85"
                               >
                                 {showAdminPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                               </button>
                             </div>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-medium text-foreground">
                               Confirm password <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
@@ -2219,12 +2219,12 @@ function CompaniesPageContent() {
                                 onChange={(e) =>
                                   setCompanyFormData({ ...companyFormData, admin_confirm_password: e.target.value })
                                 }
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10 bg-white"
+                                className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring pr-10 bg-white"
                               />
                               <button
                                 type="button"
                                 onClick={() => setShowAdminConfirmPassword(!showAdminConfirmPassword)}
-                                className="absolute right-2 top-2.5 text-gray-500 hover:text-gray-700"
+                                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground/85"
                               >
                                 {showAdminConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                               </button>
@@ -2236,44 +2236,44 @@ function CompaniesPageContent() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Company contact email</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Company contact email</label>
                         <input
                           type="email"
                           value={companyFormData.email}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, email: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder="Optional — general company inbox"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Phone</label>
                         <input
                           type="text"
                           value={companyFormData.phone}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, phone: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Contact Person</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Contact Person</label>
                       <input
                         type="text"
                         value={companyFormData.contact_person}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, contact_person: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Name of contact person"
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Billing Cycle</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Billing Cycle</label>
                         <select
                           value={companyFormData.payment_type}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_type: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="">Select billing cycle</option>
                           <option value="monthly">Monthly</option>
@@ -2283,7 +2283,7 @@ function CompaniesPageContent() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment Amount</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Payment Amount</label>
                         <input
                           type="text"
                           value={companyFormData.payment_amount}
@@ -2296,31 +2296,31 @@ function CompaniesPageContent() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment Start Date</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Payment Start Date</label>
                         <input
                           type="date"
                           value={companyFormData.payment_start_date}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_start_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment End Date</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Payment End Date</label>
                         <input
                           type="date"
                           value={companyFormData.payment_end_date}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, payment_end_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Currency</label>
                       <select
                         value={companyFormData.currency}
                         onChange={(e) => setCompanyFormData({ ...companyFormData, currency: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       >
                         {getCurrenciesByCountry().map((currency, index) => (
                           <option key={`${currency.code}-${currency.country}-${index}`} value={currency.code}>
@@ -2332,13 +2332,13 @@ function CompaniesPageContent() {
 
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Date format</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Date format</label>
                         <select
                           value={companyFormData.date_format}
                           onChange={(e) =>
                             setCompanyFormData({ ...companyFormData, date_format: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                         >
                           {COMPANY_DATE_FORMAT_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -2348,13 +2348,13 @@ function CompaniesPageContent() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Time format</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground">Time format</label>
                         <select
                           value={companyFormData.time_format}
                           onChange={(e) =>
                             setCompanyFormData({ ...companyFormData, time_format: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                         >
                           {COMPANY_TIME_FORMAT_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -2366,13 +2366,13 @@ function CompaniesPageContent() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Time zone</label>
+                      <label className="mb-2 block text-sm font-medium text-foreground">Time zone</label>
                       <select
                         value={companyFormData.time_zone}
                         onChange={(e) =>
                           setCompanyFormData({ ...companyFormData, time_zone: e.target.value })
                         }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                       >
                         {COMPANY_TIME_ZONE_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -2385,23 +2385,23 @@ function CompaniesPageContent() {
                           </option>
                         )}
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">Default: Dhaka (Bangladesh). IANA name for business &ldquo;today&rdquo; and local time.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Default: Dhaka (Bangladesh). IANA name for business &ldquo;today&rdquo; and local time.</p>
                     </div>
 
-                    <p className="text-xs text-gray-500 -mt-2">
+                    <p className="text-xs text-muted-foreground -mt-2">
                       Saved on the company record and returned from{' '}
-                      <code className="rounded bg-gray-100 px-1">GET /api/companies/current</code> as{' '}
-                      <code className="rounded bg-gray-100 px-1">date_format</code>,{' '}
-                      <code className="rounded bg-gray-100 px-1">time_format</code>, and{' '}
-                      <code className="rounded bg-gray-100 px-1">time_zone</code>. Preview:{' '}
-                      <span className="font-medium text-gray-700">
+                      <code className="rounded bg-muted px-1">GET /api/companies/current</code> as{' '}
+                      <code className="rounded bg-muted px-1">date_format</code>,{' '}
+                      <code className="rounded bg-muted px-1">time_format</code>, and{' '}
+                      <code className="rounded bg-muted px-1">time_zone</code>. Preview:{' '}
+                      <span className="font-medium text-foreground/85">
                         {formatCompanyDate('2026-04-06', companyFormData.date_format)} ·{' '}
                         {formatCompanyTime(new Date(2026, 3, 6, 14, 30), companyFormData.time_format)}
                       </span>
                     </p>
 
-                    <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-teal-900">Tenant modules</p>
+                    <div className="rounded-lg border border-primary/25 bg-accent/60 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-primary">Tenant modules</p>
                       <label className="mt-3 flex cursor-pointer items-start gap-3">
                         <input
                           type="checkbox"
@@ -2409,14 +2409,14 @@ function CompaniesPageContent() {
                           onChange={(e) =>
                             setCompanyFormData({ ...companyFormData, aquaculture_licensed: e.target.checked })
                           }
-                          className="mt-1 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                          className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-teal-500"
                         />
                         <span>
-                          <span className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
-                            <Fish className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                            <Fish className="h-4 w-4 shrink-0 text-primary" aria-hidden />
                             License Aquaculture
                           </span>
-                          <span className="mt-1 block text-xs leading-relaxed text-gray-600">
+                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
                             When you grant this license, Aquaculture turns on in ERP for that company (menu and APIs).
                             The tenant Admin can turn it off under Company settings. Revoking the license turns
                             Aquaculture off immediately.
@@ -2431,9 +2431,9 @@ function CompaniesPageContent() {
                           type="checkbox"
                           checked={companyFormData.is_active}
                           onChange={(e) => setCompanyFormData({ ...companyFormData, is_active: e.target.checked })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-primary border-border rounded focus:ring-ring"
                         />
-                        <span className="text-sm text-gray-700">Active</span>
+                        <span className="text-sm text-foreground/85">Active</span>
                       </label>
                     </div>
                   </div>
@@ -2442,13 +2442,13 @@ function CompaniesPageContent() {
                     <button
                       type="button"
                       onClick={() => setShowCompanyModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className="erp-btn-primary transition-colors"
                     >
                       {editingCompany ? 'Update Company' : 'Create Company'}
                     </button>
@@ -2467,7 +2467,7 @@ function CompaniesPageFallback() {
   return (
     <div className="flex h-screen page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">Loading…</div>
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
     </div>
   )
 }

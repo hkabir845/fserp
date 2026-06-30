@@ -210,6 +210,21 @@ interface StockPositionRow {
   latest_sample_fish_species_label?: string | null
 }
 
+interface PondEconomicsRow {
+  pond_id: number
+  pond_name: string
+  pond_role_label?: string
+  live_fish_count: number
+  biomass_kg?: string | null
+  current_fish_per_kg?: string | null
+  stock_density_kg_per_decimal?: string | null
+  load_level_label?: string | null
+  total_biological_asset_value?: string | null
+  cost_per_fish?: string | null
+  cost_per_kg?: string | null
+  transfer_cost_per_head?: string | null
+}
+
 const PIE_COLORS = [
   '#0d9488',
   '#0f766e',
@@ -253,11 +268,12 @@ export default function AquacultureOverviewPage() {
   const [expenses, setExpenses] = useState<ExpenseRow[]>([])
   const [samples, setSamples] = useState<SampleRow[]>([])
   const [stockPos, setStockPos] = useState<StockPositionRow[]>([])
+  const [pondEconomics, setPondEconomics] = useState<PondEconomicsRow[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [co, plRes, pondsRes, cyRes, salRes, expRes, smpRes, stkRes] = await Promise.all([
+      const [co, plRes, pondsRes, cyRes, salRes, expRes, smpRes, stkRes, econRes] = await Promise.all([
         api.get<Record<string, unknown>>('/companies/current/'),
         api.get<PlResponse>('/aquaculture/pl-summary/', { params: { start_date: start, end_date: end } }),
         api.get<PondFull[]>('/aquaculture/ponds/'),
@@ -266,6 +282,9 @@ export default function AquacultureOverviewPage() {
         api.get<ExpenseRow[]>('/aquaculture/expenses/'),
         api.get<SampleRow[]>('/aquaculture/samples/'),
         api.get<{ rows: StockPositionRow[] }>('/aquaculture/fish-stock-position/').catch(() => ({ data: { rows: [] } })),
+        api
+          .get<{ ponds: PondEconomicsRow[] }>('/aquaculture/pond-economics-portfolio/')
+          .catch(() => ({ data: { ponds: [] } })),
       ])
       setCurrency(String(co.data?.currency || 'BDT').slice(0, 3))
       setPl(plRes.data)
@@ -275,6 +294,7 @@ export default function AquacultureOverviewPage() {
       setExpenses(parseAquacultureExpenseRegister(expRes.data).rows)
       setSamples(Array.isArray(smpRes.data) ? smpRes.data : [])
       setStockPos(Array.isArray(stkRes.data?.rows) ? stkRes.data.rows : [])
+      setPondEconomics(Array.isArray(econRes.data?.ponds) ? econRes.data.ponds : [])
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load dashboard'))
       setPl(null)
@@ -487,7 +507,7 @@ export default function AquacultureOverviewPage() {
                   setCustomStart(e.target.value)
                   setPreset('custom')
                 }}
-                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-teal-300 focus:ring-2 focus:ring-teal-400/30"
+                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-primary/35 focus:ring-2 focus:ring-teal-400/30"
               />
             </label>
             <label className="flex items-center gap-2 text-xs font-medium text-teal-100">
@@ -499,7 +519,7 @@ export default function AquacultureOverviewPage() {
                   setCustomEnd(e.target.value)
                   setPreset('custom')
                 }}
-                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-teal-300 focus:ring-2 focus:ring-teal-400/30"
+                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-primary/35 focus:ring-2 focus:ring-teal-400/30"
               />
             </label>
           </div>
@@ -538,10 +558,10 @@ export default function AquacultureOverviewPage() {
         </div>
       }
     >
-      <p className="text-sm leading-relaxed text-slate-600">{aquacultureT('dashboardCompanyHint', lang)}</p>
+      <p className="text-sm leading-relaxed text-muted-foreground">{aquacultureT('dashboardCompanyHint', lang)}</p>
 
-      <p className="mt-3 text-xs text-slate-500">
-        Period: <span className="font-medium text-slate-700">{periodLabel}</span> ({formatDateOnly(start)} –{' '}
+      <p className="mt-3 text-xs text-muted-foreground">
+        Period: <span className="font-medium text-foreground/85">{periodLabel}</span> ({formatDateOnly(start)} –{' '}
         {formatDateOnly(end)})
         {pl ? (
           <>
@@ -549,7 +569,7 @@ export default function AquacultureOverviewPage() {
             · P&amp;L matches{' '}
             <Link
               href="/reports?report=aquaculture-pl-management&category=aquaculture"
-              className="text-teal-800 underline decoration-teal-600/30"
+              className="text-primary underline decoration-teal-600/30"
             >
               report
             </Link>{' '}
@@ -707,17 +727,17 @@ export default function AquacultureOverviewPage() {
         </ChartCard>
       </div>
 
-      <p className="mt-4 text-xs leading-relaxed text-slate-500">
+      <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
         {aquacultureT('dashboardActivityChartsPart1', lang)}
-        <Link href="/aquaculture/expenses" className="font-medium text-teal-800 underline">
+        <Link href="/aquaculture/expenses" className="font-medium text-primary underline">
           {aquacultureT('dashboardOperatingExpensesLink', lang)}
         </Link>
         {aquacultureT('dashboardActivityChartsPart2', lang)}
       </p>
 
       {fcrAllSalesWeight != null && fcrHarvest != null && Math.abs(fcrAllSalesWeight - fcrHarvest) > 0.01 ? (
-        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          <span className="font-medium text-slate-800">{aquacultureT('dashboardFcrNoteLabel', lang)}</span>
+        <p className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{aquacultureT('dashboardFcrNoteLabel', lang)}</span>
           {aquacultureTFormat('dashboardFcrNotePart1', lang, { weight: formatNumber(fcrAllSalesWeight, 2) })}
           <span className="font-medium">{aquacultureT('dashboardFcrNoteFishHarvest', lang)}</span>
           {aquacultureT('dashboardFcrNotePart2', lang)}
@@ -804,15 +824,15 @@ export default function AquacultureOverviewPage() {
       </div>
 
       {/* Pond detail table */}
-      <div className="mt-10 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
+      <div className="mt-10 overflow-hidden rounded-2xl border border-border/80 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-teal-700" />
-            <h2 className="text-sm font-semibold text-slate-900">Pond P&amp;L summary</h2>
+            <Package className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold text-foreground">Pond P&amp;L summary</h2>
           </div>
           <Link
             href="/reports?report=aquaculture-pl-management&category=aquaculture"
-            className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 hover:text-teal-950"
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-teal-950"
           >
             Full report
             <ArrowRight className="h-3.5 w-3.5" />
@@ -821,7 +841,7 @@ export default function AquacultureOverviewPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-border/70 bg-muted/50 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-2.5 sm:px-5">Pond</th>
                 <th className="px-4 py-2.5 text-right sm:px-5">Revenue</th>
                 <th className="px-4 py-2.5 text-right sm:px-5">Opex</th>
@@ -835,29 +855,29 @@ export default function AquacultureOverviewPage() {
             <tbody>
               {(pl?.ponds ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">
                     No pond rows for this period.
                   </td>
                 </tr>
               ) : (
                 (pl?.ponds ?? []).map((p) => (
-                  <tr key={p.pond_id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-3 font-medium text-slate-900 sm:px-5">{p.pond_name}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 sm:px-5">
+                  <tr key={p.pond_id} className="border-b border-border/50 last:border-0">
+                    <td className="px-4 py-3 font-medium text-foreground sm:px-5">{p.pond_name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
                       {fmtMoney(parseNum(p.revenue))}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 sm:px-5">
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
                       {fmtMoney(parseNum(p.operating_expenses))}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-600 sm:px-5">
+                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground sm:px-5">
                       {fmtMoney(parseNum(p.biological_write_offs ?? '0'))}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 sm:px-5">
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
                       {fmtMoney(parseNum(p.payroll_allocated))}
                     </td>
                     <td
                       className={`px-4 py-3 text-right tabular-nums font-medium sm:px-5 ${
-                        parseNum(p.profit) >= 0 ? 'text-teal-800' : 'text-rose-700'
+                        parseNum(p.profit) >= 0 ? 'text-primary' : 'text-rose-700'
                       }`}
                     >
                       {fmtMoney(parseNum(p.profit))}
@@ -870,27 +890,103 @@ export default function AquacultureOverviewPage() {
         </div>
       </div>
 
-      {stockPos.length > 0 ? (
-        <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5">
+      {pondEconomics.length > 0 ? (
+        <div className="mt-8 overflow-hidden rounded-2xl border border-border/80 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
-              <Fish className="h-4 w-4 text-teal-700" />
-              <h2 className="text-sm font-semibold text-slate-900">Fish on hand (transfers − sales ± ledger)</h2>
+              <Fish className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">Pond economics — live stock &amp; production cost</h2>
+            </div>
+            <Link
+              href="/aquaculture/stock"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-teal-950"
+            >
+              Full stock &amp; bio-asset
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[880px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-border/70 bg-muted/50 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-2.5 sm:px-5">Pond</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">Live fish</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">Biomass kg</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">Pcs/kg</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">kg/dec</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">Cost/fish</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">Bio asset</th>
+                  <th className="px-4 py-2.5 text-right sm:px-5">Xfer/head</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pondEconomics.map((r) => (
+                  <tr key={r.pond_id} className="border-b border-border/50 last:border-0">
+                    <td className="px-4 py-3 sm:px-5">
+                      <Link
+                        href={`/aquaculture/ponds/${r.pond_id}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {r.pond_name}
+                      </Link>
+                      {r.pond_role_label ? (
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{r.pond_role_label}</span>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {formatNumber(r.live_fish_count, 0)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {r.biomass_kg ? formatNumber(parseNum(r.biomass_kg), 2) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {r.current_fish_per_kg ? formatNumber(parseNum(r.current_fish_per_kg), 1) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {r.stock_density_kg_per_decimal
+                        ? formatNumber(parseNum(r.stock_density_kg_per_decimal), 1)
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {r.cost_per_fish ? `${sym}${formatNumber(parseNum(r.cost_per_fish), 2)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {r.total_biological_asset_value
+                        ? `${sym}${formatNumber(parseNum(r.total_biological_asset_value), 0)}`
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
+                      {r.transfer_cost_per_head
+                        ? `${sym}${formatNumber(parseNum(r.transfer_cost_per_head), 2)}`
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : stockPos.length > 0 ? (
+        <div className="mt-8 overflow-hidden rounded-2xl border border-border/80 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <Fish className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">Fish on hand (transfers − sales ± ledger)</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/aquaculture/stock?fish_species=tilapia"
-                className="inline-flex items-center gap-1 text-xs font-medium text-teal-800 hover:text-teal-950"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-teal-950"
               >
                 Tilapia stock &amp; ledger
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
-              <span className="text-slate-300" aria-hidden>
+              <span className="text-muted-foreground/40" aria-hidden>
                 |
               </span>
               <Link
                 href="/aquaculture/stock"
-                className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
               >
                 All species
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -900,7 +996,7 @@ export default function AquacultureOverviewPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[480px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-border/70 bg-muted/50 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <th className="px-4 py-2.5 sm:px-5">Pond</th>
                   <th className="px-4 py-2.5 text-right sm:px-5">Net fish</th>
                   <th className="px-4 py-2.5 text-right sm:px-5">Net kg</th>
@@ -909,20 +1005,20 @@ export default function AquacultureOverviewPage() {
               </thead>
               <tbody>
                 {stockPos.map((r) => (
-                  <tr key={r.pond_id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-4 py-3 font-medium text-slate-900 sm:px-5">{r.pond_name}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 sm:px-5">
+                  <tr key={r.pond_id} className="border-b border-border/50 last:border-0">
+                    <td className="px-4 py-3 font-medium text-foreground sm:px-5">{r.pond_name}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
                       {formatNumber(r.implied_net_fish_count, 0)}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700 sm:px-5">
+                    <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
                       {formatNumber(parseNum(r.implied_net_weight_kg), 2)}
                     </td>
-                    <td className="px-4 py-3 text-right text-slate-600 sm:px-5">
+                    <td className="px-4 py-3 text-right text-muted-foreground sm:px-5">
                       {r.latest_sample_estimated_fish_count != null ? (
                         <span className="tabular-nums">
                           {formatNumber(r.latest_sample_estimated_fish_count, 0)}
                           {r.latest_sample_fish_species_label ? (
-                            <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                               {r.latest_sample_fish_species_label}
                             </span>
                           ) : null}
@@ -956,28 +1052,28 @@ function KpiCard(props: {
       ? 'ring-teal-600/10'
       : accent === 'negative'
         ? 'ring-rose-600/10'
-        : 'ring-slate-200/80'
+        : 'ring-border/80'
   const iconBg =
-    accent === 'positive' ? 'bg-teal-50 text-teal-700' : accent === 'negative' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-700'
+    accent === 'positive' ? 'bg-accent text-primary' : accent === 'negative' ? 'bg-rose-50 text-rose-700' : 'bg-muted text-foreground/85'
   return (
-    <div className={`rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ${ring}`}>
+    <div className={`rounded-2xl border border-border/80 bg-white p-4 shadow-sm ring-1 ${ring}`}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
         <div className={`rounded-lg p-1.5 ${iconBg}`}>
           <Icon className="h-4 w-4" strokeWidth={1.75} />
         </div>
       </div>
-      <p className="mt-2 text-xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
-      <p className="mt-1 text-xs leading-relaxed text-slate-500">{sub}</p>
+      <p className="mt-2 text-xl font-bold tabular-nums tracking-tight text-foreground">{value}</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{sub}</p>
     </div>
   )
 }
 
 function ChartCard(props: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm sm:p-5">
-      <h2 className="text-sm font-semibold text-slate-900">{props.title}</h2>
-      <p className="mt-0.5 text-xs text-slate-500">{props.subtitle}</p>
+    <div className="erp-panel">
+      <h2 className="text-sm font-semibold text-foreground">{props.title}</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">{props.subtitle}</p>
       <div className="mt-4">{props.children}</div>
     </div>
   )
@@ -985,7 +1081,7 @@ function ChartCard(props: { title: string; subtitle: string; children: ReactNode
 
 function EmptyChart({ hint }: { hint: string }) {
   return (
-    <div className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-sm text-slate-500">
+    <div className="flex h-[240px] items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 text-sm text-muted-foreground">
       {hint}
     </div>
   )
@@ -997,24 +1093,24 @@ function MiniTable(props: {
   rows: { primary: string; secondary: string; amount: string }[]
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/90 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-        <h3 className="text-sm font-semibold text-slate-900">{props.title}</h3>
-        <Link href={props.href} className="text-xs font-medium text-teal-800 hover:underline">
+    <div className="rounded-2xl border border-border/80 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+        <h3 className="text-sm font-semibold text-foreground">{props.title}</h3>
+        <Link href={props.href} className="text-xs font-medium text-primary hover:underline">
           Open
         </Link>
       </div>
-      <ul className="divide-y divide-slate-100 p-0">
+      <ul className="divide-y divide-border/70 p-0">
         {props.rows.length === 0 ? (
-          <li className="px-4 py-6 text-center text-xs text-slate-500">No rows in this period.</li>
+          <li className="px-4 py-6 text-center text-xs text-muted-foreground">No rows in this period.</li>
         ) : (
           props.rows.map((r, i) => (
             <li key={i} className="flex gap-3 px-4 py-2.5 text-sm">
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-slate-800">{r.primary}</p>
-                <p className="truncate text-xs text-slate-500">{r.secondary}</p>
+                <p className="truncate font-medium text-foreground">{r.primary}</p>
+                <p className="truncate text-xs text-muted-foreground">{r.secondary}</p>
               </div>
-              <p className="shrink-0 tabular-nums text-slate-700">{r.amount}</p>
+              <p className="shrink-0 tabular-nums text-foreground/85">{r.amount}</p>
             </li>
           ))
         )}

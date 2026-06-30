@@ -1199,34 +1199,34 @@ export default function PayrollPage() {
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
       case 'paid':
-        return <CheckCircle className="h-4 w-4 text-green-600" />
+        return <CheckCircle className="h-4 w-4 text-success" />
       case 'processed':
         return <Clock className="h-4 w-4 text-yellow-600" />
       case 'draft':
-        return <FileText className="h-4 w-4 text-gray-600" />
+        return <FileText className="h-4 w-4 text-muted-foreground" />
       default:
-        return <XCircle className="h-4 w-4 text-red-600" />
+        return <XCircle className="h-4 w-4 text-destructive" />
     }
   }
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'paid':
-        return 'bg-green-100 text-green-800'
+        return 'bg-success/15 text-success'
       case 'processed':
         return 'bg-yellow-100 text-yellow-800'
       case 'draft':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-muted text-foreground'
       default:
-        return 'bg-red-100 text-red-800'
+        return 'bg-destructive/10 text-destructive'
     }
   }
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center p-6">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="erp-loading-spinner h-12 w-12"></div>
         </div>
       </PageLayout>
     )
@@ -1237,7 +1237,7 @@ export default function PayrollPage() {
   const totalNet = payrolls.reduce((sum, p) => sum + (Number(p.total_net) || 0), 0)
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -1261,7 +1261,7 @@ export default function PayrollPage() {
             </button>
           }
         >
-          <div className="mb-8 rounded-xl border border-blue-100 bg-blue-50/80 p-5 text-sm text-gray-800">
+          <div className="mb-8 rounded-xl border border-blue-100 bg-blue-50/80 p-5 text-sm text-foreground">
             <div className="mb-2 flex items-center gap-2 font-semibold text-blue-900">
               <BookOpen className="h-5 w-5" />
               How to pay salary (professional flow)
@@ -1282,7 +1282,7 @@ export default function PayrollPage() {
                 statutory line if you have deductions). This updates your books; it does not move money.
               </li>
             </ol>
-            <p className="mt-3 text-xs text-gray-600">
+            <p className="mt-3 text-xs text-muted-foreground">
               Book entry number uses your chart (e.g. 6400, 1030, 2210/2200). Link bank registers in Banking
               if you use a specific account.
             </p>
@@ -1293,39 +1293,39 @@ export default function PayrollPage() {
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Total Gross Pay</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                  <p className="text-sm text-muted-foreground">Total Gross Pay</p>
+                  <p className="text-2xl font-bold text-foreground mt-1">
                     {currencySymbol}{formatNumber(totalGross)}
                   </p>
                 </div>
                 <div className="p-3 bg-blue-100 rounded-full">
-                  <DollarSign className="h-6 w-6 text-blue-600" />
+                  <DollarSign className="h-6 w-6 text-primary" />
                 </div>
               </div>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Total Deductions</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                  <p className="text-sm text-muted-foreground">Total Deductions</p>
+                  <p className="text-2xl font-bold text-foreground mt-1">
                     {currencySymbol}{formatNumber(totalDeductions)}
                   </p>
                 </div>
-                <div className="p-3 bg-red-100 rounded-full">
-                  <DollarSign className="h-6 w-6 text-red-600" />
+                <div className="p-3 bg-destructive/10 rounded-full">
+                  <DollarSign className="h-6 w-6 text-destructive" />
                 </div>
               </div>
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Total Net Pay</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                  <p className="text-sm text-muted-foreground">Total Net Pay</p>
+                  <p className="text-2xl font-bold text-foreground mt-1">
                     {currencySymbol}{formatNumber(totalNet)}
                   </p>
                 </div>
-                <div className="p-3 bg-green-100 rounded-full">
-                  <DollarSign className="h-6 w-6 text-green-600" />
+                <div className="p-3 bg-success/15 rounded-full">
+                  <DollarSign className="h-6 w-6 text-success" />
                 </div>
               </div>
             </div>
@@ -1333,40 +1333,40 @@ export default function PayrollPage() {
 
           {/* Payroll Runs Table */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payroll #</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment Date</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Gross</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Deductions</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Payroll #</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Period</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Payment Date</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Gross</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Deductions</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Net</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-border">
                 {payrolls.map((payroll) => (
-                  <tr key={payroll.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr key={payroll.id} className="hover:bg-muted/40">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                       {payroll.payroll_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {payroll.pay_period_start && payroll.pay_period_end 
                         ? `${formatDateOnly(payroll.pay_period_start)} - ${formatDateOnly(payroll.pay_period_end)}`
                         : 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {payroll.payment_date ? formatDateOnly(payroll.payment_date) : 'N/A'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-foreground">
                       {currencySymbol}{formatNumber(Number(payroll.total_gross) || 0)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-destructive">
                       {currencySymbol}{formatNumber(Number(payroll.total_deductions) || 0)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-success">
                       {currencySymbol}{formatNumber(Number(payroll.total_net) || 0)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -1379,7 +1379,7 @@ export default function PayrollPage() {
                       <div className="flex items-center justify-end gap-3">
                         <button 
                           onClick={() => handleViewDetails(payroll)}
-                          className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1"
+                          className="text-primary hover:text-blue-900 inline-flex items-center gap-1"
                           title="View Details"
                         >
                           <Eye className="h-4 w-4" />
@@ -1388,7 +1388,7 @@ export default function PayrollPage() {
                         <button 
                           onClick={() => handleEdit(payroll)}
                           disabled={!!payroll.is_salary_posted}
-                          className="inline-flex items-center gap-1 text-green-600 hover:text-green-900 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex items-center gap-1 text-success hover:text-green-900 disabled:cursor-not-allowed disabled:opacity-40"
                           title={payroll.is_salary_posted ? 'Posted to GL — edit is locked' : 'Edit Payroll'}
                         >
                           <Edit2 className="h-4 w-4" />
@@ -1397,7 +1397,7 @@ export default function PayrollPage() {
                         <button 
                           onClick={() => handleDelete(payroll)}
                           disabled={!!payroll.is_salary_posted}
-                          className="inline-flex items-center gap-1 text-red-600 hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex items-center gap-1 text-destructive hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-40"
                           title={payroll.is_salary_posted ? 'Unpost the journal in accounting first' : 'Delete Payroll'}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1410,7 +1410,7 @@ export default function PayrollPage() {
               </tbody>
             </table>
             {payrolls.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-muted-foreground">
                 No payroll runs found. Create your first payroll to get started.
               </div>
             )}
@@ -1423,7 +1423,7 @@ export default function PayrollPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+            <div className="erp-hero-strip">
               <div className="flex items-center space-x-3">
                 <Calendar className="h-6 w-6 text-white" />
                 <h2 className="text-2xl font-bold text-white">
@@ -1445,10 +1445,10 @@ export default function PayrollPage() {
             <form onSubmit={handleSubmit} className="p-6">
               <div className="space-y-6">
                 <div className="border-b pb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Pay Period Information</h3>
+                  <h3 className="text-lg font-semibold text-foreground mb-4">Pay Period Information</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Period Start Date <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1456,11 +1456,11 @@ export default function PayrollPage() {
                         required
                         value={formData.pay_period_start}
                         onChange={(e) => setFormData({ ...formData, pay_period_start: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Period End Date <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1468,11 +1468,11 @@ export default function PayrollPage() {
                         required
                         value={formData.pay_period_end}
                         onChange={(e) => setFormData({ ...formData, pay_period_end: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Payment Date <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1480,23 +1480,23 @@ export default function PayrollPage() {
                         required
                         value={formData.payment_date}
                         onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Notes
                       </label>
                       <textarea
                         value={formData.notes}
                         onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="e.g. April 2026 — Yunus Khan (EMP-00006). Optional; helps you find this run later."
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Salary expense account (optional)
                       </label>
                       <select
@@ -1508,7 +1508,7 @@ export default function PayrollPage() {
                           )
                           setFormData({ ...formData, salary_expense_account_id: e.target.value })
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                       >
                         <option value="">
                           {templateCoaOptionLabel(COA_SALARY_EXP, salaryExpenseAccountOptions)}
@@ -1519,21 +1519,21 @@ export default function PayrollPage() {
                           </option>
                         ))}
                       </select>
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Chooses which expense GL account is debited for gross pay. New runs default to {COA_SALARY_EXP};
                         you can change to any expense account anytime.
                       </p>
                     </div>
-                    <div className="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
-                      <p className="mb-3 text-sm font-semibold text-gray-900">Earnings (optional)</p>
-                      <p className="mb-3 text-xs text-gray-600">
+                    <div className="md:col-span-2 rounded-lg border border-border bg-muted/40/80 p-4">
+                      <p className="mb-3 text-sm font-semibold text-foreground">Earnings (optional)</p>
+                      <p className="mb-3 text-xs text-muted-foreground">
                         Enter regular pay plus overtime, bonus, or other earnings for this run.{' '}
                         <strong>Total gross</strong> is the sum of the four lines below (same figure posted to
                         salary expense).
                       </p>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-xs font-medium text-foreground/85 mb-1">
                             Base salary / regular pay
                           </label>
                           <input
@@ -1544,11 +1544,11 @@ export default function PayrollPage() {
                             onChange={(e) =>
                               setFormData({ ...formData, base_salary_total: e.target.value })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Overtime</label>
+                          <label className="block text-xs font-medium text-foreground/85 mb-1">Overtime</label>
                           <input
                             type="number"
                             min="0"
@@ -1557,11 +1557,11 @@ export default function PayrollPage() {
                             onChange={(e) =>
                               setFormData({ ...formData, overtime_amount: e.target.value })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Bonus</label>
+                          <label className="block text-xs font-medium text-foreground/85 mb-1">Bonus</label>
                           <input
                             type="number"
                             min="0"
@@ -1570,11 +1570,11 @@ export default function PayrollPage() {
                             onChange={(e) =>
                               setFormData({ ...formData, bonus_amount: e.target.value })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-border rounded-lg"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-xs font-medium text-foreground/85 mb-1">
                             Other earnings
                           </label>
                           <input
@@ -1585,13 +1585,13 @@ export default function PayrollPage() {
                             onChange={(e) =>
                               setFormData({ ...formData, other_earnings_amount: e.target.value })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            className="w-full px-3 py-2 border border-border rounded-lg"
                           />
                         </div>
                       </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3">
-                        <span className="text-sm font-medium text-gray-800">Total gross (computed)</span>
-                        <span className="text-lg font-bold tabular-nums text-gray-900">
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                        <span className="text-sm font-medium text-foreground">Total gross (computed)</span>
+                        <span className="text-lg font-bold tabular-nums text-foreground">
                           {currencySymbol}
                           {formatNumber(formComputedGross)}
                         </span>
@@ -1599,7 +1599,7 @@ export default function PayrollPage() {
                     </div>
                     <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           Deductions (optional)
                         </label>
                         <input
@@ -1610,20 +1610,20 @@ export default function PayrollPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, total_deductions: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          className="w-full px-3 py-2 border border-border rounded-lg"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Net (optional)</label>
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">Net (optional)</label>
                         <input
                           type="number"
                           min="0"
                           step="0.01"
                           value={formData.total_net}
                           onChange={(e) => setFormData({ ...formData, total_net: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          className="w-full px-3 py-2 border border-border rounded-lg"
                         />
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           Leave net blank to use total gross minus deductions
                         </p>
                       </div>
@@ -1640,13 +1640,13 @@ export default function PayrollPage() {
                     setShowModal(false)
                     resetForm()
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary transition-colors"
                 >
                   {editingId ? 'Update Payroll Run' : 'Create Payroll Run'}
                 </button>
@@ -1661,7 +1661,7 @@ export default function PayrollPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+            <div className="erp-hero-strip">
               <div className="flex items-center space-x-3">
                 <FileText className="h-6 w-6 text-white" />
                 <h2 className="text-2xl font-bold text-white">Payroll Details - {selectedPayroll.payroll_number}</h2>
@@ -1682,41 +1682,41 @@ export default function PayrollPage() {
               <div className="space-y-6">
                 {/* Pay Period Info */}
                 <div className="border-b pb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Pay Period Information</h3>
+                  <h3 className="text-lg font-semibold text-foreground mb-4">Pay Period Information</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <p className="text-sm text-gray-600">Payroll Number</p>
-                      <p className="text-lg font-semibold text-gray-900">{selectedPayroll.payroll_number}</p>
+                      <p className="text-sm text-muted-foreground">Payroll Number</p>
+                      <p className="text-lg font-semibold text-foreground">{selectedPayroll.payroll_number}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Status</p>
+                      <p className="text-sm text-muted-foreground">Status</p>
                       <span className={`px-3 py-1 text-sm rounded-full inline-flex items-center gap-1 ${getStatusColor(selectedPayroll.status)}`}>
                         {getStatusIcon(selectedPayroll.status)}
                         {selectedPayroll.status}
                       </span>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Period Start</p>
-                      <p className="text-lg font-medium text-gray-900">
+                      <p className="text-sm text-muted-foreground">Period Start</p>
+                      <p className="text-lg font-medium text-foreground">
                         {selectedPayroll.pay_period_start ? formatDateOnly(selectedPayroll.pay_period_start) : 'N/A'}
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Period End</p>
-                      <p className="text-lg font-medium text-gray-900">
+                      <p className="text-sm text-muted-foreground">Period End</p>
+                      <p className="text-lg font-medium text-foreground">
                         {selectedPayroll.pay_period_end ? formatDateOnly(selectedPayroll.pay_period_end) : 'N/A'}
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Payment Date</p>
-                      <p className="text-lg font-medium text-gray-900">
+                      <p className="text-sm text-muted-foreground">Payment Date</p>
+                      <p className="text-lg font-medium text-foreground">
                         {selectedPayroll.payment_date ? formatDateOnly(selectedPayroll.payment_date) : 'N/A'}
                       </p>
                     </div>
                     {selectedPayroll.notes && (
                       <div className="md:col-span-2">
-                        <p className="text-sm text-gray-600">Notes</p>
-                        <p className="text-base text-gray-900">{selectedPayroll.notes}</p>
+                        <p className="text-sm text-muted-foreground">Notes</p>
+                        <p className="text-base text-foreground">{selectedPayroll.notes}</p>
                       </div>
                     )}
                   </div>
@@ -1725,21 +1725,21 @@ export default function PayrollPage() {
                 {selectedPayroll.is_salary_posted &&
                   Array.isArray(selectedPayroll.employee_allocations) &&
                   selectedPayroll.employee_allocations.length > 0 && (
-                    <div className="mb-6 rounded-lg border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+                    <div className="mb-6 rounded-lg border border-primary/15 bg-accent/60 px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-indigo-900">
+                        <h3 className="text-sm font-semibold text-foreground/85">
                           Wages by employee
                           {selectedPayroll.is_salary_posted ? ' (recorded)' : ''}
                         </h3>
                         {selectedPayroll.employee_allocations_source === 'inferred_hr' &&
                           !selectedPayroll.is_salary_posted && (
-                            <span className="text-xs text-amber-800">Preview from HR — save or post to record</span>
+                            <span className="text-xs text-warning-foreground">Preview from HR — save or post to record</span>
                           )}
                       </div>
                       <div className="mt-2 overflow-x-auto">
-                        <table className="min-w-full text-sm text-indigo-950">
+                        <table className="min-w-full text-sm text-foreground">
                           <thead>
-                            <tr className="border-b border-indigo-200/80 text-left text-xs uppercase text-indigo-800/80">
+                            <tr className="border-b border-primary/25/80 text-left text-xs uppercase text-primary/80">
                               <th className="py-1 pr-3 font-medium">Employee ID</th>
                               <th className="py-1 pr-3 font-medium">Name</th>
                               <th className="py-1 pr-3 font-medium">Wage scope</th>
@@ -1749,14 +1749,14 @@ export default function PayrollPage() {
                           </thead>
                           <tbody>
                             {selectedPayroll.employee_allocations.map((row) => (
-                              <tr key={row.employee_id} className="border-b border-indigo-100/80">
+                              <tr key={row.employee_id} className="border-b border-primary/15/80">
                                 <td className="py-1.5 pr-3 font-mono text-xs">
                                   {row.employee_number || row.employee_code || `#${row.employee_id}`}
                                 </td>
                                 <td className="py-1.5 pr-3">
                                   <a
                                     href={`/employees/${row.employee_id}/ledger`}
-                                    className="text-indigo-900 hover:underline"
+                                    className="text-foreground/85 hover:underline"
                                   >
                                     {row.employee_name || '—'}
                                   </a>
@@ -1771,7 +1771,7 @@ export default function PayrollPage() {
                                   {currencySymbol}
                                   {formatNumber(Number(row.amount))}
                                 </td>
-                                <td className="py-1.5 text-right tabular-nums text-indigo-800/80">
+                                <td className="py-1.5 text-right tabular-nums text-primary/80">
                                   {row.hr_salary != null && row.hr_salary !== ''
                                     ? `${currencySymbol}${formatNumber(Number(row.hr_salary))}`
                                     : '—'}
@@ -1799,8 +1799,8 @@ export default function PayrollPage() {
                 {selectedPayroll.is_salary_posted &&
                   Array.isArray(selectedPayroll.pond_allocations) &&
                   selectedPayroll.pond_allocations.length > 0 && (
-                    <div className="mb-6 rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3">
-                      <h3 className="text-sm font-semibold text-teal-900">Wages by pond (recorded)</h3>
+                    <div className="mb-6 rounded-lg border border-teal-100 bg-accent/60 px-4 py-3">
+                      <h3 className="text-sm font-semibold text-primary">Wages by pond (recorded)</h3>
                       <ul className="mt-2 space-y-1 text-sm text-teal-950">
                         {selectedPayroll.pond_allocations.map((row) => (
                           <li key={row.pond_id} className="flex justify-between gap-4 tabular-nums">
@@ -1817,15 +1817,15 @@ export default function PayrollPage() {
 
                 {/* Summary */}
                 <div className="border-b pb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Summary</h3>
+                  <h3 className="text-lg font-semibold text-foreground mb-4">Summary</h3>
                   {selectedPayroll.is_salary_posted && (
-                    <p className="mb-3 flex flex-wrap items-center gap-2 text-sm text-green-800">
+                    <p className="mb-3 flex flex-wrap items-center gap-2 text-sm text-success">
                       <CheckCircle className="h-4 w-4" />
                       Posted to GL
                       {selectedPayroll.salary_journal_entry_number ? (
                         <a
                           href={`/journal-entries?view=${selectedPayroll.salary_journal_entry_id ?? ''}`}
-                          className="font-mono text-gray-800 hover:text-blue-600 hover:underline"
+                          className="font-mono text-foreground hover:text-primary hover:underline"
                         >
                           ({selectedPayroll.salary_journal_entry_number})
                         </a>
@@ -1836,7 +1836,7 @@ export default function PayrollPage() {
                             ? `/journal-entries?view=${selectedPayroll.salary_journal_entry_id}`
                             : '/journal-entries'
                         }
-                        className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
                       >
                         View journal entries
                         <ArrowRight className="h-3 w-3" />
@@ -1845,53 +1845,53 @@ export default function PayrollPage() {
                   )}
                   {selectedPayroll.is_salary_posted ? (
                     <div className="space-y-3">
-                      <div className="space-y-1 rounded-lg border border-gray-100 bg-gray-50/90 px-3 py-2 text-sm">
-                        <div className="flex justify-between text-gray-600">
+                      <div className="space-y-1 rounded-lg border border-border/70 bg-muted/40/90 px-3 py-2 text-sm">
+                        <div className="flex justify-between text-muted-foreground">
                           <span>Base / regular</span>
-                          <span className="tabular-nums text-gray-900">
+                          <span className="tabular-nums text-foreground">
                             {currencySymbol}
                             {formatNumber(Number(selectedPayroll.base_salary_total) || 0)}
                           </span>
                         </div>
-                        <div className="flex justify-between text-gray-600">
+                        <div className="flex justify-between text-muted-foreground">
                           <span>Overtime</span>
-                          <span className="tabular-nums text-gray-900">
+                          <span className="tabular-nums text-foreground">
                             {currencySymbol}
                             {formatNumber(Number(selectedPayroll.overtime_amount) || 0)}
                           </span>
                         </div>
-                        <div className="flex justify-between text-gray-600">
+                        <div className="flex justify-between text-muted-foreground">
                           <span>Bonus</span>
-                          <span className="tabular-nums text-gray-900">
+                          <span className="tabular-nums text-foreground">
                             {currencySymbol}
                             {formatNumber(Number(selectedPayroll.bonus_amount) || 0)}
                           </span>
                         </div>
-                        <div className="flex justify-between text-gray-600">
+                        <div className="flex justify-between text-muted-foreground">
                           <span>Other earnings</span>
-                          <span className="tabular-nums text-gray-900">
+                          <span className="tabular-nums text-foreground">
                             {currencySymbol}
                             {formatNumber(Number(selectedPayroll.other_earnings_amount) || 0)}
                           </span>
                         </div>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Total Gross Pay</span>
-                        <span className="text-xl font-bold text-gray-900">
+                        <span className="text-muted-foreground">Total Gross Pay</span>
+                        <span className="text-xl font-bold text-foreground">
                           {currencySymbol}
                           {formatNumber(Number(selectedPayroll.total_gross) || 0)}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Total Deductions</span>
-                        <span className="text-xl font-bold text-red-600">
+                        <span className="text-muted-foreground">Total Deductions</span>
+                        <span className="text-xl font-bold text-destructive">
                           -{currencySymbol}
                           {formatNumber(Number(selectedPayroll.total_deductions) || 0)}
                         </span>
                       </div>
                       <div className="flex justify-between items-center pt-3 border-t">
-                        <span className="text-lg font-semibold text-gray-900">Total Net Pay</span>
-                        <span className="text-2xl font-bold text-green-600">
+                        <span className="text-lg font-semibold text-foreground">Total Net Pay</span>
+                        <span className="text-2xl font-bold text-success">
                           {currencySymbol}
                           {formatNumber(Number(selectedPayroll.total_net) || 0)}
                         </span>
@@ -1899,18 +1899,18 @@ export default function PayrollPage() {
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-gray-600 mb-3">
+                      <p className="text-sm text-muted-foreground mb-3">
                         Pick <strong>which employees</strong> receive wages on this run and enter how much each
                         gets (must match total gross). Pond P&amp;L and fuel-station splits are configured in
                         separate sections below.
                       </p>
                       {!selectedPayroll.is_salary_posted && (
-                        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                        <div className="mb-4 rounded-lg border border-primary/25 bg-accent/50 p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-indigo-900">Wages by employee</p>
+                            <p className="text-sm font-medium text-foreground/85">Wages by employee</p>
                             <button
                               type="button"
-                              className="text-xs font-medium text-indigo-800 hover:underline disabled:opacity-50"
+                              className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
                               disabled={employeesLoading}
                               onClick={() => void fetchEmployees()}
                             >
@@ -1918,10 +1918,10 @@ export default function PayrollPage() {
                             </button>
                           </div>
                           {employeesLoading && employeesForPicker.length === 0 ? (
-                            <p className="mt-2 text-xs text-indigo-800/80">Loading employees…</p>
+                            <p className="mt-2 text-xs text-primary/80">Loading employees…</p>
                           ) : null}
                           {employeesLoadError ? (
-                            <p className="mt-2 text-xs text-amber-900">
+                            <p className="mt-2 text-xs text-warning-foreground">
                               {employeesLoadError}. Check the company in the sidebar, then{' '}
                               <button
                                 type="button"
@@ -1934,7 +1934,7 @@ export default function PayrollPage() {
                             </p>
                           ) : null}
                           {!employeesLoading && employeesForPicker.length === 0 ? (
-                            <p className="mt-2 text-xs text-amber-900">
+                            <p className="mt-2 text-xs text-warning-foreground">
                               No employees for this company yet —{' '}
                               <Link href="/employees" className="font-medium underline">
                                 add staff under Employees
@@ -1944,11 +1944,11 @@ export default function PayrollPage() {
                           ) : null}
                           <div className="mt-3">
                             {employeeAllocDraft.length === 0 ? (
-                              <div className="rounded-lg border border-dashed border-indigo-200 bg-white px-4 py-6 text-center">
-                                <p className="text-sm text-gray-600">Choose who is paid on this run.</p>
+                              <div className="rounded-lg border border-dashed border-primary/25 bg-white px-4 py-6 text-center">
+                                <p className="text-sm text-muted-foreground">Choose who is paid on this run.</p>
                                 <button
                                   type="button"
-                                  className="mt-3 inline-flex items-center rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800"
+                                  className="mt-3 inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800"
                                   onClick={() =>
                                     setEmployeeAllocDraft([{ employee_id: '', amount: '' }])
                                   }
@@ -1957,10 +1957,10 @@ export default function PayrollPage() {
                                 </button>
                               </div>
                             ) : (
-                              <div className="overflow-x-auto rounded-lg border border-indigo-100 bg-white">
+                              <div className="overflow-x-auto rounded-lg border border-primary/15 bg-white">
                                 <table className="w-full min-w-[32rem] text-sm">
                                   <thead>
-                                    <tr className="border-b border-indigo-100 bg-indigo-50/70 text-left text-xs font-semibold uppercase tracking-wide text-indigo-900">
+                                    <tr className="border-b border-primary/15 bg-accent/70 text-left text-xs font-semibold uppercase tracking-wide text-foreground/85">
                                       <th className="px-3 py-2.5">Employee</th>
                                       <th className="hidden px-3 py-2.5 sm:table-cell">HR work</th>
                                       <th className="px-3 py-2.5 w-36">Amount paid</th>
@@ -1981,7 +1981,7 @@ export default function PayrollPage() {
                                         <tr key={idx} className="align-middle">
                                           <td className="px-3 py-2">
                                             <select
-                                              className="w-full min-w-[10rem] rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                                              className="w-full min-w-[10rem] rounded border border-border bg-white px-2 py-1.5 text-sm"
                                               value={row.employee_id}
                                               disabled={employeesLoading && employeesForPicker.length === 0}
                                               onChange={(e) => {
@@ -2029,12 +2029,12 @@ export default function PayrollPage() {
                                                 ))}
                                             </select>
                                             {picked ? (
-                                              <p className="mt-1 text-xs text-indigo-800/90 sm:hidden">
+                                              <p className="mt-1 text-xs text-primary/90 sm:hidden">
                                                 {employeeWorkSiteLabel(picked)}
                                               </p>
                                             ) : null}
                                           </td>
-                                          <td className="hidden px-3 py-2 text-xs text-indigo-900/90 sm:table-cell">
+                                          <td className="hidden px-3 py-2 text-xs text-foreground/85/90 sm:table-cell">
                                             {picked ? employeeWorkSiteLabel(picked) : '—'}
                                           </td>
                                           <td className="px-3 py-2">
@@ -2042,7 +2042,7 @@ export default function PayrollPage() {
                                               type="number"
                                               min="0"
                                               step="0.01"
-                                              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm tabular-nums"
+                                              className="w-full rounded border border-border px-2 py-1.5 text-sm tabular-nums"
                                               placeholder="0.00"
                                               value={row.amount}
                                               onChange={(e) => {
@@ -2059,7 +2059,7 @@ export default function PayrollPage() {
                                               {picked?.salary != null && Number(picked.salary) > 0 ? (
                                                 <button
                                                   type="button"
-                                                  className="text-xs font-medium text-indigo-800 hover:underline"
+                                                  className="text-xs font-medium text-primary hover:underline"
                                                   title="Fill amount from HR salary"
                                                   onClick={() => {
                                                     const sal = String(picked.salary)
@@ -2075,7 +2075,7 @@ export default function PayrollPage() {
                                               ) : null}
                                               <button
                                                 type="button"
-                                                className="text-xs text-red-600 hover:underline"
+                                                className="text-xs text-destructive hover:underline"
                                                 onClick={() =>
                                                   setEmployeeAllocDraft((rows) =>
                                                     rows.filter((_, i) => i !== idx)
@@ -2094,11 +2094,11 @@ export default function PayrollPage() {
                               </div>
                             )}
                             {employeeAllocDraftSum > 0.02 && (
-                              <p className="mt-2 text-xs tabular-nums text-indigo-800">
+                              <p className="mt-2 text-xs tabular-nums text-primary">
                                 Employee total: {currencySymbol}
                                 {formatNumber(employeeAllocDraftSum)}
                                 {Math.abs(employeeAllocDraftSum - detailComputedGross) > 0.02 && (
-                                  <span className="ml-1 text-amber-800">
+                                  <span className="ml-1 text-warning-foreground">
                                     (gross is {currencySymbol}
                                     {formatNumber(detailComputedGross)})
                                   </span>
@@ -2111,7 +2111,7 @@ export default function PayrollPage() {
                               <>
                                 <button
                                   type="button"
-                                  className="text-xs font-medium text-indigo-800 hover:underline"
+                                  className="text-xs font-medium text-primary hover:underline"
                                   onClick={() =>
                                     setEmployeeAllocDraft((rows) => [
                                       ...rows,
@@ -2123,7 +2123,7 @@ export default function PayrollPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="text-xs text-gray-600 hover:underline"
+                                  className="text-xs text-muted-foreground hover:underline"
                                   onClick={() => setEmployeeAllocDraft([])}
                                 >
                                   Clear all
@@ -2134,11 +2134,11 @@ export default function PayrollPage() {
                         </div>
                       )}
                       {aquacultureEnabled && !selectedPayroll.is_salary_posted && (
-                        <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50/50 p-3">
-                          <p className="text-sm font-medium text-teal-900">
+                        <div className="mb-4 rounded-lg border border-primary/25 bg-accent/50 p-3">
+                          <p className="text-sm font-medium text-primary">
                             Attribute wages to ponds (Aquaculture P&amp;L)
                           </p>
-                          <p className="mt-1 text-xs text-teal-900/80">
+                          <p className="mt-1 text-xs text-primary/80">
                             Separate from who you pay above. Only pond-scoped wages post here (account{' '}
                             <span className="font-mono">6712</span>): single-pond workers go to their pond;
                             shared managers (<em>all ponds equal share</em>) split across active ponds. Fuel
@@ -2146,7 +2146,7 @@ export default function PayrollPage() {
                             site (6400) instead.
                           </p>
                           {aquaculturePonds.length === 0 && (
-                            <p className="mt-2 text-xs text-amber-900">
+                            <p className="mt-2 text-xs text-warning-foreground">
                               No ponds yet — add them under{' '}
                               <Link href="/aquaculture/ponds" className="font-medium underline">
                                 Aquaculture → Ponds
@@ -2159,7 +2159,7 @@ export default function PayrollPage() {
                               (row, idx) => (
                                 <div key={idx} className="flex flex-wrap items-center gap-2">
                                   <select
-                                    className="min-w-[8rem] rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    className="min-w-[8rem] rounded border border-border px-2 py-1.5 text-sm"
                                     value={row.pond_id}
                                     onChange={(e) => {
                                       pondAllocTouched.current = true
@@ -2183,7 +2183,7 @@ export default function PayrollPage() {
                                     type="number"
                                     min="0"
                                     step="0.01"
-                                    className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm"
+                                    className="w-32 rounded border border-border px-2 py-1.5 text-sm"
                                     placeholder="Amount"
                                     value={row.amount}
                                     onChange={(e) => {
@@ -2199,7 +2199,7 @@ export default function PayrollPage() {
                                   />
                                   <button
                                     type="button"
-                                    className="text-xs text-red-600 hover:underline"
+                                    className="text-xs text-destructive hover:underline"
                                     onClick={() => {
                                       pondAllocTouched.current = true
                                       setPondAllocDraft((rows) => rows.filter((_, i) => i !== idx))
@@ -2211,7 +2211,7 @@ export default function PayrollPage() {
                               )
                             )}
                             {pondAllocDraftSum > 0.02 && (
-                              <span className="ml-2 text-xs tabular-nums text-teal-800">
+                              <span className="ml-2 text-xs tabular-nums text-primary">
                                 Pond total: {currencySymbol}
                                 {formatNumber(pondAllocDraftSum)}
                               </span>
@@ -2220,7 +2220,7 @@ export default function PayrollPage() {
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              className="text-xs font-medium text-teal-800 hover:underline"
+                              className="text-xs font-medium text-primary hover:underline"
                               onClick={() =>
                                 setPondAllocDraft((rows) => [...(rows.length ? rows : []), { pond_id: '', amount: '' }])
                               }
@@ -2229,7 +2229,7 @@ export default function PayrollPage() {
                             </button>
                             <button
                               type="button"
-                              className="text-xs font-medium text-teal-800 hover:underline"
+                              className="text-xs font-medium text-primary hover:underline"
                               onClick={fillPondAllocFromEmployees}
                               disabled={actionLoading}
                             >
@@ -2239,12 +2239,12 @@ export default function PayrollPage() {
                         </div>
                       )}
                       {showPayrollSiteSection && !selectedPayroll.is_salary_posted && (
-                        <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3">
-                          <label className="block text-xs font-medium text-gray-700">
+                        <div className="mb-4 rounded-lg border border-amber-100 bg-warning/10/50 p-3">
+                          <label className="block text-xs font-medium text-foreground/85">
                             Payroll site (fuel station / shop)
                           </label>
                           <select
-                            className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                            className="mt-1 w-full rounded border border-border bg-white px-2 py-1.5 text-sm"
                             value={detailStationId}
                             onChange={(e) => {
                               stationTouched.current = true
@@ -2259,7 +2259,7 @@ export default function PayrollPage() {
                               </option>
                             ))}
                           </select>
-                          <p className="mt-1 text-xs text-gray-600">
+                          <p className="mt-1 text-xs text-muted-foreground">
                             Only for fuel-station and shop wages (account{' '}
                             <span className="font-mono">6400</span>). Auto-filled when picked employees
                             share one HR station.
@@ -2271,12 +2271,12 @@ export default function PayrollPage() {
                       )}
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Base / regular</label>
+                          <label className="block text-xs font-medium text-muted-foreground">Base / regular</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded border border-border px-2 py-1.5"
                             value={detailAmounts.base}
                             onChange={(e) =>
                               setDetailAmounts((x) => ({ ...x, base: e.target.value }))
@@ -2284,23 +2284,23 @@ export default function PayrollPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Overtime</label>
+                          <label className="block text-xs font-medium text-muted-foreground">Overtime</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded border border-border px-2 py-1.5"
                             value={detailAmounts.ot}
                             onChange={(e) => setDetailAmounts((x) => ({ ...x, ot: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Bonus</label>
+                          <label className="block text-xs font-medium text-muted-foreground">Bonus</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded border border-border px-2 py-1.5"
                             value={detailAmounts.bonus}
                             onChange={(e) =>
                               setDetailAmounts((x) => ({ ...x, bonus: e.target.value }))
@@ -2308,12 +2308,12 @@ export default function PayrollPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Other earnings</label>
+                          <label className="block text-xs font-medium text-muted-foreground">Other earnings</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded border border-border px-2 py-1.5"
                             value={detailAmounts.other}
                             onChange={(e) =>
                               setDetailAmounts((x) => ({ ...x, other: e.target.value }))
@@ -2321,15 +2321,15 @@ export default function PayrollPage() {
                           />
                         </div>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-gray-100 bg-gray-50 px-3 py-2">
-                        <span className="text-xs font-semibold text-gray-700">Total gross</span>
-                        <span className="text-sm font-bold tabular-nums text-gray-900">
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-border/70 bg-muted/40 px-3 py-2">
+                        <span className="text-xs font-semibold text-foreground/85">Total gross</span>
+                        <span className="text-sm font-bold tabular-nums text-foreground">
                           {currencySymbol}
                           {formatNumber(detailComputedGross)}
                         </span>
                       </div>
                       {isMixedEntityPayrollDraft && (
-                        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
+                        <div className="mt-2 rounded-lg border border-warning/30 bg-warning/10/80 px-3 py-2 text-xs text-warning-foreground">
                           <p className="font-medium">Mixed payroll split</p>
                           <p className="mt-1">
                             Pond portion ({currencySymbol}
@@ -2343,23 +2343,23 @@ export default function PayrollPage() {
                       )}
                       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Deductions</label>
+                          <label className="block text-xs font-medium text-muted-foreground">Deductions</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded border border-border px-2 py-1.5"
                             value={detailAmounts.d}
                             onChange={(e) => setDetailAmounts((x) => ({ ...x, d: e.target.value }))}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600">Net (optional)</label>
+                          <label className="block text-xs font-medium text-muted-foreground">Net (optional)</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
-                            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5"
+                            className="mt-1 w-full rounded border border-border px-2 py-1.5"
                             value={detailAmounts.n}
                             onChange={(e) => setDetailAmounts((x) => ({ ...x, n: e.target.value }))}
                           />
@@ -2370,15 +2370,15 @@ export default function PayrollPage() {
                           type="button"
                           onClick={saveDetailAmounts}
                           disabled={amountSaving}
-                          className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-300 disabled:opacity-50"
+                          className="rounded-lg bg-muted px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
                         >
                           {amountSaving ? 'Saving…' : 'Save amounts'}
                         </button>
                         <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
                           <div className="min-w-0 sm:max-w-xs">
-                            <label className="text-xs text-gray-600">Fill from one employee (already paid?)</label>
+                            <label className="text-xs text-muted-foreground">Fill from one employee (already paid?)</label>
                             <select
-                              className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                              className="mt-1 w-full rounded border border-border px-2 py-1.5 text-sm"
                               value={oneEmployeeId}
                               onChange={(e) => setOneEmployeeId(e.target.value)}
                             >
@@ -2405,18 +2405,18 @@ export default function PayrollPage() {
                           </button>
                         </div>
                       </div>
-                      <div className="mt-4 rounded-lg border border-gray-200 p-3">
-                        <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-800">
+                      <div className="mt-4 rounded-lg border border-border p-3">
+                        <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
                           <Landmark className="h-4 w-4" />
                           Post to general ledger
                         </div>
-                        <p className="text-xs text-gray-600">
-                          The <span className="font-medium text-gray-700">dropdown is only for cash out</span>{' '}
+                        <p className="text-xs text-muted-foreground">
+                          The <span className="font-medium text-foreground/85">dropdown is only for cash out</span>{' '}
                           (which bank or cash account to credit for net pay). It does not list 6400 on purpose:{' '}
-                          <span className="font-medium text-gray-700">6400 is an expense</span>, not a bank
+                          <span className="font-medium text-foreground/85">6400 is an expense</span>, not a bank
                           account.
                         </p>
-                        <div className="mt-2 rounded border border-amber-100 bg-amber-50/80 px-2.5 py-2 text-xs text-amber-950">
+                        <div className="mt-2 rounded border border-amber-100 bg-warning/10/80 px-2.5 py-2 text-xs text-warning-foreground">
                           <span className="font-medium">Salary expense (used when posting gross):</span>{' '}
                           {selectedPayroll?.salary_expense_account_id &&
                           (selectedPayroll.salary_expense_account_code ||
@@ -2437,11 +2437,11 @@ export default function PayrollPage() {
                             </span>
                           )}
                         </div>
-                        <label className="mt-2 block text-xs text-gray-600">
+                        <label className="mt-2 block text-xs text-muted-foreground">
                           Net pay from (bank register or GL account)
                         </label>
                         <select
-                          className="mt-1 w-full max-w-lg rounded border border-gray-300 px-2 py-2 text-sm"
+                          className="mt-1 w-full max-w-lg rounded border border-border px-2 py-2 text-sm"
                           value={payFromSelect}
                           onChange={(e) => {
                             payFromTouched.current = true
@@ -2483,7 +2483,7 @@ export default function PayrollPage() {
                             </optgroup>
                           )}
                         </select>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           If you do not choose, net pay credits default bank/cash (1030/1010) when they exist. The
                           salary journal debits the expense account configured for this run (if set) or otherwise the
                           template account (e.g. 6400).
@@ -2492,7 +2492,7 @@ export default function PayrollPage() {
                           type="button"
                           onClick={postToBooks}
                           disabled={actionLoading}
-                          className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                          className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
                         >
                           {actionLoading ? 'Working…' : 'Post to books'}
                         </button>
@@ -2510,7 +2510,7 @@ export default function PayrollPage() {
                   setShowDetailsModal(false)
                   setSelectedPayroll(null)
                 }}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
               >
                 Close
               </button>

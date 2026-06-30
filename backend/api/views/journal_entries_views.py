@@ -19,7 +19,8 @@ from api.services.reference_code import next_available_code
 from api.views.common import parse_json_body, require_company_id
 from django.utils import timezone as django_timezone
 
-from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount
+from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount, Station
+from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.entity_gl_scoping import (
     manual_je_entity_scoping_warnings,
     validate_manual_je_entity_scoping_for_post,
@@ -249,6 +250,48 @@ def _manual_journal_eligible_for_post(entry: JournalEntry) -> tuple[bool, str]:
     return True, ""
 
 
+def _entity_directory_station_json(st: Station) -> dict:
+    return {
+        "id": st.id,
+        "station_name": st.station_name or "",
+        "station_number": st.station_number or "",
+        "operates_fuel_retail": bool(getattr(st, "operates_fuel_retail", True)),
+        "is_active": st.is_active,
+    }
+
+
+def _entity_directory_pond_json(p: AquaculturePond) -> dict:
+    return {
+        "id": p.id,
+        "name": p.name or "",
+        "pond_role": getattr(p, "pond_role", None) or "grow_out",
+        "operational_display_name": pond_operational_display_name(p),
+        "is_active": p.is_active,
+    }
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+def journal_entries_entity_directory(request):
+    """
+    Stations + ponds for manual journal entity tagging (GL).
+    Same scope as journal entry access — no aquaculture-module API gate.
+    """
+    if request.method != "GET":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    cid = request.company_id
+    stations = [
+        _entity_directory_station_json(s)
+        for s in Station.objects.filter(company_id=cid).order_by("id")
+    ]
+    ponds = [
+        _entity_directory_pond_json(p)
+        for p in AquaculturePond.objects.filter(company_id=cid).order_by("sort_order", "id")
+    ]
+    return JsonResponse({"stations": stations, "ponds": ponds})
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -465,52 +508,56 @@ def journal_entry_detail(request, entry_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
-        if not e.is_posted:
-            e.entry_date = _parse_date(body.get("entry_date")) or e.entry_date
-            e.description = (body.get("description") or "").strip() or e.description
-            if "station_id" in body:
-                e.station_id = _coerce_optional_station_id(
-                    request.company_id, body.get("station_id")
+        if e.is_posted:
+            return JsonResponse(
+                {"detail": "Cannot edit a posted journal entry. Unpost it first."},
+                status=400,
+            )
+        e.entry_date = _parse_date(body.get("entry_date")) or e.entry_date
+        e.description = (body.get("description") or "").strip() or e.description
+        if "station_id" in body:
+            e.station_id = _coerce_optional_station_id(
+                request.company_id, body.get("station_id")
+            )
+        e.save()
+        lines = body.get("lines")
+        if lines is not None:
+            e.lines.all().delete()
+            for row in lines:
+                debit_acc = row.get("debit_account_id")
+                credit_acc = row.get("credit_account_id")
+                amount = _decimal(row.get("amount"))
+                lsid = _manual_line_station_id(request.company_id, row, e.station_id)
+                pond_id, pond_err = _manual_line_pond_id(request.company_id, row)
+                if pond_err:
+                    return JsonResponse({"detail": pond_err}, status=400)
+                trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
+                    request.company_id, row.get("tenant_reporting_category_id")
                 )
-            e.save()
-            lines = body.get("lines")
-            if lines is not None:
-                e.lines.all().delete()
-                for row in lines:
-                    debit_acc = row.get("debit_account_id")
-                    credit_acc = row.get("credit_account_id")
-                    amount = _decimal(row.get("amount"))
-                    lsid = _manual_line_station_id(request.company_id, row, e.station_id)
-                    pond_id, pond_err = _manual_line_pond_id(request.company_id, row)
-                    if pond_err:
-                        return JsonResponse({"detail": pond_err}, status=400)
-                    trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
-                        request.company_id, row.get("tenant_reporting_category_id")
+                if trc_err:
+                    return JsonResponse({"detail": trc_err}, status=400)
+                if amount and debit_acc and ChartOfAccount.objects.filter(id=debit_acc, company_id=request.company_id).exists():
+                    JournalEntryLine.objects.create(
+                        journal_entry=e,
+                        account_id=debit_acc,
+                        debit=amount,
+                        credit=0,
+                        description=row.get("description") or "",
+                        station_id=lsid,
+                        aquaculture_pond_id=pond_id,
+                        tenant_reporting_category_id=trc_id,
                     )
-                    if trc_err:
-                        return JsonResponse({"detail": trc_err}, status=400)
-                    if amount and debit_acc and ChartOfAccount.objects.filter(id=debit_acc, company_id=request.company_id).exists():
-                        JournalEntryLine.objects.create(
-                            journal_entry=e,
-                            account_id=debit_acc,
-                            debit=amount,
-                            credit=0,
-                            description=row.get("description") or "",
-                            station_id=lsid,
-                            aquaculture_pond_id=pond_id,
-                            tenant_reporting_category_id=trc_id,
-                        )
-                    if amount and credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
-                        JournalEntryLine.objects.create(
-                            journal_entry=e,
-                            account_id=credit_acc,
-                            debit=0,
-                            credit=amount,
-                            description=row.get("description") or "",
-                            station_id=lsid,
-                            aquaculture_pond_id=pond_id,
-                            tenant_reporting_category_id=trc_id,
-                        )
+                if amount and credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
+                    JournalEntryLine.objects.create(
+                        journal_entry=e,
+                        account_id=credit_acc,
+                        debit=0,
+                        credit=amount,
+                        description=row.get("description") or "",
+                        station_id=lsid,
+                        aquaculture_pond_id=pond_id,
+                        tenant_reporting_category_id=trc_id,
+                    )
         e.refresh_from_db()
         return JsonResponse(_entry_to_json(e))
     if request.method == "DELETE":

@@ -22,8 +22,8 @@ import {
 import { MedicineProductLinesEditor } from './MedicineUi'
 
 const inputCls =
-  'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
-const labelCls = 'block text-xs font-medium text-slate-700'
+  'mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
+const labelCls = 'block text-xs font-medium text-foreground/85'
 
 interface Pond {
   id: number
@@ -127,23 +127,23 @@ export function MedicineTreatmentEntryModal(props: {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/45 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/45 p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-treatment-title"
       onClick={() => !medSaving && onClose()}
     >
       <div
-        className="flex max-h-[min(92vh,900px)] w-full max-w-3xl flex-col rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl"
+        className="flex max-h-[min(92vh,900px)] w-full max-w-3xl flex-col rounded-t-2xl border border-border bg-white shadow-2xl sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">
           <div>
-            <h2 id="new-treatment-title" className="flex items-center gap-2 text-base font-semibold text-slate-900">
-              <Stethoscope className="h-4 w-4 text-teal-700" aria-hidden />
+            <h2 id="new-treatment-title" className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Stethoscope className="h-4 w-4 text-primary" aria-hidden />
               Record treatment
             </h2>
-            <p className="mt-0.5 text-xs text-slate-600">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               Log one or more medicines for the same bath or protocol. Each product posts stock and COGS separately.
             </p>
           </div>
@@ -151,7 +151,7 @@ export function MedicineTreatmentEntryModal(props: {
             type="button"
             onClick={onClose}
             disabled={medSaving}
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-5 w-5" aria-hidden />
@@ -162,7 +162,7 @@ export function MedicineTreatmentEntryModal(props: {
           <div className="grid gap-5 lg:grid-cols-[1fr_minmax(0,11rem)]">
             <div className="space-y-4">
               <label className={labelCls}>
-                Pond <span className="text-red-600">*</span>
+                Pond <span className="text-destructive">*</span>
                 <select
                   className={inputCls}
                   value={pondId}
@@ -179,16 +179,16 @@ export function MedicineTreatmentEntryModal(props: {
               </label>
 
               {selectedPond ? (
-                <p className="-mt-2 text-xs text-slate-500">
+                <p className="-mt-2 text-xs text-muted-foreground">
                   <Link
                     href={`/aquaculture/ponds/${selectedPond.id}`}
-                    className="inline-flex items-center gap-1 font-medium text-teal-800 hover:underline"
+                    className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
                   >
                     <MapPin className="h-3 w-3" aria-hidden />
                     Pond warehouse & setup
                   </Link>
                   {selectedPond.default_medicine_item_name ? (
-                    <span className="ml-2 text-slate-700">
+                    <span className="ml-2 text-foreground/85">
                       · Default: {selectedPond.default_medicine_item_name}
                     </span>
                   ) : null}
@@ -196,13 +196,13 @@ export function MedicineTreatmentEntryModal(props: {
               ) : null}
 
               {!Number.isFinite(pondIdNum) ? (
-                <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
+                <p className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
                   Select a pond to enter products and application details.
                 </p>
               ) : (
                 <>
                   <label className={labelCls}>
-                    Treatment date <span className="text-red-600">*</span>
+                    Treatment date <span className="text-destructive">*</span>
                     <input
                       type="date"
                       className={`${inputCls} max-w-xs`}
@@ -233,8 +233,8 @@ export function MedicineTreatmentEntryModal(props: {
                     </p>
                   ) : null}
 
-                  <fieldset className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
-                    <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <fieldset className="rounded-xl border border-border bg-muted/40 p-3 sm:p-4">
+                    <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Application details (shared)
                     </legend>
                     <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -303,9 +303,9 @@ export function MedicineTreatmentEntryModal(props: {
                           </select>
                         </div>
                         {kgPerDecimalDoseHint ? (
-                          <p className="mt-1 text-[11px] leading-relaxed text-teal-900">{kgPerDecimalDoseHint}</p>
+                          <p className="mt-1 text-[11px] leading-relaxed text-primary">{kgPerDecimalDoseHint}</p>
                         ) : selectedPond && treatment.doseUnit === 'kg_decimal' ? (
-                          <p className="mt-1 text-[11px] text-amber-900">
+                          <p className="mt-1 text-[11px] text-warning-foreground">
                             Add water area (decimal) on{' '}
                             <Link
                               href={`/aquaculture/ponds/${selectedPond.id}`}
@@ -337,14 +337,14 @@ export function MedicineTreatmentEntryModal(props: {
                               type="button"
                               onClick={onRefillWaterVolume}
                               disabled={!pondHasCalculableVolume(selectedPond) || medSaving}
-                              className="shrink-0 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-medium text-teal-900 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="shrink-0 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-xs font-medium text-primary hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Use pond volume
                             </button>
                           ) : null}
                         </div>
                         {selectedPond ? (
-                          <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                             {pondHasCalculableVolume(selectedPond) ? (
                               <>From pond setup ({pondVolumeLine}). Edit for partial treatments.</>
                             ) : (
@@ -352,7 +352,7 @@ export function MedicineTreatmentEntryModal(props: {
                                 {pondVolumeHint}{' '}
                                 <Link
                                   href={`/aquaculture/ponds/${selectedPond.id}`}
-                                  className="font-medium text-teal-800 underline"
+                                  className="font-medium text-primary underline"
                                 >
                                   Pond setup
                                 </Link>
@@ -418,17 +418,17 @@ export function MedicineTreatmentEntryModal(props: {
             </div>
 
             <aside className="hidden lg:block">
-              <div className="sticky top-0 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="sticky top-0 rounded-xl border border-border bg-muted/50 p-3">
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <Package className="h-3.5 w-3.5" aria-hidden />
                   Stock at pond
                 </h3>
                 {!Number.isFinite(pondIdNum) ? (
-                  <p className="mt-2 text-[11px] text-slate-500">Select a pond</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">Select a pond</p>
                 ) : whLoading ? (
-                  <p className="mt-2 text-[11px] text-slate-500">Loading…</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">Loading…</p>
                 ) : medicineOnHand.length === 0 ? (
-                  <p className="mt-2 text-[11px] leading-relaxed text-amber-900">
+                  <p className="mt-2 text-[11px] leading-relaxed text-warning-foreground">
                     No medicine on hand. Transfer stock to this pond warehouse first.
                   </p>
                 ) : (
@@ -441,14 +441,14 @@ export function MedicineTreatmentEntryModal(props: {
                             type="button"
                             onClick={() => onAssignFromStock(r.item_id)}
                             disabled={medSaving}
-                            className={`w-full rounded-lg border px-2 py-1.5 text-left transition hover:border-teal-300 hover:bg-teal-50/60 disabled:opacity-50 ${
+                            className={`w-full rounded-lg border px-2 py-1.5 text-left transition hover:border-primary/30 hover:bg-accent/60 disabled:opacity-50 ${
                               inForm
-                                ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300/50'
-                                : 'border-slate-200 bg-white'
+                                ? 'border-teal-400 bg-accent ring-1 ring-teal-300/50'
+                                : 'border-border bg-white'
                             }`}
                           >
-                            <span className="font-medium text-slate-900">{r.item_name}</span>
-                            <span className="mt-0.5 block tabular-nums text-slate-600">
+                            <span className="font-medium text-foreground">{r.item_name}</span>
+                            <span className="mt-0.5 block tabular-nums text-muted-foreground">
                               {formatNumber(Number(r.quantity), 2)} {formatStockUnit(r.unit)}
                             </span>
                           </button>
@@ -457,7 +457,7 @@ export function MedicineTreatmentEntryModal(props: {
                     })}
                   </ul>
                 )}
-                <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] text-slate-500">
+                <p className="mt-2 border-t border-border pt-2 text-[10px] text-muted-foreground">
                   Tap a row to fill the next empty product line.
                 </p>
               </div>
@@ -465,12 +465,12 @@ export function MedicineTreatmentEntryModal(props: {
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/90 px-4 py-3 sm:px-5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border/70 bg-muted/50 px-4 py-3 sm:px-5">
           <button
             type="button"
             onClick={onClose}
             disabled={medSaving}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -484,7 +484,7 @@ export function MedicineTreatmentEntryModal(props: {
               }
               onRecord()
             }}
-            className="inline-flex min-w-[10rem] items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-w-[10rem] items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             {medSaving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             {medSaving

@@ -338,15 +338,15 @@ export default function AquacultureFinancingPage() {
       }
     >
       {loading && !overview ? (
-        <p className="text-sm text-slate-500">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : overview ? (
         <div className="space-y-8">
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Tagged loans</h2>
+          <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <h2 className="text-lg font-semibold text-foreground">Tagged loans</h2>
             {overview.loans.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-muted-foreground">
                 No borrowed loans marked as aquaculture working capital. On{' '}
-                <Link href="/loans" className="text-teal-700 underline">
+                <Link href="/loans" className="text-primary underline">
                   Loans
                 </Link>
                 , create or edit a <strong>borrowed</strong> loan and enable &quot;Aquaculture working capital (all
@@ -356,7 +356,7 @@ export default function AquacultureFinancingPage() {
               <div className="mt-3 overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-slate-500">
+                    <tr className="border-b text-left text-muted-foreground">
                       <th className="py-2 pr-4">Loan</th>
                       <th className="py-2 pr-4">Counterparty</th>
                       <th className="py-2 pr-4">Status</th>
@@ -366,7 +366,7 @@ export default function AquacultureFinancingPage() {
                   </thead>
                   <tbody>
                     {overview.loans.map((l) => (
-                      <tr key={l.id} className="border-b border-slate-100">
+                      <tr key={l.id} className="border-b border-border/70">
                         <td className="py-2 pr-4 font-medium">
                           {l.loan_no}
                           {l.title ? ` — ${l.title}` : ''}
@@ -389,16 +389,16 @@ export default function AquacultureFinancingPage() {
             )}
           </section>
 
-          <section className="rounded-xl border border-teal-100 bg-teal-50/40 p-4">
-            <h2 className="text-lg font-semibold text-teal-900">Record pond use of loan funds</h2>
-            <p className="mt-1 text-sm text-teal-800">
+          <section className="rounded-xl border border-teal-100 bg-accent/40 p-4">
+            <h2 className="text-lg font-semibold text-primary">Record pond use of loan funds</h2>
+            <p className="mt-1 text-sm text-primary">
               Management tracking only — does not post GL. Use after a disbursement or when attributing shared costs.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">Loan</span>
+                <span className="block text-xs font-medium text-muted-foreground">Loan</span>
                 <select
-                  className="mt-1 rounded border border-slate-300 px-2 py-1.5"
+                  className="mt-1 rounded border border-border px-2 py-1.5"
                   value={allocLoanId === '' ? '' : String(allocLoanId)}
                   onChange={(e) => setAllocLoanId(e.target.value === '' ? '' : Number(e.target.value))}
                 >
@@ -411,10 +411,10 @@ export default function AquacultureFinancingPage() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">Date</span>
+                <span className="block text-xs font-medium text-muted-foreground">Date</span>
                 <input
                   type="date"
-                  className="mt-1 rounded border border-slate-300 px-2 py-1.5"
+                  className="mt-1 rounded border border-border px-2 py-1.5"
                   value={allocDate}
                   onChange={(e) => setAllocDate(e.target.value)}
                 />
@@ -424,7 +424,7 @@ export default function AquacultureFinancingPage() {
               {allocRows.map((row, idx) => (
                 <div key={idx} className="flex flex-wrap gap-2 items-end">
                   <select
-                    className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    className="rounded border border-border px-2 py-1.5 text-sm"
                     value={row.pond_id === '' ? '' : String(row.pond_id)}
                     onChange={(e) => {
                       const next = [...allocRows]
@@ -444,7 +444,7 @@ export default function AquacultureFinancingPage() {
                     min="0"
                     step="0.01"
                     placeholder="Amount"
-                    className="w-28 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-28 rounded border border-border px-2 py-1.5 text-sm"
                     value={row.amount}
                     onChange={(e) => {
                       const next = [...allocRows]
@@ -455,7 +455,7 @@ export default function AquacultureFinancingPage() {
                   <input
                     type="text"
                     placeholder="Memo"
-                    className="min-w-[12rem] flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    className="min-w-[12rem] flex-1 rounded border border-border px-2 py-1.5 text-sm"
                     value={row.memo}
                     onChange={(e) => {
                       const next = [...allocRows]
@@ -468,7 +468,7 @@ export default function AquacultureFinancingPage() {
                       type="button"
                       title="Remove row"
                       aria-label="Remove row"
-                      className="rounded border border-slate-300 bg-white p-2 text-slate-600 hover:bg-slate-50 hover:text-red-700"
+                      className="rounded border border-border bg-white p-2 text-muted-foreground hover:bg-muted/40 hover:text-destructive"
                       onClick={() => setAllocRows((prev) => prev.filter((_, i) => i !== idx))}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden />
@@ -478,7 +478,7 @@ export default function AquacultureFinancingPage() {
               ))}
               <button
                 type="button"
-                className="text-sm text-teal-700 underline"
+                className="text-sm text-primary underline"
                 onClick={() => setAllocRows((prev) => [...prev, { pond_id: '', amount: '', memo: '' }])}
               >
                 + Add row
@@ -487,23 +487,23 @@ export default function AquacultureFinancingPage() {
             <button
               type="button"
               onClick={() => void submitAllocations()}
-              className="mt-4 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800"
+              className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
             >
               Save allocations
             </button>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
-            <h2 className="text-lg font-semibold text-slate-900">Repayment worksheet</h2>
-            <p className="text-sm text-slate-600">
+          <section className="rounded-xl border border-border bg-white p-4 shadow-sm space-y-4">
+            <h2 className="text-lg font-semibold text-foreground">Repayment worksheet</h2>
+            <p className="text-sm text-muted-foreground">
               Splits a repayment total across ponds by P&amp;L for the period, then posts pond profit transfers and
               optionally a loan principal repayment.
             </p>
             <div className="flex flex-wrap gap-3">
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">Loan</span>
+                <span className="block text-xs font-medium text-muted-foreground">Loan</span>
                 <select
-                  className="mt-1 rounded border border-slate-300 px-2 py-1.5 min-w-[10rem]"
+                  className="mt-1 rounded border border-border px-2 py-1.5 min-w-[10rem]"
                   value={selectedLoanId === '' ? '' : String(selectedLoanId)}
                   onChange={(e) => {
                     const v = e.target.value === '' ? '' : Number(e.target.value)
@@ -520,15 +520,15 @@ export default function AquacultureFinancingPage() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">P&amp;L from</span>
+                <span className="block text-xs font-medium text-muted-foreground">P&amp;L from</span>
                 <input type="date" className="mt-1 rounded border px-2 py-1.5" value={plStart} onChange={(e) => setPlStart(e.target.value)} />
               </label>
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">P&amp;L to</span>
+                <span className="block text-xs font-medium text-muted-foreground">P&amp;L to</span>
                 <input type="date" className="mt-1 rounded border px-2 py-1.5" value={plEnd} onChange={(e) => setPlEnd(e.target.value)} />
               </label>
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">Split method</span>
+                <span className="block text-xs font-medium text-muted-foreground">Split method</span>
                 <select className="mt-1 rounded border px-2 py-1.5" value={method} onChange={(e) => setMethod(e.target.value)}>
                   {overview.repayment_methods.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -538,7 +538,7 @@ export default function AquacultureFinancingPage() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="block text-xs font-medium text-slate-600">Repayment total</span>
+                <span className="block text-xs font-medium text-muted-foreground">Repayment total</span>
                 <div className="mt-1 flex gap-1">
                   <input
                     type="number"
@@ -548,7 +548,7 @@ export default function AquacultureFinancingPage() {
                     value={repayTotal}
                     onChange={(e) => setRepayTotal(e.target.value)}
                   />
-                  <button type="button" className="text-xs text-teal-700 underline whitespace-nowrap" onClick={useFullOutstanding}>
+                  <button type="button" className="text-xs text-primary underline whitespace-nowrap" onClick={useFullOutstanding}>
                     Full outstanding
                   </button>
                 </div>
@@ -557,7 +557,7 @@ export default function AquacultureFinancingPage() {
                 type="button"
                 disabled={worksheetLoading}
                 onClick={() => void buildWorksheet()}
-                className="self-end rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                className="self-end rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted/40 disabled:opacity-50"
               >
                 {worksheetLoading ? 'Calculating…' : 'Calculate split'}
               </button>
@@ -565,14 +565,14 @@ export default function AquacultureFinancingPage() {
 
             {worksheet ? (
               <div className="space-y-3 border-t pt-4">
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-muted-foreground">
                   Suggested total: {currency}
                   {formatNumber(worksheet.sum_suggested)} (outstanding {currency}
                   {formatNumber(worksheet.outstanding_principal)})
                 </p>
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-slate-500">
+                    <tr className="border-b text-left text-muted-foreground">
                       <th className="py-1 pr-2">Use</th>
                       <th className="py-1 pr-2">Pond</th>
                       <th className="py-1 pr-2 text-right">Profit</th>
@@ -582,7 +582,7 @@ export default function AquacultureFinancingPage() {
                   </thead>
                   <tbody>
                     {worksheet.ponds.map((p, i) => (
-                      <tr key={p.pond_id} className="border-b border-slate-100">
+                      <tr key={p.pond_id} className="border-b border-border/70">
                         <td className="py-1 pr-2">
                           <input
                             type="checkbox"
@@ -659,7 +659,7 @@ export default function AquacultureFinancingPage() {
                     </select>
                   </label>
                 </div>
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-muted-foreground">
                   Debit and credit default to bank ({COA_BANK_OP}) and profit clearing ({COA_AQ_PROFIT_CLEARING}) when
                   COA loads — change either account anytime.
                 </p>
@@ -675,7 +675,7 @@ export default function AquacultureFinancingPage() {
                   type="button"
                   disabled={applyLoading}
                   onClick={() => void applyWorksheet()}
-                  className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
                 >
                   {applyLoading ? 'Applying…' : 'Apply worksheet'}
                 </button>
@@ -687,7 +687,7 @@ export default function AquacultureFinancingPage() {
             <section className="grid gap-6 lg:grid-cols-2">
               {overview.recent_disbursements.length > 0 && (
                 <div className="rounded-xl border bg-white p-4">
-                  <h3 className="font-semibold text-slate-900">Recent disbursements</h3>
+                  <h3 className="font-semibold text-foreground">Recent disbursements</h3>
                   <ul className="mt-2 space-y-1 text-sm">
                     {overview.recent_disbursements.slice(0, 10).map((d) => (
                       <li key={d.id}>
@@ -700,7 +700,7 @@ export default function AquacultureFinancingPage() {
               )}
               {overview.recent_allocations.length > 0 && (
                 <div className="rounded-xl border bg-white p-4">
-                  <h3 className="font-semibold text-slate-900">Recent pond allocations</h3>
+                  <h3 className="font-semibold text-foreground">Recent pond allocations</h3>
                   <ul className="mt-2 space-y-1 text-sm">
                     {overview.recent_allocations.slice(0, 10).map((a) => (
                       <li key={a.id}>

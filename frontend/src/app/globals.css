@@ -49,38 +49,58 @@
   :root {
     /* Sticky POS cart / panels below app header */
     --pos-header-offset: 5.5rem;
-    /* Enterprise SaaS tokens (Fluent / Stripe / QuickBooks-style light workspace) */
-    --background: 210 40% 98%;
+    /*
+     * FS Station ERP — readable ops palette
+     * Teal primary actions · purple sidebar active · amber create CTAs · WCAG-friendly neutrals
+     */
+    --background: 220 18% 96%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 214 32% 91%;
+    --primary: 168 55% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 93%;
     --secondary-foreground: 222 47% 11%;
-    --muted: 214 32% 91%;
-    --muted-foreground: 215 16% 40%;
-    --accent: 214 32% 91%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 88%;
-    --input: 214 32% 88%;
-    --ring: 221 83% 53%;
-    --radius: 0.5rem;
-    /* Sidebar shell — neutral dark nav + blue accent (industry standard for admin ERP) */
-    --sidebar-bg: 222 47% 11%;
-    --sidebar-bg-elevated: 224 71% 4%;
-    --sidebar-border: 217 33% 20%;
-    --sidebar-fg: 210 40% 98%;
-    --sidebar-fg-muted: 215 20% 72%;
-    --sidebar-fg-subtle: 215 16% 52%;
-    --sidebar-hover: 217 33% 17%;
-    --sidebar-accent: 221 83% 53%;
-    --sidebar-accent-fg: 210 40% 98%;
-    --sidebar-search-bg: 217 33% 15%;
+    --muted: 220 14% 93%;
+    --muted-foreground: 220 12% 40%;
+    --accent: 168 45% 94%;
+    --accent-foreground: 168 55% 24%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 58% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 38 92% 12%;
+    --info: 205 85% 42%;
+    --info-foreground: 0 0% 100%;
+    --cta: 42 96% 52%;
+    --cta-foreground: 42 96% 12%;
+    --border: 220 14% 88%;
+    --input: 220 14% 86%;
+    --ring: 168 55% 36%;
+    --radius: 0.625rem;
+    --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+    --shadow-elevated: 0 4px 6px -1px rgb(15 23 42 / 0.06), 0 10px 20px -5px rgb(15 23 42 / 0.08);
+    --shadow-glow: 0 0 0 1px hsl(var(--primary) / 0.08), 0 8px 24px -4px hsl(var(--primary) / 0.16);
+    /* Sidebar — deep midnight nav with purple active state */
+    --sidebar-bg: 224 47% 9%;
+    --sidebar-bg-elevated: 225 50% 5%;
+    --sidebar-border: 224 30% 18%;
+    --sidebar-fg: 220 20% 97%;
+    --sidebar-fg-muted: 220 12% 74%;
+    --sidebar-fg-subtle: 220 10% 54%;
+    --sidebar-hover: 224 35% 14%;
+    --sidebar-accent: 270 58% 55%;
+    --sidebar-accent-fg: 0 0% 100%;
+    --sidebar-search-bg: 224 35% 12%;
+    /* Hero gradient stops — teal page headers */
+    --hero-from: 168 45% 16%;
+    --hero-via: 170 42% 20%;
+    --hero-to: 172 48% 28%;
+    --hero-accent: 168 55% 72%;
+    --hero-muted: 168 22% 82%;
     /* Reserve space above Windows taskbar (browsers do not expose it in safe-area). */
     --erp-os-bottom-chrome: 0px;
   }
@@ -93,25 +113,42 @@
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 224 47% 6%;
+    --foreground: 220 18% 94%;
+    --card: 224 35% 10%;
+    --card-foreground: 220 18% 94%;
+    --popover: 224 35% 10%;
+    --popover-foreground: 220 18% 94%;
+    --primary: 168 50% 48%;
+    --primary-foreground: 168 50% 8%;
+    --secondary: 224 30% 14%;
+    --secondary-foreground: 220 18% 94%;
+    --muted: 224 30% 14%;
+    --muted-foreground: 220 12% 68%;
+    --accent: 224 30% 16%;
+    --accent-foreground: 220 18% 94%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 220 18% 94%;
+    --success: 152 50% 44%;
+    --success-foreground: 152 50% 10%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 38 92% 10%;
+    --info: 205 80% 55%;
+    --info-foreground: 205 80% 10%;
+    --cta: 42 92% 56%;
+    --cta-foreground: 42 92% 10%;
+    --border: 224 30% 16%;
+    --input: 224 30% 16%;
+    --ring: 168 50% 48%;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2), 0 1px 3px rgb(0 0 0 / 0.25);
+    --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.25), 0 10px 20px -5px rgb(0 0 0 / 0.35);
+    --shadow-glow: 0 0 0 1px hsl(var(--primary) / 0.15), 0 8px 24px -4px hsl(var(--primary) / 0.22);
+    --sidebar-accent: 270 55% 62%;
+    --hero-from: 168 40% 12%;
+    --hero-via: 170 38% 16%;
+    --hero-to: 172 42% 22%;
+    --hero-accent: 168 50% 68%;
+    --hero-muted: 168 18% 72%;
   }
 }
 
@@ -124,7 +161,13 @@
     @apply h-dvh max-h-dvh w-full min-w-0 max-w-full overflow-hidden;
   }
   body {
-    @apply h-dvh max-h-dvh w-full min-w-0 max-w-full overflow-hidden bg-background text-foreground;
+    @apply h-dvh max-h-dvh w-full min-w-0 max-w-full overflow-hidden text-foreground;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(ellipse 120% 80% at 50% -30%, hsl(var(--primary) / 0.06), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 100% 0%, hsl(var(--sidebar-accent) / 0.04), transparent 50%);
     /* Notched phones / home indicator / gesture bar */
     padding-left: env(safe-area-inset-left, 0);
     padding-right: env(safe-area-inset-right, 0);
@@ -194,7 +237,294 @@
   }
 
   .erp-sidebar-nav-active-saas {
-    @apply border-violet-500 bg-violet-600 text-white shadow-sm;
+    color: hsl(var(--sidebar-accent-fg));
+    background: hsl(var(--sidebar-accent));
+    border-color: hsl(var(--sidebar-accent));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+  }
+
+  /* ── Workspace surfaces & metrics ── */
+  .erp-surface {
+    @apply rounded-xl border border-border/80 bg-card text-card-foreground shadow-card;
+  }
+
+  .erp-surface-interactive {
+    @apply erp-surface transition-all duration-200;
+  }
+
+  .erp-surface-interactive:hover {
+    @apply border-primary/20 shadow-elevated;
+  }
+
+  .erp-stat-card {
+    @apply erp-surface p-6;
+  }
+
+  .erp-stat-label {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .erp-stat-value {
+    @apply mt-1 text-2xl font-bold tracking-tight text-foreground;
+  }
+
+  .erp-stat-meta {
+    @apply mt-1 text-xs text-muted-foreground;
+  }
+
+  .erp-metric-icon {
+    @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-xl;
+  }
+
+  .erp-metric-icon--primary {
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--primary));
+  }
+
+  .erp-metric-icon--success {
+    background: hsl(var(--success) / 0.12);
+    color: hsl(var(--success));
+  }
+
+  .erp-metric-icon--info {
+    background: hsl(var(--info) / 0.12);
+    color: hsl(var(--info));
+  }
+
+  .erp-metric-icon--warning {
+    background: hsl(var(--warning) / 0.14);
+    color: hsl(var(--warning));
+  }
+
+  .erp-metric-icon--accent {
+    background: hsl(var(--sidebar-accent) / 0.14);
+    color: hsl(var(--sidebar-accent));
+  }
+
+  .erp-page-hero {
+    @apply overflow-hidden rounded-2xl border p-5 text-white shadow-elevated sm:p-6;
+    border-color: hsl(var(--hero-to) / 0.35);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--hero-from)) 0%,
+      hsl(var(--hero-via)) 45%,
+      hsl(var(--hero-to)) 100%
+    );
+    box-shadow: var(--shadow-elevated), inset 0 1px 0 hsl(0 0% 100% / 0.06);
+  }
+
+  .erp-page-hero-eyebrow {
+    @apply flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider;
+    color: hsl(var(--hero-muted));
+  }
+
+  .erp-page-hero-title-icon {
+    color: hsl(var(--hero-accent));
+  }
+
+  .erp-page-hero-description {
+    @apply mt-2 max-w-xl text-sm leading-relaxed;
+    color: hsl(var(--hero-muted) / 0.92);
+  }
+
+  .erp-action-card {
+    @apply flex max-w-md items-center gap-3 rounded-xl border px-4 py-3 text-foreground shadow-card transition-all duration-200;
+    border-color: hsl(var(--primary) / 0.22);
+    background: linear-gradient(135deg, hsl(0 0% 100% / 0.97) 0%, hsl(var(--primary) / 0.04) 100%);
+  }
+
+  .erp-action-card:hover {
+    border-color: hsl(var(--primary) / 0.35);
+    box-shadow: var(--shadow-glow);
+  }
+
+  .erp-action-card-icon {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-primary-foreground;
+    background: hsl(var(--primary));
+  }
+
+  .erp-action-card-title {
+    @apply text-sm font-semibold text-foreground;
+  }
+
+  .erp-action-card-desc {
+    @apply text-xs text-muted-foreground;
+  }
+
+  .erp-btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+
+  .erp-btn-cta {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+    background: hsl(var(--cta));
+    color: hsl(var(--cta-foreground));
+  }
+
+  .erp-btn-cta:hover {
+    filter: brightness(1.04);
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .erp-hero-btn-primary {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-50;
+    background: hsl(var(--cta));
+    color: hsl(var(--cta-foreground));
+  }
+
+  .erp-hero-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+
+  .erp-hero-btn-ghost {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white backdrop-blur transition-colors disabled:opacity-50;
+    background: hsl(0 0% 100% / 0.12);
+  }
+
+  .erp-hero-btn-ghost:hover:not(:disabled) {
+    background: hsl(0 0% 100% / 0.2);
+  }
+
+  .erp-field {
+    @apply w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30;
+  }
+
+  .erp-link {
+    @apply text-sm font-medium text-primary hover:text-primary/80;
+  }
+
+  .erp-badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
+  }
+
+  .erp-badge--success {
+    background: hsl(var(--success) / 0.14);
+    color: hsl(var(--success));
+  }
+
+  .erp-badge--danger {
+    background: hsl(var(--destructive) / 0.12);
+    color: hsl(var(--destructive));
+  }
+
+  .erp-stat-highlight {
+    @apply text-lg font-bold tabular-nums text-info;
+  }
+
+  .erp-alert-warning {
+    @apply rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground;
+  }
+
+  .erp-alert-error {
+    @apply rounded-xl border border-destructive/25 bg-destructive/5 p-4 sm:p-6 md:p-8;
+  }
+
+  .erp-modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4;
+  }
+
+  .erp-modal {
+    @apply erp-surface app-modal-pad w-full max-h-[90vh] overflow-y-auto;
+  }
+
+  .erp-btn-secondary {
+    @apply rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted;
+  }
+
+  .erp-btn-secondary-lg {
+    @apply erp-btn-secondary px-4 py-2.5;
+  }
+
+  .erp-btn-danger {
+    @apply rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90;
+  }
+
+  .erp-btn-success {
+    @apply inline-flex items-center justify-center rounded-lg bg-success px-4 py-2 text-sm font-medium text-success-foreground transition-colors hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .erp-btn-success-lg {
+    @apply erp-btn-success w-full px-6 py-3;
+  }
+
+  .erp-hero-strip {
+    @apply sticky top-0 z-10 flex items-center justify-between rounded-t-xl px-6 py-4 text-primary-foreground;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--hero-from)) 0%,
+      hsl(var(--hero-to)) 100%
+    );
+  }
+
+  .erp-callout-primary {
+    @apply rounded-xl border-2 border-primary/20 bg-gradient-to-b from-accent to-card p-5 shadow-sm;
+  }
+
+  .erp-toolbar {
+    @apply mb-6 flex flex-wrap items-center gap-4;
+  }
+
+  .erp-search-wrap {
+    @apply relative min-w-0 max-w-md flex-1;
+  }
+
+  .erp-search-icon {
+    @apply pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground;
+  }
+
+  .erp-section-panel {
+    @apply erp-surface flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4;
+  }
+
+  .erp-icon-btn-primary {
+    @apply rounded-lg p-2 text-primary transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1;
+  }
+
+  .erp-icon-btn-danger {
+    @apply rounded-lg p-2 text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:ring-offset-1;
+  }
+
+  .erp-badge--warning {
+    background: hsl(var(--warning) / 0.14);
+    color: hsl(var(--warning-foreground));
+  }
+
+  .erp-badge--info {
+    background: hsl(var(--info) / 0.12);
+    color: hsl(var(--info));
+  }
+
+  .erp-badge--primary {
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--primary));
+  }
+
+  .erp-quick-app-tile {
+    @apply flex flex-col items-center rounded-2xl border border-border/80 bg-muted/40 p-4 text-center transition hover:border-primary/30 hover:bg-card hover:shadow-elevated focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring;
+  }
+
+  .erp-panel {
+    @apply erp-surface p-4 sm:p-5;
+  }
+
+  .erp-panel-heading {
+    @apply flex items-center gap-2 text-base font-semibold text-foreground;
+  }
+
+  .erp-panel-subheading {
+    @apply mt-0.5 text-sm text-muted-foreground;
+  }
+
+  .erp-skeleton-block {
+    @apply animate-pulse rounded bg-muted;
+  }
+
+  .erp-empty-state {
+    @apply erp-surface app-modal-pad text-center;
+  }
+
+  .erp-loading-spinner {
+    @apply mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-muted border-t-primary;
   }
 
   .erp-sidebar-search {
@@ -272,30 +602,30 @@
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: hsl(224 71% 4%);
+  background: hsl(var(--sidebar-bg-elevated));
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: hsl(215 16% 40%);
+  background: hsl(var(--sidebar-fg-subtle));
   border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: hsl(215 20% 55%);
+  background: hsl(var(--sidebar-fg-muted));
 }
 
 /* Firefox scrollbar */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: hsl(215 16% 40%) hsl(224 71% 4%);
+  scrollbar-color: hsl(var(--sidebar-fg-subtle)) hsl(var(--sidebar-bg-elevated));
 }
 
 .scrollbar-sidebar::-webkit-scrollbar-track {
-  background: hsl(222 47% 11%);
+  background: hsl(var(--sidebar-bg));
 }
 
 .scrollbar-sidebar {
-  scrollbar-color: hsl(215 16% 40%) hsl(222 47% 11%);
+  scrollbar-color: hsl(var(--sidebar-fg-subtle)) hsl(var(--sidebar-bg));
 }
 
 /* App shell: lock viewport height so sidebar + main scroll independently (not the whole page). */

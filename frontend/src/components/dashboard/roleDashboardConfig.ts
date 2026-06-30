@@ -23,7 +23,7 @@ const DEFAULT: RoleDashboardConfig = {
 
 export const ROLE_DASHBOARD_CONFIG: Record<string, RoleDashboardConfig> = {
   admin: {
-    gradient: 'from-blue-600 via-indigo-600 to-violet-700',
+    gradient: 'from-[hsl(var(--hero-from))] via-[hsl(var(--hero-via))] to-[hsl(var(--hero-to))]',
     tagline: 'Full control of your company',
     focus: 'Sales, finance, operations, and settings — all in one place.',
     statKeys: ['today_sales', 'customers', 'invoices', 'revenue'],
@@ -31,7 +31,7 @@ export const ROLE_DASHBOARD_CONFIG: Record<string, RoleDashboardConfig> = {
     prioritizeHrefs: ['/users', '/company', '/backup', '/reports', '/invoices', '/cashier'],
   },
   manager: {
-    gradient: 'from-indigo-600 via-blue-600 to-cyan-700',
+    gradient: 'from-[hsl(var(--hero-from))] via-blue-600 to-cyan-700',
     tagline: 'Run the station and the farm',
     focus: 'Fuel, shop, aquaculture, and daily operations.',
     statKeys: ['today_sales', 'customers', 'invoices', 'revenue'],

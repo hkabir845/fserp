@@ -31,15 +31,15 @@ export function ERPSaaSSwitcher() {
   }
 
   return (
-    <div className="bg-white border-b border-gray-200 shadow-sm">
+    <div className="bg-white border-b border-border shadow-sm">
       <div className="flex items-center">
         {/* ERP Operations Tab */}
         <button
           onClick={switchToERP}
           className={`px-6 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
             !isPlatform
-              ? 'border-indigo-600 text-indigo-600 bg-indigo-50 font-semibold'
-              : 'border-transparent text-gray-600 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50/50'
+              ? 'border-primary text-primary bg-accent font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-accent/50'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -56,7 +56,7 @@ export function ERPSaaSSwitcher() {
           className={`px-6 py-3 text-sm font-medium transition-all duration-200 border-b-2 ${
             isPlatform
               ? 'border-purple-600 text-purple-600 bg-purple-50 font-semibold'
-              : 'border-transparent text-gray-600 hover:text-purple-600 hover:border-purple-300 hover:bg-purple-50/50'
+              : 'border-transparent text-muted-foreground hover:text-purple-600 hover:border-purple-300 hover:bg-purple-50/50'
           }`}
         >
           <div className="flex items-center gap-2">

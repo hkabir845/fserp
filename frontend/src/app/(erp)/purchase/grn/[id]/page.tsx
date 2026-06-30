@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDateOnly } from '@/utils/date'
+import { formatQuantity } from '@/utils/quantity'
 
 type GrnDetail = {
   id: number
@@ -76,7 +77,7 @@ export default function GrnDetailPage() {
   if (isLoading) {
     return (
               <div className="bg-white rounded-lg shadow p-6 flex items-center justify-center min-h-[300px]">
-          <div className="text-sm text-gray-600">Loading GRN…</div>
+          <div className="text-sm text-muted-foreground">Loading GRN…</div>
         </div>
     )
   }
@@ -84,8 +85,8 @@ export default function GrnDetailPage() {
   if (isError || !grn) {
     return (
               <div className="bg-white rounded-lg shadow p-6">
-          <div className="text-red-600">{(error as Error)?.message || 'GRN not found'}</div>
-          <Link href="/purchase/grn" className="mt-4 inline-block text-sm font-medium text-indigo-600">
+          <div className="text-destructive">{(error as Error)?.message || 'GRN not found'}</div>
+          <Link href="/purchase/grn" className="mt-4 inline-block text-sm font-medium text-primary">
             ← Back to GRN list
           </Link>
         </div>
@@ -94,28 +95,28 @@ export default function GrnDetailPage() {
 
   return (
           <div className="space-y-6">
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <div className="bg-white rounded-xl border border-border shadow-sm p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="text-sm text-gray-500">Goods receipt</div>
-              <h2 className="mt-1 text-2xl font-semibold text-gray-900 tracking-tight">{grn.grn_number}</h2>
-              <p className="mt-2 text-sm text-gray-600">
-                Supplier: <span className="font-semibold text-gray-900">{supplierName || `#${grn.supplier_id}`}</span>
+              <div className="text-sm text-muted-foreground">Goods receipt</div>
+              <h2 className="mt-1 text-2xl font-semibold text-foreground tracking-tight">{grn.grn_number}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Supplier: <span className="font-semibold text-foreground">{supplierName || `#${grn.supplier_id}`}</span>
                 {' · '}
-                Warehouse: <span className="font-semibold text-gray-900">{warehouseName || `#${grn.warehouse_id}`}</span>
+                Warehouse: <span className="font-semibold text-foreground">{warehouseName || `#${grn.warehouse_id}`}</span>
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/purchase/grn"
-                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
               >
                 All GRNs
               </Link>
               {grn.ref_po_id ? (
                 <Link
                   href={`/purchase/orders/${grn.ref_po_id}`}
-                  className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm"
+                  className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 shadow-sm"
                 >
                   Open PO
                 </Link>
@@ -124,21 +125,21 @@ export default function GrnDetailPage() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Receipt date</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Receipt date</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">
                 {grn.receipt_date ? formatDateOnly(grn.receipt_date) : '—'}
               </div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Status</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">{grn.status}</div>
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Status</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">{grn.status}</div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">PO reference</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">PO reference</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">
                 {grn.ref_po_id ? (
-                  <Link className="text-indigo-600 hover:text-indigo-800" href={`/purchase/orders/${grn.ref_po_id}`}>
+                  <Link className="text-primary hover:text-primary" href={`/purchase/orders/${grn.ref_po_id}`}>
                     PO #{grn.ref_po_id}
                   </Link>
                 ) : (
@@ -146,43 +147,43 @@ export default function GrnDetailPage() {
                 )}
               </div>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-semibold text-gray-600 uppercase">Total value</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">₹{Number(grn.total_amount || 0).toFixed(2)}</div>
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Total value</div>
+              <div className="mt-1 text-sm font-semibold text-foreground">₹{Number(grn.total_amount || 0).toFixed(2)}</div>
             </div>
           </div>
 
-          <p className="mt-6 text-sm text-gray-600 border-t border-gray-100 pt-4">
+          <p className="mt-6 text-sm text-muted-foreground border-t border-border/70 pt-4">
             Inventory and accrual entries (when accounts are set up) use this total. Match the vendor invoice to this GRN when recording payables so GRNI clears to Accounts
             Payable instead of duplicating inventory capitalization.
           </p>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900">Lines</h3>
+        <div className="bg-white rounded-xl border border-border shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-foreground">Lines</h3>
           <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Item</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Unit cost</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Line total</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Batch</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Item</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Qty</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Unit cost</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Line total</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Batch</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+              <tbody className="bg-white divide-y divide-border/70">
                 {grn.lines.map((l) => {
                   const it = itemById.get(l.item_id)
                   return (
-                    <tr key={l.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
+                    <tr key={l.id} className="hover:bg-muted/40">
+                      <td className="px-4 py-3 text-sm text-foreground">
                         <div className="font-semibold">{it ? `${it.sku} — ${it.name}` : `Item #${l.item_id}`}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">{Number(l.qty || 0).toFixed(3)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">₹{Number(l.unit_cost || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right">₹{Number(l.total || 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{l.batch_no || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-foreground text-right">{formatQuantity(l.qty || 0)}</td>
+                      <td className="px-4 py-3 text-sm text-foreground text-right">₹{Number(l.unit_cost || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-foreground text-right">₹{Number(l.total || 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{l.batch_no || '—'}</td>
                     </tr>
                   )
                 })}

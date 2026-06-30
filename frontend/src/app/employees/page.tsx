@@ -518,9 +518,9 @@ export default function EmployeesPage() {
   if (loading) {
     return (
       <CompanyProvider>
-        <PageLayout className="bg-slate-50">
+        <PageLayout>
           <div className="flex min-h-[50vh] items-center justify-center p-6">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="erp-loading-spinner h-12 w-12"></div>
           </div>
         </PageLayout>
       </CompanyProvider>
@@ -529,7 +529,7 @@ export default function EmployeesPage() {
 
   return (
     <CompanyProvider>
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="app-scroll-pad">
           <ErpPageShell
             flush
@@ -555,13 +555,13 @@ export default function EmployeesPage() {
             }
           >
             {error ? (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-                <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Employees</h3>
-                <p className="text-red-700 mb-4">{error}</p>
+              <div className="bg-destructive/5 border border-destructive/25 rounded-lg p-6 text-center">
+                <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-destructive mb-2">Error Loading Employees</h3>
+                <p className="text-destructive mb-4">{error}</p>
                 <button
                   onClick={fetchEmployees}
-                  className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  className="inline-flex items-center space-x-2 px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors"
                 >
                   <RefreshCw className="h-5 w-5" />
                   <span>Retry</span>
@@ -574,21 +574,21 @@ export default function EmployeesPage() {
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex flex-col md:flex-row gap-4 flex-1 min-w-0">
                       <div className="flex-1 relative min-w-0">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/70" />
                         <input
                           type="text"
                           placeholder={et('searchEmployees')}
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         />
                       </div>
                       <div className="flex items-center space-x-2 shrink-0">
-                        <Filter className="h-5 w-5 text-gray-400" />
+                        <Filter className="h-5 w-5 text-muted-foreground/70" />
                         <select
                           value={filterActive}
                           onChange={(e) => setFilterActive(e.target.value as 'all' | 'active' | 'inactive')}
-                          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="all">{tr('allOnly', { entities: et('Employees') })}</option>
                           <option value="active">{tr('activeOnly')}</option>
@@ -597,7 +597,7 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-2 shrink-0">
-                      <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                      <div className="flex items-center bg-muted rounded-lg p-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -606,8 +606,8 @@ export default function EmployeesPage() {
                           }}
                           className={`p-2 rounded transition-colors ${
                             viewMode === 'card'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'text-gray-600 hover:text-gray-900'
+                              ? 'bg-primary text-white shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
                           }`}
                           title="Card view"
                         >
@@ -621,8 +621,8 @@ export default function EmployeesPage() {
                           }}
                           className={`p-2 rounded transition-colors ${
                             viewMode === 'list'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'text-gray-600 hover:text-gray-900'
+                              ? 'bg-primary text-white shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
                           }`}
                           title="List view"
                         >
@@ -634,7 +634,7 @@ export default function EmployeesPage() {
                 </div>
 
                 {filteredEmployees.length > 0 && (
-                  <div className="mb-4 text-sm text-gray-600">
+                  <div className="mb-4 text-sm text-muted-foreground">
                     Showing {filteredEmployees.length} of {employees.length} employee
                     {employees.length !== 1 ? 's' : ''}
                   </div>
@@ -645,20 +645,20 @@ export default function EmployeesPage() {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-gray-200 overflow-hidden"
+                        className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow border border-border overflow-hidden"
                       >
-                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
+                        <div className="bg-gradient-to-r from-accent to-accent px-6 py-4 border-b border-border">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-3 min-w-0">
-                              <div className="h-12 w-12 shrink-0 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                              <div className="h-12 w-12 shrink-0 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg">
                                 {employee.first_name.charAt(0)}
                                 {(employee.last_name || '').charAt(0)}
                               </div>
                               <div className="min-w-0">
-                                <h3 className="text-lg font-semibold text-gray-900 truncate">
+                                <h3 className="text-lg font-semibold text-foreground truncate">
                                   {employee.first_name} {employee.last_name}
                                 </h3>
-                                <p className="text-sm text-gray-500 font-mono truncate">
+                                <p className="text-sm text-muted-foreground font-mono truncate">
                                   {employee.employee_number || employee.employee_code}
                                 </p>
                               </div>
@@ -666,8 +666,8 @@ export default function EmployeesPage() {
                             <span
                               className={`shrink-0 px-3 py-1 text-xs font-semibold rounded-full ${
                                 employee.is_active
-                                  ? 'bg-green-100 text-green-800 border border-green-200'
-                                  : 'bg-red-100 text-red-800 border border-red-200'
+                                  ? 'bg-success/15 text-success border border-success/25'
+                                  : 'bg-destructive/10 text-destructive border border-destructive/25'
                               }`}
                             >
                               {employee.is_active ? 'Active' : 'Inactive'}
@@ -678,80 +678,80 @@ export default function EmployeesPage() {
                         <div className="p-6 space-y-3">
                           {(employee.position || employee.job_title) && (
                             <div className="flex items-center space-x-2 text-sm">
-                              <Briefcase className="h-4 w-4 text-gray-400 shrink-0" />
-                              <span className="text-gray-600">
-                                <span className="font-medium text-gray-700">Position:</span>{' '}
+                              <Briefcase className="h-4 w-4 text-muted-foreground/70 shrink-0" />
+                              <span className="text-muted-foreground">
+                                <span className="font-medium text-foreground/85">Position:</span>{' '}
                                 {employee.position || employee.job_title}
                               </span>
                             </div>
                           )}
                           {employee.department && (
                             <div className="flex items-center space-x-2 text-sm">
-                              <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
-                              <span className="text-gray-600">
-                                <span className="font-medium text-gray-700">Department:</span>{' '}
+                              <MapPin className="h-4 w-4 text-muted-foreground/70 shrink-0" />
+                              <span className="text-muted-foreground">
+                                <span className="font-medium text-foreground/85">Department:</span>{' '}
                                 {employee.department}
                               </span>
                             </div>
                           )}
                           <div className="flex items-center space-x-2 text-sm">
                             <Building2 className="h-4 w-4 text-amber-600/90 shrink-0" />
-                            <span className="text-gray-600">
-                              <span className="font-medium text-gray-700">Work site:</span>{' '}
+                            <span className="text-muted-foreground">
+                              <span className="font-medium text-foreground/85">Work site:</span>{' '}
                               {employeeWorkSiteDisplay(employee)}
                             </span>
                           </div>
                           {aquacultureEnabled && (
                             <div className="flex items-center space-x-2 text-sm">
-                              <Droplets className="h-4 w-4 text-teal-600 shrink-0" />
-                              <span className="text-gray-600">
-                                <span className="font-medium text-gray-700">Pond wages:</span>{' '}
+                              <Droplets className="h-4 w-4 text-primary shrink-0" />
+                              <span className="text-muted-foreground">
+                                <span className="font-medium text-foreground/85">Pond wages:</span>{' '}
                                 {employeePondWagesDisplay(employee)}
                               </span>
                             </div>
                           )}
                           {employee.email && (
-                            <div className="flex items-center space-x-2 text-sm text-gray-600">
-                              <Mail className="h-4 w-4 text-gray-400 shrink-0" />
+                            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                              <Mail className="h-4 w-4 text-muted-foreground/70 shrink-0" />
                               <span className="truncate">{employee.email}</span>
                             </div>
                           )}
                           {employee.phone && (
-                            <div className="flex items-center space-x-2 text-sm text-gray-600">
-                              <Phone className="h-4 w-4 text-gray-400 shrink-0" />
+                            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                              <Phone className="h-4 w-4 text-muted-foreground/70 shrink-0" />
                               <span>{employee.phone}</span>
                             </div>
                           )}
                           {employee.hire_date && (
-                            <div className="flex items-center space-x-2 text-sm text-gray-600">
-                              <span className="font-medium text-gray-700">Hired:</span>
+                            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground/85">Hired:</span>
                               <span>
                                 {formatDateLong(employee.hire_date)}
                               </span>
                             </div>
                           )}
                           {employee.salary != null && Number(employee.salary) > 0 && (
-                            <div className="pt-3 border-t border-gray-200">
+                            <div className="pt-3 border-t border-border">
                               <div className="flex items-center space-x-2">
-                                <DollarSign className="h-5 w-5 text-green-600" />
-                                <span className="text-xl font-bold text-gray-900">
+                                <DollarSign className="h-5 w-5 text-success" />
+                                <span className="text-xl font-bold text-foreground">
                                   {currencySymbol}
                                   {formatNumber(Number(employee.salary))}
                                 </span>
-                                <span className="text-sm text-gray-500">/month</span>
+                                <span className="text-sm text-muted-foreground">/month</span>
                               </div>
                             </div>
                           )}
                           {employee.current_balance != null && employee.current_balance !== '' && (
-                            <div className="pt-2 text-sm text-gray-600">
-                              <span className="font-medium text-gray-700">Ledger balance:</span>{' '}
+                            <div className="pt-2 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground/85">Ledger balance:</span>{' '}
                               {currencySymbol}
                               {formatNumber(Number(employee.current_balance))}
                             </div>
                           )}
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-wrap items-center justify-end gap-2">
+                        <div className="px-6 py-4 bg-muted/40 border-t border-border flex flex-wrap items-center justify-end gap-2">
                           <Link
                             href={`/employees/${employee.id}/ledger`}
                             className="flex items-center space-x-2 px-4 py-2 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors font-medium text-sm"
@@ -763,7 +763,7 @@ export default function EmployeesPage() {
                           <button
                             type="button"
                             onClick={() => handleEdit(employee)}
-                            className="flex items-center space-x-2 px-4 py-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors font-medium text-sm"
+                            className="flex items-center space-x-2 px-4 py-2 text-primary hover:bg-blue-100 rounded-lg transition-colors font-medium text-sm"
                             title="Edit Employee"
                           >
                             <Edit2 className="h-4 w-4" />
@@ -772,7 +772,7 @@ export default function EmployeesPage() {
                           <button
                             type="button"
                             onClick={() => handleDelete(employee.id)}
-                            className="flex items-center space-x-2 px-4 py-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors font-medium text-sm"
+                            className="flex items-center space-x-2 px-4 py-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors font-medium text-sm"
                             title="Delete Employee"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -785,56 +785,56 @@ export default function EmployeesPage() {
                 )}
 
                 {employees.length > 0 && filteredEmployees.length > 0 && viewMode === 'list' && (
-                  <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                  <div className="bg-white rounded-lg shadow-md border border-border overflow-hidden overflow-x-auto">
+                    <table className="min-w-full divide-y divide-border">
+                      <thead className="bg-muted/40">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Code
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Name
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
                             Work site
                           </th>
                           {aquacultureEnabled && (
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                            <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider hidden md:table-cell">
                               Pond
                             </th>
                           )}
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider hidden lg:table-cell">
                             Job / Dept
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider hidden md:table-cell">
                             Contact
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Salary
                           </th>
-                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Status
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Actions
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white divide-y divide-border">
                         {filteredEmployees.map((employee) => (
-                          <tr key={employee.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-900">
+                          <tr key={employee.id} className="hover:bg-muted/40">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-mono text-foreground">
                               {employee.employee_number || employee.employee_code || '—'}
                             </td>
                             <td className="px-4 py-3 text-sm">
-                              <div className="font-medium text-gray-900">
+                              <div className="font-medium text-foreground">
                                 {employee.first_name} {employee.last_name}
                               </div>
-                              <div className="text-xs text-gray-500 md:hidden mt-0.5 truncate max-w-[200px]">
+                              <div className="text-xs text-muted-foreground md:hidden mt-0.5 truncate max-w-[200px]">
                                 {employee.email || employee.phone || ''}
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 hidden sm:table-cell max-w-[10rem]">
+                            <td className="px-4 py-3 text-sm text-muted-foreground hidden sm:table-cell max-w-[10rem]">
                               <span className="inline-flex items-center gap-1">
                                 <Building2 className="h-3.5 w-3.5 shrink-0 text-amber-600/80" />
                                 <span className="truncate" title={employeeWorkSiteDisplay(employee)}>
@@ -843,9 +843,9 @@ export default function EmployeesPage() {
                               </span>
                             </td>
                             {aquacultureEnabled && (
-                              <td className="px-4 py-3 text-sm text-gray-600 hidden md:table-cell max-w-[10rem]">
+                              <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell max-w-[10rem]">
                                 <span className="inline-flex items-center gap-1">
-                                  <Droplets className="h-3.5 w-3.5 shrink-0 text-teal-600/90" />
+                                  <Droplets className="h-3.5 w-3.5 shrink-0 text-primary/90" />
                                   <span
                                     className="truncate"
                                     title={employeePondWagesDisplay(employee)}
@@ -859,29 +859,29 @@ export default function EmployeesPage() {
                                 </span>
                               </td>
                             )}
-                            <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
+                            <td className="px-4 py-3 text-sm text-muted-foreground hidden lg:table-cell">
                               <div>{employee.position || employee.job_title || '—'}</div>
                               {employee.department && (
-                                <div className="text-xs text-gray-500">{employee.department}</div>
+                                <div className="text-xs text-muted-foreground">{employee.department}</div>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 hidden md:table-cell">
+                            <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">
                               <div className="flex items-center gap-1 truncate max-w-[180px]">
                                 {employee.email && (
                                   <>
-                                    <Mail className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                                     <span className="truncate">{employee.email}</span>
                                   </>
                                 )}
                               </div>
                               {employee.phone && (
                                 <div className="flex items-center gap-1 mt-1">
-                                  <Phone className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                  <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                                   <span>{employee.phone}</span>
                                 </div>
                               )}
                             </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-foreground">
                               {employee.salary != null && Number(employee.salary) > 0 ? (
                                 <>
                                   {currencySymbol}
@@ -895,8 +895,8 @@ export default function EmployeesPage() {
                               <span
                                 className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                                   employee.is_active
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-red-100 text-red-800'
+                                    ? 'bg-success/15 text-success'
+                                    : 'bg-destructive/10 text-destructive'
                                 }`}
                               >
                                 {employee.is_active ? 'Active' : 'Inactive'}
@@ -914,7 +914,7 @@ export default function EmployeesPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleEdit(employee)}
-                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                                  className="p-2 text-primary hover:bg-accent rounded-lg"
                                   title="Edit"
                                 >
                                   <Edit2 className="h-4 w-4" />
@@ -922,7 +922,7 @@ export default function EmployeesPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleDelete(employee.id)}
-                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                  className="p-2 text-destructive hover:bg-destructive/5 rounded-lg"
                                   title="Delete"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -937,10 +937,10 @@ export default function EmployeesPage() {
                 )}
 
                 {employees.length === 0 && (
-                  <div className="bg-white rounded-lg shadow-md p-12 text-center border border-gray-200">
-                    <User className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No Employees Found</h3>
-                    <p className="text-gray-500 mb-6">Get started by adding your first employee to the system.</p>
+                  <div className="bg-white rounded-lg shadow-md p-12 text-center border border-border">
+                    <User className="h-16 w-16 text-muted-foreground/70 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-foreground mb-2">No Employees Found</h3>
+                    <p className="text-muted-foreground mb-6">Get started by adding your first employee to the system.</p>
                     <button 
                       type="button"
                       onClick={() => {
@@ -948,7 +948,7 @@ export default function EmployeesPage() {
                         setEmpCodePickerNonce((n) => n + 1)
                         setShowModal(true)
                       }}
-                      className="inline-flex items-center space-x-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+                      className="inline-flex items-center space-x-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary transition-colors shadow-md"
                     >
                       <Plus className="h-5 w-5" />
                       <span>Add First Employee</span>
@@ -957,10 +957,10 @@ export default function EmployeesPage() {
                 )}
 
                 {employees.length > 0 && filteredEmployees.length === 0 && (
-                  <div className="bg-white rounded-lg shadow-md p-12 text-center border border-gray-200">
-                    <Search className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">No Matching Employees</h3>
-                    <p className="text-gray-500 mb-6">
+                  <div className="bg-white rounded-lg shadow-md p-12 text-center border border-border">
+                    <Search className="h-16 w-16 text-muted-foreground/70 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-foreground mb-2">No Matching Employees</h3>
+                    <p className="text-muted-foreground mb-6">
                       No employees match your search or filter. Try adjusting your criteria.
                     </p>
                     <button
@@ -969,7 +969,7 @@ export default function EmployeesPage() {
                         setSearchTerm('')
                         setFilterActive('all')
                       }}
-                      className="inline-flex items-center space-x-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                      className="inline-flex items-center space-x-2 px-6 py-3 bg-muted-foreground text-white rounded-lg hover:bg-muted-foreground transition-colors"
                     >
                       <span>Clear filters</span>
                     </button>
@@ -985,7 +985,7 @@ export default function EmployeesPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+            <div className="erp-hero-strip">
               <div className="flex items-center space-x-3">
                 <User className="h-6 w-6 text-white" />
                 <h2 className="text-2xl font-bold text-white">
@@ -1009,8 +1009,8 @@ export default function EmployeesPage() {
                 {/* Basic Information Section */}
                 <div className="border-b pb-6">
                   <div className="flex items-center space-x-2 mb-4">
-                    <User className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
+                    <User className="h-5 w-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Basic Information</h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -1034,14 +1034,14 @@ export default function EmployeesPage() {
                         />
                       )}
                       {!editingId && (
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           The lowest free code is selected by default. You can pick another from the list (gaps and next
                           number after the highest in use).
                         </p>
                       )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         First Name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1049,12 +1049,12 @@ export default function EmployeesPage() {
                         required
                         value={formData.first_name}
                         onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="John"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Last Name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1062,31 +1062,31 @@ export default function EmployeesPage() {
                         required
                         value={formData.last_name}
                         onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Doe"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Email
                       </label>
                       <input
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="john.doe@example.com"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Phone
                       </label>
                       <input
                         type="tel"
                         value={formData.phone}
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="+1 234 567 8900"
                       />
                     </div>
@@ -1096,36 +1096,36 @@ export default function EmployeesPage() {
                 {/* Employment Information Section */}
                 <div className="border-b pb-6">
                   <div className="flex items-center space-x-2 mb-4">
-                    <Briefcase className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-lg font-semibold text-gray-900">Employment Information</h3>
+                    <Briefcase className="h-5 w-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Employment Information</h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Job Title
                       </label>
                       <input
                         type="text"
                         value={formData.job_title}
                         onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Manager"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Department
                       </label>
                       <input
                         type="text"
                         value={formData.department}
                         onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="Sales"
                       />
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                      <label className="block text-sm font-medium text-foreground/85 mb-2 inline-flex items-center gap-1.5">
                         <Building2 className="h-4 w-4 text-amber-600" />
                         Work entity
                       </label>
@@ -1135,7 +1135,7 @@ export default function EmployeesPage() {
                           const patch = applyWorkEntityKey(e.target.value)
                           setFormData({ ...formData, ...patch })
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring bg-white"
                       >
                         <optgroup label="Company">
                           <option value="head_office">Head office / company-wide (no site or pond tag)</option>
@@ -1166,15 +1166,15 @@ export default function EmployeesPage() {
                           </optgroup>
                         ) : null}
                       </select>
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {workSiteIsFuelOrShop ? (
                           <>
-                            Site payroll — wages post to account <span className="font-mono text-teal-800">6400</span>{' '}
+                            Site payroll — wages post to account <span className="font-mono text-primary">6400</span>{' '}
                             on this station.
                           </>
                         ) : workSiteIsSinglePond ? (
                           <>
-                            Pond worker — wages post to account <span className="font-mono text-teal-800">6712</span>{' '}
+                            Pond worker — wages post to account <span className="font-mono text-primary">6712</span>{' '}
                             on this profit center.
                           </>
                         ) : isSharedAcrossAllPonds ? (
@@ -1187,7 +1187,7 @@ export default function EmployeesPage() {
                         )}
                       </p>
                       {aquacultureEnabled && aquaculturePonds.length === 0 && !workSiteIsFuelOrShop ? (
-                        <p className="mt-1 text-xs text-amber-800">
+                        <p className="mt-1 text-xs text-warning-foreground">
                           No ponds yet — add them under{' '}
                           <Link href="/aquaculture/ponds" className="font-medium underline">
                             Aquaculture → Ponds
@@ -1197,14 +1197,14 @@ export default function EmployeesPage() {
                       ) : null}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Hire Date
                       </label>
                       <input
                         type="date"
                         value={formData.hire_date}
                         onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
                     </div>
                   </div>
@@ -1213,33 +1213,33 @@ export default function EmployeesPage() {
                 {/* Payroll Information Section */}
                 <div className="pb-6">
                   <div className="flex items-center space-x-2 mb-4">
-                    <DollarSign className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-lg font-semibold text-gray-900">Payroll Information</h3>
+                    <DollarSign className="h-5 w-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Payroll Information</h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Salary
                       </label>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{currencySymbol}</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{currencySymbol}</span>
                         <input
                           type="number"
                           step="0.01"
                           min="0"
                           value={formData.salary}
                           onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
-                          className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full pl-8 pr-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder="0.00"
                         />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Opening balance ({currencySymbol})
                       </label>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
                           {currencySymbol}
                         </span>
                         <input
@@ -1252,18 +1252,18 @@ export default function EmployeesPage() {
                               opening_balance: parseFloat(e.target.value) || 0,
                             })
                           }
-                          className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full pl-8 pr-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder="0.00"
                         />
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {editingId
                           ? 'Update opening balance if needed'
                           : 'Starting net payable to this employee (positive) or advance owed by employee (negative)'}
                       </p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Opening balance as of
                       </label>
                       <input
@@ -1272,9 +1272,9 @@ export default function EmployeesPage() {
                         onChange={(e) =>
                           setFormData({ ...formData, opening_balance_date: e.target.value })
                         }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                       />
-                      <p className="mt-1 text-xs text-gray-500">Date shown on the employee ledger opening line</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Date shown on the employee ledger opening line</p>
                     </div>
                     <div className="flex items-center md:col-span-2">
                       <label className="flex items-center space-x-2 cursor-pointer">
@@ -1282,9 +1282,9 @@ export default function EmployeesPage() {
                           type="checkbox"
                           checked={formData.is_active}
                           onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          className="w-4 h-4 text-primary border-border rounded focus:ring-ring"
                         />
-                        <span className="text-sm font-medium text-gray-700">Active Employee</span>
+                        <span className="text-sm font-medium text-foreground/85">Active Employee</span>
                       </label>
                     </div>
                   </div>
@@ -1299,13 +1299,13 @@ export default function EmployeesPage() {
                     setShowModal(false)
                     resetForm()
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary transition-colors"
                 >
                   {editingId ? 'Update Employee' : 'Add Employee'}
                 </button>

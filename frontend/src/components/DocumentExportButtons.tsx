@@ -31,7 +31,7 @@ export function DocumentExportButtons({
             type="button"
             onClick={onPrint}
             disabled={disabled}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Printer className="h-4 w-4" />
             {printLabel}
@@ -42,7 +42,7 @@ export function DocumentExportButtons({
             type="button"
             onClick={onDownloadCsv}
             disabled={disabled}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
             CSV
@@ -53,7 +53,7 @@ export function DocumentExportButtons({
             type="button"
             onClick={onDownloadJson}
             disabled={disabled}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gray-600 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-muted-foreground px-3 py-2 text-sm font-medium text-white hover:bg-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
             JSON
@@ -70,7 +70,7 @@ export function DocumentExportButtons({
           type="button"
           onClick={onPrint}
           disabled={disabled}
-          className="flex items-center space-x-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 font-medium text-gray-800 shadow-sm transition-all hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center space-x-2 rounded-lg border border-border bg-white px-4 py-2.5 font-medium text-foreground shadow-sm transition-all hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Printer className="h-5 w-5" />
           <span>{printLabel}</span>
@@ -81,7 +81,7 @@ export function DocumentExportButtons({
           type="button"
           onClick={onDownloadCsv}
           disabled={disabled}
-          className="flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center space-x-2 rounded-lg bg-primary px-4 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download className="h-5 w-5" />
           <span>CSV</span>
@@ -92,7 +92,7 @@ export function DocumentExportButtons({
           type="button"
           onClick={onDownloadJson}
           disabled={disabled}
-          className="flex items-center space-x-2 rounded-lg bg-gray-600 px-4 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center space-x-2 rounded-lg bg-muted-foreground px-4 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Download className="h-5 w-5" />
           <span>JSON</span>

@@ -13,8 +13,8 @@ import {
 import type { MedicineHistoryRow } from './MedicineUi'
 
 const inputCls =
-  'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
-const labelCls = 'block text-xs font-medium text-slate-700'
+  'mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20'
+const labelCls = 'block text-xs font-medium text-foreground/85'
 
 interface CycleRow {
   id: number
@@ -61,25 +61,25 @@ export function MedicineTreatmentEditModal(props: {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 p-4 sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-treatment-title"
       onClick={() => !saving && onClose()}
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
-          <h3 id="edit-treatment-title" className="text-base font-semibold text-slate-900">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/70 bg-white px-4 py-3">
+          <h3 id="edit-treatment-title" className="text-base font-semibold text-foreground">
             Edit treatment
           </h3>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
             aria-label="Close"
           >
             <X className="h-5 w-5" aria-hidden />
@@ -87,7 +87,7 @@ export function MedicineTreatmentEditModal(props: {
         </div>
 
         <div className="space-y-4 p-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
             <span className="font-medium">{row.item_name || 'Product'}</span>
             {row.quantity != null && row.quantity !== '' ? (
               <span className="tabular-nums">
@@ -95,7 +95,7 @@ export function MedicineTreatmentEditModal(props: {
                 · {row.quantity} {row.unit || ''}
               </span>
             ) : null}
-            <p className="mt-1 text-[11px] text-slate-600">
+            <p className="mt-1 text-[11px] text-muted-foreground">
               Product and quantity cannot be changed here — delete and record again to adjust stock used.
             </p>
           </div>
@@ -210,12 +210,12 @@ export function MedicineTreatmentEditModal(props: {
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 bg-slate-50/80 px-4 py-3">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border/70 bg-muted/50 px-4 py-3">
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -223,7 +223,7 @@ export function MedicineTreatmentEditModal(props: {
             type="button"
             disabled={saving}
             onClick={handleSave}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             Save changes

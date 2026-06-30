@@ -2114,7 +2114,7 @@ export default function LoansPage() {
   const cpName = (id: number) => counterpartiesAll.find((c) => c.id === id)?.name || `#${id}`
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         titleId="loans-title"
@@ -2145,7 +2145,7 @@ export default function LoansPage() {
             <button
               type="button"
               onClick={openNewLoanModal}
-              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              className="erp-btn-cta"
             >
               <Plus className="h-4 w-4" />
               New loan
@@ -2154,70 +2154,70 @@ export default function LoansPage() {
         }
       >
         <div className="space-y-6">
-          <div className="rounded-2xl border border-slate-200/90 bg-white shadow-sm overflow-hidden">
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 bg-white">
+          <div className="rounded-2xl border border-border/80 bg-white shadow-sm overflow-hidden">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-border/70 bg-white">
               <div className="p-4 sm:p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Register</p>
-                <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Register</p>
+                <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                   {loanPortfolioSummary.registerCount}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {loanPortfolioSummary.activeCount} active · {loanPortfolioSummary.draftCount} draft ·{' '}
                   {loanPortfolioSummary.closedCount} closed
                 </p>
               </div>
               <div className="p-4 sm:p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                   <TrendingDown className="h-3.5 w-3.5 text-rose-600" aria-hidden />
                   Borrowed O/S
                 </p>
-                <p className="mt-1.5 text-xl sm:text-2xl font-semibold tabular-nums text-slate-900 leading-tight">
+                <p className="mt-1.5 text-xl sm:text-2xl font-semibold tabular-nums text-foreground leading-tight">
                   {formatMoneyAmount(String(loanPortfolioSummary.borrowedOutstanding), currencySymbol)}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">Loans payable — principal</p>
+                <p className="text-xs text-muted-foreground mt-1">Loans payable — principal</p>
               </div>
               <div className="p-4 sm:p-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                   <TrendingUp className="h-3.5 w-3.5 text-emerald-700" aria-hidden />
                   Lent O/S
                 </p>
-                <p className="mt-1.5 text-xl sm:text-2xl font-semibold tabular-nums text-slate-900 leading-tight">
+                <p className="mt-1.5 text-xl sm:text-2xl font-semibold tabular-nums text-foreground leading-tight">
                   {formatMoneyAmount(String(loanPortfolioSummary.lentOutstanding), currencySymbol)}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">Loans receivable — principal</p>
+                <p className="text-xs text-muted-foreground mt-1">Loans receivable — principal</p>
               </div>
               <div className="p-4 sm:p-5 col-span-2 lg:col-span-1">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5 text-slate-600" aria-hidden />
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                   Counterparties
                 </p>
-                <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
+                <p className="mt-1.5 text-2xl font-semibold tabular-nums text-foreground">
                   {loanPortfolioSummary.counterpartyCount}
                 </p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {loanPortfolioSummary.partiesWithBalance} with receivable or payable (opening + loans)
                 </p>
               </div>
               <div className="p-4 sm:p-5 col-span-2 sm:col-span-2 lg:col-span-1">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
-                  <BookOpen className="h-3.5 w-3.5 text-slate-600" aria-hidden />
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                   Tools
                 </p>
-                <p className="mt-2 text-sm text-slate-600 leading-snug">
-                  <span className="font-medium text-slate-800">Per loan</span> — Statement, schedule, accrual.{' '}
-                  <span className="font-medium text-slate-800">Per party</span> — Ledger (all facilities + opening).
+                <p className="mt-2 text-sm text-muted-foreground leading-snug">
+                  <span className="font-medium text-foreground">Per loan</span> — Statement, schedule, accrual.{' '}
+                  <span className="font-medium text-foreground">Per party</span> — Ledger (all facilities + opening).
                 </p>
               </div>
             </div>
           </div>
 
-          <details className="group rounded-xl border border-amber-200/90 bg-amber-50/40 text-sm text-amber-950 shadow-sm open:ring-1 open:ring-amber-200/50">
-            <summary className="cursor-pointer list-none px-4 py-3.5 font-medium flex items-center justify-between gap-2 hover:bg-amber-50/80 rounded-xl [&::-webkit-details-marker]:hidden">
+          <details className="group rounded-xl border border-warning/30/90 bg-warning/10/40 text-sm text-warning-foreground shadow-sm open:ring-1 open:ring-amber-200/50">
+            <summary className="cursor-pointer list-none px-4 py-3.5 font-medium flex items-center justify-between gap-2 hover:bg-warning/10/80 rounded-xl [&::-webkit-details-marker]:hidden">
               <span className="flex items-center gap-2">
                 <Scale className="h-4 w-4 shrink-0 opacity-85" aria-hidden />
                 Chart of accounts — template GL codes
               </span>
-              <span className="text-xs font-normal text-amber-800/90">Expand</span>
+              <span className="text-xs font-normal text-warning-foreground/90">Expand</span>
             </summary>
             <div className="px-4 pb-4 pt-0 border-t border-amber-100/90">
               <p className="pt-3 leading-relaxed">
@@ -2231,15 +2231,15 @@ export default function LoansPage() {
             </div>
           </details>
 
-          <details className="group rounded-xl border border-slate-200 bg-white text-sm text-slate-800 shadow-sm">
-            <summary className="cursor-pointer list-none px-4 py-3.5 font-medium flex items-center justify-between gap-2 hover:bg-slate-50 rounded-xl [&::-webkit-details-marker]:hidden">
+          <details className="group rounded-xl border border-border bg-white text-sm text-foreground shadow-sm">
+            <summary className="cursor-pointer list-none px-4 py-3.5 font-medium flex items-center justify-between gap-2 hover:bg-muted/40 rounded-xl [&::-webkit-details-marker]:hidden">
               <span className="flex items-center gap-2">
-                <Shield className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                <Shield className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 Products, EMI &amp; day-count (accounting methodology)
               </span>
-              <span className="text-xs font-normal text-slate-500">Expand</span>
+              <span className="text-xs font-normal text-muted-foreground">Expand</span>
             </summary>
-            <div className="px-4 pb-4 pt-0 border-t border-slate-100 space-y-3 leading-relaxed">
+            <div className="px-4 pb-4 pt-0 border-t border-border/70 space-y-3 leading-relaxed">
               <p className="pt-3">
                 <strong>Term loan</strong> — set <strong>term (months)</strong> and rate. Bank / finance counterparties:
                 <strong> annual %</strong>; other parties: <strong>monthly %</strong> (stored as ×12). Schedules use{' '}
@@ -2261,30 +2261,30 @@ export default function LoansPage() {
           </details>
 
           {!loading && (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-slate-50/60">
+            <div className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-border/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-muted/40/60">
                 <div className="flex items-start gap-3">
-                  <Users className="h-5 w-5 text-slate-600 shrink-0 mt-0.5" aria-hidden />
+                  <Users className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" aria-hidden />
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900">Counterparties</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <h2 className="text-base font-semibold text-foreground">Counterparties</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Openings post to <strong>Opening Balance Equity (3200)</strong> and the principal GL (default{' '}
                       <strong>1160</strong>/<strong>2410</strong>, <strong>Loan</strong> type in chart). One subledger per
                       party. Delete blocked with loans or posted opening.
                     </p>
                   </div>
                 </div>
-                <span className="text-xs font-medium text-slate-500 tabular-nums self-start sm:self-center">
+                <span className="text-xs font-medium text-muted-foreground tabular-nums self-start sm:self-center">
                   {counterpartiesAll.length} record{counterpartiesAll.length === 1 ? '' : 's'}
                 </span>
               </div>
               {counterpartiesAll.length === 0 ? (
                 <div className="p-4 text-center sm:p-8">
-                  <p className="text-sm text-slate-600">No counterparties yet.</p>
+                  <p className="text-sm text-muted-foreground">No counterparties yet.</p>
                   <button
                     type="button"
                     onClick={() => setShowCp(true)}
-                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary"
                   >
                     <Plus className="h-4 w-4" />
                     Add counterparty
@@ -2293,7 +2293,7 @@ export default function LoansPage() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-700">
+                    <thead className="bg-muted/40 text-left text-foreground/85">
                       <tr>
                         <th className="px-4 py-3 font-semibold">Code</th>
                         <th className="px-4 py-3 font-semibold">Name</th>
@@ -2309,16 +2309,16 @@ export default function LoansPage() {
                         <th className="px-4 py-3 font-semibold text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-border/70">
                       {counterpartiesAll.map((c) => (
-                        <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-4 py-2.5 font-mono text-slate-800">{c.code}</td>
-                          <td className="px-4 py-2.5 text-slate-900 font-medium">{c.name}</td>
-                          <td className="px-4 py-2.5 text-slate-700 text-sm">
+                        <tr key={c.id} className="hover:bg-muted/50 transition-colors">
+                          <td className="px-4 py-2.5 font-mono text-foreground">{c.code}</td>
+                          <td className="px-4 py-2.5 text-foreground font-medium">{c.name}</td>
+                          <td className="px-4 py-2.5 text-foreground/85 text-sm">
                             <div>{formatRoleType(c.role_type)}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">{formatPartyKind(c.party_kind)}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">{formatPartyKind(c.party_kind)}</div>
                           </td>
-                          <td className="px-4 py-2.5 text-sm text-slate-700">
+                          <td className="px-4 py-2.5 text-sm text-foreground/85">
                             {c.opening_balance_type && c.opening_balance_type !== 'zero' && Number(c.opening_balance) > 0 ? (
                               <div>
                                 <div>
@@ -2328,7 +2328,7 @@ export default function LoansPage() {
                                 </div>
                                 {openingPrincipalGlLine(c) ? (
                                   <p
-                                    className="text-[0.7rem] text-slate-500 font-mono mt-1 max-w-[14rem]"
+                                    className="text-[0.7rem] text-muted-foreground font-mono mt-1 max-w-[14rem]"
                                     title="Principal general ledger for this opening (Chart of accounts)"
                                   >
                                     {openingPrincipalGlLine(c)}
@@ -2339,7 +2339,7 @@ export default function LoansPage() {
                               '—'
                             )}
                           </td>
-                          <td className="px-4 py-2.5 text-right text-xs text-slate-800 tabular-nums">
+                          <td className="px-4 py-2.5 text-right text-xs text-foreground tabular-nums">
                             {(() => {
                               const p = counterpartyPositionSummary(c, loans)
                               return (
@@ -2347,14 +2347,14 @@ export default function LoansPage() {
                                   <span className="text-emerald-800 font-medium">
                                     {formatMoneyAmount(p.recv, currencySymbol)}
                                   </span>
-                                  <span className="text-slate-400"> / </span>
-                                  <span className="text-amber-800 font-medium">
+                                  <span className="text-muted-foreground/70"> / </span>
+                                  <span className="text-warning-foreground font-medium">
                                     {formatMoneyAmount(p.pay, currencySymbol)}
                                   </span>
                                 </span>
                               )
                             })()}
-                            <p className="text-[0.65rem] text-slate-400 font-normal normal-case">
+                            <p className="text-[0.65rem] text-muted-foreground/70 font-normal normal-case">
                               Receivable / Payable principal
                             </p>
                           </td>
@@ -2363,7 +2363,7 @@ export default function LoansPage() {
                               className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                                 c.is_active
                                   ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80'
-                                  : 'bg-slate-100 text-slate-600'
+                                  : 'bg-muted text-muted-foreground'
                               }`}
                             >
                               {c.is_active ? 'Active' : 'Inactive'}
@@ -2373,7 +2373,7 @@ export default function LoansPage() {
                             <button
                               type="button"
                               onClick={() => openCounterpartyLedger(c)}
-                              className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900"
+                              className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
                             >
                               <BookOpen className="h-3.5 w-3.5" />
                               Ledger
@@ -2381,7 +2381,7 @@ export default function LoansPage() {
                             <button
                               type="button"
                               onClick={() => openEditCounterparty(c)}
-                              className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                              className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                               Edit
@@ -2389,7 +2389,7 @@ export default function LoansPage() {
                             <button
                               type="button"
                               onClick={() => deleteCounterparty(c)}
-                              className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-800"
+                              className="inline-flex items-center gap-1 text-sm font-medium text-destructive hover:text-destructive"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               Delete
@@ -2405,15 +2405,15 @@ export default function LoansPage() {
           )}
 
           {loading ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-              <RefreshCw className="h-8 w-8 text-slate-300 mx-auto mb-3 animate-spin" aria-hidden />
-              <p className="text-sm text-slate-600">Loading loan register…</p>
+            <div className="rounded-xl border border-border bg-white p-12 text-center shadow-sm">
+              <RefreshCw className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3 animate-spin" aria-hidden />
+              <p className="text-sm text-muted-foreground">Loading loan register…</p>
             </div>
           ) : loans.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
-              <Landmark className="h-10 w-10 text-slate-300 mx-auto mb-3" aria-hidden />
-              <p className="text-slate-800 font-medium">No facilities in the register</p>
-              <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
+            <div className="rounded-xl border border-dashed border-border bg-white p-10 text-center shadow-sm">
+              <Landmark className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" aria-hidden />
+              <p className="text-foreground font-medium">No facilities in the register</p>
+              <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
                 Add a counterparty, create a loan (draft), then post disbursements when funds move. Statements and
                 amortization tools unlock after activity.
               </p>
@@ -2421,7 +2421,7 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={() => setShowCp(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted/40"
                 >
                   <Users className="h-4 w-4" />
                   Add counterparty
@@ -2429,7 +2429,7 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={openNewLoanModal}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90"
                 >
                   <Plus className="h-4 w-4" />
                   New loan
@@ -2437,29 +2437,29 @@ export default function LoansPage() {
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex flex-col gap-4 bg-slate-50/60">
+            <div className="rounded-xl border border-border bg-white shadow-sm overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-border/70 flex flex-col gap-4 bg-muted/40/60">
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900">Loan register</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <h2 className="text-base font-semibold text-foreground">Loan register</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       Filter and search; amounts in {currencySymbol} (company currency).
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                     <div className="relative flex-1 min-w-[12rem]">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" aria-hidden />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70" aria-hidden />
                       <input
                         type="search"
                         placeholder="Search loan #, party, product…"
-                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                        className="w-full pl-9 pr-3 py-2 rounded-xl border border-border text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring"
                         value={loanRegisterQuery}
                         onChange={(e) => setLoanRegisterQuery(e.target.value)}
                         aria-label="Search loans"
                       />
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
                         <Filter className="h-3.5 w-3.5" aria-hidden />
                         Direction
                       </span>
@@ -2470,15 +2470,15 @@ export default function LoansPage() {
                           onClick={() => setLoanFilterDirection(d)}
                           className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                             loanFilterDirection === d
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                              ? 'bg-foreground text-white'
+                              : 'bg-white border border-border text-foreground/85 hover:bg-muted/40'
                           }`}
                         >
                           {d === 'all' ? 'All' : d === 'borrowed' ? 'Borrowed' : 'Lent'}
                         </button>
                       ))}
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                        className="rounded-lg border border-border bg-white px-2 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
                         value={loanFilterStatus}
                         onChange={(e) => setLoanFilterStatus(e.target.value as typeof loanFilterStatus)}
                         aria-label="Filter by status"
@@ -2489,7 +2489,7 @@ export default function LoansPage() {
                         <option value="closed">Closed</option>
                       </select>
                       <select
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 max-w-[9.5rem]"
+                        className="rounded-lg border border-border bg-white px-2 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 max-w-[9.5rem]"
                         value={loanFilterBalance}
                         onChange={(e) => setLoanFilterBalance(e.target.value as typeof loanFilterBalance)}
                         title="Filter by current principal balance (excludes product-specific totals such as undrawn limits)"
@@ -2503,18 +2503,18 @@ export default function LoansPage() {
                   </div>
                 </div>
                 {filteredLoans.length !== loans.length && (
-                  <p className="text-xs text-slate-500">
-                    Showing <strong className="text-slate-700">{filteredLoans.length}</strong> of {loans.length} facilities
+                  <p className="text-xs text-muted-foreground">
+                    Showing <strong className="text-foreground/85">{filteredLoans.length}</strong> of {loans.length} facilities
                     — adjust direction, status, or balance to narrow the list
                   </p>
                 )}
               </div>
               {filteredLoans.length === 0 ? (
-                <div className="p-10 text-center text-sm text-slate-600">
+                <div className="p-10 text-center text-sm text-muted-foreground">
                   No loans match your search or filters.{' '}
                   <button
                     type="button"
-                    className="font-medium text-indigo-600 hover:underline"
+                    className="font-medium text-primary hover:underline"
                     onClick={() => {
                       setLoanRegisterQuery('')
                       setLoanFilterDirection('all')
@@ -2528,7 +2528,7 @@ export default function LoansPage() {
               ) : (
                 <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-100 text-left text-slate-800 sticky top-0 z-[1] shadow-[0_1px_0_0_rgb(226_232_240)]">
+                <thead className="bg-muted text-left text-foreground sticky top-0 z-[1] shadow-[0_1px_0_0_rgb(226_232_240)]">
                   <tr>
                     <th className="px-3 py-3 font-semibold whitespace-nowrap">Loan #</th>
                     <th className="px-3 py-3 font-semibold whitespace-nowrap">Product</th>
@@ -2544,7 +2544,7 @@ export default function LoansPage() {
                     <th className="px-3 py-3 font-semibold text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {filteredLoans.map((row) => {
                     const outS = outstandingDisplayed(row)
                     const util = utilisationPercent(row)
@@ -2553,12 +2553,12 @@ export default function LoansPage() {
                       loanHasMoneyMovement(row) ||
                       (isIslamicFacilityHeader(row) && facDeals > 0)
                     return (
-                      <tr key={row.id} className="hover:bg-slate-50/90 align-top transition-colors">
+                      <tr key={row.id} className="hover:bg-muted/50 align-top transition-colors">
                         <td className="px-3 py-3 font-mono font-medium whitespace-nowrap">{row.loan_no}</td>
                         <td className="px-3 py-3">
                           <div className="flex flex-col gap-0.5">
                             <span
-                              className="inline-flex w-fit rounded px-1.5 py-0.5 text-xs font-medium bg-indigo-50 text-indigo-900 border border-indigo-100"
+                              className="inline-flex w-fit rounded px-1.5 py-0.5 text-xs font-medium bg-accent text-foreground/85 border border-primary/15"
                               title={productTypeLabel(row.product_type)}
                             >
                               {productTypeLabel(row.product_type)}
@@ -2567,41 +2567,41 @@ export default function LoansPage() {
                               <span className="text-xs text-emerald-800">Islamic banking</span>
                             )}
                             {row.islamic_contract_variant ? (
-                              <span className="text-xs text-gray-600 capitalize">
+                              <span className="text-xs text-muted-foreground capitalize">
                                 {row.islamic_contract_variant.replace(/_/g, ' ')}
                               </span>
                             ) : null}
                             {util != null && (row.product_type === 'business_line' || row.product_type === 'general') && (
-                              <span className="text-xs text-gray-500">Util {util}</span>
+                              <span className="text-xs text-muted-foreground">Util {util}</span>
                             )}
                             {isIslamicFacilityHeader(row) && facDeals > 0 && (
-                              <span className="text-xs text-gray-500">{facDeals} deal(s)</span>
+                              <span className="text-xs text-muted-foreground">{facDeals} deal(s)</span>
                             )}
                           </div>
                         </td>
                         <td className="px-3 py-3 capitalize whitespace-nowrap">{row.direction}</td>
                         <td className="px-3 py-3 max-w-[12rem] break-words">
-                          <span className="text-gray-900">{cpName(row.counterparty_id)}</span>
+                          <span className="text-foreground">{cpName(row.counterparty_id)}</span>
                           {(() => {
                             const line = loanInterestBasisLine(row)
                             return (
-                              <p className="text-xs text-gray-500 mt-0.5 normal-case" title={line.title}>
+                              <p className="text-xs text-muted-foreground mt-0.5 normal-case" title={line.title}>
                                 {line.short}
                               </p>
                             )
                           })()}
                         </td>
-                        <td className="px-3 py-3 text-xs text-slate-700 max-w-[9rem] break-words">
+                        <td className="px-3 py-3 text-xs text-foreground/85 max-w-[9rem] break-words">
                           {row.station_name?.trim() ? (
                             <span title="Optional segment for auto-posted loan journals">{row.station_name}</span>
                           ) : (
-                            <span className="text-slate-400">—</span>
+                            <span className="text-muted-foreground/70">—</span>
                           )}
                         </td>
                         <td className="px-3 py-3 text-right whitespace-nowrap tabular-nums">
                           {formatMoneyAmount(row.sanction_amount, currencySymbol)}
                           {isIslamicFacilityHeader(row) && row.facility_available_limit != null && (
-                            <div className="text-xs text-gray-500 font-normal">
+                            <div className="text-xs text-muted-foreground font-normal">
                               Avail {formatMoneyAmount(row.facility_available_limit, currencySymbol)}
                             </div>
                           )}
@@ -2615,14 +2615,14 @@ export default function LoansPage() {
                         <td className="px-3 py-3 text-right whitespace-nowrap tabular-nums">
                           {formatMoneyAmount(row.total_repaid_principal, currencySymbol)}
                         </td>
-                        <td className="px-3 py-3 text-xs text-gray-700 max-w-[9rem] break-words">
+                        <td className="px-3 py-3 text-xs text-foreground/85 max-w-[9rem] break-words">
                           {(row.product_type === 'islamic_deal' && row.parent_loan_no) || row.deal_reference ? (
                             <>
                               {row.product_type === 'islamic_deal' && row.parent_loan_no ? (
                                 <div title="Parent facility">↳ {row.parent_loan_no}</div>
                               ) : null}
                               {row.deal_reference ? (
-                                <div className="text-gray-500">{row.deal_reference}</div>
+                                <div className="text-muted-foreground">{row.deal_reference}</div>
                               ) : null}
                             </>
                           ) : (
@@ -2634,7 +2634,7 @@ export default function LoansPage() {
                           <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                             <button
                               type="button"
-                              className="text-indigo-600 hover:underline text-sm disabled:opacity-40 disabled:pointer-events-none"
+                              className="text-primary hover:underline text-sm disabled:opacity-40 disabled:pointer-events-none"
                               disabled={isIslamicFacilityHeader(row) || row.status === 'closed'}
                               title={
                                 isIslamicFacilityHeader(row)
@@ -2663,7 +2663,7 @@ export default function LoansPage() {
                             <button
                               type="button"
                               onClick={() => openLoanStatement(row)}
-                              className="inline-flex items-center gap-1 text-gray-700 hover:text-indigo-600 text-sm"
+                              className="inline-flex items-center gap-1 text-foreground/85 hover:text-primary text-sm"
                               title="Loan activity & running balance"
                             >
                               <FileText className="h-3.5 w-3.5" />
@@ -2672,7 +2672,7 @@ export default function LoansPage() {
                             <button
                               type="button"
                               onClick={() => openEditLoan(row)}
-                              className="inline-flex items-center gap-1 text-gray-700 hover:text-indigo-600 text-sm"
+                              className="inline-flex items-center gap-1 text-foreground/85 hover:text-primary text-sm"
                               title={
                                 row.status === 'closed'
                                   ? 'Edit — set status to Active to reopen (closing does not post GL)'
@@ -2686,7 +2686,7 @@ export default function LoansPage() {
                               type="button"
                               onClick={() => deleteLoan(row)}
                               disabled={deleteBlocked}
-                              className="inline-flex items-center gap-1 text-red-600 hover:underline text-sm disabled:opacity-40 disabled:pointer-events-none"
+                              className="inline-flex items-center gap-1 text-destructive hover:underline text-sm disabled:opacity-40 disabled:pointer-events-none"
                               title={
                                 deleteBlocked
                                   ? 'Delete only when there are no deals (facilities), disbursements, or repayments'
@@ -2731,25 +2731,25 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={() => !cpSaving && setShowCp(false)}
-                  className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                  className="text-muted-foreground/70 hover:text-muted-foreground disabled:opacity-50"
                   disabled={cpSaving}
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <form onSubmit={submitCounterparty} className="space-y-3">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Code is assigned on save. Opening balance posts to <strong>Opening Balance Equity (3200)</strong> and
                   the loan principal GL (<strong>1160</strong> receivable / <strong>2410</strong> payable) unless you pass{' '}
-                  <code className="text-xs bg-slate-100 px-1 rounded">opening_principal_account_id</code> in the API.
+                  <code className="text-xs bg-muted px-1 rounded">opening_principal_account_id</code> in the API.
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   In Chart of Accounts, those default lines are usually <strong>account type &quot;Loan&quot;</strong> (not
                   generic liability). Customer/vendor links on the counterparty do not post to A/R or A/P—only to the
                   selected principal line.
                 </p>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Name</label>
                   <input
                     ref={newCpNameInputRef}
                     className="w-full border rounded-lg px-3 py-2"
@@ -2760,8 +2760,8 @@ export default function LoansPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category (for interest day-count)</label>
-                  <p className="text-xs text-gray-500 mb-1">Bank &amp; finance: actual/365. Others: 30/360 in hints &amp; tools.</p>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Category (for interest day-count)</label>
+                  <p className="text-xs text-muted-foreground mb-1">Bank &amp; finance: actual/365. Others: 30/360 in hints &amp; tools.</p>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpForm.role_type}
@@ -2775,7 +2775,7 @@ export default function LoansPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Business role</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Business role</label>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpForm.party_kind}
@@ -2788,9 +2788,9 @@ export default function LoansPage() {
                     ))}
                   </select>
                 </div>
-                <div className="border-t border-slate-100 pt-3 space-y-2">
-                    <h3 className="text-sm font-semibold text-slate-800">Opening loan position</h3>
-                  <p className="text-xs text-slate-500">
+                <div className="border-t border-border/70 pt-3 space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">Opening loan position</h3>
+                  <p className="text-xs text-muted-foreground">
                     Record legacy receivable or payable in <strong>one</strong> line; add loan facilities after save. After
                     posting, the balance appears on the principal GL (default <strong>1160</strong> or <strong>2410</strong>—look
                     under the <strong>Loan</strong> type on the chart, not a separate A/R line). Same person as customer
@@ -2798,7 +2798,7 @@ export default function LoansPage() {
                     1160/2410, not customer receivables.
                   </p>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Position</label>
                     <select
                       className="w-full border rounded-lg px-3 py-2"
                       value={cpForm.opening_balance_type}
@@ -2830,7 +2830,7 @@ export default function LoansPage() {
                     <>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">Amount</label>
                           <input
                             className="w-full border rounded-lg px-3 py-2"
                             type="text"
@@ -2841,7 +2841,7 @@ export default function LoansPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">As of</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">As of</label>
                           <input
                             className="w-full border rounded-lg px-3 py-2"
                             type="date"
@@ -2851,7 +2851,7 @@ export default function LoansPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           GL site (optional)
                         </label>
                         <select
@@ -2877,11 +2877,11 @@ export default function LoansPage() {
                               </option>
                             ))}
                         </select>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           Tags the opening journal for entity balance-sheet reporting.
                         </p>
                       </div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <label className="flex items-center gap-2 text-sm text-foreground/85">
                         <input
                           type="checkbox"
                           checked={cpForm.opening_interest_applicable}
@@ -2893,7 +2893,7 @@ export default function LoansPage() {
                       </label>
                       {cpForm.opening_interest_applicable && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Annual % (nominal)</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">Annual % (nominal)</label>
                           <input
                             className="w-full border rounded-lg px-3 py-2"
                             value={cpForm.opening_annual_interest_rate}
@@ -2902,7 +2902,7 @@ export default function LoansPage() {
                           />
                         </div>
                       )}
-                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <label className="flex items-center gap-2 text-sm text-foreground/85">
                         <input
                           type="checkbox"
                           checked={cpForm.post_opening_to_gl}
@@ -2916,7 +2916,7 @@ export default function LoansPage() {
                 <button
                   type="submit"
                   disabled={cpSaving}
-                  className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {cpSaving ? 'Saving…' : 'Save counterparty'}
                 </button>
@@ -2944,7 +2944,7 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={() => !cpSaving && closeEditCounterparty()}
-                  className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                  className="text-muted-foreground/70 hover:text-muted-foreground disabled:opacity-50"
                   disabled={cpSaving}
                 >
                   <X className="h-5 w-5" />
@@ -2952,22 +2952,22 @@ export default function LoansPage() {
               </div>
               <form onSubmit={submitEditCounterparty} className="space-y-3">
                 {cpEditForm.opening_balance_journal_id != null && (
-                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  <p className="text-sm text-warning-foreground bg-warning/10 border border-amber-100 rounded-lg px-3 py-2">
                     Opening balance is posted to the general ledger; amounts here are read-only. Adjust via GL if
                     required.
                   </p>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Code</label>
                   <input
-                    className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-600"
+                    className="w-full border rounded-lg px-3 py-2 bg-muted/40 text-muted-foreground"
                     value={cpEditForm.code}
                     readOnly
                     disabled
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Name</label>
                   <input
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpEditForm.name}
@@ -2976,8 +2976,8 @@ export default function LoansPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                  <p className="text-xs text-gray-500 mb-1">Bank / finance: annual /365 hints; other: 30/360.</p>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Category</label>
+                  <p className="text-xs text-muted-foreground mb-1">Bank / finance: annual /365 hints; other: 30/360.</p>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpEditForm.role_type}
@@ -2991,7 +2991,7 @@ export default function LoansPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Business role</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Business role</label>
                   <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={cpEditForm.party_kind}
@@ -3007,8 +3007,8 @@ export default function LoansPage() {
                   </select>
                 </div>
                 {cpEditForm.opening_balance_journal_id == null && (
-                  <div className="border-t border-slate-100 pt-3 space-y-2">
-                    <h3 className="text-sm font-semibold text-slate-800">Opening loan (not posted yet)</h3>
+                  <div className="border-t border-border/70 pt-3 space-y-2">
+                    <h3 className="text-sm font-semibold text-foreground">Opening loan (not posted yet)</h3>
                     <select
                       className="w-full border rounded-lg px-3 py-2"
                       value={cpEditForm.opening_balance_type}
@@ -3050,7 +3050,7 @@ export default function LoansPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">
                             GL site (optional)
                           </label>
                           <select
@@ -3077,7 +3077,7 @@ export default function LoansPage() {
                               ))}
                           </select>
                         </div>
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <label className="flex items-center gap-2 text-sm text-foreground/85">
                           <input
                             type="checkbox"
                             checked={cpEditForm.opening_interest_applicable}
@@ -3097,7 +3097,7 @@ export default function LoansPage() {
                             placeholder="Annual %"
                           />
                         )}
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <label className="flex items-center gap-2 text-sm text-foreground/85">
                           <input
                             type="checkbox"
                             checked={cpEditForm.post_opening_to_gl}
@@ -3112,12 +3112,12 @@ export default function LoansPage() {
                   </div>
                 )}
                 {cpEditForm.opening_balance_journal_id != null && (
-                  <div className="text-sm text-slate-600">
+                  <div className="text-sm text-muted-foreground">
                     <p>
                       <strong>Opening (posted)</strong> — {cpEditForm.opening_balance_type} {cpEditForm.opening_balance}
                     </p>
                     {cpEditForm.opening_principal_account_code ? (
-                      <p className="text-xs font-mono text-slate-700 mt-1">
+                      <p className="text-xs font-mono text-foreground/85 mt-1">
                         Principal GL: {cpEditForm.opening_principal_account_code}
                         {cpEditForm.opening_principal_account_name
                           ? ` — ${cpEditForm.opening_principal_account_name}`
@@ -3130,7 +3130,7 @@ export default function LoansPage() {
                     <p className="text-xs mt-1">Journal # {cpEditForm.opening_balance_journal_id}</p>
                   </div>
                 )}
-                <label className="flex items-center gap-2 text-sm text-gray-700">
+                <label className="flex items-center gap-2 text-sm text-foreground/85">
                   <input
                     type="checkbox"
                     checked={cpEditForm.is_active}
@@ -3141,7 +3141,7 @@ export default function LoansPage() {
                 <button
                   type="submit"
                   disabled={cpSaving}
-                  className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {cpSaving ? 'Saving…' : 'Save changes'}
                 </button>
@@ -3163,11 +3163,11 @@ export default function LoansPage() {
               aria-modal="true"
               id="cp-ledger-panel"
             >
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-5 py-4 print:border-0">
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border/70 px-5 py-4 print:border-0">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Party ledger (subledger)</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Party ledger (subledger)</h2>
                   {cpLedgerPayload && (
-                    <p className="text-sm text-slate-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       {cpLedgerPayload.counterparty.name}{' '}
                       <span className="font-mono text-xs">({cpLedgerPayload.counterparty.code})</span>
                     </p>
@@ -3179,7 +3179,7 @@ export default function LoansPage() {
                       <button
                         type="button"
                         onClick={downloadCounterpartyLedgerCsv}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-sm text-foreground/85 hover:bg-muted/40"
                         title="Download CSV for Excel or audit"
                       >
                         <Download className="h-4 w-4" />
@@ -3188,7 +3188,7 @@ export default function LoansPage() {
                       <button
                         type="button"
                         onClick={printCounterpartyLedger}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-sm text-foreground/85 hover:bg-muted/40"
                         title="Print"
                       >
                         <Printer className="h-4 w-4" />
@@ -3199,7 +3199,7 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={closeCounterpartyLedger}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-lg p-1.5 text-muted-foreground/70 hover:bg-muted hover:text-foreground/85"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5" />
@@ -3207,7 +3207,7 @@ export default function LoansPage() {
                 </div>
               </div>
               {cpLedgerLoading && (
-                <div className="flex items-center justify-center gap-2 p-10 text-slate-500">
+                <div className="flex items-center justify-center gap-2 p-10 text-muted-foreground">
                   <RefreshCw className="h-5 w-5 animate-spin shrink-0" aria-hidden />
                   <span>Loading party activity…</span>
                 </div>
@@ -3215,34 +3215,34 @@ export default function LoansPage() {
               {!cpLedgerLoading && cpLedgerPayload && (
                 <div className="p-4 overflow-y-auto flex-1 space-y-3">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    <div className="rounded-lg border border-slate-100 p-2 bg-slate-50/80">
-                      <p className="text-xs text-slate-500">Receivable (principal)</p>
+                    <div className="rounded-lg border border-border/70 p-2 bg-muted/50">
+                      <p className="text-xs text-muted-foreground">Receivable (principal)</p>
                       <p className="font-mono font-semibold text-emerald-900">
                         {formatMoneyAmount(cpLedgerPayload.summary.total_receivable_principal, currencySymbol)}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-100 p-2 bg-slate-50/80">
-                      <p className="text-xs text-slate-500">Payable (principal)</p>
-                      <p className="font-mono font-semibold text-amber-900">
+                    <div className="rounded-lg border border-border/70 p-2 bg-muted/50">
+                      <p className="text-xs text-muted-foreground">Payable (principal)</p>
+                      <p className="font-mono font-semibold text-warning-foreground">
                         {formatMoneyAmount(cpLedgerPayload.summary.total_payable_principal, currencySymbol)}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-100 p-2">
-                      <p className="text-xs text-slate-500">Opening receivable</p>
-                      <p className="font-mono text-slate-800">
+                    <div className="rounded-lg border border-border/70 p-2">
+                      <p className="text-xs text-muted-foreground">Opening receivable</p>
+                      <p className="font-mono text-foreground">
                         {formatMoneyAmount(cpLedgerPayload.summary.opening_receivable, currencySymbol)}
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-100 p-2">
-                      <p className="text-xs text-slate-500">Opening payable</p>
-                      <p className="font-mono text-slate-800">
+                    <div className="rounded-lg border border-border/70 p-2">
+                      <p className="text-xs text-muted-foreground">Opening payable</p>
+                      <p className="font-mono text-foreground">
                         {formatMoneyAmount(cpLedgerPayload.summary.opening_payable, currencySymbol)}
                       </p>
                     </div>
                   </div>
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <div className="overflow-x-auto border border-border rounded-lg">
                     <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-slate-700 text-left">
+                      <thead className="bg-muted/40 text-foreground/85 text-left">
                         <tr>
                           <th className="px-3 py-2 font-medium">Date</th>
                           <th className="px-3 py-2 font-medium">Loan / ref</th>
@@ -3250,24 +3250,24 @@ export default function LoansPage() {
                           <th className="px-3 py-2 text-right">Disb / Pay</th>
                           <th className="px-3 py-2 text-right">Principal / Int.</th>
                           <th className="px-3 py-2 text-right min-w-[8.5rem]">Rcv / Pay run.</th>
-                          <th className="px-3 py-2 font-medium text-slate-500 max-w-[10rem]">Note</th>
+                          <th className="px-3 py-2 font-medium text-muted-foreground max-w-[10rem]">Note</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-border/70">
                         {cpLedgerPayload.lines.map((ln, i) => (
-                          <tr key={i} className="hover:bg-slate-50/80">
+                          <tr key={i} className="hover:bg-muted/50">
                             <td className="px-3 py-1.5 font-mono text-xs whitespace-nowrap">{(ln.date || '').split('T')[0]}</td>
                             <td className="px-3 py-1.5">
-                              <span className="font-mono text-xs text-indigo-700">{ln.loan_no || '—'}</span>
+                              <span className="font-mono text-xs text-primary">{ln.loan_no || '—'}</span>
                             </td>
-                            <td className="px-3 py-1.5 text-xs text-slate-800">{ln.kind_label || ln.kind}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-800">
+                            <td className="px-3 py-1.5 text-xs text-foreground">{ln.kind_label || ln.kind}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-foreground">
                               {ln.disbursement && Number(ln.disbursement) ? ln.disbursement : ln.repayment_total || '—'}
                             </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-800">
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-foreground">
                               {[ln.principal, ln.interest].filter((x) => x && x !== '0' && x !== '0.00').join(' / ') || '—'}
                             </td>
-                            <td className="px-3 py-1.5 text-right text-[0.7rem] sm:text-xs font-mono text-slate-700">
+                            <td className="px-3 py-1.5 text-right text-[0.7rem] sm:text-xs font-mono text-foreground/85">
                               {ln.receivable_principal_total && ln.payable_principal_total ? (
                                 <span>
                                   {formatMoneyAmount(ln.receivable_principal_total, currencySymbol)} /{' '}
@@ -3278,7 +3278,7 @@ export default function LoansPage() {
                               )}
                             </td>
                             <td
-                              className="px-3 py-1.5 text-xs text-slate-500 max-w-[10rem] truncate"
+                              className="px-3 py-1.5 text-xs text-muted-foreground max-w-[10rem] truncate"
                               title={(ln.memo || ln.reference || '').replace(/\s+/g, ' ').trim()}
                             >
                               {(ln.memo || ln.reference || '').trim() ? (ln.memo || ln.reference).slice(0, 48) : '—'}
@@ -3289,7 +3289,7 @@ export default function LoansPage() {
                     </table>
                   </div>
                   {cpLedgerPayload.lines.length === 0 && (
-                    <p className="text-sm text-slate-500">No lines yet — set opening or create a loan.</p>
+                    <p className="text-sm text-muted-foreground">No lines yet — set opening or create a loan.</p>
                   )}
                 </div>
               )}
@@ -3299,13 +3299,13 @@ export default function LoansPage() {
 
         {loanModalOpen && (
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center sm:p-6">
-            <div className="my-auto flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xl max-h-[min(92vh,56rem)]">
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 bg-slate-50/90 px-5 py-4 sm:px-6">
+            <div className="my-auto flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-white shadow-xl max-h-[min(92vh,56rem)]">
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 bg-muted/50 px-5 py-4 sm:px-6">
                 <div className="min-w-0 pr-2">
-                  <h2 className="text-lg font-semibold text-slate-900">
+                  <h2 className="text-lg font-semibold text-foreground">
                     {loanModalMode === 'new' ? 'New loan' : 'Edit loan'}
                   </h2>
-                  <p className="mt-1 text-xs leading-snug text-slate-500">
+                  <p className="mt-1 text-xs leading-snug text-muted-foreground">
                     {loanModalMode === 'new'
                       ? 'Define direction, product, GL lines, and rate — saved as draft until disbursement.'
                       : 'Adjust allowed fields; restricted when journals exist.'}
@@ -3314,14 +3314,14 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={closeLoanModal}
-                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700"
+                  className="shrink-0 rounded-lg p-1.5 text-muted-foreground/70 transition-colors hover:bg-white hover:text-foreground/85"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
               {loanModalLoading ? (
-                <p className="text-gray-500 py-8 text-center px-5 sm:px-6">Loading…</p>
+                <p className="text-muted-foreground py-8 text-center px-5 sm:px-6">Loading…</p>
               ) : (
                 <form
                   onSubmit={submitLoanModal}
@@ -3331,9 +3331,9 @@ export default function LoansPage() {
                     <div className="space-y-3 pb-1">
                   {loanModalMode === 'edit' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Loan #</label>
+                      <label className="block text-sm font-medium text-foreground/85 mb-1">Loan #</label>
                       <input
-                        className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-600"
+                        className="w-full border rounded-lg px-3 py-2 bg-muted/40 text-muted-foreground"
                         value={loanForm.loan_no}
                         readOnly
                         disabled
@@ -3341,7 +3341,7 @@ export default function LoansPage() {
                     </div>
                   )}
                   {loanModalMode === 'edit' && loanModalHasActivity && (
-                    <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="text-sm text-warning-foreground bg-warning/10 border border-warning/30 rounded-lg p-3">
                       This loan has disbursements, repayments, or posted interest accruals. You can only update{' '}
                       <strong>title</strong>, <strong>notes</strong>, <strong>maturity date</strong>,{' '}
                       <strong>status</strong>, and <strong>GL segment site</strong> — not direction, product type,
@@ -3360,7 +3360,7 @@ export default function LoansPage() {
                   {(loanModalMode === 'new' || (!loanModalHasActivity && !loanEditInitiallyClosed)) && (
                     <>
                       <div>
-                        <span className="block text-sm font-medium text-gray-700 mb-2">
+                        <span className="mb-2 block text-sm font-medium text-foreground">
                           Direction — who is the borrower?
                         </span>
                         <div
@@ -3382,12 +3382,12 @@ export default function LoansPage() {
                             }
                             className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
                               loanForm.direction === 'borrowed'
-                                ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-500/30'
-                                : 'border-gray-200 bg-white hover:bg-gray-50'
+                                ? 'border-primary bg-accent ring-2 ring-primary/30'
+                                : 'border-border bg-white hover:bg-muted/40'
                             }`}
                           >
-                            <span className="font-medium text-gray-900">We borrowed</span>
-                            <span className="block text-gray-600 mt-0.5">
+                            <span className="font-medium text-foreground">We borrowed</span>
+                            <span className="block text-muted-foreground mt-0.5">
                               Funds from a bank or lender — we owe principal (loans payable).
                             </span>
                           </button>
@@ -3405,12 +3405,12 @@ export default function LoansPage() {
                             }
                             className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
                               loanForm.direction === 'lent'
-                                ? 'border-indigo-600 bg-indigo-50 ring-2 ring-indigo-500/30'
-                                : 'border-gray-200 bg-white hover:bg-gray-50'
+                                ? 'border-primary bg-accent ring-2 ring-primary/30'
+                                : 'border-border bg-white hover:bg-muted/40'
                             }`}
                           >
-                            <span className="font-medium text-gray-900">We lent / gave a loan</span>
-                            <span className="block text-gray-600 mt-0.5">
+                            <span className="font-medium text-foreground">We lent / gave a loan</span>
+                            <span className="block text-muted-foreground mt-0.5">
                               We advanced money — counterparty owes us (loans receivable).
                             </span>
                           </button>
@@ -3418,9 +3418,9 @@ export default function LoansPage() {
                       </div>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Banking model</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">Banking model</label>
                           <select
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                             value={loanForm.banking_model}
                             onChange={(e) =>
                               setLoanForm({
@@ -3436,9 +3436,9 @@ export default function LoansPage() {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Product type</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">Product type</label>
                           <select
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                             value={loanForm.product_type}
                             onChange={(e) => {
                               const v = e.target.value as LoanProductType
@@ -3461,11 +3461,11 @@ export default function LoansPage() {
                       </div>
                       {loanForm.banking_model === 'islamic' && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">
                             Islamic structure (label only)
                           </label>
                           <select
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                             value={loanForm.islamic_contract_variant}
                             onChange={(e) =>
                               setLoanForm({ ...loanForm, islamic_contract_variant: e.target.value })
@@ -3477,7 +3477,7 @@ export default function LoansPage() {
                               </option>
                             ))}
                           </select>
-                          <p className="mt-1 text-xs text-gray-500">
+                          <p className="mt-1 text-xs text-muted-foreground">
                             Same GL mechanics as conventional loans; this is for reporting and clarity only.
                           </p>
                         </div>
@@ -3491,7 +3491,7 @@ export default function LoansPage() {
                       {loanForm.product_type === 'islamic_deal' && (
                         <>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-foreground/85 mb-1">
                               Parent Islamic facility
                             </label>
                             <select
@@ -3513,13 +3513,13 @@ export default function LoansPage() {
                               ))}
                             </select>
                             {islamicFacilitiesForParent.length === 0 && (
-                              <p className="mt-1 text-xs text-amber-700">
+                              <p className="mt-1 text-xs text-warning-foreground">
                                 Create an <strong>Islamic facility</strong> first (same direction), then add this deal.
                               </p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-foreground/85 mb-1">
                               Deal reference (optional)
                             </label>
                             <input
@@ -3532,7 +3532,7 @@ export default function LoansPage() {
                         </>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Counterparty</label>
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">Counterparty</label>
                         <select
                           className="w-full border rounded-lg px-3 py-2"
                           value={loanForm.counterparty_id || ''}
@@ -3560,9 +3560,9 @@ export default function LoansPage() {
                         </select>
                       </div>
                       {selectedCounterparty && selectedCounterpartyPosition && loanForm.counterparty_id > 0 && (
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2.5 text-sm">
-                          <div className="min-w-0 text-slate-800">
-                            <span className="text-slate-500 text-xs uppercase tracking-wide font-medium">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-primary/15 bg-accent/50 px-3 py-2.5 text-sm">
+                          <div className="min-w-0 text-foreground">
+                            <span className="text-muted-foreground text-xs uppercase tracking-wide font-medium">
                               Party (all loans + opening)
                             </span>
                             <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -3572,9 +3572,9 @@ export default function LoansPage() {
                               >
                                 Recv {formatMoneyAmount(selectedCounterpartyPosition.recv, currencySymbol)}
                               </span>
-                              <span className="text-slate-300 hidden sm:inline">|</span>
+                              <span className="text-muted-foreground/40 hidden sm:inline">|</span>
                               <span
-                                className="text-amber-800 font-mono text-sm"
+                                className="text-warning-foreground font-mono text-sm"
                                 title="Principal payable — you owe this amount"
                               >
                                 Pay {formatMoneyAmount(selectedCounterpartyPosition.pay, currencySymbol)}
@@ -3584,7 +3584,7 @@ export default function LoansPage() {
                           <button
                             type="button"
                             onClick={() => openCounterpartyLedger(selectedCounterparty)}
-                            className="shrink-0 inline-flex items-center gap-1.5 self-start sm:self-center text-xs font-semibold text-indigo-700 hover:text-indigo-900 rounded-lg px-2 py-1 hover:bg-white/80"
+                            className="shrink-0 inline-flex items-center gap-1.5 self-start sm:self-center text-xs font-semibold text-primary hover:text-foreground/85 rounded-lg px-2 py-1 hover:bg-card/80"
                           >
                             <BookOpen className="h-3.5 w-3.5" aria-hidden />
                             Party ledger
@@ -3592,7 +3592,7 @@ export default function LoansPage() {
                         </div>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           {sanctionFieldLabel(loanForm.product_type)}
                         </label>
                         <input
@@ -3604,7 +3604,7 @@ export default function LoansPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           Principal GL
                           {loanForm.direction === 'borrowed'
                             ? ' (loan payable — money you owe)'
@@ -3632,7 +3632,7 @@ export default function LoansPage() {
                           ))}
                         </select>
                         {coaFilteredForLoan.principal.length === 0 && (
-                          <p className="mt-1 text-xs text-amber-700">
+                          <p className="mt-1 text-xs text-warning-foreground">
                             No matching accounts. Under Chart of accounts add type <strong>Loan</strong> with subtype{' '}
                             {loanForm.direction === 'borrowed' ? (
                               <strong>loan payable</strong>
@@ -3651,7 +3651,7 @@ export default function LoansPage() {
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           Settlement GL (bank / cash only)
                         </label>
                         <select
@@ -3676,14 +3676,14 @@ export default function LoansPage() {
                           ))}
                         </select>
                         {coaFilteredForLoan.settlement.length === 0 && (
-                          <p className="mt-1 text-xs text-amber-700">
+                          <p className="mt-1 text-xs text-warning-foreground">
                             No bank or cash lines found. Add an <strong>Asset</strong> with subtype checking / cash on
                             hand, or type <strong>Bank account</strong>, under Chart of accounts.
                           </p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           {loanForm.banking_model === 'islamic'
                             ? 'Profit / return GL (optional — same account types as interest)'
                             : 'Interest GL (optional —'}{' '}
@@ -3713,7 +3713,7 @@ export default function LoansPage() {
                             </option>
                           ))}
                         </select>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           Optional. Suggested when needed:{' '}
                           {templateCoaOptionLabel(
                             loanForm.direction === 'lent' ? COA_INTEREST_INCOME : COA_INTEREST_EXPENSE,
@@ -3722,14 +3722,14 @@ export default function LoansPage() {
                           . You can change principal and settlement accounts anytime before saving.
                         </p>
                         {coaFilteredForLoan.interest.length === 0 && (
-                          <p className="mt-1 text-xs text-amber-700">
+                          <p className="mt-1 text-xs text-warning-foreground">
                             Add an <strong>Expense</strong> (borrowed) or <strong>Income</strong> (lent) line for{' '}
                             {loanForm.banking_model === 'islamic' ? 'profit/return' : 'interest'} in repayments.
                           </p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">
                           {loanForm.banking_model === 'islamic'
                             ? 'Accrued profit GL (optional — balance sheet accruals)'
                             : 'Accrued interest GL (optional — for explicit accrual journals)'}
@@ -3754,7 +3754,7 @@ export default function LoansPage() {
                             </option>
                           ))}
                         </select>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           Borrowed: use a <strong>liability</strong> (
                           {loanForm.banking_model === 'islamic'
                             ? 'accrued profit payable'
@@ -3767,7 +3767,7 @@ export default function LoansPage() {
                           above.
                         </p>
                         {coaFilteredForLoan.accrual.length === 0 && (
-                          <p className="mt-1 text-xs text-amber-700">
+                          <p className="mt-1 text-xs text-warning-foreground">
                             Add a balance-sheet line under Chart of accounts if you want to post accruals from the loan
                             screen.
                           </p>
@@ -3775,17 +3775,17 @@ export default function LoansPage() {
                       </div>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Agreement # (optional)</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">Agreement # (optional)</label>
                           <input
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                             value={loanForm.agreement_no}
                             onChange={(e) => setLoanForm({ ...loanForm, agreement_no: e.target.value })}
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Start date (optional)</label>
+                          <label className="block text-sm font-medium text-foreground/85 mb-1">Start date (optional)</label>
                           <input
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                             type="date"
                             value={loanForm.start_date}
                             onChange={(e) => setLoanForm({ ...loanForm, start_date: e.target.value })}
@@ -3795,19 +3795,19 @@ export default function LoansPage() {
                       <div className="space-y-2">
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:items-end md:gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-foreground/85 mb-1">
                               {loanFormInterestBankFinance ? (
                                 <>
-                                  Annual interest % <span className="text-red-600">*</span>
+                                  Annual interest % <span className="text-destructive">*</span>
                                 </>
                               ) : (
                                 <>
-                                  Monthly interest % <span className="text-red-600">*</span>
+                                  Monthly interest % <span className="text-destructive">*</span>
                                 </>
                               )}
                             </label>
                             <input
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                               type="number"
                               step="0.0001"
                               min={0}
@@ -3817,11 +3817,11 @@ export default function LoansPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-foreground/85 mb-1">
                               Term (months, optional)
                             </label>
                             <input
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                               type="number"
                               min={0}
                               max={600}
@@ -3830,7 +3830,7 @@ export default function LoansPage() {
                             />
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           {loanFormInterestBankFinance ? (
                             <>
                               Enter the quoted <strong>annual</strong> percentage rate. Use <strong>0</strong> for
@@ -3848,7 +3848,7 @@ export default function LoansPage() {
                     </>
                   )}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Title (optional)</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Title (optional)</label>
                     <input
                       className="w-full border rounded-lg px-3 py-2"
                       value={loanForm.title}
@@ -3857,7 +3857,7 @@ export default function LoansPage() {
                   </div>
                   {loanModalMode === 'edit' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <label className="block text-sm font-medium text-foreground/85 mb-1">Status</label>
                       <select
                         className="w-full border rounded-lg px-3 py-2"
                         value={loanForm.status}
@@ -3870,10 +3870,10 @@ export default function LoansPage() {
                     </div>
                   )}
                   {loanModalMode === 'new' && (
-                    <p className="text-xs text-gray-500">New loans are saved as <strong>draft</strong> until you disburse.</p>
+                    <p className="text-xs text-muted-foreground">New loans are saved as <strong>draft</strong> until you disburse.</p>
                   )}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Maturity date (optional)</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Maturity date (optional)</label>
                     <input
                       className="w-full border rounded-lg px-3 py-2"
                       type="date"
@@ -3882,7 +3882,7 @@ export default function LoansPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">
                       GL segment — site (optional)
                     </label>
                     <select
@@ -3903,18 +3903,18 @@ export default function LoansPage() {
                         </option>
                       ))}
                     </select>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       When set, <strong>new</strong> disbursements, repayments, and interest accruals tag journals with
                       this station for site-scoped reports. Cash still settles through the settlement GL above. Changing
                       this does not repost existing entries.
                     </p>
                   </div>
                   {loanForm.direction === 'borrowed' ? (
-                    <div className="rounded-lg border border-teal-100 bg-teal-50/50 p-3">
-                      <label className="flex items-start gap-2 text-sm text-gray-800">
+                    <div className="rounded-lg border border-teal-100 bg-accent/50 p-3">
+                      <label className="flex items-start gap-2 text-sm text-foreground">
                         <input
                           type="checkbox"
-                          className="mt-0.5 rounded border-gray-300"
+                          className="mt-0.5 rounded border-border"
                           checked={loanForm.aquaculture_financing}
                           onChange={(e) =>
                             setLoanForm({ ...loanForm, aquaculture_financing: e.target.checked })
@@ -3922,7 +3922,7 @@ export default function LoansPage() {
                         />
                         <span>
                           <strong>Aquaculture working capital (all ponds)</strong>
-                          <span className="block text-xs text-gray-600 mt-0.5">
+                          <span className="block text-xs text-muted-foreground mt-0.5">
                             Appears under Aquaculture → Financing for pond allocation and P&amp;L repayment worksheet.
                           </span>
                         </span>
@@ -3930,7 +3930,7 @@ export default function LoansPage() {
                     </div>
                   ) : null}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Notes</label>
                     <textarea
                       className="w-full border rounded-lg px-3 py-2 min-h-[80px]"
                       value={loanForm.notes}
@@ -3939,18 +3939,18 @@ export default function LoansPage() {
                   </div>
                     </div>
                   </div>
-                  <div className="shrink-0 border-t border-slate-100 bg-slate-50/90 px-5 py-4 sm:px-6">
+                  <div className="shrink-0 border-t border-border/70 bg-muted/50 px-5 py-4 sm:px-6">
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
                       <button
                         type="button"
                         onClick={closeLoanModal}
-                        className="w-full rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 sm:w-auto sm:min-w-[7.5rem]"
+                        className="w-full rounded-lg border border-border bg-white py-2.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted/40 sm:w-auto sm:min-w-[7.5rem]"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
-                        className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 sm:w-auto sm:min-w-[10rem]"
+                        className="erp-btn-primary w-full rounded-lg py-2.5 text-sm font-semibold shadow-sm sm:w-auto sm:min-w-[10rem]"
                       >
                         {loanModalMode === 'new' ? 'Create draft loan' : 'Save changes'}
                       </button>
@@ -3968,12 +3968,12 @@ export default function LoansPage() {
               <div className="flex justify-between items-center mb-4">
                 <div>
                   <h2 className="text-lg font-semibold">{actionLoan.loan_no}</h2>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     {productTypeLabel(actionLoan.product_type)} · {actionLoan.direction}
                     {actionLoan.station_name?.trim() ? (
                       <>
                         {' '}
-                        · <span className="text-slate-600">Site: {actionLoan.station_name}</span>
+                        · <span className="text-muted-foreground">Site: {actionLoan.station_name}</span>
                       </>
                     ) : null}
                   </p>
@@ -3981,7 +3981,7 @@ export default function LoansPage() {
                 <button
                   type="button"
                   onClick={() => setActionLoan(null)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -3989,7 +3989,7 @@ export default function LoansPage() {
               {!actionLoan.station_id &&
               actionLoan.interest_account_id &&
               actionLoan.interest_account_id > 0 ? (
-                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <p className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                   No GL site is set on this loan. Principal and bank movements can post company-wide, but{' '}
                   <strong>interest / profit accruals and repayments with an interest portion require a site</strong>{' '}
                   (Edit loan → GL segment — site) so entity P&L is correct.
@@ -3997,7 +3997,7 @@ export default function LoansPage() {
               ) : null}
               <div className="space-y-4">
                 {isIslamicFacilityHeader(actionLoan) ? (
-                  <p className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-4">
+                  <p className="text-sm text-foreground/85 bg-muted/40 border border-border rounded-lg p-4">
                     This row is an <strong>Islamic facility</strong> (limit header only). Open an{' '}
                     <strong>Islamic deal</strong> under this facility in the list and use <strong>Disburse / Repay</strong>{' '}
                     there.
@@ -4013,7 +4013,7 @@ export default function LoansPage() {
                           {formatCoaDisplay(actionLoanSettlementCoa)}
                         </p>
                       ) : (
-                        <p className="text-xs text-amber-800">
+                        <p className="text-xs text-warning-foreground">
                           No matching chart line in the list (id {actionLoan.settlement_account_id}). Check Chart of
                           accounts or <strong>Edit loan</strong> → Settlement GL.
                         </p>
@@ -4026,10 +4026,10 @@ export default function LoansPage() {
                     </div>
 
                     <div>
-                      <h3 className="font-medium text-gray-800 mb-2">
+                      <h3 className="font-medium text-foreground mb-2">
                         {disburseRepayUsesIslamicTerms ? 'Financing disbursement' : 'Disburse'}
                       </h3>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-muted-foreground mb-2">
                         {actionLoan.direction === 'borrowed'
                           ? disburseRepayUsesIslamicTerms
                             ? 'Dr Bank, Cr financing payable (principal)'
@@ -4038,11 +4038,11 @@ export default function LoansPage() {
                             ? 'Dr financing receivable (principal), Cr Bank'
                             : 'Dr Loan receivable, Cr Bank'}
                         .{' '}
-                        <span className="text-indigo-700">
+                        <span className="text-primary">
                           Amount defaults to remaining limit (sanction minus outstanding); change if you draw less.
                         </span>
                       </p>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Disbursement date</label>
+                      <label className="block text-xs font-medium text-foreground/85 mb-1">Disbursement date</label>
                       <input
                         type="date"
                         className="w-full border rounded-lg px-3 py-2 mb-2"
@@ -4060,38 +4060,38 @@ export default function LoansPage() {
                       <button
                         type="button"
                         onClick={doDisburse}
-                        className="w-full py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900"
+                        className="erp-btn-primary w-full py-2"
                       >
                         {disburseRepayUsesIslamicTerms ? 'Post financing disbursement' : 'Post disbursement'}
                       </button>
                     </div>
 
                     {Number(actionLoan.outstanding_principal) > 0 && (
-                      <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 space-y-4">
-                        <h3 className="font-medium text-gray-900 flex items-center gap-2">
-                          <Calculator className="h-4 w-4 text-indigo-600" />
+                      <div className="rounded-xl border border-border bg-muted/40/80 p-4 space-y-4">
+                        <h3 className="font-medium text-foreground flex items-center gap-2">
+                          <Calculator className="h-4 w-4 text-primary" />
                           Payment helpers
                         </h3>
 
                         <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
-                          <p className="text-xs font-semibold text-gray-700 mb-2">
+                          <p className="text-xs font-semibold text-foreground/85 mb-2">
                             {disburseRepayUsesIslamicTerms
                               ? 'Simple profit / return estimate'
                               : 'Simple interest estimate'}
                           </p>
-                          <p className="text-xs text-gray-500 mb-2">
+                          <p className="text-xs text-muted-foreground mb-2">
                             On <strong>current outstanding</strong> (not an accrual journal). Adjust days to match your
                             bank or institution statement period.
                             {interestHint?.interest_basis_label ? (
                               <>
                                 {' '}
-                                <span className="text-gray-700 font-medium">{interestHint.interest_basis_label}</span>
+                                <span className="text-foreground/85 font-medium">{interestHint.interest_basis_label}</span>
                               </>
                             ) : null}
                           </p>
                           <div className="flex flex-wrap items-end gap-2">
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">Days</label>
+                              <label className="block text-xs text-muted-foreground mb-1">Days</label>
                               <input
                                 type="number"
                                 min={1}
@@ -4107,33 +4107,33 @@ export default function LoansPage() {
                             </div>
                           </div>
                           {interestHint?.simple_interest_estimate != null && (
-                            <p className="mt-2 text-sm font-medium text-gray-900">
+                            <p className="mt-2 text-sm font-medium text-foreground">
                               ≈ {currencySymbol}
                               {Number(interestHint.simple_interest_estimate).toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}{' '}
-                              <span className="text-xs font-normal text-gray-500">
+                              <span className="text-xs font-normal text-muted-foreground">
                                 over {interestHint.days} day(s)
                               </span>
                             </p>
                           )}
                           {interestHint?.note && (
-                            <p className="mt-1 text-xs text-gray-500">{interestHint.note}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{interestHint.note}</p>
                           )}
                         </div>
 
                         <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
                             <div>
-                              <p className="text-xs font-semibold text-gray-700">
+                              <p className="text-xs font-semibold text-foreground/85">
                                 {actionLoan.product_type === 'business_line'
                                   ? disburseRepayUsesIslamicTerms
                                     ? 'Quarterly profit / return schedule'
                                     : 'Quarterly interest schedule'
                                   : 'Payment schedule (remaining)'}
                               </p>
-                              <p className="text-xs text-gray-500 mt-0.5">
+                              <p className="text-xs text-muted-foreground mt-0.5">
                                 {scheduleData?.schedule_sheet?.role === 'receivable' ||
                                 actionLoan.direction === 'lent'
                                   ? 'Receivable: amounts you collect from the borrower.'
@@ -4146,7 +4146,7 @@ export default function LoansPage() {
                                 <div className="flex flex-wrap gap-2 shrink-0">
                                   <button
                                     type="button"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-border bg-white text-foreground hover:bg-muted/40"
                                     onClick={downloadPaymentScheduleCsv}
                                   >
                                     <Download className="h-3.5 w-3.5" />
@@ -4154,7 +4154,7 @@ export default function LoansPage() {
                                   </button>
                                   <button
                                     type="button"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-border bg-white text-foreground hover:bg-muted/40"
                                     onClick={() => void printPaymentScheduleSheet()}
                                   >
                                     <Printer className="h-3.5 w-3.5" />
@@ -4165,7 +4165,7 @@ export default function LoansPage() {
                           </div>
                           {actionLoan.product_type === 'business_line' ? (
                             <>
-                              <p className="text-xs text-gray-500 mb-2">
+                              <p className="text-xs text-muted-foreground mb-2">
                                 {disburseRepayUsesIslamicTerms ? 'Profit-only' : 'Interest-only'} rows on{' '}
                                 <strong>today&apos;s drawn balance</strong> for each <strong>calendar quarter</strong>{' '}
                                 (actual days in the quarter). Principal repayments are separate. Override how many quarters
@@ -4183,7 +4183,7 @@ export default function LoansPage() {
                                 />
                                 <button
                                   type="button"
-                                  className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                                  className="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                                   onClick={() => {
                                     const n = parseInt(scheduleQuartersInput, 10)
                                     if (!Number.isFinite(n) || n < 1) {
@@ -4197,7 +4197,7 @@ export default function LoansPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                                  className="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground/85 hover:bg-muted/40"
                                   onClick={() => {
                                     setScheduleQuartersApplied(null)
                                     setScheduleQuartersInput('')
@@ -4209,7 +4209,7 @@ export default function LoansPage() {
                             </>
                           ) : (
                             <>
-                              <p className="text-xs text-gray-500 mb-2">
+                              <p className="text-xs text-muted-foreground mb-2">
                                 Equal payments on <strong>today&apos;s balance</strong>. If you prepaid extra principal,
                                 set remaining months below and click Apply.
                               </p>
@@ -4225,7 +4225,7 @@ export default function LoansPage() {
                                 />
                                 <button
                                   type="button"
-                                  className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                                  className="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                                   onClick={() => {
                                     const n = parseInt(scheduleRemainInput, 10)
                                     if (!Number.isFinite(n) || n < 1) {
@@ -4239,7 +4239,7 @@ export default function LoansPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                                  className="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground/85 hover:bg-muted/40"
                                   onClick={() => {
                                     setScheduleRemainApplied(null)
                                     setScheduleRemainInput('')
@@ -4251,16 +4251,16 @@ export default function LoansPage() {
                             </>
                           )}
                           {scheduleLoading && (
-                            <p className="text-xs text-gray-500 py-2">Loading schedule…</p>
+                            <p className="text-xs text-muted-foreground py-2">Loading schedule…</p>
                           )}
                           {scheduleErr && (
-                            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-2">
+                            <p className="text-xs text-warning-foreground bg-warning/10 border border-amber-100 rounded p-2">
                               {scheduleErr}
                             </p>
                           )}
                           {scheduleData?.suggested_next && (
                             <div className="flex flex-wrap items-center gap-2 mb-2">
-                              <span className="text-xs text-gray-600">Suggested next period:</span>
+                              <span className="text-xs text-muted-foreground">Suggested next period:</span>
                               <button
                                 type="button"
                                 className="text-sm px-3 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
@@ -4275,12 +4275,12 @@ export default function LoansPage() {
                             </div>
                           )}
                           {scheduleData?.method_note && (
-                            <p className="text-xs text-gray-500 mb-2">{scheduleData.method_note}</p>
+                            <p className="text-xs text-muted-foreground mb-2">{scheduleData.method_note}</p>
                           )}
                           {scheduleData?.schedule && scheduleData.schedule.length > 0 && (
                             <div className="overflow-x-auto max-h-72 border rounded-lg">
                               <table className="min-w-full text-xs">
-                                <thead className="bg-gray-100 text-left sticky top-0">
+                                <thead className="bg-muted text-left sticky top-0">
                                   <tr>
                                     <th className="px-2 py-1.5 font-semibold">Period</th>
                                     <th className="px-2 py-1.5 font-semibold text-right">
@@ -4296,11 +4296,11 @@ export default function LoansPage() {
                                 </thead>
                                 <tbody>
                                   {scheduleData.schedule.map((row) => (
-                                    <tr key={row.period} className="border-t border-gray-100 hover:bg-gray-50">
+                                    <tr key={row.period} className="border-t border-border/70 hover:bg-muted/40">
                                       <td className="px-2 py-1">
                                         {row.period_label ?? row.period}
                                         {row.days_in_period != null && (
-                                          <span className="text-gray-500"> ({row.days_in_period}d)</span>
+                                          <span className="text-muted-foreground"> ({row.days_in_period}d)</span>
                                         )}
                                       </td>
                                       <td className="px-2 py-1 text-right tabular-nums">{row.payment}</td>
@@ -4310,7 +4310,7 @@ export default function LoansPage() {
                                       <td className="px-2 py-1 text-right">
                                         <button
                                           type="button"
-                                          className="text-indigo-600 hover:underline"
+                                          className="text-primary hover:underline"
                                           onClick={() => applyScheduleRow(row)}
                                         >
                                           Use
@@ -4327,13 +4327,13 @@ export default function LoansPage() {
                     )}
 
                     {actionLoan.status === 'active' && !isIslamicFacilityHeader(actionLoan) && (
-                      <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 space-y-3">
-                        <h3 className="font-medium text-gray-900">
+                      <div className="rounded-xl border border-primary/15 bg-accent/50 p-4 space-y-3">
+                        <h3 className="font-medium text-foreground">
                           {disburseRepayUsesIslamicTerms
                             ? 'Profit accrual (period-end)'
                             : 'Interest accrual (period-end)'}
                         </h3>
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-muted-foreground">
                           {disburseRepayUsesIslamicTerms ? (
                             <>
                               Posts <strong>Dr profit/return expense, Cr accrued liability</strong> (borrowed) or the
@@ -4349,7 +4349,7 @@ export default function LoansPage() {
                           )}
                         </p>
                         {!actionLoan.interest_account_id || !actionLoan.interest_accrual_account_id ? (
-                          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                          <p className="text-xs text-warning-foreground bg-warning/10 border border-warning/30 rounded-lg p-2">
                             Set{' '}
                             <strong>
                               {disburseRepayUsesIslamicTerms ? 'Profit / return GL' : 'Interest GL'}
@@ -4366,7 +4366,7 @@ export default function LoansPage() {
                             {loanAccruals.map((a) => (
                               <li
                                 key={a.id}
-                                className="flex flex-wrap justify-between gap-2 items-center border-b border-gray-50 pb-1 last:border-0"
+                                className="flex flex-wrap justify-between gap-2 items-center border-b border-border/50 pb-1 last:border-0"
                               >
                                 <span>
                                   {formatDateOnly(a.accrual_date)} · {currencySymbol}
@@ -4378,17 +4378,17 @@ export default function LoansPage() {
                                 </span>
                                 <span className="flex items-center gap-2">
                                   {a.reversed_at ? (
-                                    <span className="text-gray-400">Reversed</span>
+                                    <span className="text-muted-foreground/70">Reversed</span>
                                   ) : a.journal_entry_id ? (
                                     <button
                                       type="button"
-                                      className="text-red-600 hover:underline"
+                                      className="text-destructive hover:underline"
                                       onClick={() => reverseLoanAccrual(a.id)}
                                     >
                                       Reverse
                                     </button>
                                   ) : (
-                                    <span className="text-gray-400">Draft</span>
+                                    <span className="text-muted-foreground/70">Draft</span>
                                   )}
                                 </span>
                               </li>
@@ -4398,8 +4398,8 @@ export default function LoansPage() {
                         {Number(actionLoan.outstanding_principal) > 0 &&
                           actionLoan.interest_account_id &&
                           actionLoan.interest_accrual_account_id && (
-                            <div className="space-y-2 border-t border-indigo-100 pt-3">
-                              <label className="block text-xs font-medium text-gray-700">Accrual date</label>
+                            <div className="space-y-2 border-t border-primary/15 pt-3">
+                              <label className="block text-xs font-medium text-foreground/85">Accrual date</label>
                               <input
                                 type="date"
                                 className="w-full border rounded-lg px-2 py-1.5 text-sm"
@@ -4436,7 +4436,7 @@ export default function LoansPage() {
                               <button
                                 type="button"
                                 onClick={postLoanAccrual}
-                                className="w-full py-2 bg-indigo-700 text-white rounded-lg hover:bg-indigo-800 text-sm"
+                                className="w-full py-2 bg-primary text-white rounded-lg hover:bg-indigo-800 text-sm"
                               >
                                 {disburseRepayUsesIslamicTerms
                                   ? 'Post profit accrual to GL'
@@ -4449,7 +4449,7 @@ export default function LoansPage() {
 
                     <hr />
                     <div>
-                      <h3 className="font-medium text-gray-800 mb-2">
+                      <h3 className="font-medium text-foreground mb-2">
                         {actionLoan.direction === 'lent'
                           ? disburseRepayUsesIslamicTerms
                             ? 'Receive payment (principal & profit)'
@@ -4458,7 +4458,7 @@ export default function LoansPage() {
                             ? 'Pay lender (principal & profit)'
                             : 'Pay lender (principal & interest)'}
                       </h3>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-muted-foreground mb-2">
                         {actionLoan.direction === 'borrowed'
                           ? disburseRepayUsesIslamicTerms
                             ? 'Dr financing payable + profit/return exp, Cr Bank'
@@ -4467,11 +4467,11 @@ export default function LoansPage() {
                             ? 'Dr Bank, Cr financing receivable + profit/return income'
                             : 'Dr Bank, Cr Loan receivable + interest income'}
                         .{' '}
-                        <strong className="text-gray-700">
+                        <strong className="text-foreground/85">
                           Cash side: {formatCoaDisplay(actionLoanSettlementCoa) || `GL #${actionLoan.settlement_account_id}`}
                         </strong>
                         .{' '}
-                        <span className="text-indigo-700">
+                        <span className="text-primary">
                           Fields pre-fill: next amortized instalment when a schedule is available; otherwise full
                           principal plus simple {disburseRepayUsesIslamicTerms ? 'profit/return' : 'interest'} for the
                           &quot;Days&quot; above (or principal-only at 0% rate).
@@ -4521,7 +4521,7 @@ export default function LoansPage() {
                           interest).
                         </p>
                       </div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Payment date</label>
+                      <label className="block text-xs font-medium text-foreground/85 mb-1">Payment date</label>
                       <input
                         type="date"
                         className="w-full border rounded-lg px-3 py-2 mb-2"
@@ -4559,16 +4559,16 @@ export default function LoansPage() {
                       <button
                         type="button"
                         onClick={doRepay}
-                        className="w-full py-2 border border-indigo-600 text-indigo-700 rounded-lg hover:bg-indigo-50"
+                        className="w-full py-2 border border-primary text-primary rounded-lg hover:bg-accent"
                       >
                         {actionLoan.direction === 'lent' ? 'Post collection to GL' : 'Post payment to GL'}
                       </button>
                     </div>
 
                     {loanRepayments.length > 0 && (
-                      <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 space-y-2">
-                        <h3 className="font-medium text-gray-900">Posted repayments</h3>
-                        <p className="text-xs text-gray-600">
+                      <div className="rounded-xl border border-amber-100 bg-warning/10/50 p-4 space-y-2">
+                        <h3 className="font-medium text-foreground">Posted repayments</h3>
+                        <p className="text-xs text-muted-foreground">
                           <strong>Reverse</strong> creates an opposite GL entry (e.g. credit loan payable, debit bank for
                           a mistaken borrowed repayment) and puts principal back on the loan. The original repayment
                           stays on the statement with a matching reversal line.
@@ -4577,7 +4577,7 @@ export default function LoansPage() {
                           {loanRepayments.map((r) => (
                             <li
                               key={r.id}
-                              className="flex flex-wrap justify-between gap-2 items-center border-b border-gray-50 pb-1 last:border-0"
+                              className="flex flex-wrap justify-between gap-2 items-center border-b border-border/50 pb-1 last:border-0"
                             >
                               <span>
                                 {formatDateOnly(r.repayment_date)} · total {currencySymbol}
@@ -4599,17 +4599,17 @@ export default function LoansPage() {
                               </span>
                               <span>
                                 {r.reversed_at ? (
-                                  <span className="text-gray-400">Reversed</span>
+                                  <span className="text-muted-foreground/70">Reversed</span>
                                 ) : r.journal_entry_id ? (
                                   <button
                                     type="button"
-                                    className="text-red-600 hover:underline"
+                                    className="text-destructive hover:underline"
                                     onClick={() => reverseLoanRepayment(r.id)}
                                   >
                                     Reverse
                                   </button>
                                 ) : (
-                                  <span className="text-gray-400">No GL</span>
+                                  <span className="text-muted-foreground/70">No GL</span>
                                 )}
                               </span>
                             </li>
@@ -4627,20 +4627,20 @@ export default function LoansPage() {
         {statementLoan && (
           <div className="loan-statement-modal-backdrop fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4 print:p-6 print:bg-white print:items-start print:justify-start">
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col print:shadow-none print:max-h-none print:max-w-none print:w-full">
-              <div className="flex justify-between items-start gap-4 p-4 border-b border-gray-100 print:hidden">
+              <div className="flex justify-between items-start gap-4 p-4 border-b border-border/70 print:hidden">
                 <div>
                   <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-indigo-600" />
+                    <FileText className="h-5 w-5 text-primary" />
                     {statementUsesIslamicTerms ? 'Financing statement' : 'Loan statement'}
                   </h2>
-                  <p className="text-sm text-gray-600 font-mono">{statementLoan.loan_no}</p>
+                  <p className="text-sm text-muted-foreground font-mono">{statementLoan.loan_no}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     disabled={!statementPayload}
                     onClick={() => printCurrentWindow()}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-muted/40 disabled:opacity-40"
                   >
                     <Printer className="h-4 w-4" />
                     Print / PDF
@@ -4649,7 +4649,7 @@ export default function LoansPage() {
                     type="button"
                     disabled={!statementPayload}
                     onClick={downloadLoanStatementCsv}
-                    className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-40"
+                    className="px-3 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-muted/40 disabled:opacity-40"
                   >
                     Download CSV
                   </button>
@@ -4660,7 +4660,7 @@ export default function LoansPage() {
                       setStatementPayload(null)
                       setStatementPrintBranding(null)
                     }}
-                    className="text-gray-400 hover:text-gray-600 p-1"
+                    className="text-muted-foreground/70 hover:text-muted-foreground p-1"
                     aria-label="Close"
                   >
                     <X className="h-5 w-5" />
@@ -4668,19 +4668,19 @@ export default function LoansPage() {
                 </div>
               </div>
               <div id="loan-statement-print-root" className="p-4 overflow-y-auto flex-1">
-                {statementLoading && <p className="text-gray-500">Loading…</p>}
+                {statementLoading && <p className="text-muted-foreground">Loading…</p>}
                 {!statementLoading && statementPayload && (
                   <>
                     {statementPrintBranding ? (
-                      <div className="hidden print:block text-center border-b border-gray-200 pb-3 mb-3">
-                        <p className="text-base font-bold text-gray-900">{statementPrintBranding.companyName}</p>
+                      <div className="hidden print:block text-center border-b border-border pb-3 mb-3">
+                        <p className="text-base font-bold text-foreground">{statementPrintBranding.companyName}</p>
                         {statementPrintBranding.stationName ? (
-                          <p className="text-xs font-semibold text-gray-600 mt-1">
+                          <p className="text-xs font-semibold text-muted-foreground mt-1">
                             Station: {statementPrintBranding.stationName}
                           </p>
                         ) : null}
                         {statementPrintBranding.companyAddress ? (
-                          <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">
+                          <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
                             {statementPrintBranding.companyAddress}
                           </p>
                         ) : null}
@@ -4691,41 +4691,41 @@ export default function LoansPage() {
                         {statementUsesIslamicTerms ? 'Financing statement' : 'Loan statement'}
                       </h1>
                       <p className="font-mono text-sm">{statementPayload.loan.loan_no}</p>
-                      <p className="text-xs text-gray-600">As of {statementPayload.as_of || '—'}</p>
+                      <p className="text-xs text-muted-foreground">As of {statementPayload.as_of || '—'}</p>
                     </div>
                     {statementPayload.statement_note ? (
-                      <p className="text-xs text-gray-600 border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 mb-3">
+                      <p className="text-xs text-muted-foreground border border-border bg-muted/40 rounded-lg px-3 py-2 mb-3">
                         {statementPayload.statement_note}
                       </p>
                     ) : null}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-4">
                       <div>
-                        <p className="text-xs text-gray-500">Party</p>
+                        <p className="text-xs text-muted-foreground">Party</p>
                         <p className="font-medium">{statementPayload.loan.counterparty_name || '—'}</p>
                         {statementPayload.loan.interest_basis_label ? (
-                          <p className="text-xs text-gray-500 mt-1 normal-case" title={statementPayload.loan.interest_basis_label}>
+                          <p className="text-xs text-muted-foreground mt-1 normal-case" title={statementPayload.loan.interest_basis_label}>
                             {statementPayload.loan.interest_basis_label}
                           </p>
                         ) : null}
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Direction</p>
+                        <p className="text-xs text-muted-foreground">Direction</p>
                         <p className="font-medium capitalize">{statementPayload.loan.direction}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Outstanding</p>
+                        <p className="text-xs text-muted-foreground">Outstanding</p>
                         <p className="font-medium tabular-nums">
                           {formatMoneyAmount(statementPayload.loan.outstanding_principal, currencySymbol)}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">As of</p>
+                        <p className="text-xs text-muted-foreground">As of</p>
                         <p className="font-medium">{statementPayload.as_of || '—'}</p>
                       </div>
                     </div>
                     <div className="overflow-x-auto border rounded-lg">
                       <table className="min-w-full text-sm">
-                        <thead className="bg-gray-50 text-left">
+                        <thead className="bg-muted/40 text-left">
                           <tr>
                             <th className="px-3 py-2 font-semibold">Date</th>
                             <th className="px-3 py-2 font-semibold">Type</th>
@@ -4741,7 +4741,7 @@ export default function LoansPage() {
                         <tbody>
                           {statementPayload.lines.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="px-3 py-6 text-center text-gray-500">
+                              <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                                 {statementUsesIslamicTerms
                                   ? 'No financing disbursements or payments yet.'
                                   : 'No disbursements or repayments yet.'}
@@ -4749,7 +4749,7 @@ export default function LoansPage() {
                             </tr>
                           ) : (
                             statementPayload.lines.map((line, idx) => (
-                              <tr key={`${line.date}-${line.kind}-${idx}`} className="border-t border-gray-100">
+                              <tr key={`${line.date}-${line.kind}-${idx}`} className="border-t border-border/70">
                                 <td className="px-3 py-2 whitespace-nowrap">{line.date}</td>
                                 <td className="px-3 py-2">
                                   {line.kind_label ??

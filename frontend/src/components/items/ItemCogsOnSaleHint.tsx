@@ -23,13 +23,13 @@ export function ItemCogsOnSaleHint({ item, coaOptions, className = '' }: Props) 
   const { label, fromItem } = resolveItemCogsOnSaleLabel(item, coaOptions)
   const editHref = item.id ? `/items?edit=${item.id}` : '/items'
   return (
-    <p className={`text-xs text-slate-600 ${className}`.trim()}>
-      COGS on sale: <span className="font-medium text-slate-800">{label}</span>
+    <p className={`text-xs text-muted-foreground ${className}`.trim()}>
+      COGS on sale: <span className="font-medium text-foreground">{label}</span>
       {!fromItem && (
-        <span className="text-slate-500"> (template default — set on product to override)</span>
+        <span className="text-muted-foreground"> (template default — set on product to override)</span>
       )}
       . Posts on POS / invoice, not on purchase.{' '}
-      <Link href={editHref} className="text-blue-600 hover:underline">
+      <Link href={editHref} className="text-primary hover:underline">
         Edit product
       </Link>
     </p>

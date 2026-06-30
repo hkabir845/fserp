@@ -1195,7 +1195,7 @@ export default function ChartOfAccountsPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <ErpPageShell
           showBackLink={false}
           titleId="coa-title"
@@ -1208,8 +1208,8 @@ export default function ChartOfAccountsPage() {
           contentClassName="mt-4"
         >
           <div className="flex flex-col justify-center items-center h-64 bg-white rounded-lg shadow">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p className="text-gray-600">{t('loading')}</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+            <p className="text-muted-foreground">{t('loading')}</p>
           </div>
         </ErpPageShell>
       </PageLayout>
@@ -1218,7 +1218,7 @@ export default function ChartOfAccountsPage() {
 
   if (error) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <ErpPageShell
           showBackLink={false}
           titleId="coa-title"
@@ -1230,13 +1230,13 @@ export default function ChartOfAccountsPage() {
           maxWidthClass="max-w-[1600px]"
           contentClassName="mt-4"
         >
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-red-800 mb-2">{t('errorTitle')}</h3>
-            <p className="text-red-700 mb-4">{error}</p>
+          <div className="bg-destructive/5 border border-destructive/25 rounded-lg p-6 text-center">
+            <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <h3 className="text-xl font-bold text-destructive mb-2">{t('errorTitle')}</h3>
+            <p className="text-destructive mb-4">{error}</p>
             <button
               onClick={handleRetry}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors"
             >
               <RefreshCw className="h-5 w-5" />
               <span>{t('retry')}</span>
@@ -1248,7 +1248,7 @@ export default function ChartOfAccountsPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         titleId="coa-title"
@@ -1265,7 +1265,7 @@ export default function ChartOfAccountsPage() {
               resetForm()
               setShowModal(true)
             }}
-            className="flex items-center space-x-2 px-5 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-all shadow-md hover:shadow-lg font-medium"
+            className="flex items-center space-x-2 px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-accent0 transition-all shadow-md hover:shadow-lg font-medium"
           >
             <Plus className="h-5 w-5" />
             <span>{t('newAccount')}</span>
@@ -1273,7 +1273,7 @@ export default function ChartOfAccountsPage() {
         }
       >
           {pageMeta.descriptionNote ? (
-            <p className="text-gray-500 text-sm mb-4">{pageMeta.descriptionNote}</p>
+            <p className="text-muted-foreground text-sm mb-4">{pageMeta.descriptionNote}</p>
           ) : null}
 
           <div className="mb-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-950 shadow-sm">
@@ -1339,15 +1339,15 @@ export default function ChartOfAccountsPage() {
           </div>
 
           {unlinkedBanks.length > 0 && (
-            <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-950 shadow-sm">
+            <div className="mb-6 rounded-lg border border-amber-300 bg-warning/10 px-4 py-4 text-sm text-warning-foreground shadow-sm">
               <p className="font-semibold">{t('unlinkedBanksTitle')}</p>
-              <p className="mt-1 text-amber-900/95">
+              <p className="mt-1 text-warning-foreground/95">
                 {t('unlinkedBanksBody', {
                   count: unlinkedBanks.length,
                   plural: unlinkedBanks.length === 1 ? '' : language === 'bn' ? '' : 's',
                 })}
               </p>
-              <ul className="mt-2 max-h-32 overflow-y-auto list-disc pl-5 text-amber-900/90">
+              <ul className="mt-2 max-h-32 overflow-y-auto list-disc pl-5 text-warning-foreground/90">
                 {unlinkedBanks.slice(0, 12).map((b) => (
                   <li key={b.id}>
                     {b.account_name} — {b.bank_name}
@@ -1355,7 +1355,7 @@ export default function ChartOfAccountsPage() {
                   </li>
                 ))}
                 {unlinkedBanks.length > 12 && (
-                  <li className="list-none pl-0 text-amber-800/90">
+                  <li className="list-none pl-0 text-warning-foreground/90">
                     {t('unlinkedBanksMore', { n: unlinkedBanks.length - 12 })}
                   </li>
                 )}
@@ -1370,10 +1370,10 @@ export default function ChartOfAccountsPage() {
                   {syncingBanks ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {syncingBanks ? t('syncingBanks') : t('syncBanksToChart')}
                 </button>
-                <span className="text-xs text-amber-900/80">{t('syncBanksHint')}</span>
+                <span className="text-xs text-warning-foreground/80">{t('syncBanksHint')}</span>
               </div>
               {isSuperAdminUser && (
-                <p className="mt-3 border-t border-amber-200/80 pt-3 text-xs text-amber-900/85">
+                <p className="mt-3 border-t border-warning/30/80 pt-3 text-xs text-warning-foreground/85">
                   <strong>{t('superAdminLabel')}</strong>{' '}
                   {t('superAdminHint')}
                 </p>
@@ -1383,17 +1383,17 @@ export default function ChartOfAccountsPage() {
 
           {/* Built-in fuel retail COA template */}
           {fuelTemplateMeta && (
-            <div className="mb-6 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/90 to-white p-6 shadow-sm">
+            <div className="mb-6 rounded-xl border border-primary/25 bg-gradient-to-br from-accent/90 to-card p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow">
                     <LayoutTemplate className="h-5 w-5" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900">
+                    <h2 className="text-lg font-semibold text-foreground">
                       {t('fuelTemplateName')}
                     </h2>
-                    <p className="mt-1 text-sm text-gray-600 leading-relaxed max-w-3xl">
+                    <p className="mt-1 text-sm text-muted-foreground leading-relaxed max-w-3xl">
                       {t('fuelTemplateSummary')}
                     </p>
                   </div>
@@ -1403,7 +1403,7 @@ export default function ChartOfAccountsPage() {
                     type="button"
                     disabled={seedBusy}
                     onClick={() => handleSeedFuelTemplate('full', false)}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-primary/90 disabled:opacity-50"
                   >
                     {seedBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {t('importFullTemplate')}
@@ -1412,7 +1412,7 @@ export default function ChartOfAccountsPage() {
                     type="button"
                     disabled={seedBusy}
                     onClick={() => handleSeedFuelTemplate('retail', false)}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2.5 text-sm font-medium text-indigo-800 hover:bg-indigo-50 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-white px-4 py-2.5 text-sm font-medium text-primary hover:bg-accent disabled:opacity-50"
                   >
                     {t('importFuelFirst')}
                   </button>
@@ -1420,7 +1420,7 @@ export default function ChartOfAccountsPage() {
                     type="button"
                     disabled={seedBusy}
                     onClick={() => handleSeedFuelTemplate('full', true)}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
                   >
                     {t('replaceAllTemplate')}
                   </button>
@@ -1428,7 +1428,7 @@ export default function ChartOfAccountsPage() {
                     type="button"
                     disabled={backfillBusy || accounts.length === 0}
                     onClick={() => void handleBackfillDescriptions()}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
                     title={t('fillMissingDescriptionsTitle')}
                   >
                     {backfillBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -1449,16 +1449,16 @@ export default function ChartOfAccountsPage() {
                 const accountCount = typeAccounts.length
                 
                 const typeColors: Record<string, { bg: string; text: string; border: string }> = {
-                  asset: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+                  asset: { bg: 'bg-blue-50', text: 'text-primary', border: 'border-primary/25' },
                   bank_account: { bg: 'bg-cyan-50', text: 'text-cyan-800', border: 'border-cyan-300' },
-                  liability: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
+                  liability: { bg: 'bg-destructive/5', text: 'text-destructive', border: 'border-destructive/25' },
                   equity: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
-                  income: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+                  income: { bg: 'bg-green-50', text: 'text-success', border: 'border-success/25' },
                   expense: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
                   cost_of_goods_sold: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' }
                 }
                 
-                const colors = typeColors[type.value] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
+                const colors = typeColors[type.value] || { bg: 'bg-muted/40', text: 'text-foreground/85', border: 'border-border' }
                 
                 return (
                   <div key={type.value} className={`bg-white rounded-lg shadow-md p-5 border-l-4 ${colors.border}`}>
@@ -1473,7 +1473,7 @@ export default function ChartOfAccountsPage() {
                     <p className={`text-2xl font-bold ${colors.text}`}>
                       {currencySymbol}{formatNumber(Math.abs(totalBalance))}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {accountCount}{' '}
                       {accountCount === 1 ? t('accountSingular') : t('accountPlural')}
                     </p>
@@ -1484,11 +1484,11 @@ export default function ChartOfAccountsPage() {
           )}
 
           {/* Filters */}
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-100">
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6 border border-border/70">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
-                <Filter className="h-5 w-5 text-gray-600" />
-                <h2 className="text-lg font-semibold text-gray-900">{t('searchAndFilter')}</h2>
+                <Filter className="h-5 w-5 text-muted-foreground" />
+                <h2 className="text-lg font-semibold text-foreground">{t('searchAndFilter')}</h2>
               </div>
               {(filterCode || filterAccountName || filterType) && (
                 <button
@@ -1497,7 +1497,7 @@ export default function ChartOfAccountsPage() {
                     setFilterAccountName('')
                     setFilterType('')
                   }}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  className="text-sm text-primary hover:text-primary font-medium"
                 >
                   {t('clearAll')}
                 </button>
@@ -1505,7 +1505,7 @@ export default function ChartOfAccountsPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   {t('accountCode')}
                 </label>
                 <input
@@ -1513,11 +1513,11 @@ export default function ChartOfAccountsPage() {
                   value={filterCode}
                   onChange={(e) => setFilterCode(e.target.value)}
                   placeholder={t('searchByCode')}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 transition-all shadow-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   {t('accountName')}
                 </label>
                 <input
@@ -1525,17 +1525,17 @@ export default function ChartOfAccountsPage() {
                   value={filterAccountName}
                   onChange={(e) => setFilterAccountName(e.target.value)}
                   placeholder={t('searchByName')}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 transition-all shadow-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   {t('accountType')}
                 </label>
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm bg-white"
+                  className="w-full px-4 py-2.5 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 transition-all shadow-sm bg-white"
                 >
                   <option value="">{t('allTypesOption')}</option>
                   {ACCOUNT_TYPES.map(type => (
@@ -1548,35 +1548,35 @@ export default function ChartOfAccountsPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-100">
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-border/70">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-gradient-to-r from-muted/40 to-muted">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('code')}
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('accountName')}
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('type')}
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('subType')}
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('balance')}
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('status')}
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-foreground/85 uppercase tracking-wider">
                       {t('actions')}
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-border">
                   {(() => {
                     const filteredAccounts = accounts.filter((account) => {
                       if (filterCode && !account.account_code.toLowerCase().includes(filterCode.toLowerCase())) {
@@ -1596,13 +1596,13 @@ export default function ChartOfAccountsPage() {
                         <tr>
                           <td colSpan={7} className="px-6 py-16 text-center">
                             <div className="flex flex-col items-center">
-                              <div className="bg-gray-100 rounded-full p-4 mb-4">
-                                <FileText className="h-10 w-10 text-gray-400" />
+                              <div className="bg-muted rounded-full p-4 mb-4">
+                                <FileText className="h-10 w-10 text-muted-foreground/70" />
                               </div>
-                              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                              <h3 className="text-lg font-semibold text-foreground mb-2">
                                 {accounts.length === 0 ? t('noAccountsFound') : t('noMatchingAccounts')}
                               </h3>
-                              <p className="text-gray-600 mb-4 max-w-md text-center">
+                              <p className="text-muted-foreground mb-4 max-w-md text-center">
                                 {accounts.length === 0 ? t('emptyChartHint') : t('noFilterMatch')}
                               </p>
                               {accounts.length === 0 && (
@@ -1611,7 +1611,7 @@ export default function ChartOfAccountsPage() {
                                     type="button"
                                     disabled={seedBusy || !fuelTemplateMeta}
                                     onClick={() => handleSeedFuelTemplate('full', false)}
-                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
                                   >
                                     {seedBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <LayoutTemplate className="h-5 w-5" />}
                                     <span>{t('importFullTemplate')}</span>
@@ -1621,7 +1621,7 @@ export default function ChartOfAccountsPage() {
                                       resetForm()
                                       setShowModal(true)
                                     }}
-                                    className="px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                                    className="px-4 py-2 border border-border bg-white text-foreground rounded-lg hover:bg-muted/40 transition-colors flex items-center gap-2"
                                   >
                                     <Plus className="h-5 w-5" />
                                     <span>{t('createOneAccount')}</span>
@@ -1646,26 +1646,26 @@ export default function ChartOfAccountsPage() {
                       const balance = Number(account.current_balance || 0)
                       const isNegative = balance < 0
                       const accountTypeColors: Record<string, { bg: string; text: string }> = {
-                        asset: { bg: 'bg-blue-100', text: 'text-blue-800' },
+                        asset: { bg: 'bg-blue-100', text: 'text-primary' },
                         bank_account: { bg: 'bg-cyan-100', text: 'text-cyan-900' },
-                        liability: { bg: 'bg-red-100', text: 'text-red-800' },
-                        loan: { bg: 'bg-indigo-100', text: 'text-indigo-900' },
+                        liability: { bg: 'bg-destructive/10', text: 'text-destructive' },
+                        loan: { bg: 'bg-accent', text: 'text-foreground/85' },
                         equity: { bg: 'bg-purple-100', text: 'text-purple-800' },
-                        income: { bg: 'bg-green-100', text: 'text-green-800' },
+                        income: { bg: 'bg-success/15', text: 'text-success' },
                         expense: { bg: 'bg-orange-100', text: 'text-orange-800' },
                         cost_of_goods_sold: { bg: 'bg-yellow-100', text: 'text-yellow-800' }
                       }
-                      const typeColors = accountTypeColors[account.account_type || ''] || { bg: 'bg-gray-100', text: 'text-gray-800' }
+                      const typeColors = accountTypeColors[account.account_type || ''] || { bg: 'bg-muted', text: 'text-foreground' }
                       
                       return (
-                        <tr key={account.id} className="hover:bg-blue-50 transition-colors border-b border-gray-100">
+                        <tr key={account.id} className="hover:bg-accent transition-colors border-b border-border/70">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm font-semibold text-gray-900 font-mono">
+                            <span className="text-sm font-semibold text-foreground font-mono">
                               {account.account_code || 'N/A'}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-gray-900">
+                            <div className="text-sm font-medium text-foreground">
                               {localizeCoaAccountName(account.account_code, account.account_name, language) ||
                                 t('unnamedAccount')}
                             </div>
@@ -1678,7 +1678,7 @@ export default function ChartOfAccountsPage() {
                               if (!desc) return null
                               return (
                                 <div
-                                  className="text-xs text-gray-600 mt-1 max-w-xl line-clamp-4 whitespace-pre-line"
+                                  className="text-xs text-muted-foreground mt-1 max-w-xl line-clamp-4 whitespace-pre-line"
                                   title={desc}
                                 >
                                   {desc}
@@ -1691,7 +1691,7 @@ export default function ChartOfAccountsPage() {
                                 {account.bank_register.account_number
                                   ? ` · ${account.bank_register.account_number}`
                                   : ''}
-                                <span className="text-gray-500 font-normal">
+                                <span className="text-muted-foreground font-normal">
                                   {' '}
                                   ({account.bank_register.register_type})
                                 </span>
@@ -1720,17 +1720,17 @@ export default function ChartOfAccountsPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm text-gray-600">
+                            <span className="text-sm text-muted-foreground">
                               {account.account_sub_type ? (
                                 <span>{localizeCoaAccountSubType(account.account_sub_type, language)}</span>
                               ) : (
-                                <span className="text-gray-400">—</span>
+                                <span className="text-muted-foreground/70">—</span>
                               )}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right">
                             <span className={`text-sm font-bold ${
-                              isNegative ? 'text-red-600' : 'text-gray-900'
+                              isNegative ? 'text-destructive' : 'text-foreground'
                             }`}>
                               {isNegative && '('}
                               {currencySymbol}{formatNumber(Math.abs(balance))}
@@ -1740,8 +1740,8 @@ export default function ChartOfAccountsPage() {
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                               account.is_active !== false
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
+                                ? 'bg-success/15 text-success' 
+                                : 'bg-destructive/10 text-destructive'
                             }`}>
                               {account.is_active !== false ? t('active') : t('inactive')}
                             </span>
@@ -1751,7 +1751,7 @@ export default function ChartOfAccountsPage() {
                               <button
                                 type="button"
                                 onClick={() => fetchStatement(account.id)}
-                                className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
+                                className="p-2 text-success hover:text-success hover:bg-green-50 rounded-lg transition-colors"
                                 title={t('viewStatement')}
                                 aria-label={`Statement for ${account.account_code}`}
                               >
@@ -1760,7 +1760,7 @@ export default function ChartOfAccountsPage() {
                               <button
                                 type="button"
                                 onClick={() => handleEdit(account)}
-                                className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                className="p-2 text-primary hover:text-primary hover:bg-accent rounded-lg transition-colors"
                                 title={t('editAccount')}
                                 aria-label={`Edit account ${account.account_code}`}
                               >
@@ -1772,8 +1772,8 @@ export default function ChartOfAccountsPage() {
                                 disabled={account.can_delete === false}
                                 className={`p-2 rounded-lg transition-colors ${
                                   account.can_delete === false
-                                    ? 'text-gray-300 cursor-not-allowed'
-                                    : 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                                    ? 'text-muted-foreground/40 cursor-not-allowed'
+                                    : 'text-destructive hover:text-destructive hover:bg-destructive/5'
                                 }`}
                                 title={
                                   account.can_delete === false
@@ -1809,8 +1809,8 @@ export default function ChartOfAccountsPage() {
               
               if (filteredAccounts.length > 0) {
                 return (
-                  <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-                    <p className="text-sm text-gray-600">
+                  <div className="bg-muted/40 px-6 py-3 border-t border-border">
+                    <p className="text-sm text-muted-foreground">
                       Showing <span className="font-semibold">{filteredAccounts.length}</span> of <span className="font-semibold">{accounts.length}</span> account{accounts.length !== 1 ? 's' : ''}
                       {(filterCode || filterAccountName || filterType) && (
                         <span className="ml-2">
@@ -1832,22 +1832,22 @@ export default function ChartOfAccountsPage() {
             <div className="flex justify-between items-start gap-4 mb-6">
               <div>
                 {statementPrintBranding ? (
-                  <div className="mb-4 border-b border-gray-200 pb-3">
-                    <p className="text-base font-bold text-gray-900">{statementPrintBranding.companyName}</p>
+                  <div className="mb-4 border-b border-border pb-3">
+                    <p className="text-base font-bold text-foreground">{statementPrintBranding.companyName}</p>
                     {statementPrintBranding.stationName ? (
-                      <p className="text-xs font-semibold text-gray-600 mt-0.5 uppercase tracking-wide">
+                      <p className="text-xs font-semibold text-muted-foreground mt-0.5 uppercase tracking-wide">
                         Station: {statementPrintBranding.stationName}
                       </p>
                     ) : null}
                     {statementPrintBranding.companyAddress ? (
-                      <p className="text-xs text-gray-500 mt-1 whitespace-pre-line">
+                      <p className="text-xs text-muted-foreground mt-1 whitespace-pre-line">
                         {statementPrintBranding.companyAddress}
                       </p>
                     ) : null}
                   </div>
                 ) : null}
-                <h2 className="text-2xl font-bold text-gray-900">GL account statement</h2>
-                <p className="text-gray-600 mt-1">
+                <h2 className="text-2xl font-bold text-foreground">GL account statement</h2>
+                <p className="text-muted-foreground mt-1">
                   {statement.account.account_code} -{' '}
                   {localizeCoaAccountName(
                     statement.account.account_code,
@@ -1855,12 +1855,12 @@ export default function ChartOfAccountsPage() {
                     language
                   )}
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   {coaAccountTypeLabel(statement.account.account_type, language)} /{' '}
                   {localizeCoaAccountSubType(statement.account.account_sub_type, language)}
                 </p>
                 {statement.filter_station_id != null ? (
-                  <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  <p className="mt-2 text-sm text-warning-foreground bg-warning/10 border border-warning/30 rounded-md px-3 py-2">
                     Site filter active: journal lines for station #{statement.filter_station_id} only.
                     Opening balance is treated as zero for this slice (same basis as site-scoped trial
                     balance).
@@ -1871,7 +1871,7 @@ export default function ChartOfAccountsPage() {
                 <button
                   type="button"
                   onClick={() => void handlePrintAccountStatement()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/40"
                 >
                   <Printer className="h-4 w-4" />
                   Print
@@ -1879,7 +1879,7 @@ export default function ChartOfAccountsPage() {
                 <button
                   type="button"
                   onClick={handleDownloadAccountStatementCsv}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary"
                 >
                   CSV
                 </button>
@@ -1896,7 +1896,7 @@ export default function ChartOfAccountsPage() {
                     setStatementSearch('')
                     setDebouncedStatementSearch('')
                   }}
-                  className="text-gray-400 hover:text-gray-600 p-2"
+                  className="text-muted-foreground/70 hover:text-muted-foreground p-2"
                   aria-label="Close"
                 >
                   <X className="h-6 w-6" />
@@ -1905,22 +1905,22 @@ export default function ChartOfAccountsPage() {
             </div>
 
             {/* Period filter */}
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <p className="mb-3 text-xs text-gray-600">
+            <div className="mb-6 p-4 bg-muted/40 rounded-lg">
+              <p className="mb-3 text-xs text-muted-foreground">
                 <strong>Delete</strong> on payment rows (<span className="font-mono">PAY-…</span>) or
                 payroll salary rows (<span className="font-mono">AUTO-PAYROLL-…</span>) removes the
                 journal from the GL and restores draft status on the payroll run where applicable.
               </p>
               <div className="flex flex-wrap items-end gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Report period</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Report period</label>
                   <select
                     value={statementPeriodMode}
                     onChange={(e) =>
                       void handleStatementPeriodModeChange(e.target.value as StatementPeriodMode)
                     }
                     disabled={statementLoading}
-                    className="min-w-[10rem] px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                    className="min-w-[10rem] px-3 py-2 border border-border rounded-lg bg-white focus:ring-2 focus:ring-ring"
                   >
                     <option value="all">All</option>
                     <option value="range">Date range</option>
@@ -1928,59 +1928,59 @@ export default function ChartOfAccountsPage() {
                 </div>
                 {statementPeriodMode === 'range' ? (
                 <div className="flex-1 min-w-[16rem]">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Date range</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Date range</label>
                   <div className="flex flex-wrap items-center gap-2">
                     <input
                       type="date"
                       value={statementStartDate}
                       onChange={(e) => setStatementStartDate(e.target.value)}
                       max={statementEndDate || undefined}
-                      className="flex-1 min-w-[9rem] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 min-w-[9rem] px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring"
                     />
-                    <span className="text-gray-500">to</span>
+                    <span className="text-muted-foreground">to</span>
                     <input
                       type="date"
                       value={statementEndDate}
                       onChange={(e) => setStatementEndDate(e.target.value)}
                       min={statementStartDate || undefined}
-                      className="flex-1 min-w-[9rem] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 min-w-[9rem] px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring"
                     />
                     <button
                       type="button"
                       onClick={() => void handleStatementDateChange()}
                       disabled={statementLoading}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+                      className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary disabled:opacity-50"
                     >
                       {statementLoading ? 'Loading...' : 'Update'}
                     </button>
                   </div>
                 </div>
                 ) : (
-                  <p className="text-sm text-gray-600 pb-2">
+                  <p className="text-sm text-muted-foreground pb-2">
                     Showing all posted journal lines for this account (lifetime activity).
                   </p>
                 )}
                 <div className="w-full min-w-[16rem] flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
+                  <label className="mb-2 block text-sm font-medium text-foreground">Search</label>
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
                     <input
                       type="search"
                       value={statementSearch}
                       onChange={(e) => setStatementSearch(e.target.value)}
                       placeholder="Entry #, description, source…"
                       disabled={statementLoading}
-                      className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 focus:ring-2 focus:ring-blue-500"
+                      className="w-full rounded-lg border border-border py-2 pl-9 pr-3 focus:ring-2 focus:ring-ring"
                     />
                   </div>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Search spans all dates — date range paused while searching
                   </p>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-600">Period:</span>
+                  <span className="text-muted-foreground">Period:</span>
                   <p className="font-semibold">
                     {hasStatementTextSearch
                       ? `All dates (search: ${debouncedStatementSearch})`
@@ -1988,19 +1988,19 @@ export default function ChartOfAccountsPage() {
                   </p>
                 </div>
                 <div>
-                  <span className="text-gray-600">Opening Balance:</span>
+                  <span className="text-muted-foreground">Opening Balance:</span>
                   <p className="font-semibold">
                     {statement.account.currency} {formatNumber(Number(statement.opening_balance))}
                   </p>
                 </div>
                 <div>
-                  <span className="text-gray-600">Closing Balance:</span>
+                  <span className="text-muted-foreground">Closing Balance:</span>
                   <p className="font-semibold">
                     {statement.account.currency} {formatNumber(Number(statement.closing_balance))}
                   </p>
                 </div>
                 <div>
-                  <span className="text-gray-600">Transactions:</span>
+                  <span className="text-muted-foreground">Transactions:</span>
                   <p className="font-semibold">{statement.transaction_count}</p>
                 </div>
               </div>
@@ -2008,28 +2008,28 @@ export default function ChartOfAccountsPage() {
 
             {/* Transactions Table */}
             <div className="bg-white rounded-lg shadow overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                       Entry / ref.
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source & detail</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Source & detail</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Debit</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Credit</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Balance</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-border">
                   {/* Opening Balance Row */}
-                  <tr className="bg-gray-50">
-                    <td colSpan={4} className="px-6 py-4 text-sm font-semibold text-gray-900">
+                  <tr className="bg-muted/40">
+                    <td colSpan={4} className="px-6 py-4 text-sm font-semibold text-foreground">
                       Opening Balance
                     </td>
-                    <td colSpan={4} className="px-6 py-4 text-sm text-right font-semibold text-gray-900">
+                    <td colSpan={4} className="px-6 py-4 text-sm text-right font-semibold text-foreground">
                       {statement.account.currency} {formatNumber(Number(statement.opening_balance))}
                     </td>
                   </tr>
@@ -2037,7 +2037,7 @@ export default function ChartOfAccountsPage() {
                   {/* Transactions */}
                   {statement.transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">
                         No transactions found for this period
                       </td>
                     </tr>
@@ -2082,32 +2082,32 @@ export default function ChartOfAccountsPage() {
                       }
                       
                       return (
-                        <tr key={transaction.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <tr key={transaction.id} className="hover:bg-muted/40">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                             {formatDateOnly(transaction.date)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                             {transaction.type}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">
+                          <td className="px-6 py-4 text-sm text-muted-foreground">
                             <span className="font-mono whitespace-nowrap">{transaction.reference || '—'}</span>
                             {transaction.journal_entry_id > 0 && (
                               <Link
                                 href={`/journal-entries?view=${transaction.journal_entry_id}`}
-                                className="text-blue-600 hover:text-blue-800 text-xs mt-0.5 inline-flex items-center gap-0.5"
+                                className="text-primary hover:text-primary/80 text-xs mt-0.5 inline-flex items-center gap-0.5"
                               >
                                 JE #{transaction.journal_entry_id}
                                 <ExternalLink className="h-3 w-3" />
                               </Link>
                             )}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-900">
+                          <td className="px-6 py-4 text-sm text-foreground">
                             {transaction.source_type && transaction.source_id ? (
                               <div className="mb-1">
                                 {transaction.source_type === 'receivable' ? (
                                   <Link
                                     href={`/invoices?view=${transaction.source_id}`}
-                                    className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                    className="font-medium text-primary hover:underline inline-flex items-center gap-1"
                                   >
                                     Receivable: {transaction.source_label || `INV-${transaction.source_id}`}
                                     <ExternalLink className="h-3 w-3" />
@@ -2115,7 +2115,7 @@ export default function ChartOfAccountsPage() {
                                 ) : transaction.source_type === 'payable' ? (
                                   <Link
                                     href={`/bills?view=${transaction.source_id}`}
-                                    className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                    className="font-medium text-primary hover:underline inline-flex items-center gap-1"
                                   >
                                     Payable: {transaction.source_label || `BILL-${transaction.source_id}`}
                                     <ExternalLink className="h-3 w-3" />
@@ -2123,7 +2123,7 @@ export default function ChartOfAccountsPage() {
                                 ) : transaction.source_type === 'payroll' ? (
                                   <Link
                                     href="/payroll"
-                                    className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                    className="font-medium text-primary hover:underline inline-flex items-center gap-1"
                                   >
                                     Payroll: {transaction.source_label || `PR-${transaction.source_id}`}
                                     <ExternalLink className="h-3 w-3" />
@@ -2136,12 +2136,12 @@ export default function ChartOfAccountsPage() {
                                           ? `/payments/received?edit=${transaction.source_id}`
                                           : `/payments/made?edit=${transaction.source_id}`
                                       }
-                                      className="font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                                      className="font-medium text-primary hover:underline inline-flex items-center gap-1"
                                     >
                                       {transaction.source_label || `PAY-${transaction.source_id}`}
                                       <ExternalLink className="h-3 w-3" />
                                     </Link>
-                                    <span className="text-gray-500 text-xs ml-1">
+                                    <span className="text-muted-foreground text-xs ml-1">
                                       ({transaction.source_type === 'payment_received'
                                         ? 'Receipt'
                                         : 'Payment made'})
@@ -2152,13 +2152,13 @@ export default function ChartOfAccountsPage() {
                             ) : null}
                             {transaction.journal_description || transaction.description ? (
                               <>
-                                <div className="text-gray-900">
+                                <div className="text-foreground">
                                   {transaction.journal_description || transaction.description}
                                 </div>
                                 {transaction.journal_description &&
                                 transaction.description &&
                                 transaction.journal_description !== transaction.description && (
-                                  <div className="text-gray-500 text-xs mt-0.5">Line: {transaction.description}</div>
+                                  <div className="text-muted-foreground text-xs mt-0.5">Line: {transaction.description}</div>
                                 )}
                               </>
                             ) : !transaction.source_type ? (
@@ -2182,15 +2182,15 @@ export default function ChartOfAccountsPage() {
                                       {docHref ? (
                                         <Link
                                           href={docHref}
-                                          className="text-blue-700 hover:underline inline-flex items-center gap-0.5"
+                                          className="text-primary hover:underline inline-flex items-center gap-0.5"
                                         >
                                           {docLabel}
                                           <ExternalLink className="h-3 w-3" />
                                         </Link>
                                       ) : (
-                                        <span className="text-gray-700">{docLabel}</span>
+                                        <span className="text-foreground/85">{docLabel}</span>
                                       )}
-                                      <span className="text-gray-500 ml-1 tabular-nums">
+                                      <span className="text-muted-foreground ml-1 tabular-nums">
                                         {statement.account.currency}
                                         {formatNumber(Number(alloc.amount) || 0)}
                                       </span>
@@ -2200,24 +2200,24 @@ export default function ChartOfAccountsPage() {
                               </ul>
                             )}
                             {transaction.other_account_name && (
-                              <span className="text-gray-500 text-xs block mt-0.5">
+                              <span className="text-muted-foreground text-xs block mt-0.5">
                                 With {transaction.other_account_code} — {transaction.other_account_name}
                               </span>
                             )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-destructive">
                             {transaction.debit_amount > 0 
                               ? `${statement.account.currency} ${formatNumber(Number(transaction.debit_amount))}`
                               : '-'
                             }
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-success">
                             {transaction.credit_amount > 0 
                               ? `${statement.account.currency} ${formatNumber(Number(transaction.credit_amount))}`
                               : '-'
                             }
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-foreground">
                             {statement.account.currency} {formatNumber(Number(runningBalance))}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
@@ -2229,7 +2229,7 @@ export default function ChartOfAccountsPage() {
                                   onClick={() => void handleStatementDeletePayment(transaction)}
                                   disabled={statementPaymentDeletingId === transaction.source_id}
                                   title="Delete payment (removes AUTO-PAY journal and restores AR/AP)"
-                                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/5 disabled:opacity-50"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                   {statementPaymentDeletingId === transaction.source_id
@@ -2238,7 +2238,7 @@ export default function ChartOfAccountsPage() {
                                 </button>
                               ) : (
                                 <span
-                                  className="text-xs text-gray-400"
+                                  className="text-xs text-muted-foreground/70"
                                   title={transaction.immutable_reason || 'Cannot delete'}
                                 >
                                   Locked
@@ -2254,7 +2254,7 @@ export default function ChartOfAccountsPage() {
                                   (transaction.source_id ?? transaction.journal_entry_id)
                                 }
                                 title="Remove salary journal — payroll run returns to draft"
-                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/5 disabled:opacity-50"
                               >
                                 <Trash2 className="h-4 w-4" />
                                 {statementPayrollRemovingId ===
@@ -2265,19 +2265,19 @@ export default function ChartOfAccountsPage() {
                             ) : transaction.source_type === 'receivable' && transaction.source_id ? (
                               <Link
                                 href={`/invoices?view=${transaction.source_id}`}
-                                className="text-xs font-medium text-blue-700 hover:underline"
+                                className="text-xs font-medium text-primary hover:underline"
                               >
                                 Open
                               </Link>
                             ) : transaction.source_type === 'payable' && transaction.source_id ? (
                               <Link
                                 href={`/bills?view=${transaction.source_id}`}
-                                className="text-xs font-medium text-blue-700 hover:underline"
+                                className="text-xs font-medium text-primary hover:underline"
                               >
                                 Open
                               </Link>
                             ) : (
-                              <span className="text-gray-300">—</span>
+                              <span className="text-muted-foreground/40">—</span>
                             )}
                           </td>
                         </tr>
@@ -2286,17 +2286,17 @@ export default function ChartOfAccountsPage() {
                   )}
 
                   {/* Closing Balance Row */}
-                  <tr className="bg-gray-50 font-semibold">
-                    <td colSpan={4} className="px-6 py-4 text-sm font-semibold text-gray-900">
+                  <tr className="bg-muted/40 font-semibold">
+                    <td colSpan={4} className="px-6 py-4 text-sm font-semibold text-foreground">
                       Closing Balance
                     </td>
-                    <td className="px-6 py-4 text-sm text-right text-red-600">
+                    <td className="px-6 py-4 text-sm text-right text-destructive">
                       {statement.account.currency} {formatNumber(Number(statement.total_debits))}
                     </td>
-                    <td className="px-6 py-4 text-sm text-right text-green-600">
+                    <td className="px-6 py-4 text-sm text-right text-success">
                       {statement.account.currency} {formatNumber(Number(statement.total_credits))}
                     </td>
-                    <td className="px-6 py-4 text-sm text-right font-semibold text-gray-900">
+                    <td className="px-6 py-4 text-sm text-right font-semibold text-foreground">
                       {statement.account.currency} {formatNumber(Number(statement.closing_balance))}
                     </td>
                     <td />
@@ -2313,23 +2313,23 @@ export default function ChartOfAccountsPage() {
         const accPending = accounts.find((a) => a.id === showDeleteConfirm)
         const blocked = accPending?.can_delete === false
         return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="erp-modal-backdrop">
           <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
             <h2 className="text-xl font-bold mb-2">Delete account</h2>
             {accPending && (
-              <p className="text-sm text-gray-800 mb-2">
+              <p className="text-sm text-foreground mb-2">
                 <span className="font-mono font-semibold">{accPending.account_code}</span>
                 {' — '}
                 {accPending.account_name}
               </p>
             )}
-            <p className="text-gray-600 mb-4 text-sm leading-relaxed">
+            <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
               {blocked
                 ? deleteBlockedHint(accPending!)
                 : 'This permanently removes the account from the chart. If it was never used in journals, it is safe to delete.'}
             </p>
             {!blocked && (
-              <p className="text-gray-500 text-xs mb-6">
+              <p className="text-muted-foreground text-xs mb-6">
                 To hide an account from selection without deleting history, use <strong>Edit</strong> and turn off{' '}
                 <strong>Active</strong>.
               </p>
@@ -2338,7 +2338,7 @@ export default function ChartOfAccountsPage() {
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="erp-btn-secondary"
               >
                 {blocked ? 'Close' : 'Cancel'}
               </button>
@@ -2346,7 +2346,7 @@ export default function ChartOfAccountsPage() {
                 <button
                   type="button"
                   onClick={() => handleDelete(showDeleteConfirm)}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="erp-btn-danger"
                 >
                   Delete
                 </button>
@@ -2367,7 +2367,7 @@ export default function ChartOfAccountsPage() {
               </h2>
               <button
                 onClick={handleCloseModal}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-muted-foreground/70 hover:text-muted-foreground"
               >
                 <X className="h-6 w-6" />
               </button>
@@ -2376,7 +2376,7 @@ export default function ChartOfAccountsPage() {
             <form onSubmit={editingAccount ? handleUpdate : handleCreate}>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Account Code *
                   </label>
                   <input
@@ -2384,12 +2384,12 @@ export default function ChartOfAccountsPage() {
                     required
                     value={formData.account_code}
                     onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                     placeholder="e.g., 1000, 2000"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Account Name *
                   </label>
                   <input
@@ -2397,12 +2397,12 @@ export default function ChartOfAccountsPage() {
                     required
                     value={formData.account_name}
                     onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                     placeholder="e.g., Cash, Accounts Payable"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Account Type *
                   </label>
                   <select
@@ -2421,7 +2421,7 @@ export default function ChartOfAccountsPage() {
                         account_sub_type: defaultSub,
                       })
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                   >
                     {ACCOUNT_TYPES.map((type) => (
                       <option key={type.value} value={type.value}>
@@ -2431,14 +2431,14 @@ export default function ChartOfAccountsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Account Sub-Type *
                   </label>
                   <select
                     required
                     value={formData.account_sub_type}
                     onChange={(e) => setFormData({ ...formData, account_sub_type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                   >
                     <option value="">Select Sub-Type</option>
                     {getAvailableSubTypes().map((subtype) => (
@@ -2457,31 +2457,31 @@ export default function ChartOfAccountsPage() {
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Institution / bank name</label>
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">Institution / bank name</label>
                         <input
                           type="text"
                           value={formData.bank_name}
                           onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                           placeholder="e.g. City Bank PLC"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Account number</label>
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">Account number</label>
                         <input
                           type="text"
                           value={formData.bank_account_number}
                           onChange={(e) => setFormData({ ...formData, bank_account_number: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-mono"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white font-mono"
                           placeholder="Account #"
                         />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Register type</label>
+                        <label className="block text-sm font-medium text-foreground/85 mb-1">Register type</label>
                         <select
                           value={formData.register_type}
                           onChange={(e) => setFormData({ ...formData, register_type: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                         >
                           <option value="CHECKING">Checking</option>
                           <option value="SAVINGS">Savings</option>
@@ -2495,19 +2495,19 @@ export default function ChartOfAccountsPage() {
                   </div>
                 )}
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Description
                   </label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                     placeholder="What this account is for (shown in the chart list; use for staff guidance)"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Opening Balance ({currencySymbol})
                   </label>
                   <input
@@ -2515,15 +2515,15 @@ export default function ChartOfAccountsPage() {
                     step="0.01"
                     value={formData.opening_balance}
                     onChange={(e) => setFormData({ ...formData, opening_balance: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                     placeholder="0.00"
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Starting balance for this account
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     As of Date *
                   </label>
                   <input
@@ -2531,9 +2531,9 @@ export default function ChartOfAccountsPage() {
                     required
                     value={formData.opening_balance_date}
                     onChange={(e) => setFormData({ ...formData, opening_balance_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="erp-field"
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Date of the opening balance
                   </p>
                 </div>
@@ -2543,9 +2543,9 @@ export default function ChartOfAccountsPage() {
                       type="checkbox"
                       checked={formData.is_active}
                       onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      className="w-4 h-4 text-primary border-border rounded focus:ring-ring"
                     />
-                    <span className="text-sm font-medium text-gray-700">Active</span>
+                    <span className="text-sm font-medium text-foreground/85">Active</span>
                   </label>
                 </div>
               </div>
@@ -2553,13 +2553,13 @@ export default function ChartOfAccountsPage() {
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="erp-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="erp-btn-primary"
                 >
                   {editingAccount ? 'Update Account' : 'Create Account'}
                 </button>

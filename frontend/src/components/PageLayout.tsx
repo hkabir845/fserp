@@ -17,7 +17,7 @@ interface PageLayoutProps {
  */
 export default function PageLayout({ children, className = '', containScroll = false }: PageLayoutProps) {
   return (
-    <div className={`page-with-sidebar flex h-dvh max-h-dvh min-h-0 w-full min-w-0 max-w-full flex-row bg-slate-50 md:h-[calc(100dvh-var(--erp-os-bottom-chrome))] md:max-h-[calc(100dvh-var(--erp-os-bottom-chrome))] ${className}`}>
+    <div className={`page-with-sidebar flex h-dvh max-h-dvh min-h-0 w-full min-w-0 max-w-full flex-row bg-background md:h-[calc(100dvh-var(--erp-os-bottom-chrome))] md:max-h-[calc(100dvh-var(--erp-os-bottom-chrome))] ${className}`}>
       <Sidebar />
       <div className="erp-main-column flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* Master/Tenant Company Banner */}

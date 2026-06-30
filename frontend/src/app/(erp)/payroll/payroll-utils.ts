@@ -33,9 +33,9 @@ export function statusBadge(status: string) {
   const s = status.toLowerCase()
   if (s === 'posted')
     return 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-  if (s === 'draft') return 'bg-amber-100 text-amber-900 border border-amber-200'
-  if (s === 'cancelled') return 'bg-slate-200 text-slate-700 border border-slate-300'
-  return 'bg-gray-100 text-gray-800 border border-gray-200'
+  if (s === 'draft') return 'bg-amber-100 text-warning-foreground border border-warning/30'
+  if (s === 'cancelled') return 'bg-muted text-foreground/85 border border-border'
+  return 'bg-muted text-foreground border border-border'
 }
 
 export function apiDetail(e: unknown) {

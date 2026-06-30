@@ -52,3 +52,23 @@ export async function fetchEntityScopeDirectory(): Promise<{
     ponds: pondsRes.status === 'fulfilled' ? parsePondsFromApi(pondsRes.value.data) : [],
   }
 }
+
+/** GL manual journal entries — always includes ponds when company has them (no aquaculture API gate). */
+export async function fetchJournalEntityScopeDirectory(): Promise<{
+  stations: BillReceiptLocationStation[]
+  ponds: BillReceiptLocationPond[]
+}> {
+  try {
+    const res = await api.get<{ stations?: unknown; ponds?: unknown }>(
+      '/journal-entries/entity-directory/',
+      { timeout: 10000 }
+    )
+    const data = res.data
+    return {
+      stations: parseStationsFromApi(data?.stations ?? []),
+      ponds: parsePondsFromApi(data?.ponds ?? []),
+    }
+  } catch {
+    return fetchEntityScopeDirectory()
+  }
+}

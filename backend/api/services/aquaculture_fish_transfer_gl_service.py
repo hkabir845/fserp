@@ -86,12 +86,41 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
     """
     (Re)post AUTO-AQ-FISH-XFER-{id}: Dr 1581 destination / Cr 1581 source per line.
     Amounts match line cost_amount, capped at source pond 1581 balance when needed.
+    When management cost exceeds 1581, reclassifies pond production expense into 1581 first.
     """
     if not isinstance(transfer, AquacultureFishPondTransfer):
         return {"posted": False, "reason": "invalid_transfer"}
 
     delete_aquaculture_fish_pond_transfer_journal(company_id, transfer.id)
     lines = list(transfer.lines.select_related("to_pond", "to_production_cycle").all())
+    total_requested = _money_q(
+        sum(
+            _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0)))
+            for ln in lines
+            if _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0))) > 0
+        )
+    )
+    reclass_posted = Decimal("0")
+    if total_requested > 0:
+        balance = pond_1581_balance(company_id, transfer.from_pond_id, transfer.transfer_date)
+        if balance < total_requested:
+            from api.services.aquaculture_pond_bio_capitalization import (
+                company_capitalizes_pond_production,
+                post_pond_expense_reclass_to_1581,
+            )
+
+            if company_capitalizes_pond_production(company_id):
+                shortfall = _money_q(total_requested - balance)
+                reclass_posted = post_pond_expense_reclass_to_1581(
+                    company_id,
+                    pond_id=transfer.from_pond_id,
+                    production_cycle_id=transfer.from_production_cycle_id,
+                    entry_date=transfer.transfer_date,
+                    entry_number=f"AUTO-AQ-FISH-XFER-{transfer.id}-RECLASS",
+                    amount_needed=shortfall,
+                    memo=f"Inter-pond transfer #{transfer.id} — align 1581 with production cost",
+                )
+
     line_amounts, total_req, total_gl, capped = allocate_transfer_gl_amounts(
         company_id,
         from_pond_id=transfer.from_pond_id,
@@ -132,10 +161,11 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
         "total_gl_amount": str(_money_q(total_gl)),
         "gl_capped": capped,
         "gl_cap_note": (
-            "GL amount capped at source pond 1581 book balance (management transfer cost can exceed fry capitalized in 1581)."
+            "GL amount capped at source pond 1581 book balance after expense reclass."
             if capped
             else None
         ),
+        "gl_reclass_amount": str(_money_q(reclass_posted)) if reclass_posted > 0 else None,
     }
 
 

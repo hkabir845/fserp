@@ -17,10 +17,10 @@ type BeforeInstallPromptEvent = Event & {
 }
 
 const btnPrimary =
-  'inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto sm:py-2.5 sm:text-sm'
+  'inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-600 bg-primary px-4 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-primary active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:w-auto sm:py-2.5 sm:text-sm'
 
 const btnSecondary =
-  'inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 active:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto sm:py-2.5 sm:text-sm'
+  'inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 py-3 text-base font-semibold text-foreground shadow-sm transition hover:bg-muted/40 active:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:w-auto sm:py-2.5 sm:text-sm'
 
 /**
  * Login-screen Android download / install — all SaaS tenants, mobile-first touch targets.
@@ -74,8 +74,8 @@ export function AndroidAppDownload() {
   }
 
   return (
-    <div className="mt-5 border-t border-slate-200/80 pt-5">
-      <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className="mt-5 border-t border-border/80 pt-5">
+      <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Android app
       </p>
       <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center">
@@ -94,11 +94,11 @@ export function AndroidAppDownload() {
           </button>
         ) : null}
       </div>
-      <p className="mt-2.5 text-center text-xs leading-relaxed text-slate-500">
+      <p className="mt-2.5 text-center text-xs leading-relaxed text-muted-foreground">
         Direct download from this site — not on Google Play. Same login for every company.
       </p>
       {android ? (
-        <p className="mt-2 text-center text-xs leading-relaxed text-slate-600">
+        <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
           After download, open the file and tap <span className="font-medium">Install</span>. If Android asks, allow installs from your browser for this step only.
         </p>
       ) : null}

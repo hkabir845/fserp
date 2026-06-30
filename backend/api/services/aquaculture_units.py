@@ -31,19 +31,10 @@ def metres_to_feet(m: Decimal) -> Decimal:
     return (m / _M_PER_FT).quantize(Decimal("0.001"))
 
 
-def quantize_two_decimal_places(d: Decimal | None) -> Decimal | None:
-    """Half-up rounding to 2 fractional digits (pond areas, depth ft, lease price per decimal, etc.)."""
-    if d is None:
-        return None
-    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def format_two_decimal_places_for_api(d: Decimal | None) -> str | None:
-    """Stable JSON string with exactly two digits after the decimal point."""
-    if d is None:
-        return None
-    q = quantize_two_decimal_places(d)
-    return f"{q:.2f}"
+from api.utils.measured_quantity import (
+    format_measured_quantity_for_api as format_two_decimal_places_for_api,
+    quantize_measured_quantity as quantize_two_decimal_places,
+)
 
 
 def quantize_pond_area_decimal(d: Decimal | None) -> Decimal | None:
@@ -116,12 +107,12 @@ def compute_stocking_load_advice(
 
     kg_per_dec: Decimal | None = None
     if water_area_decimal is not None and water_area_decimal > 0:
-        kg_per_dec = (bio / water_area_decimal).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        kg_per_dec = (bio / water_area_decimal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     kg_per_kcuft: Decimal | None = None
     if water_volume_cu_ft is not None and water_volume_cu_ft > 0:
         kg_per_kcuft = ((bio / water_volume_cu_ft) * Decimal("1000")).quantize(
-            Decimal("0.001"), rounding=ROUND_HALF_UP
+            Decimal("0.01"), rounding=ROUND_HALF_UP
         )
 
     if kg_per_dec is None:

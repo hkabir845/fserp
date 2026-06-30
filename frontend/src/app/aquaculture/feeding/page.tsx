@@ -487,10 +487,10 @@ export default function AquacultureFeedingPage() {
   }, [selected?.status, selected?.suggested_feed_kg, sackKgForDisplay])
 
   const sackSelect = (
-    <label className="block text-xs font-medium text-slate-700">
+    <label className="block text-xs font-medium text-foreground/85">
       Sack size (kg)
       <select
-        className="mt-1 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        className="mt-1 w-full max-w-xs rounded-lg border border-border bg-white px-3 py-2 text-sm"
         value={editSackSize}
         onChange={(e) => onSackSizeSelectChange(e.target.value)}
       >
@@ -891,16 +891,16 @@ export default function AquacultureFeedingPage() {
       <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
         {/* Left: generate + list */}
         <div className="space-y-4 lg:col-span-5 xl:col-span-5">
-          <section className="rounded-2xl border border-teal-200/70 bg-white p-4 shadow-sm ring-1 ring-teal-500/10">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <Sparkles className="h-4 w-4 text-teal-600" aria-hidden />
+          <section className="rounded-2xl border border-primary/25/70 bg-white p-4 shadow-sm ring-1 ring-teal-500/10">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Sparkles className="h-4 w-4 text-primary" aria-hidden />
               New daily plan
             </h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+              <label className="block text-xs font-medium text-muted-foreground sm:col-span-2">
                 Pond
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm"
                   value={genPond}
                   onChange={(e) => setGenPond(e.target.value)}
                 >
@@ -914,32 +914,32 @@ export default function AquacultureFeedingPage() {
               </label>
               {pendingPonds.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 sm:col-span-2">
-                  <span className="w-full text-[10px] font-medium uppercase text-slate-500">Today needs review</span>
+                  <span className="w-full text-[10px] font-medium uppercase text-muted-foreground">Today needs review</span>
                   {pendingPonds.map((p) => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => setGenPond(String(p.id))}
-                      className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
+                      className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning-foreground ring-1 ring-amber-200 hover:bg-amber-100"
                     >
                       {p.name}
                     </button>
                   ))}
                 </div>
               ) : null}
-              <label className="block text-xs font-medium text-slate-600">
+              <label className="block text-xs font-medium text-muted-foreground">
                 Date
                 <input
                   type="date"
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm"
                   value={genDate}
                   onChange={(e) => setGenDate(e.target.value)}
                 />
               </label>
-              <label className="block text-xs font-medium text-slate-600">
+              <label className="block text-xs font-medium text-muted-foreground">
                 Sack size
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm"
                   value={genSackKg}
                   onChange={(e) => {
                     const v = Number.parseInt(e.target.value, 10)
@@ -956,18 +956,18 @@ export default function AquacultureFeedingPage() {
             </div>
             <button
               type="button"
-              className="mt-2 flex w-full items-center justify-center gap-1 text-xs font-medium text-teal-800"
+              className="mt-2 flex w-full items-center justify-center gap-1 text-xs font-medium text-primary"
               onClick={() => setShowAdvancedGen((v) => !v)}
             >
               Advanced options
               <ChevronDown className={`h-3.5 w-3.5 transition ${showAdvancedGen ? 'rotate-180' : ''}`} aria-hidden />
             </button>
             {showAdvancedGen ? (
-              <div className="mt-2 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
-                <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+              <div className="mt-2 grid gap-3 border-t border-border/70 pt-3 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-muted-foreground sm:col-span-2">
                   Production cycle
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm disabled:opacity-50"
+                    className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm disabled:opacity-50"
                     value={genCycle}
                     onChange={(e) => setGenCycle(e.target.value)}
                     disabled={!genPond}
@@ -980,13 +980,13 @@ export default function AquacultureFeedingPage() {
                     ))}
                   </select>
                 </label>
-                <label className="block text-xs font-medium text-slate-600 sm:col-span-2">
+                <label className="block text-xs font-medium text-muted-foreground sm:col-span-2">
                   Water °C (optional)
                   <input
                     type="text"
                     inputMode="decimal"
                     placeholder="e.g. 28"
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm"
                     value={genTemp}
                     onChange={(e) => setGenTemp(e.target.value)}
                   />
@@ -997,14 +997,14 @@ export default function AquacultureFeedingPage() {
               type="button"
               disabled={genBusy || !genPond}
               onClick={() => void generate()}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary disabled:opacity-50"
             >
               <Sparkles className="h-4 w-4" aria-hidden />
               {genBusy ? 'Generating…' : 'Generate AI plan'}
             </button>
           </section>
 
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-3 shadow-sm">
+          <div className="rounded-2xl border border-border/80 bg-white p-3 shadow-sm">
             <StatusFilterTabs
               filterStatus={filterStatus}
               statusTabCounts={statusTabCounts}
@@ -1012,7 +1012,7 @@ export default function AquacultureFeedingPage() {
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <select
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-1.5 text-xs"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-muted/50 px-2 py-1.5 text-xs"
                 value={filterPond}
                 onChange={(e) => setFilterPond(e.target.value)}
               >
@@ -1027,14 +1027,14 @@ export default function AquacultureFeedingPage() {
                 type="button"
                 onClick={() => setTodayOnly((v) => !v)}
                 className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-                  todayOnly ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700'
+                  todayOnly ? 'bg-primary text-white' : 'bg-muted text-foreground/85'
                 }`}
               >
                 Today
               </button>
             </div>
-            <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/80 px-2 py-1.5">
-              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+            <label className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-2 py-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
               <input
                 ref={searchRef}
                 type="search"
@@ -1049,29 +1049,29 @@ export default function AquacultureFeedingPage() {
 
           {loading ? (
             <div className="flex justify-center py-12">
-              <div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+              <div className="h-9 w-9 animate-spin rounded-full border-2 border-border border-t-primary" />
             </div>
           ) : rows.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-600">
-              <p className="font-medium text-slate-800">No plans yet</p>
+            <div className="rounded-2xl border border-dashed border-border bg-white px-4 py-10 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">No plans yet</p>
               <p className="mt-1 text-xs">Generate your first daily plan above.</p>
             </div>
           ) : (
             <>
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-sm font-semibold text-slate-900">Daily plans</h2>
-                <p className="text-xs text-slate-500">
+                <h2 className="text-sm font-semibold text-foreground">Daily plans</h2>
+                <p className="text-xs text-muted-foreground">
                   {displayRows.length} of {rows.length}
                   {todayOnly || searchQuery || filterPond || filterStatus !== 'all' ? ' · filtered' : ''}
                 </p>
               </div>
               <div className="max-h-[min(70vh,720px)] space-y-2.5 overflow-y-auto pr-0.5">
                 {displayRows.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+                  <p className="rounded-xl border border-dashed border-border bg-white px-4 py-8 text-center text-sm text-muted-foreground">
                     No matches.{' '}
                     <button
                       type="button"
-                      className="font-medium text-teal-800 underline"
+                      className="font-medium text-primary underline"
                       onClick={() => {
                         setSearchQuery('')
                         setTodayOnly(false)
@@ -1102,10 +1102,10 @@ export default function AquacultureFeedingPage() {
         {/* Right: detail */}
         <div className="lg:col-span-7 xl:col-span-7">
           {!selected ? (
-            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/80 px-6 py-16 text-center">
-              <Bot className="h-12 w-12 text-slate-300" aria-hidden />
-              <p className="mt-4 text-sm font-semibold text-slate-800">Select a plan</p>
-              <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
+            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-white/80 px-6 py-16 text-center">
+              <Bot className="h-12 w-12 text-muted-foreground/40" aria-hidden />
+              <p className="mt-4 text-sm font-semibold text-foreground">Select a plan</p>
+              <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                 Pick a row from the list or generate a new AI daily plan for a pond.
               </p>
             </div>
@@ -1141,7 +1141,7 @@ export default function AquacultureFeedingPage() {
                         type="button"
                         disabled={sackSaveBusy}
                         onClick={() => void saveSackSizeOnly()}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800"
+                        className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-foreground"
                       >
                         {sackSaveBusy ? 'Saving…' : 'Save sack size'}
                       </button>
@@ -1150,9 +1150,9 @@ export default function AquacultureFeedingPage() {
                 />
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                <div className="min-w-0 text-xs text-slate-500">
-                  <Link href={`/aquaculture/ponds/${selected.pond_id}`} className="font-semibold text-teal-900 hover:underline">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-white px-4 py-3 shadow-sm">
+                <div className="min-w-0 text-xs text-muted-foreground">
+                  <Link href={`/aquaculture/ponds/${selected.pond_id}`} className="font-semibold text-primary hover:underline">
                     {selected.pond_name}
                   </Link>
                   {selected.production_cycle_name ? ` · ${selected.production_cycle_name}` : ''}
@@ -1160,7 +1160,7 @@ export default function AquacultureFeedingPage() {
                 <div className="flex flex-wrap gap-2">
                   <Link
                     href={`/aquaculture/ponds/${selected.pond_id}`}
-                    className="hidden items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 sm:inline-flex"
+                    className="hidden items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-medium text-foreground/85 sm:inline-flex"
                   >
                     Pond <ArrowRight className="h-3 w-3" aria-hidden />
                   </Link>
@@ -1169,7 +1169,7 @@ export default function AquacultureFeedingPage() {
                       type="button"
                       disabled={deleteBusy}
                       onClick={() => void deleteCancelled()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900"
+                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/25 bg-destructive/5 px-2 py-1 text-xs text-red-900"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden />
                       Delete
@@ -1182,15 +1182,15 @@ export default function AquacultureFeedingPage() {
               <WorkflowRail status={selected.status} />
 
               {selectedHiddenBySearch ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                   Hidden by filters — clear search or filters to see this row in the list.
                 </p>
               ) : null}
 
               {displayMealPlan.rows.length > 0 ? (
-                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-900">Meal schedule</h3>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-foreground">Meal schedule</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Per-meal kg and sacks ({sackKgForDisplay} kg/sack)
                     {mealPlanScaled ? ' · scaled to your daily total using the advised per-meal ratio' : ''}
                   </p>
@@ -1203,7 +1203,7 @@ export default function AquacultureFeedingPage() {
                     />
                   </div>
                   {feedingScheduleBlock?.per_meal_amount_summary != null ? (
-                    <p className="mt-2 text-xs text-slate-600">
+                    <p className="mt-2 text-xs text-muted-foreground">
                       <AdviceRichText text={String(feedingScheduleBlock.per_meal_amount_summary)} />
                     </p>
                   ) : null}
@@ -1211,9 +1211,9 @@ export default function AquacultureFeedingPage() {
               ) : null}
 
               {feedingScheduleBullets.length > 0 ? (
-                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-xs font-semibold uppercase text-slate-500">Pond notes</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">
+                <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
+                  <h3 className="text-xs font-semibold uppercase text-muted-foreground">Pond notes</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-foreground/85">
                     {feedingScheduleBullets.map((b, i) => (
                       <li key={i}>
                         <AdviceRichText text={b} />
@@ -1223,43 +1223,43 @@ export default function AquacultureFeedingPage() {
                 </section>
               ) : null}
 
-              <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-600">AI narrative (full text)</summary>
-                <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-slate-50 p-3">
+              <details className="rounded-xl border border-border bg-white p-4 shadow-sm">
+                <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">AI narrative (full text)</summary>
+                <div className="mt-2 max-h-40 overflow-y-auto rounded-lg bg-muted/40 p-3">
                   <AdviceRichText text={selected.effective_advice_text || selected.ai_advice_text} />
                 </div>
               </details>
 
               {worldfishBlock ? (
-                <details className="rounded-xl border border-teal-100 bg-teal-50/40 p-3 text-xs">
+                <details className="rounded-xl border border-teal-100 bg-accent/40 p-3 text-xs">
                   <summary className="cursor-pointer font-semibold text-teal-950">WorldFish parameters</summary>
                   <dl className="mt-2 grid gap-1 sm:grid-cols-2">
                     {worldfishBlock.worldfish_stage != null && (
                       <>
-                        <dt className="text-slate-500">Stage</dt>
+                        <dt className="text-muted-foreground">Stage</dt>
                         <dd>{String(worldfishBlock.worldfish_stage)}</dd>
                       </>
                     )}
                     {worldfishBlock.mean_fish_weight_g != null && (
                       <>
-                        <dt className="text-slate-500">Mean weight</dt>
+                        <dt className="text-muted-foreground">Mean weight</dt>
                         <dd>{String(worldfishBlock.mean_fish_weight_g)} g</dd>
                       </>
                     )}
-                    <dt className="text-slate-500">% BW / day</dt>
+                    <dt className="text-muted-foreground">% BW / day</dt>
                     <dd>{String(worldfishBlock.chosen_bw_pct_per_day)}%</dd>
                   </dl>
                 </details>
               ) : null}
 
               {selected.status === 'pending_review' && (
-                <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-sm font-semibold text-slate-900">Review & approve</h3>
-                  <p className="mt-1 text-xs text-slate-500">
+                <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-foreground">Review & approve</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Save your feed amount above, add optional notes, then approve for field use.
                   </p>
                   <textarea
-                    className="mt-2 min-h-[100px] w-full rounded-lg border border-slate-300 p-3 text-sm"
+                    className="mt-2 min-h-[100px] w-full rounded-lg border border-border p-3 text-sm"
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
                     placeholder="Optional manager notes…"
@@ -1269,7 +1269,7 @@ export default function AquacultureFeedingPage() {
                       type="button"
                       disabled={saveBusy}
                       onClick={() => void saveEdits()}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      className="rounded-lg border border-border px-3 py-2 text-sm"
                     >
                       {saveBusy ? 'Saving…' : 'Save draft'}
                     </button>
@@ -1284,7 +1284,7 @@ export default function AquacultureFeedingPage() {
                     <button
                       type="button"
                       onClick={() => void cancelAdvice()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-red-900"
                     >
                       <XCircle className="h-4 w-4" aria-hidden />
                       Cancel
@@ -1303,10 +1303,10 @@ export default function AquacultureFeedingPage() {
                     Feed amount is set above. Choose how to record this feeding, then click{' '}
                     <strong>Apply plan</strong> (not the workflow pill above — that is only a progress indicator).
                   </p>
-                  <label className="mt-3 block text-xs font-medium text-slate-700">
+                  <label className="mt-3 block text-xs font-medium text-foreground/85">
                     Feed product
                     <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                       value={applyFeedItemId}
                       onChange={(e) => setApplyFeedItemId(e.target.value)}
                     >
@@ -1330,8 +1330,8 @@ export default function AquacultureFeedingPage() {
                       onChange={(e) => setApplyConsumePond(e.target.checked)}
                     />
                     <span>
-                      <span className="font-medium text-slate-900">Consume pond warehouse</span>
-                      <span className="block text-xs font-normal text-slate-600">
+                      <span className="font-medium text-foreground">Consume pond warehouse</span>
+                      <span className="block text-xs font-normal text-muted-foreground">
                         Reduces sacks on hand at this pond (recommended when using transferred feed).
                       </span>
                     </span>
@@ -1346,19 +1346,19 @@ export default function AquacultureFeedingPage() {
                       }}
                     />
                     <span>
-                      <span className="font-medium text-slate-900">Record feed purchase expense</span>
-                      <span className="block text-xs font-normal text-slate-600">
+                      <span className="font-medium text-foreground">Record feed purchase expense</span>
+                      <span className="block text-xs font-normal text-muted-foreground">
                         Shop/cost entry only — does <strong>not</strong> change pond warehouse quantity.
                       </span>
                     </span>
                   </label>
                   {applyCreateExp ? (
-                    <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    <p className="mt-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                       Pond warehouse will stay at the current on-hand figure (e.g. 50 sacks) with this option. Use
                       “Consume pond warehouse” to deduct applied feed from the pond.
                     </p>
                   ) : !applyConsumePond ? (
-                    <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                    <p className="mt-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-foreground/85">
                       Neither stock nor purchase expense will be recorded — only the feeding advice status changes.
                     </p>
                   ) : null}
@@ -1412,7 +1412,7 @@ export default function AquacultureFeedingPage() {
                     <button
                       type="button"
                       onClick={() => void cancelAdvice()}
-                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900"
+                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-red-900"
                     >
                       <XCircle className="h-4 w-4" aria-hidden />
                       Cancel plan
@@ -1422,7 +1422,7 @@ export default function AquacultureFeedingPage() {
               )}
 
               {selected.status === 'applied' && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">
                   <p>
                     Applied <strong>{selected.applied_feed_kg ?? '—'} kg</strong>
                     {feedKgToSackLabel(selected.applied_feed_kg, sackKgForDisplay)
@@ -1436,14 +1436,14 @@ export default function AquacultureFeedingPage() {
                       Pond warehouse stock was reduced (feed consumed).
                     </p>
                   ) : selected.linked_expense_category === 'feed_purchase' ? (
-                    <p className="mt-1 text-xs font-medium text-amber-900">
+                    <p className="mt-1 text-xs font-medium text-warning-foreground">
                       Purchase expense only — pond warehouse on-hand was not reduced. Apply again with “Consume pond
                       warehouse” to deduct sacks.
                     </p>
                   ) : !selected.linked_expense_id ? (
-                    <p className="mt-1 text-xs text-slate-600">No linked expense / stock movement.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">No linked expense / stock movement.</p>
                   ) : null}
-                  <p className="mt-2 text-xs text-slate-600">
+                  <p className="mt-2 text-xs text-muted-foreground">
                     Applied feeding advice cannot be deleted (audit trail). To undo accounting or stock, delete the
                     linked expense below. Revoke approval or cancel plan only while status is review or approved (not
                     applied).
@@ -1452,7 +1452,7 @@ export default function AquacultureFeedingPage() {
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Link
                         href={`/aquaculture/expenses?pond_id=${selected.pond_id}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50"
+                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/40"
                       >
                         Open expenses for {selected.pond_name}
                         <ArrowRight className="h-3 w-3" aria-hidden />
@@ -1461,7 +1461,7 @@ export default function AquacultureFeedingPage() {
                         type="button"
                         disabled={deleteLinkedExpenseBusy}
                         onClick={() => void deleteLinkedExpense()}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+                        className="inline-flex items-center gap-1 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-1.5 text-xs font-medium text-red-900 hover:bg-destructive/10 disabled:opacity-50"
                       >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden />
                         {deleteLinkedExpenseBusy
@@ -1470,17 +1470,17 @@ export default function AquacultureFeedingPage() {
                       </button>
                     </div>
                   ) : (
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 text-xs text-muted-foreground">
                       Linked expense already removed. You can record a new apply with the correct options if needed.
                     </p>
                   )}
-                  <div className="mt-4 border-t border-slate-200 pt-3">
+                  <div className="mt-4 border-t border-border pt-3">
                     {sackSelect}
                     <button
                       type="button"
                       disabled={sackSaveBusy}
                       onClick={() => void saveSackSizeOnly()}
-                      className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                      className="mt-2 rounded-lg border border-border bg-white px-3 py-1.5 text-xs"
                     >
                       {sackSaveBusy ? 'Saving…' : 'Save sack size'}
                     </button>
@@ -1494,12 +1494,12 @@ export default function AquacultureFeedingPage() {
 
       {/* Mobile sticky actions */}
       {selected?.status === 'pending_review' ? (
-        <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-border bg-white/95 p-3 backdrop-blur lg:hidden">
           <button
             type="button"
             onClick={() => void saveEdits()}
             disabled={saveBusy}
-            className="flex-1 rounded-lg border border-slate-300 py-2.5 text-sm font-medium"
+            className="flex-1 rounded-lg border border-border py-2.5 text-sm font-medium"
           >
             Save
           </button>
@@ -1513,7 +1513,7 @@ export default function AquacultureFeedingPage() {
         </div>
       ) : null}
       {selected?.status === 'approved' ? (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-white/95 p-3 backdrop-blur lg:hidden">
           <button
             type="button"
             disabled={applyBusy || applyPlanBlockedByWarehouseLoad}

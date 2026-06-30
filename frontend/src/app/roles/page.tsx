@@ -182,18 +182,18 @@ export default function RolesPage() {
 
   if (!allowed && !loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] flex-col items-center justify-center px-4 py-8 sm:p-8">
           <div className="mb-4 w-full max-w-md text-left sm:text-center">
             <Link
               href="/apps"
-              className="inline-flex items-center gap-1 text-sm font-medium text-amber-900/80 hover:text-amber-900 hover:underline"
+              className="inline-flex items-center gap-1 text-sm font-medium text-warning-foreground/80 hover:text-warning-foreground hover:underline"
             >
               <ChevronLeft className="h-4 w-4" />
               {rt('backToLauncher')}
             </Link>
           </div>
-          <div className="max-w-md rounded-lg border border-amber-200 bg-amber-50 p-6 text-center text-amber-900">
+          <div className="max-w-md rounded-lg border border-warning/30 bg-warning/10 p-6 text-center text-warning-foreground">
             <Shield className="mx-auto h-10 w-10" />
             <h1 className="mt-2 text-lg font-semibold">{rt('accessDeniedTitle')}</h1>
             <p className="mt-1 text-sm">{rt('accessDeniedBody')}</p>
@@ -204,7 +204,7 @@ export default function RolesPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -226,25 +226,25 @@ export default function RolesPage() {
           }
         >
           {loading ? (
-            <p className="text-slate-500">{rt('loading')}</p>
+            <p className="text-muted-foreground">{rt('loading')}</p>
           ) : (
             <ul className="space-y-3">
               {roles.length === 0 && (
-                <li className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center text-slate-500">
+                <li className="rounded-xl border border-dashed border-border bg-white px-4 py-10 text-center text-muted-foreground">
                   {rt('noRolesYet')}
                 </li>
               )}
               {roles.map((r) => (
                 <li
                   key={r.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-white p-4 shadow-sm"
                 >
                   <div>
-                    <p className="font-semibold text-slate-900">{r.name}</p>
+                    <p className="font-semibold text-foreground">{r.name}</p>
                     {r.description ? (
-                      <p className="text-sm text-slate-600">{r.description}</p>
+                      <p className="text-sm text-muted-foreground">{r.description}</p>
                     ) : null}
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {catalog.length > 0
                         ? rt('modulesAllowed', {
                             count: r.permissions?.length ?? 0,
@@ -259,7 +259,7 @@ export default function RolesPage() {
                     <button
                       type="button"
                       onClick={() => openEdit(r)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
                       title={rt('edit')}
                     >
                       <Pencil className="h-4 w-4" />
@@ -267,7 +267,7 @@ export default function RolesPage() {
                     <button
                       type="button"
                       onClick={() => remove(r)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:bg-red-50"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-destructive hover:bg-destructive/5"
                       title={rt('delete')}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -283,28 +283,28 @@ export default function RolesPage() {
       {modalOpen && (
           <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
             <div
-              className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+              className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-white p-5 shadow-xl"
               role="dialog"
               aria-modal
             >
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-lg font-semibold text-foreground">
                 {editing ? rt('editAccessProfile') : rt('newAccessProfile')}
               </h2>
-              <p className="mt-1 text-xs text-slate-500">{rt('modalHint')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{rt('modalHint')}</p>
               <div className="mt-4 space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-slate-600">{rt('name')}</label>
+                  <label className="text-xs font-medium text-muted-foreground">{rt('name')}</label>
                   <input
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-border px-3 py-2 text-sm"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={rt('namePlaceholder')}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-600">{rt('descriptionOptional')}</label>
+                  <label className="text-xs font-medium text-muted-foreground">{rt('descriptionOptional')}</label>
                   <textarea
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-border px-3 py-2 text-sm"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     rows={2}
@@ -312,19 +312,19 @@ export default function RolesPage() {
                   />
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-600">{rt('appsModulesReports')}</p>
-                  <p className="mt-0.5 flex items-start gap-1 text-[11px] text-slate-500">
+                  <p className="text-xs font-medium text-muted-foreground">{rt('appsModulesReports')}</p>
+                  <p className="mt-0.5 flex items-start gap-1 text-[11px] text-muted-foreground">
                     <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                     {rt('matrixHelp')}
                   </p>
                   {!editing && (
                     <div className="mt-2">
-                      <label className="text-xs font-medium text-slate-600" htmlFor="role-seed">
+                      <label className="text-xs font-medium text-muted-foreground" htmlFor="role-seed">
                         {rt('startFromJobType')}
                       </label>
                       <select
                         id="role-seed"
-                        className="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        className="mt-0.5 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                         value={seedFromRole}
                         onChange={(e) => applySeedRole(e.target.value)}
                       >
@@ -337,7 +337,7 @@ export default function RolesPage() {
                       </select>
                     </div>
                   )}
-                  <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50/80 p-2 sm:p-3">
+                  <div className="mt-2 rounded-lg border border-border/70 bg-muted/50 p-2 sm:p-3">
                     <PermissionMatrix
                       idPrefix="roles-perm"
                       catalog={localizedCatalog as PermItem[]}
@@ -348,11 +348,11 @@ export default function RolesPage() {
                   </div>
                 </div>
               </div>
-              <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+                  className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
                 >
                   {rt('cancel')}
                 </button>
@@ -360,7 +360,7 @@ export default function RolesPage() {
                   type="button"
                   disabled={saving}
                   onClick={() => void save()}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                  className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-white hover:bg-foreground/90 disabled:opacity-50"
                 >
                   {saving ? rt('saving') : rt('save')}
                 </button>

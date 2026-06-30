@@ -10,7 +10,7 @@ export default function AccountsRedirectPage() {
     router.replace('/chart-of-accounts')
   }, [router])
   return (
-    <div className="flex min-h-[40vh] items-center justify-center text-sm text-gray-600">
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
       Redirecting to Chart of accounts…
     </div>
   )

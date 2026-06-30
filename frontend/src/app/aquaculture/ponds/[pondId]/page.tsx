@@ -31,6 +31,10 @@ import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
+import {
+  PondEconomicsSnapshotPanel,
+  type PondEconomicsSnapshot,
+} from '@/components/aquaculture/PondEconomicsSnapshotPanel'
 
 type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 type PresetButton = Exclude<PeriodPreset, 'custom'>
@@ -412,6 +416,7 @@ export default function PondDetailViewPage() {
   const [defaultFeedSel, setDefaultFeedSel] = useState('')
   const [defaultFeedSaving, setDefaultFeedSaving] = useState(false)
   const [bioAsset, setBioAsset] = useState<BioAssetSummary | null>(null)
+  const [economicsSnapshot, setEconomicsSnapshot] = useState<PondEconomicsSnapshot | null>(null)
   const load = useCallback(async () => {
     if (!Number.isFinite(pondIdNum)) return
     setLoading(true)
@@ -432,6 +437,7 @@ export default function PondDetailViewPage() {
         pwrRes,
         itemsPick,
         bioRes,
+        econRes,
       ] = await Promise.all([
         api.get<Record<string, unknown>>('/companies/current/'),
         api.get<PondDetail>(`/aquaculture/ponds/${pondIdNum}/`),
@@ -465,6 +471,11 @@ export default function PondDetailViewPage() {
             params: { pond_id: pondIdNum, as_of: end },
           })
           .catch(() => ({ data: null })),
+        api
+          .get<PondEconomicsSnapshot>(`/aquaculture/ponds/${pondIdNum}/economics-snapshot/`, {
+            params: { as_of: end },
+          })
+          .catch(() => ({ data: null })),
       ])
       setCurrency(String(co.data?.currency || 'BDT').slice(0, 3))
       setPond(pondRes.data)
@@ -493,6 +504,7 @@ export default function PondDetailViewPage() {
       const rawItems = Array.isArray(itemsPick.data) ? itemsPick.data : []
       setInventoryItems(rawItems.filter((it) => (it.item_type || '').toLowerCase() === 'inventory'))
       setBioAsset(bioRes.data ?? null)
+      setEconomicsSnapshot(econRes.data ?? null)
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Could not load pond'))
       setPond(null)
@@ -686,9 +698,9 @@ export default function PondDetailViewPage() {
 
   if (!Number.isFinite(pondIdNum)) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-slate-600">
+      <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-muted-foreground">
         Invalid pond link.{' '}
-        <Link href="/aquaculture/ponds" className="text-teal-700 underline">
+        <Link href="/aquaculture/ponds" className="text-primary underline">
           Back to ponds
         </Link>
       </div>
@@ -700,25 +712,25 @@ export default function PondDetailViewPage() {
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Link
           href="/aquaculture/ponds"
-          className="inline-flex items-center gap-1 text-sm font-medium text-teal-800 hover:underline"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Ponds
         </Link>
         {pond ? (
-          <h1 className="text-xl font-bold text-slate-900">
+          <h1 className="text-xl font-bold text-foreground">
             {pond.name}
             {pond.code ? (
-              <span className="ml-2 text-base font-normal text-slate-500">({pond.code})</span>
+              <span className="ml-2 text-base font-normal text-muted-foreground">({pond.code})</span>
             ) : null}
           </h1>
         ) : (
-          <h1 className="text-xl font-bold text-slate-900">{pageMeta.title}</h1>
+          <h1 className="text-xl font-bold text-foreground">{pageMeta.title}</h1>
         )}
         <button
           type="button"
           onClick={() => void load()}
-          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground/85 hover:bg-muted/40"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -726,11 +738,11 @@ export default function PondDetailViewPage() {
       </div>
 
       {periodClosed && dataBankLock ? (
-        <section className="mb-6 rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-950">
+        <section className="mb-6 rounded-xl border border-warning/30 bg-warning/10/80 p-4 text-sm text-warning-foreground">
           <div className="flex flex-wrap items-start gap-2">
-            <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-800" aria-hidden />
+            <Lock className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden />
             <div className="min-w-0 flex-1">
-              <p className="font-semibold text-amber-950">
+              <p className="font-semibold text-warning-foreground">
                 Period closed — {dataBankLock.period_label}
               </p>
               <p className="mt-1 leading-relaxed">
@@ -741,7 +753,7 @@ export default function PondDetailViewPage() {
               {archiveHref ? (
                 <Link
                   href={archiveHref}
-                  className="mt-2 inline-flex items-center gap-1 font-medium text-teal-800 underline hover:text-teal-950"
+                  className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline hover:text-teal-950"
                 >
                   <Archive className="h-4 w-4" />
                   View archived P&amp;L
@@ -753,31 +765,31 @@ export default function PondDetailViewPage() {
       ) : null}
 
       {Number.isFinite(pondIdNum) ? (
-        <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 border-b border-slate-200 pb-4 text-sm">
+        <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 border-b border-border pb-4 text-sm">
           <Link
             href={`/aquaculture/sales?pond_id=${pondIdNum}`}
-            className="font-medium text-teal-800 underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
+            className="font-medium text-primary underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
           >
             Pond &amp; fish sales
           </Link>
           <Link
             href={`/aquaculture/expenses?pond_id=${pondIdNum}`}
-            className="font-medium text-teal-800 underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
+            className="font-medium text-primary underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
           >
             Pond costs
           </Link>
           <Link
             href="/aquaculture/stock"
-            className="font-medium text-slate-700 underline decoration-slate-400/50 underline-offset-2 hover:text-slate-900"
+            className="font-medium text-foreground/85 underline decoration-slate-400/50 underline-offset-2 hover:text-foreground"
           >
             Pond stock
           </Link>
         </div>
       ) : null}
 
-      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-2 text-slate-700">
-          <CalendarRange className="h-5 w-5 text-slate-400" aria-hidden />
+      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2 text-foreground/85">
+          <CalendarRange className="h-5 w-5 text-muted-foreground/70" aria-hidden />
           <span className="text-sm font-medium">Period</span>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -794,7 +806,7 @@ export default function PondDetailViewPage() {
               type="button"
               onClick={() => applyPresetButton(k)}
               className={`rounded-lg px-3 py-1.5 text-sm ${
-                preset === k ? 'bg-teal-600 font-medium text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                preset === k ? 'bg-primary font-medium text-white' : 'bg-muted text-foreground/85 hover:bg-muted'
               }`}
             >
               {lab}
@@ -804,7 +816,7 @@ export default function PondDetailViewPage() {
             type="button"
             onClick={() => setPreset('custom')}
             className={`rounded-lg px-3 py-1.5 text-sm ${
-              preset === 'custom' ? 'bg-teal-600 font-medium text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              preset === 'custom' ? 'bg-primary font-medium text-white' : 'bg-muted text-foreground/85 hover:bg-muted'
             }`}
           >
             Custom
@@ -812,37 +824,37 @@ export default function PondDetailViewPage() {
         </div>
         {preset === 'custom' ? (
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <label className="text-slate-600">
+            <label className="text-muted-foreground">
               From
               <input
                 type="date"
-                className="ml-1 rounded border border-slate-300 px-2 py-1"
+                className="ml-1 rounded border border-border px-2 py-1"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
               />
             </label>
-            <label className="text-slate-600">
+            <label className="text-muted-foreground">
               To
               <input
                 type="date"
-                className="ml-1 rounded border border-slate-300 px-2 py-1"
+                className="ml-1 rounded border border-border px-2 py-1"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
               />
             </label>
           </div>
         ) : null}
-        <p className="w-full text-xs text-slate-500 sm:ml-auto sm:w-auto">
+        <p className="w-full text-xs text-muted-foreground sm:ml-auto sm:w-auto">
           {periodLabel}: {formatDateOnly(start)} → {formatDateOnly(end)}
         </p>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       ) : !pond ? (
-        <p className="text-sm text-slate-600">Pond not found.</p>
+        <p className="text-sm text-muted-foreground">Pond not found.</p>
       ) : (
         <>
           {(pond.pond_role === 'nursing' || pond.pond_role === 'grow_out') && (
@@ -851,31 +863,38 @@ export default function PondDetailViewPage() {
             </section>
           )}
 
+          <PondEconomicsSnapshotPanel
+            snapshot={economicsSnapshot}
+            currency={currency}
+            loading={loading}
+            pondId={pondIdNum}
+          />
+
           <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 shadow-sm">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-teal-800">
+            <div className="rounded-xl border border-primary/25 bg-accent/40 p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
                 <BookOpen className="h-4 w-4" aria-hidden />
                 Biological asset value
               </p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
                 {bioAsset
                   ? `${getCurrencySymbol(currency)}${fmtMoney(parseNum(bioAsset.total_biological_asset_value))}`
                   : '—'}
               </p>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Fry + feed + medicine + labour + direct pond costs ± transfers − harvest relief (as of {end}).
                 {bioAsset?.gl_reconciliation_note ? ` ${bioAsset.gl_reconciliation_note}` : ''}
               </p>
             </div>
-            <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">Cost per fish / kg</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+            <div className="rounded-xl border border-primary/25 bg-accent/40 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Cost per fish / kg</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
                 {bioAsset?.cost_per_fish
                   ? `${getCurrencySymbol(currency)}${fmtMoney(parseNum(bioAsset.cost_per_fish), 2)}`
                   : '—'}
-                <span className="text-base font-normal text-slate-500"> / fish</span>
+                <span className="text-base font-normal text-muted-foreground"> / fish</span>
               </p>
-              <p className="mt-1 text-sm tabular-nums text-slate-700">
+              <p className="mt-1 text-sm tabular-nums text-foreground/85">
                 {bioAsset?.cost_per_kg
                   ? `${getCurrencySymbol(currency)}${fmtMoney(parseNum(bioAsset.cost_per_kg), 2)}/kg`
                   : '—'}
@@ -885,20 +904,20 @@ export default function PondDetailViewPage() {
                   : '—'}
               </p>
               {bioAsset?.cost_redistribution_note ? (
-                <p className="mt-1 text-xs text-amber-800">{bioAsset.cost_redistribution_note}</p>
+                <p className="mt-1 text-xs text-warning-foreground">{bioAsset.cost_redistribution_note}</p>
               ) : null}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Sprout className="h-4 w-4" aria-hidden />
                 ADG (sample-based)
               </p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
                 {sampleMetrics.adgGPerFishPerDay != null && Number.isFinite(sampleMetrics.adgGPerFishPerDay)
                   ? `${formatNumber(sampleMetrics.adgGPerFishPerDay, 2)} g/fish/day`
                   : '—'}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 From first to last biomass sample in range (mean weight). Needs two samples with average weight (or
                 total kg ÷ fish count).
                 {sampleMetrics.firstDate && sampleMetrics.lastDate ? (
@@ -910,99 +929,99 @@ export default function PondDetailViewPage() {
                 ) : null}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Scale className="h-4 w-4" aria-hidden />
                 FCR (feed ÷ biomass gain)
               </p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
                 {fcrBiomass != null ? formatNumber(fcrBiomass, 2) : '—'}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Feed kg recorded on expenses ÷ (last sample total kg − first sample total kg) in this period. Positive
                 gain required.
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <Fish className="h-4 w-4" aria-hidden />
                 FCR (feed ÷ harvest kg)
               </p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
                 {fcrHarvest != null ? formatNumber(fcrHarvest, 2) : '—'}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Feed kg on lines in period ÷ harvest sale kg (<code className="rounded bg-slate-100 px-1">fish_harvest_sale</code>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Feed kg on lines in period ÷ harvest sale kg (<code className="rounded bg-muted px-1">fish_harvest_sale</code>
                 ).
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Feed recorded (kg)</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{formatNumber(feedKgRecorded, 2)}</p>
-              <p className="mt-1 text-xs text-slate-500">Sum of feed kg fields on pond expenses in range (incl. shared splits).</p>
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feed recorded (kg)</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{formatNumber(feedKgRecorded, 2)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Sum of feed kg fields on pond expenses in range (incl. shared splits).</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Harvest in period (kg)</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{formatNumber(harvestKg, 2)}</p>
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Harvest in period (kg)</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{formatNumber(harvestKg, 2)}</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Biomass Δ (samples, kg)</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+            <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Biomass Δ (samples, kg)</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
                 {sampleMetrics.biomassGainKg != null ? formatNumber(sampleMetrics.biomassGainKg, 2) : '—'}
               </p>
-              <p className="mt-1 text-xs text-slate-500">Last − first estimated total weight in period (needs both).</p>
+              <p className="mt-1 text-xs text-muted-foreground">Last − first estimated total weight in period (needs both).</p>
             </div>
           </section>
 
           <div className="mb-6 grid gap-4 lg:grid-cols-2">
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold text-slate-900">Pond profile</h2>
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-foreground">Pond profile</h2>
               <dl className="mt-3 grid gap-2 text-sm">
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Role</dt>
-                  <dd className="font-medium text-slate-800">{pond.pond_role_label || pond.pond_role || '—'}</dd>
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Role</dt>
+                  <dd className="font-medium text-foreground">{pond.pond_role_label || pond.pond_role || '—'}</dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Status</dt>
-                  <dd className="font-medium text-slate-800">{pond.is_active ? 'Active' : 'Inactive'}</dd>
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Status</dt>
+                  <dd className="font-medium text-foreground">{pond.is_active ? 'Active' : 'Inactive'}</dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Sort order</dt>
-                  <dd className="tabular-nums text-slate-800">{pond.sort_order}</dd>
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Sort order</dt>
+                  <dd className="tabular-nums text-foreground">{pond.sort_order}</dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Leasing / water / depth</dt>
-                  <dd className="text-right text-slate-800">
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Leasing / water / depth</dt>
+                  <dd className="text-right text-foreground">
                     {pond.leasing_area_decimal ? `L ${pond.leasing_area_decimal} dec` : '—'}
                     {pond.water_area_decimal ? ` · W ${pond.water_area_decimal} dec` : ''}
                     {pond.pond_depth_ft ? ` · ${pond.pond_depth_ft} ft` : ''}
                   </dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Water volume</dt>
-                  <dd className="tabular-nums text-slate-800">
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Water volume</dt>
+                  <dd className="tabular-nums text-foreground">
                     {pond.water_volume_cu_ft ? `${formatNumber(Number(pond.water_volume_cu_ft), 0)} cu ft` : '—'}
                   </dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">POS customer</dt>
-                  <dd className="text-right text-slate-800">
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">POS customer</dt>
+                  <dd className="text-right text-foreground">
                     {pond.pos_customer_id
                       ? `${pond.pos_customer_display?.trim() || `Customer #${pond.pos_customer_id}`}${pond.pos_customer_auto_managed ? ' (auto)' : ''}`
                       : '—'}
                   </dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Lease period</dt>
-                  <dd className="text-right text-slate-800">
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Lease period</dt>
+                  <dd className="text-right text-foreground">
                     {pond.lease_contract_start || pond.lease_contract_end
                       ? `${formatDateOnly(pond.lease_contract_start)} → ${formatDateOnly(pond.lease_contract_end)}`
                       : '—'}
                   </dd>
                 </div>
-                <div className="flex justify-between gap-2 border-b border-slate-50 py-1">
-                  <dt className="text-slate-500">Annual / contract / paid / balance</dt>
-                  <dd className="text-right tabular-nums text-slate-800">
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Annual / contract / paid / balance</dt>
+                  <dd className="text-right tabular-nums text-foreground">
                     {fmtMoney(pond.lease_annual_amount ? Number(pond.lease_annual_amount) : null)} /{' '}
                     {fmtMoney(pond.lease_contract_total ? Number(pond.lease_contract_total) : null)} /{' '}
                     {fmtMoney(Number(pond.lease_paid_to_landlord))} /{' '}
@@ -1010,9 +1029,9 @@ export default function PondDetailViewPage() {
                   </dd>
                 </div>
                 {pond.lease_payment_status ? (
-                  <div className="rounded-lg border border-teal-100 bg-teal-50/60 py-2">
+                  <div className="rounded-lg border border-teal-100 bg-accent/60 py-2">
                     <div className="flex justify-between gap-2 px-1">
-                      <dt className="text-teal-900">Lease — contract total</dt>
+                      <dt className="text-primary">Lease — contract total</dt>
                       <dd className="tabular-nums font-medium text-teal-950">
                         {fmtMoney(
                           pond.lease_payment_status.contract_total != null
@@ -1022,13 +1041,13 @@ export default function PondDetailViewPage() {
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2 border-t border-teal-100/80 px-1 pt-1">
-                      <dt className="text-teal-900">Paid to landlord</dt>
+                      <dt className="text-primary">Paid to landlord</dt>
                       <dd className="tabular-nums font-medium text-teal-950">
                         {fmtMoney(Number(pond.lease_payment_status.paid_total))}
                       </dd>
                     </div>
                     <div className="flex justify-between gap-2 border-t border-teal-100/80 px-1 pt-1">
-                      <dt className="text-teal-900">Outstanding</dt>
+                      <dt className="text-primary">Outstanding</dt>
                       <dd className="tabular-nums font-medium text-teal-950">
                         {fmtMoney(
                           pond.lease_payment_status.outstanding != null
@@ -1040,23 +1059,23 @@ export default function PondDetailViewPage() {
                   </div>
                 ) : null}
                 {(pond.landlord_pond_shares?.length ?? 0) > 0 ? (
-                  <div className="border-b border-slate-50 py-2">
-                    <dt className="flex items-center gap-1 text-slate-500">
+                  <div className="border-b border-border/50 py-2">
+                    <dt className="flex items-center gap-1 text-muted-foreground">
                       <Landmark className="h-3.5 w-3.5" aria-hidden />
                       Landlords on this pond
                     </dt>
-                    <dd className="mt-2 space-y-1 text-right text-slate-800">
+                    <dd className="mt-2 space-y-1 text-right text-foreground">
                       {pond.landlord_pond_shares!.map((s) => (
                         <div key={s.id} className="flex flex-wrap justify-between gap-2 text-sm">
                           <span className="text-left">
                             <Link
                               href={`/aquaculture/landlords/${s.landlord_id}`}
-                              className="font-medium text-teal-800 underline hover:text-teal-950"
+                              className="font-medium text-primary underline hover:text-teal-950"
                             >
                               {s.landlord_name || `Landlord #${s.landlord_id}`}
                             </Link>
                             {s.landlord_code ? (
-                              <span className="ml-1 text-xs text-slate-500">({s.landlord_code})</span>
+                              <span className="ml-1 text-xs text-muted-foreground">({s.landlord_code})</span>
                             ) : null}
                           </span>
                           <span className="tabular-nums">{s.land_area_decimal} dec</span>
@@ -1067,51 +1086,51 @@ export default function PondDetailViewPage() {
                 ) : null}
                 {pond.notes?.trim() ? (
                   <div className="pt-1">
-                    <dt className="text-slate-500">Notes</dt>
-                    <dd className="mt-1 text-slate-700">{pond.notes.trim()}</dd>
+                    <dt className="text-muted-foreground">Notes</dt>
+                    <dd className="mt-1 text-foreground/85">{pond.notes.trim()}</dd>
                   </div>
                 ) : null}
               </dl>
             </section>
 
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Gauge className="h-4 w-4 text-slate-500" aria-hidden />
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Gauge className="h-4 w-4 text-muted-foreground" aria-hidden />
                 Current stock & tilapia load
               </h2>
               <dl className="mt-3 space-y-2 text-sm">
                 <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Implied net (all species)</dt>
-                  <dd className="tabular-nums text-slate-800">
+                  <dt className="text-muted-foreground">Implied net (all species)</dt>
+                  <dd className="tabular-nums text-foreground">
                     {stock
                       ? `${formatNumber(stock.implied_net_fish_count, 0)} fish · ${formatNumber(parseNum(stock.implied_net_weight_kg), 2)} kg`
                       : '—'}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Tilapia net</dt>
-                  <dd className="tabular-nums text-slate-800">
+                  <dt className="text-muted-foreground">Tilapia net</dt>
+                  <dd className="tabular-nums text-foreground">
                     {pond.tilapia_net_fish_count != null
                       ? `${formatNumber(pond.tilapia_net_fish_count, 0)} fish · ${formatNumber(parseNum(pond.tilapia_net_weight_kg), 2)} kg`
                       : '—'}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Kg per decimal (tilapia)</dt>
-                  <dd className="tabular-nums text-slate-800">
+                  <dt className="text-muted-foreground">Kg per decimal (tilapia)</dt>
+                  <dd className="tabular-nums text-foreground">
                     {pond.tilapia_kg_per_decimal != null && pond.tilapia_kg_per_decimal !== ''
                       ? `${formatNumber(Number(pond.tilapia_kg_per_decimal), 3)} kg/dec`
                       : '—'}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Load status</dt>
-                  <dd className="font-medium text-slate-800">{pond.tilapia_load_level_label || stock?.load_level_label || '—'}</dd>
+                  <dt className="text-muted-foreground">Load status</dt>
+                  <dd className="font-medium text-foreground">{pond.tilapia_load_level_label || stock?.load_level_label || '—'}</dd>
                 </div>
                 {stock?.current_fish_per_kg ? (
                   <div className="flex justify-between gap-2">
-                    <dt className="text-slate-500">Current size (pcs/kg)</dt>
-                    <dd className="tabular-nums font-medium text-teal-900">
+                    <dt className="text-muted-foreground">Current size (pcs/kg)</dt>
+                    <dd className="tabular-nums font-medium text-primary">
                       {formatNumber(Number(stock.current_fish_per_kg), 1)} pcs/kg
                     </dd>
                   </div>
@@ -1126,14 +1145,14 @@ export default function PondDetailViewPage() {
             ) : null}
           </div>
 
-          <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="mb-6 rounded-xl border border-border bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">Pond warehouse</h2>
+                <h2 className="text-sm font-semibold text-foreground">Pond warehouse</h2>
                 {pond.warehouse_group_name ? (
-                  <p className="mt-0.5 text-xs text-slate-600">
-                    Shared store: <span className="font-medium text-teal-900">{pond.warehouse_group_name}</span> — use{' '}
-                    <Link href="/aquaculture/stock/supplies" className="font-medium text-teal-800 hover:underline">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Shared store: <span className="font-medium text-primary">{pond.warehouse_group_name}</span> — use{' '}
+                    <Link href="/aquaculture/stock/supplies" className="font-medium text-primary hover:underline">
                       Stock → Move between ponds
                     </Link>{' '}
                     to reallocate.
@@ -1145,7 +1164,7 @@ export default function PondDetailViewPage() {
                   type="button"
                   disabled={!Number.isFinite(pondIdNum)}
                   onClick={() => setAddWhOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Plus className="h-3.5 w-3.5" aria-hidden />
                   Add stock
@@ -1154,17 +1173,17 @@ export default function PondDetailViewPage() {
                   type="button"
                   disabled={warehouseRefreshing || !Number.isFinite(pondIdNum)}
                   onClick={() => void refreshWarehouseStock()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/85 hover:bg-muted/40 disabled:opacity-50"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${warehouseRefreshing ? 'animate-spin' : ''}`} aria-hidden />
                   Refresh
                 </button>
               </div>
             </div>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-1 text-xs text-muted-foreground">
               Feed, medicine, and supplies at this pond. Use <strong className="font-medium">Add stock</strong> to move
               from your shop (no COGS until consumed via{' '}
-              <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">
+              <Link href="/aquaculture/feeding" className="font-medium text-primary underline">
                 feeding
               </Link>{' '}
               or{' '}
@@ -1172,18 +1191,18 @@ export default function PondDetailViewPage() {
                 medicine
               </Link>
               ). Advanced:{' '}
-              <Link href="/inventory" className="font-medium text-teal-800 underline">
+              <Link href="/inventory" className="font-medium text-primary underline">
                 Inventory
               </Link>
               .
             </p>
             {recentPondWarehouseConsumption.length > 0 ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
-                <p className="text-xs font-semibold text-slate-800">Recent pond warehouse use</p>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
-                  Feed or medicine <strong className="font-medium text-slate-800">consumed</strong> at this pond
+              <div className="mt-3 rounded-lg border border-border bg-muted/50 p-3">
+                <p className="text-xs font-semibold text-foreground">Recent pond warehouse use</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  Feed or medicine <strong className="font-medium text-foreground">consumed</strong> at this pond
                   (including from{' '}
-                  <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline">
+                  <Link href="/aquaculture/feeding" className="font-medium text-primary underline">
                     feeding advice apply
                   </Link>{' '}
                   and{' '}
@@ -1194,28 +1213,28 @@ export default function PondDetailViewPage() {
                     medicine events
                   </Link>
                   ). Shown from the latest pond expenses — not filtered by the dashboard period above. Click{' '}
-                  <strong className="font-medium text-slate-800">Refresh stock</strong> after applying advice on another
+                  <strong className="font-medium text-foreground">Refresh stock</strong> after applying advice on another
                   tab so quantities match the server.
                 </p>
-                <ul className="mt-2 max-h-44 space-y-1.5 overflow-y-auto text-xs text-slate-800">
+                <ul className="mt-2 max-h-44 space-y-1.5 overflow-y-auto text-xs text-foreground">
                   {recentPondWarehouseConsumption.map((e) => (
                     <li
                       key={e.id}
-                      className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-slate-100 pb-1.5 last:border-0"
+                      className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border/70 pb-1.5 last:border-0"
                     >
                       <span>
                         {formatDateOnly(e.expense_date)} · {e.expense_category_label}
                         {e.feed_weight_kg ? (
-                          <span className="text-slate-600"> · {e.feed_weight_kg} kg</span>
+                          <span className="text-muted-foreground"> · {e.feed_weight_kg} kg</span>
                         ) : null}
                       </span>
-                      <span className="tabular-nums text-slate-700">{getCurrencySymbol(currency)} {e.amount}</span>
+                      <span className="tabular-nums text-foreground/85">{getCurrencySymbol(currency)} {e.amount}</span>
                     </li>
                   ))}
                 </ul>
                 <Link
                   href={`/aquaculture/expenses?pond_id=${pondIdNum}`}
-                  className="mt-2 inline-block text-xs font-medium text-teal-800 hover:underline"
+                  className="mt-2 inline-block text-xs font-medium text-primary hover:underline"
                 >
                   Open all pond expenses
                 </Link>
@@ -1223,17 +1242,17 @@ export default function PondDetailViewPage() {
             ) : null}
             {warehouseLoadError ? (
               <div
-                className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+                className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-foreground"
                 role="alert"
               >
                 <span className="font-semibold">Warehouse stock could not be loaded.</span> {warehouseLoadError}
               </div>
             ) : null}
             <div className="mt-4 flex flex-wrap items-end gap-3">
-              <label className="block min-w-[220px] text-xs font-medium text-slate-700">
+              <label className="block min-w-[220px] text-xs font-medium text-foreground/85">
                 Default feed SKU (for feeding advice apply)
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-2 text-sm"
                   value={defaultFeedSel}
                   onChange={(e) => setDefaultFeedSel(e.target.value)}
                 >
@@ -1249,7 +1268,7 @@ export default function PondDetailViewPage() {
                 type="button"
                 disabled={defaultFeedSaving}
                 onClick={() => void saveDefaultFeed()}
-                className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {defaultFeedSaving ? 'Saving…' : 'Save default feed'}
               </button>
@@ -1268,7 +1287,7 @@ export default function PondDetailViewPage() {
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[360px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                  <tr className="border-b border-border text-xs uppercase text-muted-foreground">
                     <th className="py-2 pr-3">Item</th>
                     <th className="py-2 pr-3">Qty</th>
                     <th className="py-2">Unit</th>
@@ -1277,8 +1296,8 @@ export default function PondDetailViewPage() {
                 {warehouseLoadError && warehouseRows.length === 0 ? (
                   <tbody>
                     <tr>
-                      <td colSpan={3} className="py-3 text-xs text-slate-500">
-                        After fixing the issue above, click <strong className="font-medium text-slate-700">Refresh stock</strong>.
+                      <td colSpan={3} className="py-3 text-xs text-muted-foreground">
+                        After fixing the issue above, click <strong className="font-medium text-foreground/85">Refresh stock</strong>.
                       </td>
                     </tr>
                   </tbody>
@@ -1286,8 +1305,8 @@ export default function PondDetailViewPage() {
                 {warehouseRows.length === 0 && !warehouseLoadError ? (
                   <tbody>
                     <tr>
-                      <td colSpan={3} className="py-4 text-slate-600">
-                        <p className="text-sm font-medium text-slate-800">No on-hand stock at this pond warehouse.</p>
+                      <td colSpan={3} className="py-4 text-muted-foreground">
+                        <p className="text-sm font-medium text-foreground">No on-hand stock at this pond warehouse.</p>
                         {receiptsForThisPond.length > 0 ? (
                           <div className="mt-3 max-w-xl rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2 text-xs text-sky-950">
                             <p className="font-medium text-sky-900">
@@ -1322,15 +1341,15 @@ export default function PondDetailViewPage() {
                             </ul>
                             <p className="mt-2 text-sky-800">
                               Full history:{' '}
-                              <Link href="/inventory" className="font-medium text-teal-800 underline hover:text-teal-950">
+                              <Link href="/inventory" className="font-medium text-primary underline hover:text-teal-950">
                                 Inventory
                               </Link>{' '}
                               → Pond warehouse receipts.
                             </p>
                           </div>
                         ) : null}
-                        <p className="mt-2 text-xs text-slate-600">
-                          Click <strong className="font-medium text-slate-800">Add stock</strong> above to move feed or
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Click <strong className="font-medium text-foreground">Add stock</strong> above to move feed or
                           medicine from your shop into this pond.
                         </p>
                       </td>
@@ -1339,11 +1358,11 @@ export default function PondDetailViewPage() {
                 ) : null}
                 {warehouseRows.length > 0
                   ? warehouseByCategory.map(group => (
-                      <tbody key={group.key} className="divide-y divide-slate-100">
-                        <tr className="bg-slate-50">
+                      <tbody key={group.key} className="divide-y divide-border/70">
+                        <tr className="bg-muted/40">
                           <td
                             colSpan={3}
-                            className="py-2 pl-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+                            className="py-2 pl-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                           >
                             {group.label}
                           </td>
@@ -1351,15 +1370,15 @@ export default function PondDetailViewPage() {
                         {group.rows.map(w => (
                           <tr key={w.item_id}>
                             <td className="py-2 pr-3">
-                              <div className="font-medium text-slate-800">{w.item_name}</div>
+                              <div className="font-medium text-foreground">{w.item_name}</div>
                               {w.reporting_category && w.reporting_category !== 'General' ? (
-                                <div className="text-[11px] text-slate-500">{w.reporting_category}</div>
+                                <div className="text-[11px] text-muted-foreground">{w.reporting_category}</div>
                               ) : null}
                             </td>
-                            <td className="py-2 pr-3 tabular-nums text-slate-800">
+                            <td className="py-2 pr-3 tabular-nums text-foreground">
                               {formatNumber(Number(w.quantity), 2)}
                             </td>
-                            <td className="py-2 text-slate-600">{w.unit}</td>
+                            <td className="py-2 text-muted-foreground">{w.unit}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1370,44 +1389,44 @@ export default function PondDetailViewPage() {
           </section>
 
           {plRow ? (
-            <section className="mb-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <h2 className="text-sm font-semibold text-slate-900">P&amp;L (selected period, this pond)</h2>
-                <p className="text-xs text-slate-500">Matches Aquaculture report when filtered to this pond.</p>
+            <section className="mb-6 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
+              <div className="border-b border-border/70 px-4 py-3">
+                <h2 className="text-sm font-semibold text-foreground">P&amp;L (selected period, this pond)</h2>
+                <p className="text-xs text-muted-foreground">Matches Aquaculture report when filtered to this pond.</p>
               </div>
               <table className="w-full min-w-[640px] text-left text-sm">
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   <tr>
-                    <th className="px-4 py-2 text-slate-500">Revenue</th>
-                    <td className="px-4 py-2 text-right font-medium tabular-nums text-slate-900">
+                    <th className="px-4 py-2 text-muted-foreground">Revenue</th>
+                    <td className="px-4 py-2 text-right font-medium tabular-nums text-foreground">
                       {sym}
                       {formatNumber(parseNum(plRow.revenue), 2)}
                     </td>
                   </tr>
                   <tr>
-                    <th className="px-4 py-2 text-slate-500">Operating expenses</th>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-800">
+                    <th className="px-4 py-2 text-muted-foreground">Operating expenses</th>
+                    <td className="px-4 py-2 text-right tabular-nums text-foreground">
                       {sym}
                       {formatNumber(parseNum(plRow.operating_expenses), 2)}
                     </td>
                   </tr>
                   <tr>
-                    <th className="px-4 py-2 text-slate-500">Payroll allocated</th>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-800">
+                    <th className="px-4 py-2 text-muted-foreground">Payroll allocated</th>
+                    <td className="px-4 py-2 text-right tabular-nums text-foreground">
                       {sym}
                       {formatNumber(parseNum(plRow.payroll_allocated), 2)}
                     </td>
                   </tr>
                   <tr>
-                    <th className="px-4 py-2 text-slate-500">Total costs</th>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-800">
+                    <th className="px-4 py-2 text-muted-foreground">Total costs</th>
+                    <td className="px-4 py-2 text-right tabular-nums text-foreground">
                       {sym}
                       {formatNumber(parseNum(plRow.total_costs), 2)}
                     </td>
                   </tr>
-                  <tr className="bg-slate-50/80">
-                    <th className="px-4 py-2 font-semibold text-slate-800">Profit</th>
-                    <td className="px-4 py-2 text-right text-base font-semibold tabular-nums text-teal-900">
+                  <tr className="bg-muted/50">
+                    <th className="px-4 py-2 font-semibold text-foreground">Profit</th>
+                    <td className="px-4 py-2 text-right text-base font-semibold tabular-nums text-primary">
                       {sym}
                       {formatNumber(parseNum(plRow.profit), 2)}
                     </td>
@@ -1416,17 +1435,17 @@ export default function PondDetailViewPage() {
               </table>
             </section>
           ) : (
-            <p className="mb-6 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="mb-6 rounded-lg border border-amber-100 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
               No P&amp;L row for this pond in the selected dates. Inactive ponds are omitted from the P&amp;L engine; use
               transactions below for activity.
             </p>
           )}
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Production cycles</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Production cycles</h2>
+            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[520px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2">Name</th>
                     <th className="px-4 py-2">Code</th>
@@ -1434,19 +1453,19 @@ export default function PondDetailViewPage() {
                     <th className="px-4 py-2">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {cycles.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
                         No cycles
                       </td>
                     </tr>
                   ) : (
                     cycles.map((c) => (
                       <tr key={c.id}>
-                        <td className="px-4 py-2 font-medium text-slate-900">{c.name}</td>
-                        <td className="px-4 py-2 text-slate-600">{c.code || '—'}</td>
-                        <td className="px-4 py-2 text-slate-600">
+                        <td className="px-4 py-2 font-medium text-foreground">{c.name}</td>
+                        <td className="px-4 py-2 text-muted-foreground">{c.code || '—'}</td>
+                        <td className="px-4 py-2 text-muted-foreground">
                           {formatDateOnly(c.start_date)} → {formatDateOnly(c.end_date)}
                         </td>
                         <td className="px-4 py-2">{c.is_active !== false ? 'Active' : 'Inactive'}</td>
@@ -1459,10 +1478,10 @@ export default function PondDetailViewPage() {
           </section>
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Expenses in period</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Expenses in period</h2>
+            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2">Date</th>
                     <th className="px-4 py-2">Category</th>
@@ -1471,10 +1490,10 @@ export default function PondDetailViewPage() {
                     <th className="px-4 py-2">Memo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {expensesInPeriod.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
                         None
                       </td>
                     </tr>
@@ -1485,7 +1504,7 @@ export default function PondDetailViewPage() {
                         <td className="px-4 py-2">
                           {e.expense_category_label}
                           {e.is_shared ? (
-                            <span className="ml-1 rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-600">
+                            <span className="ml-1 rounded bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground">
                               Shared
                             </span>
                           ) : null}
@@ -1494,12 +1513,12 @@ export default function PondDetailViewPage() {
                           {sym}
                           {formatNumber(parseNum(e.amount), 2)}
                         </td>
-                        <td className="px-4 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-4 py-2 text-right tabular-nums text-foreground/85">
                           {e.feed_weight_kg != null && e.feed_weight_kg !== ''
                             ? formatNumber(parseNum(e.feed_weight_kg), 2)
                             : '—'}
                         </td>
-                        <td className="max-w-xs truncate px-4 py-2 text-slate-600" title={e.memo}>
+                        <td className="max-w-xs truncate px-4 py-2 text-muted-foreground" title={e.memo}>
                           {e.memo || '—'}
                         </td>
                       </tr>
@@ -1511,10 +1530,10 @@ export default function PondDetailViewPage() {
           </section>
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Sales in period</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Sales in period</h2>
+            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2">Date</th>
                     <th className="px-4 py-2">Type</th>
@@ -1523,10 +1542,10 @@ export default function PondDetailViewPage() {
                     <th className="px-4 py-2">Species</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {salesInPeriod.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
                         None
                       </td>
                     </tr>
@@ -1534,13 +1553,13 @@ export default function PondDetailViewPage() {
                     salesInPeriod.map((s) => (
                       <tr key={s.id}>
                         <td className="whitespace-nowrap px-4 py-2">{formatDateOnly(s.sale_date)}</td>
-                        <td className="px-4 py-2 text-slate-700">{s.income_type_label || s.income_type || '—'}</td>
+                        <td className="px-4 py-2 text-foreground/85">{s.income_type_label || s.income_type || '—'}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatNumber(parseNum(s.weight_kg), 2)}</td>
                         <td className="px-4 py-2 text-right tabular-nums">
                           {sym}
                           {formatNumber(parseNum(s.total_amount), 2)}
                         </td>
-                        <td className="px-4 py-2 text-slate-600">{s.fish_species_label || '—'}</td>
+                        <td className="px-4 py-2 text-muted-foreground">{s.fish_species_label || '—'}</td>
                       </tr>
                     ))
                   )}
@@ -1550,10 +1569,10 @@ export default function PondDetailViewPage() {
           </section>
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Biomass samples in period</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Biomass samples in period</h2>
+            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2">Date</th>
                     <th className="px-4 py-2 text-right">Est. fish</th>
@@ -1562,10 +1581,10 @@ export default function PondDetailViewPage() {
                     <th className="px-4 py-2">Species</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {samplesInPeriod.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
                         None
                       </td>
                     </tr>
@@ -1588,7 +1607,7 @@ export default function PondDetailViewPage() {
                               ? formatNumber(Number(s.avg_weight_kg), 4)
                               : '—'}
                           </td>
-                          <td className="px-4 py-2 text-slate-600">{s.fish_species_label || '—'}</td>
+                          <td className="px-4 py-2 text-muted-foreground">{s.fish_species_label || '—'}</td>
                         </tr>
                       ))
                   )}
@@ -1598,10 +1617,10 @@ export default function PondDetailViewPage() {
           </section>
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Inter-pond transfers in period</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Inter-pond transfers in period</h2>
+            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2">Date</th>
                     <th className="px-4 py-2">Direction</th>
@@ -1610,10 +1629,10 @@ export default function PondDetailViewPage() {
                     <th className="px-4 py-2 text-right">Heads</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {transfersInPeriod.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
                         None
                       </td>
                     </tr>
@@ -1626,7 +1645,7 @@ export default function PondDetailViewPage() {
                       return (
                         <tr key={t.id}>
                           <td className="whitespace-nowrap px-4 py-2">{formatDateOnly(t.transfer_date)}</td>
-                          <td className="px-4 py-2 text-slate-700">
+                          <td className="px-4 py-2 text-foreground/85">
                             {out ? (
                               <span>
                                 Out →{' '}
@@ -1639,7 +1658,7 @@ export default function PondDetailViewPage() {
                               <span>In ← {t.from_pond_name || `Pond #${t.from_pond_id}`}</span>
                             )}
                           </td>
-                          <td className="px-4 py-2 text-slate-600">{t.fish_species_label || '—'}</td>
+                          <td className="px-4 py-2 text-muted-foreground">{t.fish_species_label || '—'}</td>
                           <td className="px-4 py-2 text-right tabular-nums">{formatNumber(lineKg, 2)}</td>
                           <td className="px-4 py-2 text-right tabular-nums">{formatNumber(lineHeads, 0)}</td>
                         </tr>
@@ -1652,10 +1671,10 @@ export default function PondDetailViewPage() {
           </section>
 
           <section className="mb-10">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Stock ledger in period</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Stock ledger in period</h2>
+            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[640px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
                   <tr>
                     <th className="px-4 py-2">Date</th>
                     <th className="px-4 py-2">Kind</th>
@@ -1665,10 +1684,10 @@ export default function PondDetailViewPage() {
                     <th className="px-4 py-2">Memo</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-border/70">
                   {ledgerInPeriod.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
                         None
                       </td>
                     </tr>
@@ -1679,8 +1698,8 @@ export default function PondDetailViewPage() {
                         <td className="px-4 py-2">{r.entry_kind_label || '—'}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatNumber(r.fish_count_delta, 0)}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatNumber(parseNum(r.weight_kg_delta), 2)}</td>
-                        <td className="px-4 py-2 text-slate-600">{r.fish_species_label || '—'}</td>
-                        <td className="max-w-xs truncate px-4 py-2 text-slate-600" title={r.memo}>
+                        <td className="px-4 py-2 text-muted-foreground">{r.fish_species_label || '—'}</td>
+                        <td className="max-w-xs truncate px-4 py-2 text-muted-foreground" title={r.memo}>
                           {r.memo || '—'}
                         </td>
                       </tr>

@@ -28,7 +28,7 @@ const SEGMENTS: {
     id: 'all',
     title: 'All sites',
     icon: Layers,
-    activeClass: 'border-slate-800 bg-slate-900 text-white shadow-md',
+    activeClass: 'border-foreground bg-foreground text-white shadow-md',
   },
   {
     id: 'fuel',
@@ -40,7 +40,7 @@ const SEGMENTS: {
     id: 'aquaculture',
     title: 'Aquaculture',
     icon: Fish,
-    activeClass: 'border-teal-600 bg-teal-600 text-white shadow-md',
+    activeClass: 'border-teal-600 bg-primary text-white shadow-md',
   },
 ]
 
@@ -79,15 +79,15 @@ export function BusinessSegmentFilter({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm">
+    <div className="rounded-lg border border-border bg-gradient-to-br from-muted/40 to-card p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="text-sm font-semibold text-slate-900">Business line</p>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="text-sm font-semibold text-foreground">Business line</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {hint || 'Fuel forecourt vs aquaculture shop. Applies to Sales, Purchase, and Daily Summary.'}
           </p>
           {lockedSegment ? (
-            <p className="mt-2 text-xs font-medium text-amber-800">Locked to your home site.</p>
+            <p className="mt-2 text-xs font-medium text-warning-foreground">Locked to your home site.</p>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ export function BusinessSegmentFilter({
                   'flex min-w-[9.5rem] flex-col items-start rounded-lg border px-3 py-2 text-left transition-all',
                   isActive
                     ? seg.activeClass
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50',
+                    : 'border-border bg-white text-foreground/85 hover:border-border hover:bg-muted/40',
                   isDisabled ? 'cursor-not-allowed opacity-45' : 'cursor-pointer',
                 ].join(' ')}
               >
@@ -116,7 +116,7 @@ export function BusinessSegmentFilter({
                   {seg.id === 'all' ? seg.title : seg.id === 'fuel' ? 'Fuel Station' : 'Aquaculture'}
                 </span>
                 <span
-                  className={`mt-0.5 text-xs ${isActive ? 'text-white/90' : 'text-slate-500'}`}
+                  className={`mt-0.5 text-xs ${isActive ? 'text-white/90' : 'text-muted-foreground'}`}
                 >
                   {seg.id === 'aquaculture' ? title : segmentSubtitle(seg.id)}
                 </span>
@@ -126,11 +126,11 @@ export function BusinessSegmentFilter({
         </div>
       </div>
       {(activeLabel || (activeStationNames && activeStationNames.length > 0)) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-600">
-          <span className="font-medium text-slate-800">Showing:</span>
-          {activeLabel ? <span className="rounded-full bg-slate-100 px-2 py-0.5">{activeLabel}</span> : null}
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Showing:</span>
+          {activeLabel ? <span className="rounded-full bg-muted px-2 py-0.5">{activeLabel}</span> : null}
           {activeStationNames?.map((name) => (
-            <span key={name} className="rounded-full bg-slate-100 px-2 py-0.5">
+            <span key={name} className="rounded-full bg-muted px-2 py-0.5">
               {name}
             </span>
           ))}

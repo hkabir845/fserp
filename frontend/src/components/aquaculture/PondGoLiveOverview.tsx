@@ -52,29 +52,29 @@ export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalP
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4">
+      <div className="rounded-xl border border-primary/25 bg-gradient-to-br from-teal-50 to-card p-4">
         <p className="text-sm font-semibold text-teal-950">
           {aquacultureT('goLiveCutoverDateLabel', lang)} {cutoverDate}
         </p>
-        <p className="mt-1 text-xs leading-relaxed text-slate-700">
+        <p className="mt-1 text-xs leading-relaxed text-foreground/85">
           {aquacultureT('goLiveOverviewMessage', lang)}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {aquacultureT('goLivePondsReadyLabel', lang)}
             </p>
-            <p className="text-2xl font-bold tabular-nums text-teal-900">
+            <p className="text-2xl font-bold tabular-nums text-primary">
               {readyPonds}
-              <span className="text-base font-medium text-slate-500"> / {totalPonds}</span>
+              <span className="text-base font-medium text-muted-foreground"> / {totalPonds}</span>
             </p>
           </div>
           <div className="h-10 w-px bg-teal-200" aria-hidden />
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {aquacultureT('goLiveFleetReadinessLabel', lang)}
             </p>
-            <p className="text-2xl font-bold tabular-nums text-slate-900">{pct}%</p>
+            <p className="text-2xl font-bold tabular-nums text-foreground">{pct}%</p>
           </div>
         </div>
       </div>
@@ -89,15 +89,15 @@ export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalP
             <section
               key={p.pond_id}
               className={`rounded-xl border bg-white p-4 shadow-sm ${
-                gl?.ready ? 'border-emerald-200' : 'border-slate-200'
+                gl?.ready ? 'border-emerald-200' : 'border-border'
               }`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 pb-3">
                 <div>
-                  <h3 className="font-semibold text-slate-900">
+                  <h3 className="font-semibold text-foreground">
                     {p.pond_name}
                     {p.pond_code ? (
-                      <span className="ml-2 text-sm font-normal text-slate-500">{p.pond_code}</span>
+                      <span className="ml-2 text-sm font-normal text-muted-foreground">{p.pond_code}</span>
                     ) : null}
                   </h3>
                   {gl?.ready ? (
@@ -105,33 +105,33 @@ export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalP
                       Ready for go-live
                     </span>
                   ) : (
-                    <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-950">
+                    <span className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-warning-foreground">
                       {gl?.readiness_percent ?? 0}% complete
                     </span>
                   )}
                 </div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-right text-xs sm:grid-cols-4">
                   <div>
-                    <dt className="text-slate-500">P&amp;L net</dt>
+                    <dt className="text-muted-foreground">P&amp;L net</dt>
                     <dd className={`font-semibold tabular-nums ${signedTone(plNet)}`}>{formatSigned(plNet, sym)}</dd>
                   </div>
                   <div>
-                    <dt className="text-slate-500">A/R net</dt>
+                    <dt className="text-muted-foreground">A/R net</dt>
                     <dd className={`font-semibold tabular-nums ${signedTone(signedByKind(p, 'customer'))}`}>
                       {formatSigned(signedByKind(p, 'customer'), sym)}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-slate-500">Biomass</dt>
-                    <dd className="font-semibold tabular-nums text-slate-800">
+                    <dt className="text-muted-foreground">Biomass</dt>
+                    <dd className="font-semibold tabular-nums text-foreground">
                       {gl?.biology?.has_biomass
                         ? `${gl.biology.total_weight_kg} kg`
                         : '—'}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-slate-500">Bioasset est.</dt>
-                    <dd className="font-semibold tabular-nums text-slate-800">
+                    <dt className="text-muted-foreground">Bioasset est.</dt>
+                    <dd className="font-semibold tabular-nums text-foreground">
                       {bio && parseMoney(bio.estimated_value) > 0
                         ? `${sym}${fmtMoney(parseMoney(bio.estimated_value))}`
                         : '—'}
@@ -159,9 +159,9 @@ export function PondGoLiveOverview({ ponds, sym, cutoverDate, readyPonds, totalP
               ) : null}
 
               {gl?.lease?.has_contract ? (
-                <p className="mt-3 text-[11px] text-slate-600">
+                <p className="mt-3 text-[11px] text-muted-foreground">
                   Lease remaining:{' '}
-                  <strong className="text-slate-800">
+                  <strong className="text-foreground">
                     {gl.lease.balance_due != null ? `${sym}${fmtMoney(parseMoney(gl.lease.balance_due))}` : '—'}
                   </strong>
                   {' · '}

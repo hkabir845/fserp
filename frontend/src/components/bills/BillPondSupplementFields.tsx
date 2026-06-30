@@ -31,7 +31,7 @@ export function BillPondSupplementFields({
   productionCycles,
   billExpenseCategories,
   onFieldChange,
-  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500',
+  selectClassName = 'w-full min-w-0 px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring',
   /** Fish / single-pond inventory lines: cycle only, no shared split UI. */
   directOnly = false,
 }: {
@@ -72,13 +72,13 @@ export function BillPondSupplementFields({
   if (!showCycle && !showSharedAllocation) return null
 
   return (
-    <div className="mt-2 space-y-2 border-t border-dashed border-teal-200 pt-2">
+    <div className="mt-2 space-y-2 border-t border-dashed border-primary/25 pt-2">
       {showSharedAllocation ? (
-        <fieldset className="w-full rounded-lg border border-teal-100 bg-teal-50/30 p-2 space-y-1">
-          <legend className="px-1 text-xs font-medium uppercase tracking-wide text-teal-800">
+        <fieldset className="w-full rounded-lg border border-teal-100 bg-accent/30 p-2 space-y-1">
+          <legend className="px-1 text-xs font-medium uppercase tracking-wide text-primary">
             Pond cost allocation
           </legend>
-          <label className="flex items-center gap-2 text-sm text-gray-800">
+          <label className="flex items-center gap-2 text-sm text-foreground">
             <input
               type="radio"
               name={`pond_cost_mode_${index}`}
@@ -87,7 +87,7 @@ export function BillPondSupplementFields({
             />
             Direct to one pond (use Entity above)
           </label>
-          <label className="flex items-center gap-2 text-sm text-gray-800">
+          <label className="flex items-center gap-2 text-sm text-foreground">
             <input
               type="radio"
               name={`pond_cost_mode_${index}`}
@@ -96,7 +96,7 @@ export function BillPondSupplementFields({
             />
             Shared — equal split
           </label>
-          <label className="flex items-center gap-2 text-sm text-gray-800">
+          <label className="flex items-center gap-2 text-sm text-foreground">
             <input
               type="radio"
               name={`pond_cost_mode_${index}`}
@@ -111,7 +111,7 @@ export function BillPondSupplementFields({
       {showCycle ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-[10rem] flex-1 max-w-md">
-            <label className="block text-xs font-medium text-gray-700 mb-1">
+            <label className="block text-xs font-medium text-foreground/85 mb-1">
               Production batch (optional)
             </label>
             <select
@@ -138,7 +138,7 @@ export function BillPondSupplementFields({
                 </option>
               ))}
             </select>
-            <p className="mt-0.5 text-[11px] text-slate-500">
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
               Tilapia: pick batch C01/C02/C03 for each fry cohort. Other species: usually leave blank or pick the
               one open batch — FSERP reuses it on new bills to the same pond.
             </p>
@@ -149,13 +149,13 @@ export function BillPondSupplementFields({
       {showSharedAllocation && mode === 'shared_equal' ? (
         <div className="rounded-lg border border-teal-100 bg-white p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-medium text-teal-900">
+            <p className="text-xs font-medium text-primary">
               Select at least two ponds (equal split of line amount). Use for shared feed, medicine, or utilities
               charged on one bill.
             </p>
             <button
               type="button"
-              className="text-xs font-medium text-teal-700 hover:text-teal-900 underline"
+              className="text-xs font-medium text-primary hover:text-primary underline"
               onClick={() =>
                 onFieldChange(
                   index,
@@ -173,7 +173,7 @@ export function BillPondSupplementFields({
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    className="rounded border-gray-300"
+                    className="rounded border-border"
                     checked={sharedIds.includes(p.id)}
                     onChange={() => toggleSharedPond(p.id)}
                   />
@@ -187,13 +187,13 @@ export function BillPondSupplementFields({
 
       {showSharedAllocation && mode === 'shared_manual' ? (
         <div className="space-y-2 rounded-lg border border-teal-100 bg-white p-3">
-          <p className="text-xs text-gray-600">
+          <p className="text-xs text-muted-foreground">
             Enter amount per pond; must sum to the line amount. On save, expands to one line per pond.
           </p>
           {manualShares.map((row, ri) => (
             <div key={ri} className="flex flex-wrap items-end gap-2">
               <div className="min-w-[8rem] flex-1">
-                <label className="block text-xs text-gray-600 mb-0.5">Pond</label>
+                <label className="block text-xs text-muted-foreground mb-0.5">Pond</label>
                 <select
                   value={row.pond_id === '' ? '' : String(row.pond_id)}
                   onChange={(e) => {
@@ -215,7 +215,7 @@ export function BillPondSupplementFields({
                 </select>
               </div>
               <div className="w-28">
-                <label className="block text-xs text-gray-600 mb-0.5">Amount</label>
+                <label className="block text-xs text-muted-foreground mb-0.5">Amount</label>
                 <input
                   type="number"
                   step="0.01"
@@ -231,7 +231,7 @@ export function BillPondSupplementFields({
               </div>
               <button
                 type="button"
-                className="text-xs text-red-600 hover:underline pb-1"
+                className="text-xs text-destructive hover:underline pb-1"
                 onClick={() => {
                   const next = manualShares.filter((_, i) => i !== ri)
                   onFieldChange(index, 'pond_shares', next)
@@ -243,7 +243,7 @@ export function BillPondSupplementFields({
           ))}
           <button
             type="button"
-            className="text-xs font-medium text-teal-700 hover:underline"
+            className="text-xs font-medium text-primary hover:underline"
             onClick={() =>
               onFieldChange(index, 'pond_shares', [...manualShares, { pond_id: '', amount: 0 }])
             }
@@ -255,12 +255,12 @@ export function BillPondSupplementFields({
 
       {showSharedCategory ? (
         <div className="min-w-[11rem] max-w-md">
-          <label className="block text-xs font-medium text-teal-900 mb-1">Pond expense category *</label>
+          <label className="block text-xs font-medium text-primary mb-1">Pond expense category *</label>
           <select
             required
             value={line.aquaculture_expense_category || ''}
             onChange={(e) => onFieldChange(index, 'aquaculture_expense_category', e.target.value)}
-            className="w-full min-w-0 px-2 py-1 text-sm border border-teal-300 rounded focus:ring-1 focus:ring-teal-500 bg-teal-50/40"
+            className="w-full min-w-0 px-2 py-1 text-sm border border-primary/35 rounded focus:ring-1 focus:ring-teal-500 bg-accent/40"
           >
             <option value="">Select category…</option>
             <ReportingCategorySelectOptions categories={billExpenseCategories} />
@@ -269,7 +269,7 @@ export function BillPondSupplementFields({
       ) : null}
 
       {showSharedAllocation ? (
-        <p className="text-xs text-gray-500 pb-1">
+        <p className="text-xs text-muted-foreground pb-1">
           {mode === 'direct'
             ? hasPondEntity
               ? 'Optional production cycle tags this line to a crop window when the bill posts.'

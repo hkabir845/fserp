@@ -394,67 +394,67 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-page-scroll fixed inset-0 z-0 overflow-y-auto overscroll-y-contain bg-gradient-to-br from-blue-50 to-indigo-100 px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:py-8">
+    <div className="auth-page-scroll fixed inset-0 z-0 overflow-y-auto overscroll-y-contain bg-gradient-to-br from-accent to-accent px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:py-8">
       <div className="mx-auto flex min-h-full w-full max-w-md items-center justify-center py-2">
         <div className="w-full rounded-lg bg-white p-5 shadow-xl sm:p-8">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Filling Station ERP</h1>
-          <p className="text-gray-600 mt-2">QuickBooks Style Business Management</p>
+          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Filling Station ERP</h1>
+          <p className="text-muted-foreground mt-2">QuickBooks Style Business Management</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           {backendConnected === false && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="bg-destructive/5 border border-destructive/25 text-destructive px-4 py-3 rounded">
               <p className="font-semibold">⚠️ Cannot connect to backend server</p>
               <p className="text-sm mt-1">Start the backend first, then try again:</p>
-              <p className="text-xs mt-2 text-red-600 font-mono bg-red-100 p-2 rounded break-all">
+              <p className="text-xs mt-2 text-destructive font-mono bg-destructive/10 p-2 rounded break-all">
                 cd backend → venv\Scripts\activate → python manage.py runserver
               </p>
-              <p className="text-xs mt-1 text-gray-600">Then open <a href={apiDocsUrl} target="_blank" rel="noopener noreferrer" className="underline">{apiDocsUrl}</a> to confirm (when <code className="text-xs">DJANGO_DEBUG=true</code>).</p>
+              <p className="text-xs mt-1 text-muted-foreground">Then open <a href={apiDocsUrl} target="_blank" rel="noopener noreferrer" className="underline">{apiDocsUrl}</a> to confirm (when <code className="text-xs">DJANGO_DEBUG=true</code>).</p>
               <button
                 type="button"
                 onClick={() => testConnection(true)}
                 disabled={checkingConnection}
-                className="mt-3 text-sm bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="mt-3 text-sm bg-destructive text-white px-3 py-1.5 rounded hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {checkingConnection ? 'Checking...' : 'Retry Connection'}
               </button>
             </div>
           )}
           {backendConnected === true && error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="bg-destructive/5 border border-destructive/25 text-destructive px-4 py-3 rounded">
               <p className="font-semibold">Login Failed</p>
               <p className="text-sm mt-1">{error}</p>
               {(error.toLowerCase().includes('invalid credentials') || error.toLowerCase().includes('incorrect username or password')) && (
-                <p className="text-xs mt-2 text-red-600">
-                  No user or wrong password. Create a user: in the <strong>backend</strong> folder run <code className="bg-red-100 px-1 rounded">python manage.py create_superuser</code> (default username: <strong>admin</strong>; set a password when prompted), then log in with that username and password.
+                <p className="text-xs mt-2 text-destructive">
+                  No user or wrong password. Create a user: in the <strong>backend</strong> folder run <code className="bg-destructive/10 px-1 rounded">python manage.py create_superuser</code> (default username: <strong>admin</strong>; set a password when prompted), then log in with that username and password.
                 </p>
               )}
             </div>
           )}
           {backendConnected !== false && error && error.includes('Cannot connect to server') && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="bg-destructive/5 border border-destructive/25 text-destructive px-4 py-3 rounded">
               <p className="font-semibold">⚠️ Cannot connect to backend server</p>
               <p className="text-sm mt-1">{error}</p>
-              <p className="text-xs mt-2 text-red-600">
-                💡 Tip: Run <code className="bg-red-100 px-1 rounded">python manage.py runserver 8000</code> in the backend directory
+              <p className="text-xs mt-2 text-destructive">
+                💡 Tip: Run <code className="bg-destructive/10 px-1 rounded">python manage.py runserver 8000</code> in the backend directory
               </p>
             </div>
           )}
           {(backendConnected === null || checkingConnection) && (
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded flex items-center">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+            <div className="bg-blue-50 border border-primary/25 text-primary px-4 py-3 rounded flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2"></div>
               <span>Checking backend connection...</span>
             </div>
           )}
           {backendConnected === true && !error && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded text-sm">
+            <div className="bg-green-50 border border-success/25 text-success px-4 py-3 rounded text-sm">
               ✅ Backend connected successfully
             </div>
           )}
 
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="username" className="mb-2 block text-sm font-medium text-foreground">
               Username or email
             </label>
             <input
@@ -462,7 +462,7 @@ export default function LoginPage() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:py-2"
+              className="w-full px-4 py-3 text-base border border-border rounded-md focus:ring-2 focus:ring-ring focus:border-ring sm:py-2"
               placeholder="Your login name or email"
               autoComplete="username"
               required
@@ -470,7 +470,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="password" className="mb-2 block text-sm font-medium text-foreground">
               Password
             </label>
             <div className="relative">
@@ -479,7 +479,7 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 pr-11 text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:py-2"
+                className="w-full px-4 py-3 pr-11 text-base border border-border rounded-md focus:ring-2 focus:ring-ring focus:border-ring sm:py-2"
                 placeholder="Enter your password"
                 autoComplete="current-password"
                 required
@@ -487,7 +487,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground/85 focus:outline-none focus:ring-2 focus:ring-ring"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -496,7 +496,7 @@ export default function LoginPage() {
             <div className="mt-2 text-right">
               <Link
                 href="/forgot-password"
-                className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                className="text-sm text-primary hover:text-primary/80 hover:underline"
               >
                 Forgot password?
               </Link>
@@ -506,7 +506,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full min-h-11 bg-blue-600 text-white py-3 px-4 text-base rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors sm:py-2 sm:text-sm"
+            className="w-full min-h-11 bg-primary text-white py-3 px-4 text-base rounded-md hover:bg-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors sm:py-2 sm:text-sm"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

@@ -117,37 +117,37 @@ export default function CrmActivitiesPage() {
           <div className="max-w-4xl space-y-6">
         <ReportingHubBreadcrumb current="CRM activities" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">CRM activities</h1>
-          <p className="mt-1 text-sm text-gray-600">Calls, visits, and follow-ups linked to leads (FMERP CRM).</p>
+          <h1 className="text-2xl font-bold text-foreground">CRM activities</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Calls, visits, and follow-ups linked to leads (FMERP CRM).</p>
         </div>
 
         {error ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">Tenant required.</div>
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">Tenant required.</div>
         ) : null}
         {mutationError ? (
           <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{mutationError}</div>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Open (global)</div>
-            <div className="mt-2 text-2xl font-semibold text-indigo-700">{summary?.open_activities ?? stats.open}</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Open (global)</div>
+            <div className="mt-2 text-2xl font-semibold text-primary">{summary?.open_activities ?? stats.open}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Overdue (global)</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Overdue (global)</div>
             <div className="mt-2 text-2xl font-semibold text-rose-700">{summary?.overdue_open_activities ?? stats.overdue}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Shown open</div>
-            <div className="mt-2 text-2xl font-semibold text-indigo-700">{stats.open}</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shown open</div>
+            <div className="mt-2 text-2xl font-semibold text-primary">{stats.open}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Shown completed</div>
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shown completed</div>
             <div className="mt-2 text-2xl font-semibold text-emerald-700">{stats.completed}</div>
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="erp-panel">
           <h2 className="text-sm font-semibold">Log activity</h2>
           <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <select
@@ -187,21 +187,21 @@ export default function CrmActivitiesPage() {
               type="button"
               disabled={create.isPending || leadId === ''}
               onClick={() => create.mutate()}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm text-white"
+              className="rounded-md bg-primary px-4 py-2 text-sm text-white"
             >
               {create.isPending ? 'Adding…' : 'Add'}
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">Linked activities keep pipeline actions auditable and measurable.</p>
+          <p className="mt-2 text-xs text-muted-foreground">Linked activities keep pipeline actions auditable and measurable.</p>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2 text-sm text-foreground/85">
               <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
               Open only
             </label>
-            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <label className="inline-flex items-center gap-2 text-sm text-foreground/85">
               <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
               Overdue only
             </label>
@@ -223,20 +223,20 @@ export default function CrmActivitiesPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="erp-panel">
           <h2 className="text-sm font-semibold">Recent</h2>
           <ul className="mt-2 space-y-2 text-sm">
             {data.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-start justify-between gap-2 border-b border-gray-100 py-2">
+              <li key={a.id} className="flex flex-wrap items-start justify-between gap-2 border-b border-border/70 py-2">
                 <div>
                   <span className="font-medium">{a.subject}</span>
-                  <span className="text-gray-500"> · {a.activity_type}</span>
-                  {a.lead_id ? <span className="ml-2 text-xs text-gray-400">lead #{a.lead_id}</span> : null}
-                  {a.due_at ? <span className="ml-2 text-xs text-gray-400">due {formatDateTime(a.due_at)}</span> : null}
+                  <span className="text-muted-foreground"> · {a.activity_type}</span>
+                  {a.lead_id ? <span className="ml-2 text-xs text-muted-foreground/70">lead #{a.lead_id}</span> : null}
+                  {a.due_at ? <span className="ml-2 text-xs text-muted-foreground/70">due {formatDateTime(a.due_at)}</span> : null}
                   {a.completed_at ? (
                     <span className="ml-2 text-xs text-emerald-600">done</span>
                   ) : (
-                    <button type="button" className="ml-2 text-xs text-indigo-600 disabled:opacity-50" disabled={complete.isPending} onClick={() => complete.mutate(a.id)}>
+                    <button type="button" className="ml-2 text-xs text-primary disabled:opacity-50" disabled={complete.isPending} onClick={() => complete.mutate(a.id)}>
                       {complete.isPending ? 'Saving…' : 'Complete'}
                     </button>
                   )}

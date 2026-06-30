@@ -6,6 +6,7 @@
 
 import { pondVolumeCubicMetres, type PondVolumeFields } from '@/lib/aquaculturePondVolume'
 import { suggestMedicineStockUnit } from '@/lib/aquacultureMedicineUnits'
+import { formatQuantity } from '@/utils/quantity'
 import type {
   ApplicationMethodId,
   DoseUnitId,
@@ -29,9 +30,7 @@ export function kgPerHaToKgPerDecimal(kgPerHa: number): number {
 
 function formatKgPerDecimalValue(kgPerDecimal: number): string {
   if (kgPerDecimal >= 10) return String(Math.round(kgPerDecimal))
-  if (kgPerDecimal >= 1) return kgPerDecimal.toFixed(2)
-  if (kgPerDecimal >= 0.1) return kgPerDecimal.toFixed(2)
-  return kgPerDecimal.toFixed(3)
+  return formatQuantity(kgPerDecimal)
 }
 
 /** Single recommended rate in kg/decimal (from legacy kg/ha extension tables). */
@@ -582,10 +581,8 @@ export function suggestQuantityFromGuide(
 }
 
 export function formatMedicineQuantity(n: number): string {
-  if (n >= 100) return String(Math.round(n))
-  if (n >= 10) return n.toFixed(1)
-  if (n >= 1) return n.toFixed(2)
-  return n.toFixed(3)
+  if (!Number.isFinite(n)) return formatQuantity(0)
+  return formatQuantity(n)
 }
 
 export interface MedicineDoseSuggestion {

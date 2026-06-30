@@ -3,6 +3,8 @@
  * Matches backend compute_water_volume_cu_ft in aquaculture_units.py.
  */
 
+import { formatQuantity } from '@/utils/quantity'
+
 const CU_FT_PER_CUBIC_M = 35.31466672148948
 
 export interface PondVolumeFields {
@@ -37,7 +39,7 @@ export function pondVolumeCubicMetres(pond: PondVolumeFields): number | null {
 export function formatTreatmentWaterVolume(pond: PondVolumeFields): string | null {
   const m3 = pondVolumeCubicMetres(pond)
   if (m3 == null) return null
-  const label = m3 >= 100 ? Math.round(m3).toLocaleString() : m3.toFixed(1)
+  const label = formatQuantity(m3)
   return `~${label} m³ (full pond)`
 }
 
@@ -49,17 +51,17 @@ export function pondVolumeSummaryLine(pond: PondVolumeFields): string | null {
   const m3 = pondVolumeCubicMetres(pond)
 
   if (m3 != null && cu != null) {
-    const m3Label = m3 >= 100 ? Math.round(m3).toLocaleString() : m3.toFixed(1)
+    const m3Label = formatQuantity(m3)
     const parts: string[] = [`~${m3Label} m³`]
     if (wa != null && wa > 0 && d != null && d > 0) {
-      parts.push(`${wa} dec × ${d} ft`)
+      parts.push(`${formatQuantity(wa)} dec × ${formatQuantity(d)} ft`)
     }
-    parts.push(`${Math.round(cu).toLocaleString()} cu ft`)
+    parts.push(`${formatQuantity(cu)} cu ft`)
     return parts.join(' · ')
   }
 
   if (wa != null && wa > 0 && (d == null || d <= 0)) {
-    return `${wa} dec water area — add depth on pond setup to calculate volume`
+    return `${formatQuantity(wa)} dec water area — add depth on pond setup to calculate volume`
   }
 
   return null

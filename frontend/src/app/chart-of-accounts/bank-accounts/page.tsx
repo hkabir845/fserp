@@ -10,7 +10,7 @@ export default function BankAccountsNestedRedirectPage() {
     router.replace('/chart-of-accounts')
   }, [router])
   return (
-    <div className="flex min-h-[40vh] items-center justify-center text-gray-600 text-sm">
+    <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground text-sm">
       Redirecting to Chart of accounts…
     </div>
   )

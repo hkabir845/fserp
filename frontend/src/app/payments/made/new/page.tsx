@@ -614,16 +614,16 @@ function RecordPaymentMadeInner() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -637,9 +637,9 @@ function RecordPaymentMadeInner() {
           maxWidthClass="max-w-5xl"
           contentClassName="mt-4"
         >
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm">
+          <div className="rounded-2xl border border-border/80 bg-white p-6 shadow-sm">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 flex items-center">
+              <div className="bg-destructive/5 border border-destructive/25 text-destructive px-4 py-3 rounded mb-4 flex items-center">
                 <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
                 {error}
               </div>
@@ -648,26 +648,26 @@ function RecordPaymentMadeInner() {
             <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Vendor *</label>
                   <VendorReferenceCombobox
                     id="record-payment-vendor"
                     value={selectedVendorId ?? 0}
                     onChange={(id) => handleVendorSelectChange(id > 0 ? String(id) : '')}
                     vendors={vendors}
-                    className="relative z-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="relative z-10 w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                   {!loading && vendors.length === 0 && !error && (
-                    <p className="mt-1 text-sm text-gray-500">No vendors found.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">No vendors found.</p>
                   )}
                   {selectedVendor && (
-                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                    <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground/85">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                         Vendor details
                       </p>
                       <div className="space-y-1">
                         <p>
-                          <span className="text-gray-500">Name:</span>{' '}
-                          <span className="font-medium text-gray-900">
+                          <span className="text-muted-foreground">Name:</span>{' '}
+                          <span className="font-medium text-foreground">
                             {(
                               selectedVendor.display_name ||
                               selectedVendor.company_name ||
@@ -677,30 +677,30 @@ function RecordPaymentMadeInner() {
                           </span>
                         </p>
                         <p>
-                          <span className="text-gray-500">Vendor #:</span>{' '}
-                          <span className="font-medium text-gray-900">
+                          <span className="text-muted-foreground">Vendor #:</span>{' '}
+                          <span className="font-medium text-foreground">
                             {selectedVendor.vendor_number || '—'}
                           </span>
                         </p>
                         {selectedVendor.contact_person?.trim() ? (
                           <p>
-                            <span className="text-gray-500">Contact:</span>{' '}
+                            <span className="text-muted-foreground">Contact:</span>{' '}
                             {selectedVendor.contact_person.trim()}
                           </p>
                         ) : null}
                         {selectedVendor.email?.trim() ? (
                           <p>
-                            <span className="text-gray-500">Email:</span> {selectedVendor.email.trim()}
+                            <span className="text-muted-foreground">Email:</span> {selectedVendor.email.trim()}
                           </p>
                         ) : null}
                         {selectedVendor.phone?.trim() ? (
                           <p>
-                            <span className="text-gray-500">Phone:</span> {selectedVendor.phone.trim()}
+                            <span className="text-muted-foreground">Phone:</span> {selectedVendor.phone.trim()}
                           </p>
                         ) : null}
                         {selectedVendor.bank_name || selectedVendor.bank_account_number ? (
                           <p>
-                            <span className="text-gray-500">Bank:</span>{' '}
+                            <span className="text-muted-foreground">Bank:</span>{' '}
                             {[
                               selectedVendor.bank_name,
                               selectedVendor.bank_branch,
@@ -728,7 +728,7 @@ function RecordPaymentMadeInner() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Bank Account *
                   </label>
                   <select
@@ -737,7 +737,7 @@ function RecordPaymentMadeInner() {
                       const n = Number(e.target.value)
                       setSelectedBankAccountId(Number.isFinite(n) ? n : null)
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   >
                     <option value="">Select Bank Account</option>
@@ -765,26 +765,26 @@ function RecordPaymentMadeInner() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Payment Date *
                   </label>
                   <input
                     type="date"
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Payment Method *
                   </label>
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                     required
                   >
                     <option value="check">Check</option>
@@ -798,7 +798,7 @@ function RecordPaymentMadeInner() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Reference Number
                   </label>
                   <input
@@ -806,12 +806,12 @@ function RecordPaymentMadeInner() {
                     value={referenceNumber}
                     onChange={(e) => setReferenceNumber(e.target.value)}
                     placeholder="Check #, Transaction ID, etc."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Payment Amount *
                   </label>
                   <input
@@ -827,12 +827,12 @@ function RecordPaymentMadeInner() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Memo</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Memo</label>
                   <textarea
                     value={memo}
                     onChange={(e) => setMemo(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring text-sm"
                     placeholder="Filled from vendor record when you select a vendor; you can edit."
                   />
                 </div>
@@ -840,24 +840,24 @@ function RecordPaymentMadeInner() {
 
               {selectedVendorId && outstandingBills.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-lg font-semibold text-gray-900">Allocate Payment to Bills</h3>
-                  <p className="mt-1 mb-4 text-sm text-gray-600">
-                    <strong className="font-medium text-gray-800">All bills</strong> fills the full open
+                  <h3 className="text-lg font-semibold text-foreground">Allocate Payment to Bills</h3>
+                  <p className="mt-1 mb-4 text-sm text-muted-foreground">
+                    <strong className="font-medium text-foreground">All bills</strong> fills the full open
                     balance on each real bill only;{' '}
                     <span className="whitespace-nowrap">vendor advance / on-account</span> is always listed
                     separately and is not toggled by that control.{' '}
-                    <strong className="font-medium text-gray-800">Draft</strong> bills are listed so you can
+                    <strong className="font-medium text-foreground">Draft</strong> bills are listed so you can
                     see the balance; approve them on{' '}
-                    <Link href="/bills" className="text-blue-600 hover:underline">
+                    <Link href="/bills" className="text-primary hover:underline">
                       Bills
                     </Link>{' '}
                     before allocating payment here.
                   </p>
-                  <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                  <div className="border border-border rounded-lg overflow-hidden overflow-x-auto">
+                    <table className="min-w-full divide-y divide-border">
+                      <thead className="bg-muted/40">
                         <tr>
-                          <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 w-[5.5rem]">
+                          <th className="px-2 py-2 text-center text-xs font-medium text-muted-foreground w-[5.5rem]">
                             <label
                               className="flex cursor-pointer flex-col items-center gap-1"
                               title="Select full balance on every open bill (excludes vendor advance / on-account)"
@@ -869,42 +869,42 @@ function RecordPaymentMadeInner() {
                                   checked={allFullBalanceTicked}
                                   disabled={realBillsWithPositiveBalance.length === 0}
                                   onChange={toggleSelectAllFullBalance}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  className="rounded border-input text-primary focus:ring-ring"
                                   aria-label="Select full balance on all open bills except vendor advance"
                                 />
-                                <span className="whitespace-nowrap text-[10px] font-semibold uppercase leading-tight text-gray-600">
+                                <span className="whitespace-nowrap text-[10px] font-semibold uppercase leading-tight text-muted-foreground">
                                   All bills
                                 </span>
                               </span>
-                              <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
                                 Full
                               </span>
                             </label>
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Bill #
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Date
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Due Date
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Total
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Paid
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Balance
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Allocate
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white divide-y divide-border">
                         {outstandingBills.map((bill) => {
                           const aid = allocBillId(bill)
                           const allocation = allocations.find((a) => a.bill_id === aid)
@@ -924,7 +924,7 @@ function RecordPaymentMadeInner() {
                                   checked={payFullChecked}
                                   disabled={balanceDue <= 0 || draft}
                                   onChange={(e) => handleRowPayFullToggle(aid, e.target.checked)}
-                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  className="rounded border-input text-primary focus:ring-ring"
                                   title={
                                     isVendorAdvanceRow(bill)
                                       ? 'Allocate full balance on vendor advance / on-account (not included in Select all bills)'
@@ -937,31 +937,31 @@ function RecordPaymentMadeInner() {
                                   }
                                 />
                               </td>
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              <td className="px-4 py-3 text-sm font-medium text-foreground">
                                 {bill.bill_number}
                                 {draft ? (
-                                  <span className="ml-1 text-xs font-normal text-amber-800">
+                                  <span className="ml-1 text-xs font-normal text-warning-foreground">
                                     (Draft — approve on Bills to pay)
                                   </span>
                                 ) : null}
                                 {bill.synthetic ? (
-                                  <span className="ml-1 text-xs font-normal text-gray-500">
+                                  <span className="ml-1 text-xs font-normal text-muted-foreground">
                                     (A/P not on a bill)
                                   </span>
                                 ) : null}
                                 {!bill.synthetic && bill.days_overdue && bill.days_overdue > 0 && (
-                                  <span className="ml-2 text-xs text-red-600">
+                                  <span className="ml-2 text-xs text-destructive">
                                     ({bill.days_overdue}d overdue)
                                   </span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
+                              <td className="px-4 py-3 text-sm text-muted-foreground">
                                 {formatDateOnly(bill.bill_date)}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
+                              <td className="px-4 py-3 text-sm text-muted-foreground">
                                 {bill.due_date ? formatDateOnly(bill.due_date) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-sm text-right text-gray-900">
+                              <td className="px-4 py-3 text-sm text-right text-foreground">
                                 {bill.synthetic ? (
                                   '—'
                                 ) : (
@@ -971,7 +971,7 @@ function RecordPaymentMadeInner() {
                                   </>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-sm text-right text-gray-600">
+                              <td className="px-4 py-3 text-sm text-right text-muted-foreground">
                                 {bill.synthetic ? (
                                   '—'
                                 ) : (
@@ -981,7 +981,7 @@ function RecordPaymentMadeInner() {
                                   </>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                              <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                                 {currencySymbol}
                                 {formatNumber(parseNum(bill.balance_due))}
                               </td>
@@ -1015,15 +1015,15 @@ function RecordPaymentMadeInner() {
                           )
                         })}
                       </tbody>
-                      <tfoot className="bg-gray-50">
+                      <tfoot className="bg-muted/40">
                         <tr>
                           <td
                             colSpan={7}
-                            className="px-4 py-3 text-sm font-medium text-right text-gray-900"
+                            className="px-4 py-3 text-sm font-medium text-right text-foreground"
                           >
                             Total Allocated:
                           </td>
-                          <td className="px-4 py-3 text-sm font-bold text-right text-gray-900">
+                          <td className="px-4 py-3 text-sm font-bold text-right text-foreground">
                             {currencySymbol}
                             {formatNumber(allocations.reduce((sum, a) => sum + a.allocated_amount, 0))}
                           </td>
@@ -1034,17 +1034,17 @@ function RecordPaymentMadeInner() {
                 </div>
               )}
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <div className="flex justify-end gap-3 pt-4 border-t border-border/70">
                 <Link
                   href="/payments/made"
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 inline-flex items-center justify-center"
+                  className="px-4 py-2 border border-border rounded-md text-foreground/85 hover:bg-muted/40 inline-flex items-center justify-center"
                 >
                   Cancel
                 </Link>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary disabled:opacity-50"
                 >
                   {submitting ? 'Processing…' : 'Record Payment'}
                 </button>
@@ -1061,8 +1061,8 @@ export default function NewPaymentMadePage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[50vh] items-center justify-center bg-slate-50">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+        <div className="flex min-h-[50vh] items-center justify-center bg-muted/40">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       }
     >

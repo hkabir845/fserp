@@ -23,17 +23,17 @@ export function MedicineStatCard(props: {
   const { title, value, sub, icon: Icon, tone = 'violet' } = props
   const iconBg =
     tone === 'amber'
-      ? 'bg-amber-50 text-amber-800'
+      ? 'bg-warning/10 text-warning-foreground'
       : tone === 'slate'
-        ? 'bg-slate-100 text-slate-700'
+        ? 'bg-muted text-foreground/85'
         : 'bg-violet-50 text-violet-800'
   return (
-    <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm ring-1 ring-violet-500/10">
+    <div className="rounded-2xl border border-border/80 bg-white p-4 shadow-sm ring-1 ring-violet-500/10">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
-          <p className="mt-0.5 text-xs text-slate-600">{sub}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{value}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
         </div>
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
           <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
@@ -45,35 +45,35 @@ export function MedicineStatCard(props: {
 
 export function MedicineTipsAside() {
   return (
-    <aside className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4 text-sm text-slate-700">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <aside className="rounded-2xl border border-border/80 bg-muted/50 p-4 text-sm text-foreground/85">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <HelpCircle className="h-3.5 w-3.5" aria-hidden />
         Quick guide
       </div>
-      <ul className="mt-3 space-y-2 text-xs leading-relaxed text-slate-600">
+      <ul className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
         <li>
-          <strong className="text-slate-900">1.</strong> In Items, set each SKU&apos;s unit (e.g. Lime → kg). Move stock to
+          <strong className="text-foreground">1.</strong> In Items, set each SKU&apos;s unit (e.g. Lime → kg). Move stock to
           the pond warehouse (
-          <Link href="/aquaculture/stock" className="font-medium text-teal-800 underline">
+          <Link href="/aquaculture/stock" className="font-medium text-primary underline">
             Pond stock
           </Link>
           {' '}
           or{' '}
-          <Link href="/inventory" className="font-medium text-teal-800 underline">
+          <Link href="/inventory" className="font-medium text-primary underline">
             Inventory
           </Link>
           ).
         </li>
         <li>
-          <strong className="text-slate-900">2.</strong> Selecting a pond fills water volume from pond setup. Edit if you
+          <strong className="text-foreground">2.</strong> Selecting a pond fills water volume from pond setup. Edit if you
           only treat part of the pond.
         </li>
         <li>
-          <strong className="text-slate-900">3.</strong> Multi-product baths share application details and one batch
+          <strong className="text-foreground">3.</strong> Multi-product baths share application details and one batch
           reference in history.
         </li>
         <li>
-          <strong className="text-slate-900">4.</strong> Delete restores stock and reverses COGS; edit protocol fields from
+          <strong className="text-foreground">4.</strong> Delete restores stock and reverses COGS; edit protocol fields from
           row actions.
         </li>
       </ul>
@@ -92,7 +92,7 @@ export function TreatmentDetailChips({ memo }: { memo: string }) {
   if (p.water) chips.push(p.water)
   if (p.withdrawal) chips.push(`Withdrawal ${p.withdrawal}`)
   if (p.staff) chips.push(p.staff)
-  if (chips.length === 0 && !p.notes) return <span className="text-slate-400">—</span>
+  if (chips.length === 0 && !p.notes) return <span className="text-muted-foreground/70">—</span>
   return (
     <div className="space-y-1">
       {chips.length > 0 ? (
@@ -107,7 +107,7 @@ export function TreatmentDetailChips({ memo }: { memo: string }) {
           ))}
         </div>
       ) : null}
-      {p.notes ? <p className="text-xs text-slate-600 break-words">{p.notes}</p> : null}
+      {p.notes ? <p className="text-xs text-muted-foreground break-words">{p.notes}</p> : null}
     </div>
   )
 }
@@ -142,22 +142,22 @@ export function MedicineTreatmentDeleteDialog(props: {
   const sym = getCurrencySymbol(currency)
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 p-4 sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-treatment-title"
       onClick={() => !deleting && onCancel()}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+        className="w-full max-w-md rounded-2xl border border-border bg-white p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="delete-treatment-title" className="text-base font-semibold text-slate-900">
+        <h3 id="delete-treatment-title" className="text-base font-semibold text-foreground">
           Delete treatment record?
         </h3>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           This removes the consumption entry for{' '}
-          <span className="font-medium text-slate-900">{row.item_name || 'this product'}</span>
+          <span className="font-medium text-foreground">{row.item_name || 'this product'}</span>
           {row.quantity ? (
             <>
               {' '}
@@ -167,7 +167,7 @@ export function MedicineTreatmentDeleteDialog(props: {
           on {formatDateOnly(row.entry_date)} ({sym}
           {formatNumber(Number(row.amount), 2)} COGS).
         </p>
-        <p className="mt-2 text-xs text-amber-900">
+        <p className="mt-2 text-xs text-warning-foreground">
           Pond warehouse stock will be restored and the linked COGS journal entry will be reversed. This cannot be
           undone.
         </p>
@@ -176,7 +176,7 @@ export function MedicineTreatmentDeleteDialog(props: {
             type="button"
             onClick={onCancel}
             disabled={deleting}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -184,7 +184,7 @@ export function MedicineTreatmentDeleteDialog(props: {
             type="button"
             onClick={onConfirm}
             disabled={deleting}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50"
           >
             {deleting ? 'Deleting…' : 'Delete treatment'}
           </button>
@@ -229,11 +229,11 @@ export function MedicineProductLinesEditor(props: {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Medicines used</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Medicines used</p>
         <button
           type="button"
           onClick={onAddLine}
-          className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-100"
+          className="inline-flex items-center gap-1 rounded-lg border border-primary/25 bg-accent px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-teal-100"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden />
           Add another medicine
@@ -251,15 +251,15 @@ export function MedicineProductLinesEditor(props: {
         return (
           <div
             key={line.id}
-            className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm ring-1 ring-slate-100/80"
+            className="rounded-xl border border-border bg-white p-3 shadow-sm ring-1 ring-slate-100/80"
           >
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-slate-500">Product {index + 1}</span>
+              <span className="text-xs font-medium text-muted-foreground">Product {index + 1}</span>
               {lines.length > 1 ? (
                 <button
                   type="button"
                   onClick={() => onRemoveLine(line.id)}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-slate-500 hover:bg-red-50 hover:text-red-700"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
                   aria-label={`Remove product ${index + 1}`}
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -269,7 +269,7 @@ export function MedicineProductLinesEditor(props: {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className={`${labelCls} sm:col-span-2`}>
-                Medicine product <span className="text-red-600">*</span>
+                Medicine product <span className="text-destructive">*</span>
                 <MedicineProductSelect
                   items={medicineCatalog}
                   value={line.itemId}
@@ -281,24 +281,24 @@ export function MedicineProductLinesEditor(props: {
               <label className={labelCls}>
                 Quantity used
                 {line.itemId ? (
-                  <span className="font-normal text-teal-800">
+                  <span className="font-normal text-primary">
                     {' '}
-                    ({stockUnit}) <span className="text-red-600">*</span>
+                    ({stockUnit}) <span className="text-destructive">*</span>
                   </span>
                 ) : (
-                  <span className="text-red-600"> *</span>
+                  <span className="text-destructive"> *</span>
                 )}
-                <div className="mt-1 flex rounded-lg border border-slate-300 bg-white shadow-sm focus-within:border-violet-500 focus-within:ring-2 focus-within:ring-violet-500/20">
+                <div className="mt-1 flex rounded-lg border border-border bg-white shadow-sm focus-within:border-violet-500 focus-within:ring-2 focus-within:ring-violet-500/20">
                   <input
                     type="text"
                     inputMode="decimal"
-                    className="min-w-0 flex-1 rounded-l-lg border-0 bg-transparent px-3 py-2 text-sm tabular-nums text-slate-900 focus:outline-none focus:ring-0"
+                    className="min-w-0 flex-1 rounded-l-lg border-0 bg-transparent px-3 py-2 text-sm tabular-nums text-foreground focus:outline-none focus:ring-0"
                     value={line.quantity}
                     onChange={(e) => onChangeLine(line.id, { quantity: e.target.value })}
                     placeholder={line.itemId ? quantityPlaceholderForUnit(stockUnit) : 'Select product first'}
                   />
                   {line.itemId ? (
-                    <span className="flex items-center rounded-r-lg border-l border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-600">
+                    <span className="flex items-center rounded-r-lg border-l border-border bg-muted/40 px-3 text-xs font-medium text-muted-foreground">
                       {stockUnit}
                     </span>
                   ) : null}
@@ -308,14 +308,14 @@ export function MedicineProductLinesEditor(props: {
                     On hand: {formatNumber(Number(stock.quantity), 2)} {formatStockUnit(stock.unit)}
                   </p>
                 ) : showStockWarn ? (
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-800">
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-warning-foreground">
                     <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
                     Not at pond — transfer stock first
                   </p>
                 ) : null}
               </label>
               <label className={labelCls}>
-                Per-product note <span className="font-normal text-slate-500">(optional)</span>
+                Per-product note <span className="font-normal text-muted-foreground">(optional)</span>
                 <input
                   type="text"
                   className={inputCls}
@@ -349,7 +349,7 @@ export function MedicineHistoryTable(props: {
     return (
       <div className="mt-4 space-y-2">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-12 animate-pulse rounded-lg bg-slate-100" />
+          <div key={i} className="h-12 animate-pulse rounded-lg bg-muted" />
         ))}
       </div>
     )
@@ -357,11 +357,11 @@ export function MedicineHistoryTable(props: {
 
   if (rows.length === 0) {
     return (
-      <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-12 text-center">
-        <Pill className="h-8 w-8 text-slate-300" aria-hidden />
-        <p className="mt-3 text-sm font-medium text-slate-700">No treatments recorded yet</p>
-        <p className="mt-1 max-w-sm text-xs text-slate-500">
-          Use <span className="font-medium text-slate-700">New treatment entry</span> to log the first medicine
+      <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/40 px-4 py-12 text-center">
+        <Pill className="h-8 w-8 text-muted-foreground/40" aria-hidden />
+        <p className="mt-3 text-sm font-medium text-foreground/85">No treatments recorded yet</p>
+        <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+          Use <span className="font-medium text-foreground/85">New treatment entry</span> to log the first medicine
           application.
         </p>
       </div>
@@ -369,9 +369,9 @@ export function MedicineHistoryTable(props: {
   }
 
   return (
-    <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+    <div className="mt-4 overflow-x-auto rounded-xl border border-border">
       <table className="min-w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <thead className="bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-3 py-2.5">Date</th>
             {showPondColumn ? <th className="px-3 py-2.5">Pond</th> : null}
@@ -388,23 +388,23 @@ export function MedicineHistoryTable(props: {
             const editable = canEditMedicineHistoryRow(r)
             const busy = busyRowId === r.id
             return (
-            <tr key={r.id} className="border-t border-slate-100 hover:bg-teal-50/30">
-              <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-slate-800">
+            <tr key={r.id} className="border-t border-border/70 hover:bg-accent/30">
+              <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-foreground">
                 {formatDateOnly(r.entry_date)}
               </td>
               {showPondColumn ? (
-                <td className="max-w-[8rem] px-3 py-2.5 font-medium text-slate-800 break-words">
+                <td className="max-w-[8rem] px-3 py-2.5 font-medium text-foreground break-words">
                   {r.pond_name?.trim() || '—'}
                 </td>
               ) : null}
-              <td className="max-w-[10rem] px-3 py-2.5 font-medium text-slate-900 break-words">
+              <td className="max-w-[10rem] px-3 py-2.5 font-medium text-foreground break-words">
                 {r.item_name?.trim() || '—'}
               </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-slate-800">
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-foreground">
                 {r.quantity != null && r.quantity !== '' ? (
                   <>
                     {formatNumber(Number(r.quantity), 2)}
-                    {r.unit ? <span className="ml-0.5 text-xs text-slate-500">{r.unit}</span> : null}
+                    {r.unit ? <span className="ml-0.5 text-xs text-muted-foreground">{r.unit}</span> : null}
                   </>
                 ) : (
                   '—'
@@ -413,10 +413,10 @@ export function MedicineHistoryTable(props: {
               <td className="px-3 py-2.5">
                 <TreatmentDetailChips memo={r.memo} />
               </td>
-              <td className="max-w-[8rem] px-3 py-2.5 text-xs text-slate-600 break-words">
+              <td className="max-w-[8rem] px-3 py-2.5 text-xs text-muted-foreground break-words">
                 {r.production_cycle_name?.trim() || '—'}
               </td>
-              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-medium text-slate-900">
+              <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-medium text-foreground">
                 {sym}
                 {formatNumber(Number(r.amount), 2)}
               </td>
@@ -431,7 +431,7 @@ export function MedicineHistoryTable(props: {
                           onClick={() => onEdit(r)}
                           title="Edit treatment details"
                           aria-label={`Edit treatment on ${formatDateOnly(r.entry_date)}`}
-                          className="rounded-lg p-2 text-slate-500 transition hover:bg-teal-100 hover:text-teal-800 disabled:opacity-40"
+                          className="rounded-lg p-2 text-muted-foreground transition hover:bg-teal-100 hover:text-primary disabled:opacity-40"
                         >
                           <Pencil className="h-4 w-4" aria-hidden />
                         </button>
@@ -443,7 +443,7 @@ export function MedicineHistoryTable(props: {
                           onClick={() => onDelete(r)}
                           title="Delete treatment and restore stock"
                           aria-label={`Delete treatment on ${formatDateOnly(r.entry_date)}`}
-                          className="rounded-lg p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
+                          className="rounded-lg p-2 text-muted-foreground transition hover:bg-destructive/5 hover:text-destructive disabled:opacity-40"
                         >
                           <Trash2 className="h-4 w-4" aria-hidden />
                         </button>
@@ -451,7 +451,7 @@ export function MedicineHistoryTable(props: {
                     </div>
                   ) : (
                     <div
-                      className="flex justify-center text-slate-400"
+                      className="flex justify-center text-muted-foreground/70"
                       title="Created from feeding advice — edit in feeding module"
                     >
                       <Lock className="h-4 w-4" aria-hidden />

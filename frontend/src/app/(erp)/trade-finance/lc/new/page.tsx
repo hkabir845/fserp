@@ -131,31 +131,31 @@ export default function NewLCPage() {
   })
 
   const field =
-    'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500'
-  const label = 'block text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1'
+    'block w-full rounded-md border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:ring-ring'
+  const label = 'block text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1'
 
   return (
           <div className="mx-auto max-w-5xl space-y-6 pb-16">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Link href="/trade-finance/lc" className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+            <Link href="/trade-finance/lc" className="text-sm font-medium text-primary hover:text-primary">
               ← Back to LC register
             </Link>
-            <h1 className="mt-2 text-2xl font-bold text-gray-900">Register letter of credit</h1>
-            <p className="mt-1 text-sm text-gray-600">
+            <h1 className="mt-2 text-2xl font-bold text-foreground">Register letter of credit</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               Enter data from your bank’s SWIFT MT700/701 or application form. Fields mirror common Bangladesh AD bank and customs references.
             </p>
           </div>
         </div>
 
         {mut.isError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive">
             {(mut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || (mut.error as Error)?.message || 'Save failed'}
           </div>
         )}
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Identity & direction</h2>
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Identity & direction</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={label}>Internal reference # *</label>
@@ -199,9 +199,9 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Parties</h2>
-          <p className="mt-1 text-sm text-gray-500">For imports, applicant is usually your company in Bangladesh; beneficiary is the foreign seller. Reverse roles for export.</p>
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Parties</h2>
+          <p className="mt-1 text-sm text-muted-foreground">For imports, applicant is usually your company in Bangladesh; beneficiary is the foreign seller. Reverse roles for export.</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={label}>Applicant (ordering party) *</label>
@@ -226,8 +226,8 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Banks (SWIFT where available)</h2>
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Banks (SWIFT where available)</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label className={label}>Issuing / applicant’s bank *</label>
@@ -256,8 +256,8 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Amounts & trade terms</h2>
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Amounts & trade terms</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className={label}>Currency *</label>
@@ -298,11 +298,11 @@ export default function NewLCPage() {
               <input className={field} type="date" value={form.expiry_date} onChange={(e) => setForm({ ...form, expiry_date: e.target.value })} />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <input type="checkbox" checked={form.partial_shipment_allowed} onChange={(e) => setForm({ ...form, partial_shipment_allowed: e.target.checked })} />
                 Partial shipments allowed
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <input type="checkbox" checked={form.transshipment_allowed} onChange={(e) => setForm({ ...form, transshipment_allowed: e.target.checked })} />
                 Transshipment allowed
               </label>
@@ -310,8 +310,8 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Goods (feed & plant)</h2>
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Goods (feed & plant)</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <label className={label}>Category</label>
@@ -339,9 +339,9 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Bangladesh regulatory & bank references</h2>
-          <p className="mt-1 text-sm text-gray-500">
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Bangladesh regulatory & bank references</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Use values issued to your company (IRC for imports, ERC for exports as applicable). Bank lodgment / BB references are given by your AD bank when reporting under
             current FX rules.
           </p>
@@ -389,8 +389,8 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">ERP links (optional)</h2>
+        <section className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">ERP links (optional)</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <div>
               <label className={label}>Supplier ID</label>
@@ -417,15 +417,15 @@ export default function NewLCPage() {
           </div>
         </section>
 
-        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-6">
-          <Link href="/trade-finance/lc" className="rounded-md border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border pt-6">
+          <Link href="/trade-finance/lc" className="rounded-md border border-border bg-white px-5 py-2.5 text-sm font-semibold text-foreground/85 hover:bg-muted/40">
             Cancel
           </Link>
           <button
             type="button"
             disabled={mut.isPending || !form.lc_internal_number.trim() || !form.applicant_name.trim() || !form.beneficiary_name.trim() || !form.issuing_bank_name.trim() || !form.goods_description.trim() || !form.amount || !form.expiry_date}
             onClick={() => mut.mutate()}
-            className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50"
           >
             {mut.isPending ? 'Saving…' : 'Save LC'}
           </button>

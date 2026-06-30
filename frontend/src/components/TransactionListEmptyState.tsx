@@ -24,14 +24,14 @@ export function TransactionListEmptyState({
 }: TransactionListEmptyStateProps) {
   return (
     <div className={`flex flex-col items-center px-6 py-14 text-center ${className}`}>
-      {icon ? <div className="mb-4 rounded-full bg-slate-100 p-4">{icon}</div> : null}
-      <p className="font-medium text-slate-900">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">{description}</p>
+      {icon ? <div className="mb-4 rounded-full bg-muted p-4">{icon}</div> : null}
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{description}</p>
       {hasActiveFilters && onClearFilters ? (
         <button
           type="button"
           onClick={onClearFilters}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40"
         >
           <FilterX className="h-3.5 w-3.5" aria-hidden />
           Clear filters

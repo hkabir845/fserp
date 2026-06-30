@@ -64,23 +64,23 @@ function AutoTable({
         }
       : {}
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-      <h3 className="border-b bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-900">{title}</h3>
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="overflow-x-auto rounded-lg border border-border bg-white shadow-sm">
+      <h3 className="border-b bg-muted/40 px-4 py-3 text-sm font-semibold text-foreground">{title}</h3>
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/40">
           <tr>
             {cols.map((c) => (
-              <th key={c} className="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">
+              <th key={c} className="px-3 py-2 text-left text-xs font-medium uppercase text-muted-foreground">
                 {c.replace(/_/g, ' ')}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-border/70">
           {rows.map((row, i) => (
-            <tr key={i} className="hover:bg-gray-50">
+            <tr key={i} className="hover:bg-muted/40">
               {cols.map((c) => (
-                <td key={c} className="whitespace-nowrap px-3 py-2 text-gray-900">
+                <td key={c} className="whitespace-nowrap px-3 py-2 text-foreground">
                   {formatCell(row[c], row, c, scope)}
                 </td>
               ))}
@@ -88,10 +88,10 @@ function AutoTable({
           ))}
         </tbody>
         {moneyCols.length > 0 && (
-          <tfoot className="bg-gray-50 font-semibold">
+          <tfoot className="bg-muted/40 font-semibold">
             <tr>
               {cols.map((c, i) => (
-                <td key={`tot-${c}`} className="whitespace-nowrap px-3 py-2 text-gray-900">
+                <td key={`tot-${c}`} className="whitespace-nowrap px-3 py-2 text-foreground">
                   {i === 0 ? 'Total' : moneyCols.includes(c) ? (
                     <ReportAmountCell amount={totals[c]} row={totalRow} field={c} scope={scope} />
                   ) : (
@@ -123,21 +123,21 @@ export function ReportStructuredFallback({ reportType, data, drillScope = {} }: 
 
   return (
     <div className="space-y-6">
-      <p className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+      <p className="rounded-lg border border-primary/25 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         Structured view for <strong>{reportType}</strong>. Click underlined amounts to drill into source
         detail. Use CSV/JSON export for spreadsheets.
       </p>
       {typeof data.accounting_note === 'string' && (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">
           {data.accounting_note}
         </p>
       )}
       {summary && Object.keys(summary).length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {Object.entries(summary).map(([k, v]) => (
-            <div key={k} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-              <p className="text-xs uppercase text-gray-500">{k.replace(/_/g, ' ')}</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">
+            <div key={k} className="rounded-lg border border-border bg-white p-3 shadow-sm">
+              <p className="text-xs uppercase text-muted-foreground">{k.replace(/_/g, ' ')}</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">
                 {typeof v === 'number' && isMoneyColumn(k, v) ? (
                   <ReportAmountCell amount={v} row={summary} field={k} scope={scope} />
                 ) : (
@@ -151,13 +151,13 @@ export function ReportStructuredFallback({ reportType, data, drillScope = {} }: 
       {tables.length > 0 ? (
         tables.map((t) => <AutoTable key={t.title} title={t.title} rows={t.rows} scope={scope} />)
       ) : (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-600">
+        <div className="rounded-lg border border-border bg-muted/40 p-6 text-center text-sm text-muted-foreground">
           No tabular sections in this response. Expand JSON below or adjust filters and dates.
         </div>
       )}
-      <details className="rounded-lg border border-gray-200 bg-gray-50">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-gray-700">Raw JSON</summary>
-        <pre className="max-h-80 overflow-auto p-4 text-xs text-gray-700">{JSON.stringify(data, null, 2)}</pre>
+      <details className="rounded-lg border border-border bg-muted/40">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-foreground/85">Raw JSON</summary>
+        <pre className="max-h-80 overflow-auto p-4 text-xs text-foreground/85">{JSON.stringify(data, null, 2)}</pre>
       </details>
     </div>
   )

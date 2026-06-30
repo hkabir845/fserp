@@ -48,10 +48,10 @@ export default function AquacultureReportRedirectPage() {
         </Link>
       }
     >
-      <div className="flex min-h-[32vh] flex-col items-center justify-center rounded-2xl border border-slate-200/90 bg-white px-6 py-12 text-center shadow-sm">
-        <Loader2 className="h-8 w-8 animate-spin text-teal-600" aria-hidden />
-        <p className="mt-4 text-sm text-slate-600">{aquacultureT('aquacultureReportOpening', lang)}</p>
-        <Link href={reportsHref} className="mt-4 text-sm font-medium text-teal-800 underline hover:text-teal-950">
+      <div className="flex min-h-[32vh] flex-col items-center justify-center rounded-2xl border border-border/80 bg-white px-6 py-12 text-center shadow-sm">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
+        <p className="mt-4 text-sm text-muted-foreground">{aquacultureT('aquacultureReportOpening', lang)}</p>
+        <Link href={reportsHref} className="mt-4 text-sm font-medium text-primary underline hover:text-teal-950">
           {aquacultureT('openPlReport', lang)}
         </Link>
       </div>

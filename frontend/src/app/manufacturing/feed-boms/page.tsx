@@ -22,10 +22,10 @@ interface FeedBom {
 function StatusPill({ status }: { status: string }) {
   const cls =
     status === 'approved'
-      ? 'bg-green-50 text-green-700 ring-green-200'
+      ? 'bg-green-50 text-success ring-green-200'
       : status === 'draft'
-        ? 'bg-amber-50 text-amber-700 ring-amber-200'
-        : 'bg-gray-50 text-gray-700 ring-gray-200'
+        ? 'bg-warning/10 text-warning-foreground ring-amber-200'
+        : 'bg-muted/40 text-foreground/85 ring-gray-200'
 
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ring-1 ${cls}`}>
@@ -110,26 +110,26 @@ export default function FeedBomsPage() {
   if (isLoading) {
     return (
               <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-border p-6">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
-                <div className="h-7 w-64 bg-gray-100 rounded animate-pulse" />
-                <div className="h-4 w-[34rem] max-w-full bg-gray-100 rounded animate-pulse" />
+                <div className="h-7 w-64 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-[34rem] max-w-full bg-muted rounded animate-pulse" />
               </div>
-              <div className="h-10 w-28 bg-gray-100 rounded-md animate-pulse" />
+              <div className="h-10 w-28 bg-muted rounded-md animate-pulse" />
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="bg-white rounded-xl border border-border p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
             </div>
             <div className="mt-6 space-y-3">
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
-              <div className="h-10 bg-gray-100 rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
+              <div className="h-10 bg-muted rounded-md animate-pulse" />
             </div>
           </div>
         </div>
@@ -140,15 +140,15 @@ export default function FeedBomsPage() {
           <div className="space-y-6">
         <ReportingHubBreadcrumb current="Feed BOMs" />
         {/* Header */}
-        <div className="bg-white rounded-xl border border-gray-200">
+        <div className="bg-white rounded-xl border border-border">
           <div className="p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <div className="text-sm text-gray-500">Manufacturing</div>
-                <h2 className="mt-1 text-2xl font-semibold text-gray-900 tracking-tight">
+                <div className="text-sm text-muted-foreground">Manufacturing</div>
+                <h2 className="mt-1 text-2xl font-semibold text-foreground tracking-tight">
                   Feed BOMs / Formulations
                 </h2>
-                <p className="mt-2 text-sm text-gray-600 max-w-3xl">
+                <p className="mt-2 text-sm text-muted-foreground max-w-3xl">
                   Manage feed formulations, versions, and costing. Approved BOMs can be used for production orders.
                 </p>
               </div>
@@ -156,14 +156,14 @@ export default function FeedBomsPage() {
                 <button
                   type="button"
                   onClick={() => refetch()}
-                  className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center justify-center rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
                   aria-label="Refresh"
                 >
                   {isFetching ? 'Refreshing…' : 'Refresh'}
                 </button>
                 <Link
                   href="/manufacturing/feed-boms/new"
-                  className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
                 >
                   + New BOM
                 </Link>
@@ -173,32 +173,32 @@ export default function FeedBomsPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-xl border border-gray-200">
+        <div className="bg-white rounded-xl border border-border">
           <div className="p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-sm font-semibold text-gray-900">Filters</div>
-                <div className="text-xs text-gray-500 mt-1">
+                <div className="text-sm font-semibold text-foreground">Filters</div>
+                <div className="text-xs text-muted-foreground mt-1">
                   {filteredBoms.length} shown{boms ? ` • ${boms.length} total` : ''}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setFilters({ category: '', status: '', search: '' })}
-                className="text-sm font-medium text-gray-600 hover:text-gray-900"
+                className="text-sm font-medium text-muted-foreground hover:text-foreground"
               >
                 Clear
               </button>
             </div>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/85 mb-1">
                 Status
               </label>
               <select
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:border-ring focus:ring-ring"
               >
                 <option value="">All</option>
                 <option value="draft">Draft</option>
@@ -207,7 +207,7 @@ export default function FeedBomsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/85 mb-1">
                 Search
               </label>
               <input
@@ -215,7 +215,7 @@ export default function FeedBomsPage() {
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                 placeholder="Search by BOM code…"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:border-ring focus:ring-ring"
               />
             </div>
           </div>
@@ -223,19 +223,19 @@ export default function FeedBomsPage() {
         </div>
 
         {/* Content */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-border overflow-hidden">
           {isError ? (
             <div className="p-6">
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                <div className="text-sm font-semibold text-red-800">Couldn’t load Feed BOMs</div>
-                <div className="mt-1 text-sm text-red-700">
+              <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4">
+                <div className="text-sm font-semibold text-destructive">Couldn’t load Feed BOMs</div>
+                <div className="mt-1 text-sm text-destructive">
                   {(error as any)?.message || 'An unexpected error occurred.'}
                 </div>
                 <div className="mt-3">
                   <button
                     type="button"
                     onClick={() => refetch()}
-                    className="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                    className="inline-flex items-center rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-white hover:bg-destructive/90"
                   >
                     Try again
                   </button>
@@ -244,24 +244,24 @@ export default function FeedBomsPage() {
             </div>
           ) : filteredBoms.length === 0 ? (
             <div className="p-10 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-700">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent text-primary">
                 <span className="text-xl">📐</span>
               </div>
-              <h3 className="mt-4 text-base font-semibold text-gray-900">No BOMs found</h3>
-              <p className="mt-2 text-sm text-gray-600">
+              <h3 className="mt-4 text-base font-semibold text-foreground">No BOMs found</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
                 Create a new formulation, or adjust your filters.
               </p>
               <div className="mt-6 flex items-center justify-center gap-3">
                 <button
                   type="button"
                   onClick={() => setFilters({ category: '', status: '', search: '' })}
-                  className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
                 >
                   Clear filters
                 </button>
                 <Link
                   href="/manufacturing/feed-boms/new"
-                  className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
                 >
                   + New BOM
                 </Link>
@@ -269,14 +269,14 @@ export default function FeedBomsPage() {
             </div>
           ) : (
             <>
-              <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-gray-50/90 px-4 py-2">
-                <span className="text-sm font-medium text-gray-800">Feed BOMs</span>
-                <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5">
+              <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/40/90 px-4 py-2">
+                <span className="text-sm font-medium text-foreground">Feed BOMs</span>
+                <div className="inline-flex rounded-md border border-border bg-white p-0.5">
                   <button
                     type="button"
                     onClick={() => setBomView('list')}
                     className={`rounded px-3 py-1.5 text-sm font-medium ${
-                      bomView === 'list' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+                      bomView === 'list' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/40'
                     }`}
                   >
                     List
@@ -285,7 +285,7 @@ export default function FeedBomsPage() {
                     type="button"
                     onClick={() => setBomView('cards')}
                     className={`rounded px-3 py-1.5 text-sm font-medium ${
-                      bomView === 'cards' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+                      bomView === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/40'
                     }`}
                   >
                     Cards
@@ -294,45 +294,45 @@ export default function FeedBomsPage() {
               </div>
               {bomView === 'list' ? (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       BOM
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Version
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Process
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Batch size
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
+                <tbody className="bg-white divide-y divide-border/70">
                   {filteredBoms.map((bom) => (
-                    <tr key={bom.id} className="hover:bg-gray-50/70">
+                    <tr key={bom.id} className="hover:bg-muted/40/70">
                       <td className="px-6 py-4">
-                        <div className="text-sm font-semibold text-gray-900">{bom.bom_code}</div>
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="text-sm font-semibold text-foreground">{bom.bom_code}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
                           Product #{bom.product_id}{bom.is_floating ? ' • Floating' : ''}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground/85">
                         v{bom.version}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground/85">
                         {bom.process_type}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground/85">
                         {bom.default_batch_size_ton} ton
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -343,7 +343,7 @@ export default function FeedBomsPage() {
                           {/* View Button */}
                           <Link
                             href={`/manufacturing/feed-boms/${bom.id}`}
-                            className="inline-flex items-center justify-center rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700"
+                            className="inline-flex items-center justify-center rounded-md p-1.5 text-primary hover:bg-accent hover:text-primary"
                             title="View BOM"
                           >
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -356,7 +356,7 @@ export default function FeedBomsPage() {
                           {canEdit(bom) && (
                             <Link
                               href={`/manufacturing/feed-boms/${bom.id}`}
-                              className="inline-flex items-center justify-center rounded-md p-1.5 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                              className="inline-flex items-center justify-center rounded-md p-1.5 text-primary hover:bg-accent hover:text-primary"
                               title="Edit BOM"
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -381,7 +381,7 @@ export default function FeedBomsPage() {
                             <button
                               onClick={() => handleDelete(bom.id)}
                               disabled={deleteMutation.isPending}
-                              className="inline-flex items-center justify-center rounded-md p-1.5 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                              className="inline-flex items-center justify-center rounded-md p-1.5 text-destructive hover:bg-destructive/5 hover:text-destructive disabled:opacity-50"
                               title="Delete BOM"
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -392,7 +392,7 @@ export default function FeedBomsPage() {
                             <button
                               onClick={() => handleArchive(bom.id)}
                               disabled={archiveMutation.isPending}
-                              className="inline-flex items-center justify-center rounded-md p-1.5 text-gray-600 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50"
+                              className="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:bg-muted/40 hover:text-foreground/85 disabled:opacity-50"
                               title="Archive BOM"
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -413,36 +413,36 @@ export default function FeedBomsPage() {
                     {filteredBoms.map((bom) => (
                       <div
                         key={bom.id}
-                        className="flex flex-col rounded-lg border border-gray-200 bg-white p-4"
+                        className="flex flex-col rounded-lg border border-border bg-white p-4"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <div className="text-base font-semibold text-gray-900">{bom.bom_code}</div>
-                            <div className="mt-1 text-xs text-gray-500">
+                            <div className="text-base font-semibold text-foreground">{bom.bom_code}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
                               Product #{bom.product_id}
                               {bom.is_floating ? ' • Floating' : ''}
                             </div>
                           </div>
                           <StatusPill status={bom.status} />
                         </div>
-                        <dl className="mt-3 space-y-1 text-sm text-gray-600">
+                        <dl className="mt-3 space-y-1 text-sm text-muted-foreground">
                           <div className="flex justify-between gap-2">
-                            <dt className="text-gray-500">Version</dt>
-                            <dd className="font-medium text-gray-900">v{bom.version}</dd>
+                            <dt className="text-muted-foreground">Version</dt>
+                            <dd className="font-medium text-foreground">v{bom.version}</dd>
                           </div>
                           <div className="flex justify-between gap-2">
-                            <dt className="text-gray-500">Process</dt>
-                            <dd className="font-medium text-gray-900">{bom.process_type}</dd>
+                            <dt className="text-muted-foreground">Process</dt>
+                            <dd className="font-medium text-foreground">{bom.process_type}</dd>
                           </div>
                           <div className="flex justify-between gap-2">
-                            <dt className="text-gray-500">Batch</dt>
-                            <dd className="font-medium text-gray-900">{bom.default_batch_size_ton} ton</dd>
+                            <dt className="text-muted-foreground">Batch</dt>
+                            <dd className="font-medium text-foreground">{bom.default_batch_size_ton} ton</dd>
                           </div>
                         </dl>
-                        <div className="mt-4 flex justify-end gap-2 border-t border-gray-100 pt-3">
+                        <div className="mt-4 flex justify-end gap-2 border-t border-border/70 pt-3">
                           <Link
                             href={`/manufacturing/feed-boms/${bom.id}`}
-                            className="rounded-md p-2 text-indigo-600 hover:bg-indigo-50"
+                            className="rounded-md p-2 text-primary hover:bg-accent"
                             title="Open BOM"
                           >
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -172,14 +172,14 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
   return (
     <>
       {isSaas && props.companies.length > 0 && (
-        <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50/80 p-5 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-indigo-900">Target tenant</h2>
-          <p className="mt-1 text-sm text-indigo-900/90">
+        <div className="mb-6 rounded-xl border border-primary/25 bg-accent/80 p-5 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground/85">Target tenant</h2>
+          <p className="mt-1 text-sm text-foreground/85/90">
             Select which company to back up or restore. Operations use admin API endpoints for that company ID.
           </p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="min-w-[220px] flex-1">
-              <label className="block text-xs font-medium text-indigo-900">Company</label>
+              <label className="block text-xs font-medium text-foreground/85">Company</label>
               <select
                 value={targetCompanyId ?? ''}
                 onChange={(e) => {
@@ -187,7 +187,7 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
                   props.onTargetCompanyChange(Number.isFinite(v as number) ? (v as number) : null)
                   setPreview(null)
                 }}
-                className="mt-1 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-gray-900"
+                className="mt-1 w-full rounded-lg border border-primary/25 bg-white px-3 py-2 text-sm text-foreground"
               >
                 {props.companies.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -201,16 +201,16 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
               type="button"
               onClick={loadPreview}
               disabled={previewLoading || targetCompanyId == null}
-              className="inline-flex items-center gap-2 rounded-lg border border-indigo-300 bg-white px-4 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-white px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-accent disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${previewLoading ? 'animate-spin' : ''}`} />
               {previewLoading ? 'Loading…' : 'Load metadata'}
             </button>
           </div>
           {preview && (
-            <div className="mt-4 rounded-lg border border-indigo-100 bg-white p-4 text-sm text-gray-800">
+            <div className="mt-4 rounded-lg border border-primary/15 bg-white p-4 text-sm text-foreground">
               <p className="font-medium">{preview.company_name}</p>
-              <ul className="mt-2 list-inside list-disc space-y-1 text-gray-600">
+              <ul className="mt-2 list-inside list-disc space-y-1 text-muted-foreground">
                 <li>Company ID: {preview.company_id}</li>
                 <li>Schema version: {preview.schema_version}</li>
                 <li>Records in bundle (approx.): {preview.record_count}</li>
@@ -222,16 +222,16 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
       )}
 
       {isSaas && props.companies.length === 0 && (
-        <p className="mb-6 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
+        <p className="mb-6 rounded-lg border border-border bg-white p-4 text-sm text-muted-foreground">
           No companies found. Create a tenant first, then use backup and restore here.
         </p>
       )}
 
-      <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+      <div className="mb-4 rounded-lg border border-border bg-white p-4 text-sm text-foreground/85 shadow-sm">
         <div className="flex gap-2">
-          <Info className="h-5 w-5 shrink-0 text-slate-500" />
+          <Info className="h-5 w-5 shrink-0 text-muted-foreground" />
           <div>
-            <p className="font-medium text-slate-900">Scope</p>
+            <p className="font-medium text-foreground">Scope</p>
             {isSaas ? (
               <>
                 <p className="mt-1">
@@ -239,7 +239,7 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
                     ? `Per-tenant full application backup for company ID ${targetCompanyId} (one legal entity). Platform-wide database dumps are separate (PostgreSQL / host backups).`
                     : 'Select a company above.'}
                 </p>
-                <p className="mt-2 text-slate-600">
+                <p className="mt-2 text-muted-foreground">
                   Company owners use Management → Backup &amp; Restore for their own tenant. Super admins can run the
                   same export/restore here for any tenant.
                 </p>
@@ -251,7 +251,7 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
                   contexts). The backup file is tied to your company ID and includes portal organization settings used for
                   login routing.
                 </p>
-                <p className="mt-2 text-slate-600">
+                <p className="mt-2 text-muted-foreground">
                   Schema v2 exports every company table (over 70 model types): GL, stations, inventory, aquaculture, Data
                   Bank, loans, payroll, and more. Export fails if any table with data is missing from the file. Only
                   password-reset tokens and this page&apos;s audit log are intentionally omitted (security).
@@ -263,9 +263,9 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
       </div>
 
       <div className="space-y-6">
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Download backup</h2>
-          <p className="mt-2 text-sm text-gray-600">
+        <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Download backup</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
             {isSaas
               ? 'JSON snapshot of the tenant. Large exports may take several minutes.'
               : 'Full schema v2 JSON snapshot: every company table with data (chart of accounts, stations, journals, loans, aquaculture, Data Bank, inventory, users, roles, etc.). Export is blocked if anything would be skipped. Large tenants may take several minutes.'}
@@ -274,33 +274,33 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
             type="button"
             onClick={onDownload}
             disabled={downloading || !canOperate}
-            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-400"
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
             {downloading ? 'Preparing…' : 'Download backup'}
           </button>
         </div>
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-          <div className="flex gap-2 text-amber-900">
+        <div className="rounded-xl border border-warning/30 bg-warning/10 p-6 shadow-sm">
+          <div className="flex gap-2 text-warning-foreground">
             <AlertTriangle className="h-5 w-5 shrink-0" />
             <div>
               <h2 className="text-lg font-semibold">Restore from backup</h2>
-              <p className="mt-2 text-sm text-amber-900/90">
+              <p className="mt-2 text-sm text-warning-foreground/90">
                 Restoring deletes all current data for {isSaas ? 'the selected company' : 'this company'} and reloads
                 the file. The backup must have been created for the same company ID.
                 {isSaas ? ' Ensure reverse-proxy upload size and timeouts are sufficient.' : ''}
               </p>
             </div>
           </div>
-          <label className="mt-4 block text-sm font-medium text-gray-800">
+          <label className="mt-4 block text-sm font-medium text-foreground">
             Type <code className="rounded bg-amber-100 px-1">{RESTORE_CONFIRM_PHRASE}</code> to enable restore
           </label>
           <input
             type="text"
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
-            className="mt-2 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 font-mono text-sm"
+            className="mt-2 w-full rounded-lg border border-warning/30 bg-white px-3 py-2 font-mono text-sm"
             placeholder={RESTORE_CONFIRM_PHRASE}
             autoComplete="off"
           />
@@ -309,44 +309,44 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
             type="button"
             onClick={onPickFile}
             disabled={restoring || confirmText.trim() !== RESTORE_CONFIRM_PHRASE || !canOperate}
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-700 bg-white px-4 py-2.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-700 bg-white px-4 py-2.5 text-sm font-medium text-warning-foreground hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Upload className="h-4 w-4" />
             {restoring ? 'Restoring…' : 'Choose backup file and restore'}
           </button>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="rounded-xl border border-border bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-              <History className="h-5 w-5 text-gray-500" />
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+              <History className="h-5 w-5 text-muted-foreground" />
               Activity history
             </h2>
             <button
               type="button"
               onClick={() => void loadHistory()}
               disabled={historyLoading || !canOperate}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-medium text-foreground/85 hover:bg-muted/40 disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${historyLoading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
-          <p className="mt-1 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             Audit trail of backup and restore operations (who, when, outcome). Most recent first.
           </p>
 
           {!canOperate ? (
-            <p className="mt-4 text-sm text-gray-500">Select a company above to view its history.</p>
+            <p className="mt-4 text-sm text-muted-foreground">Select a company above to view its history.</p>
           ) : history.length === 0 ? (
-            <p className="mt-4 text-sm text-gray-500">
+            <p className="mt-4 text-sm text-muted-foreground">
               {historyLoading ? 'Loading…' : 'No backup or restore activity recorded yet.'}
             </p>
           ) : (
             <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <table className="min-w-full divide-y divide-border text-sm">
                 <thead>
-                  <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                  <tr className="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <th className="px-3 py-2">When</th>
                     <th className="px-3 py-2">Action</th>
                     <th className="px-3 py-2">Result</th>
@@ -356,32 +356,32 @@ export default function BackupRestorePanel(props: BackupRestorePanelProps) {
                     <th className="px-3 py-2">Details</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border/70">
                   {history.map((row) => (
-                    <tr key={row.id} className="text-gray-800">
-                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">
+                    <tr key={row.id} className="text-foreground">
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                         {formatAuditTimestamp(row.created_at)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 font-medium">{actionLabel(row.action)}</td>
                       <td className="whitespace-nowrap px-3 py-2">
                         {row.success ? (
-                          <span className="inline-flex items-center gap-1 text-green-700">
+                          <span className="inline-flex items-center gap-1 text-success">
                             <CheckCircle2 className="h-4 w-4" /> Success
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-red-700">
+                          <span className="inline-flex items-center gap-1 text-destructive">
                             <XCircle className="h-4 w-4" /> Failed
                           </span>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">{row.actor_label || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">{row.source || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right text-gray-600">
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.actor_label || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.source || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-muted-foreground">
                         {row.record_count ?? '—'}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
+                      <td className="px-3 py-2 text-muted-foreground">
                         {row.error_message ? (
-                          <span className="text-red-700" title={row.error_message}>
+                          <span className="text-destructive" title={row.error_message}>
                             {row.error_message.length > 80
                               ? `${row.error_message.slice(0, 80)}…`
                               : row.error_message}

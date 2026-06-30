@@ -117,8 +117,8 @@ type Props = {
 }
 
 const inputCls =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/25 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-500'
-const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-slate-500'
+  'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted/40 disabled:text-muted-foreground'
+const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-muted-foreground'
 
 function deriveFishPerKg(count: number, kg: number): string {
   if (!Number.isFinite(count) || count <= 0 || !Number.isFinite(kg) || kg <= 0) return ''
@@ -184,7 +184,7 @@ function QuantityFromSampleFields({
   return (
     <div className="mt-4 space-y-3">
       {lastSampleLoading ? (
-        <p className="text-xs text-slate-500">{t('stockLoadingLastSample')}</p>
+        <p className="text-xs text-muted-foreground">{t('stockLoadingLastSample')}</p>
       ) : lastSample ? (
         <div className="flex flex-wrap items-start gap-2 rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2.5 text-xs text-violet-950">
           <Beaker className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" aria-hidden />
@@ -213,12 +213,12 @@ function QuantityFromSampleFields({
           </div>
         </div>
       ) : (
-        <p className="text-xs text-slate-500">{t('stockNoSampleHint')}</p>
+        <p className="text-xs text-muted-foreground">{t('stockNoSampleHint')}</p>
       )}
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block">
           <span className={labelCls}>
-            {fishCountLabel} <span className="text-red-600">*</span>
+            {fishCountLabel} <span className="text-destructive">*</span>
           </span>
           <input
             className={`${inputCls} mt-1.5`}
@@ -227,11 +227,11 @@ function QuantityFromSampleFields({
             value={fishCount}
             onChange={(e) => onFishCountChange(e.target.value)}
           />
-          <span className="mt-1 block text-xs text-slate-500">{fishCountHint}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{fishCountHint}</span>
         </label>
         <label className="block">
           <span className={labelCls}>
-            {weightLabel} <span className="text-red-600">*</span>
+            {weightLabel} <span className="text-destructive">*</span>
           </span>
           <input
             className={`${inputCls} mt-1.5`}
@@ -240,13 +240,13 @@ function QuantityFromSampleFields({
             value={weightKg}
             onChange={(e) => onWeightKgChange(e.target.value)}
           />
-          <span className="mt-1 block text-xs text-slate-500">
+          <span className="mt-1 block text-xs text-muted-foreground">
             {weightHint ?? t('stockTotalBiomassHint')}
           </span>
         </label>
         <label className="block">
           <span className={labelCls}>
-            {t('stockFishPerKg')} <span className="text-red-600">*</span>
+            {t('stockFishPerKg')} <span className="text-destructive">*</span>
           </span>
           <input
             className={`${inputCls} mt-1.5`}
@@ -255,7 +255,7 @@ function QuantityFromSampleFields({
             value={fishPerKg}
             onChange={(e) => onFishPerKgChange(e.target.value)}
           />
-          <span className="mt-1 block text-xs text-slate-500">{t('stockFishPerKgHint')}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{t('stockFishPerKgHint')}</span>
         </label>
       </div>
     </div>
@@ -779,18 +779,18 @@ export function AquacultureStockLedgerFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-3 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="aq-stock-ledger-form-title"
     >
-      <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-teal-50 to-white px-5 py-4 sm:px-6">
+      <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 to-card px-5 py-4 sm:px-6">
           <div className="min-w-0">
-            <h2 id="aq-stock-ledger-form-title" className="text-xl font-bold tracking-tight text-slate-900">
+            <h2 id="aq-stock-ledger-form-title" className="text-xl font-bold tracking-tight text-foreground">
               {glLinked ? t('stockEditMemo') : isEdit ? t('stockEditEntry') : t('stockRecordEntry')}
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               {glLinked
                 ? t('stockGlPostedHint')
                 : isEdit
@@ -802,7 +802,7 @@ export function AquacultureStockLedgerFormModal({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-50"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -811,60 +811,60 @@ export function AquacultureStockLedgerFormModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
           {glLinked ? (
-            <div className="mb-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden />
+            <div className="mb-5 flex gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden />
               <p>
                 Biological amounts and GL are locked. Use <strong className="font-medium">Rollback</strong> in the
                 table to reverse this entry and its journal together.
               </p>
             </div>
           ) : isEdit && !glLinked ? (
-            <p className="mb-5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <p className="mb-5 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               Book value and “Post journal” were set at creation. To change GL posting, roll back this row and add a new
               one.
             </p>
           ) : null}
 
           {!glLinked && !isEdit ? (
-            <details className="group mb-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/80">
-              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-slate-800 marker:content-none [&::-webkit-details-marker]:hidden">
+            <details className="group mb-5 overflow-hidden rounded-xl border border-border bg-muted/50">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-foreground marker:content-none [&::-webkit-details-marker]:hidden">
                 <ChevronDown
-                  className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-180"
+                  className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
                   aria-hidden
                 />
-                <BookOpen className="h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                <BookOpen className="h-4 w-4 shrink-0 text-primary" aria-hidden />
                 Example: 500 fish mortality with GL posting
               </summary>
-              <div className="border-t border-slate-200 px-4 py-3 text-sm leading-relaxed text-slate-700">
-                <p className="text-slate-600">
+              <div className="border-t border-border px-4 py-3 text-sm leading-relaxed text-foreground/85">
+                <p className="text-muted-foreground">
                   Morning check: ~500 dead tilapia. Recent sampling suggests ~4 fish/kg. You want stock, P&amp;L, and
-                  account <strong className="font-medium text-slate-800">1581</strong> updated.
+                  account <strong className="font-medium text-foreground">1581</strong> updated.
                 </p>
                 <ol className="mt-3 list-decimal space-y-2 pl-5 text-xs sm:text-sm">
                   <li>
-                    <strong className="font-medium text-slate-800">Where &amp; when:</strong> pick the grow pond, today&apos;s
+                    <strong className="font-medium text-foreground">Where &amp; when:</strong> pick the grow pond, today&apos;s
                     date, optional stocking batch, species Tilapia.
                   </li>
                   <li>
-                    <strong className="font-medium text-slate-800">What happened:</strong> entry type{' '}
+                    <strong className="font-medium text-foreground">What happened:</strong> entry type{' '}
                     <span className="rounded bg-rose-50 px-1 font-medium text-rose-900">Loss</span>, reason Mortality,
                     fish removed <span className="tabular-nums">500</span>, fish/kg{' '}
                     <span className="tabular-nums">4</span> → kg removed{' '}
                     <span className="tabular-nums">125</span> (preview: −500 fish · −125 kg).
                   </li>
                   <li>
-                    <strong className="font-medium text-slate-800">Book value:</strong> if cost/kg is {sym}120, book value
+                    <strong className="font-medium text-foreground">Book value:</strong> if cost/kg is {sym}120, book value
                     ≈ {sym}15,000 (125 × 120, capped at pond bio-asset balance). Check{' '}
-                    <strong className="font-medium text-slate-800">Post journal on save</strong> to post Dr{' '}
+                    <strong className="font-medium text-foreground">Post journal on save</strong> to post Dr{' '}
                     <span className="tabular-nums">6726</span> / Cr <span className="tabular-nums">1581</span>.
                   </li>
                   <li>
-                    <strong className="font-medium text-slate-800">Memo:</strong> e.g. &quot;Morning mortality after low DO —
+                    <strong className="font-medium text-foreground">Memo:</strong> e.g. &quot;Morning mortality after low DO —
                     ~500 fish, est. 125 kg @ 4 fish/kg&quot;.
                   </li>
                 </ol>
-                <p className="mt-3 text-xs text-slate-500">
-                  <strong className="font-medium text-slate-600">After save:</strong> implied pond stock drops; biomass
+                <p className="mt-3 text-xs text-muted-foreground">
+                  <strong className="font-medium text-muted-foreground">After save:</strong> implied pond stock drops; biomass
                   sampling uses lower book head; P&amp;L shows biological write-off when book value is set; GL moves only
                   when posted. Stock-only (no GL): enter fish + kg, leave book value at 0 and Post journal unchecked.
                 </p>
@@ -873,8 +873,8 @@ export function AquacultureStockLedgerFormModal({
           ) : null}
 
           {!glLinked && preview ? (
-            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-teal-200 bg-teal-50/80 px-4 py-3">
-              <Fish className="h-5 w-5 text-teal-800" aria-hidden />
+            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-primary/25 bg-accent/80 px-4 py-3">
+              <Fish className="h-5 w-5 text-primary" aria-hidden />
               <div className="text-sm text-teal-950">
                 <span className="font-medium">Stock impact preview:</span>{' '}
                 <span className="tabular-nums">
@@ -890,15 +890,15 @@ export function AquacultureStockLedgerFormModal({
             </div>
           ) : null}
 
-          <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <MapPin className="h-4 w-4 text-teal-700" aria-hidden />
+          <section className="rounded-xl border border-border bg-muted/40/60 p-4 sm:p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <MapPin className="h-4 w-4 text-primary" aria-hidden />
               Where &amp; when
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="block sm:col-span-1">
                 <span className={labelCls}>
-                  Pond <span className="text-red-600">*</span>
+                  Pond <span className="text-destructive">*</span>
                 </span>
                 <select
                   className={`${inputCls} mt-1.5`}
@@ -941,20 +941,20 @@ export function AquacultureStockLedgerFormModal({
                   ))}
                 </select>
                 {form.pond_id && cycles.length === 0 ? (
-                  <p className="mt-1 text-xs text-amber-800">
+                  <p className="mt-1 text-xs text-warning-foreground">
                     No batches for this pond yet — pond-level mortality still works, or{' '}
                     <Link
                       href={`/aquaculture/cycles?pond_id=${encodeURIComponent(form.pond_id)}`}
-                      className="font-medium text-teal-800 underline hover:text-teal-950"
+                      className="font-medium text-primary underline hover:text-teal-950"
                     >
                       create a stocking batch
                     </Link>
                     .
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Tag a batch so this entry appears in batch × species breakdown and filtered totals. Same record as{' '}
-                    <Link href="/aquaculture/cycles" className="font-medium text-teal-800 underline hover:text-teal-950">
+                    <Link href="/aquaculture/cycles" className="font-medium text-primary underline hover:text-teal-950">
                       Stocking batches
                     </Link>
                     .
@@ -991,12 +991,12 @@ export function AquacultureStockLedgerFormModal({
           </section>
 
           {!glLinked ? (
-            <section className="mt-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Scale className="h-4 w-4 text-teal-700" aria-hidden />
+            <section className="mt-5 rounded-xl border border-border bg-white p-4 sm:p-5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Scale className="h-4 w-4 text-primary" aria-hidden />
                 What happened
               </div>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Loss entries always reduce stock. Adjustments can increase or decrease count and weight.
               </p>
 
@@ -1014,12 +1014,12 @@ export function AquacultureStockLedgerFormModal({
                         onClick={() => setForm((f) => ({ ...f, entry_kind: o.id }))}
                         className={`rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
                           active
-                            ? 'border-teal-600 bg-teal-50 font-medium text-teal-950 ring-2 ring-teal-500/30'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                            ? 'border-teal-600 bg-accent font-medium text-teal-950 ring-2 ring-teal-500/30'
+                            : 'border-border bg-white text-foreground/85 hover:border-border hover:bg-muted/40'
                         }`}
                       >
                         <span className="block font-semibold">{o.label}</span>
-                        <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                           {o.id === 'loss'
                             ? t('stockLossKindsHint')
                             : t('stockAdjKindsHint')}
@@ -1045,8 +1045,8 @@ export function AquacultureStockLedgerFormModal({
                               onClick={() => setForm((f) => ({ ...f, loss_reason: o.id }))}
                               className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                                 active
-                                  ? 'border-teal-600 bg-teal-600 text-white'
-                                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                                  ? 'border-teal-600 bg-primary text-white'
+                                  : 'border-border bg-white text-foreground/85 hover:border-border'
                               }`}
                             >
                               {o.label}
@@ -1115,19 +1115,19 @@ export function AquacultureStockLedgerFormModal({
           ) : null}
 
           {!glLinked && !bookPostingLocked ? (
-            <section className="mt-5 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <BookOpen className="h-4 w-4 text-teal-700" aria-hidden />
+            <section className="mt-5 rounded-xl border border-border bg-muted/40/60 p-4 sm:p-5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <BookOpen className="h-4 w-4 text-primary" aria-hidden />
                 {t('stockGlOptional')}
               </div>
               {refData?.coa_note ? (
-                <p className="mt-1 text-xs text-slate-500">{refData.coa_note}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{refData.coa_note}</p>
               ) : (
-                <p className="mt-1 text-xs text-slate-500">{t('stockGlHint')}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('stockGlHint')}</p>
               )}
               <div className="mt-4 space-y-3">
                 {isMortalityLoss ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950">
+                  <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-xs text-warning-foreground">
                     <p className="font-medium">Mortality — cost stays on survivors</p>
                     <p className="mt-1 leading-snug">
                       Leave book value at <span className="font-semibold">0</span> so accumulated fry, feed, and pond
@@ -1135,7 +1135,7 @@ export function AquacultureStockLedgerFormModal({
                       write-down (Dr 6726 / Cr 1581).
                     </p>
                     {bioCost?.cost_per_fish ? (
-                      <p className="mt-2 tabular-nums text-amber-900">
+                      <p className="mt-2 tabular-nums text-warning-foreground">
                         Current survivor cost:{' '}
                         <span className="font-semibold">
                           {sym}
@@ -1156,19 +1156,19 @@ export function AquacultureStockLedgerFormModal({
                   </div>
                 ) : null}
                 {bioCostLoading ? (
-                  <p className="text-xs text-slate-500">Looking up production cost for this pond…</p>
+                  <p className="text-xs text-muted-foreground">Looking up production cost for this pond…</p>
                 ) : bioCost ? (
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-600">
+                  <div className="rounded-lg border border-border bg-white px-3 py-2.5 text-xs text-muted-foreground">
                     <p>
-                      <span className="font-medium text-slate-800">Production cost</span>{' '}
+                      <span className="font-medium text-foreground">Production cost</span>{' '}
                       {bioCost.cost_per_fish ? (
                         <>
-                          <span className="tabular-nums font-medium text-slate-800">
+                          <span className="tabular-nums font-medium text-foreground">
                             {sym}
                             {formatNumber(Number(bioCost.cost_per_fish), 2)}/fish
                           </span>
                           {bioCost.cost_per_kg ? (
-                            <span className="text-slate-500">
+                            <span className="text-muted-foreground">
                               {' '}
                               · {sym}
                               {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
@@ -1176,20 +1176,20 @@ export function AquacultureStockLedgerFormModal({
                           ) : null}
                         </>
                       ) : (
-                        <span className="tabular-nums font-medium text-slate-800">
+                        <span className="tabular-nums font-medium text-foreground">
                           {sym}
                           {formatNumber(Number(bioCost.cost_per_kg), 2)}/kg
                         </span>
                       )}
-                      <span className="text-slate-500"> (fry + feed + medicine + preparation)</span>
+                      <span className="text-muted-foreground"> (fry + feed + medicine + preparation)</span>
                     </p>
                     {bioCost.basis_note ? (
-                      <p className="mt-1 text-[11px] leading-snug text-slate-500">{bioCost.basis_note}</p>
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{bioCost.basis_note}</p>
                     ) : null}
                     {!isMortalityLoss && weightKgForBook != null && suggestedBookValue ? (
-                      <p className="mt-1 tabular-nums text-slate-700">
+                      <p className="mt-1 tabular-nums text-foreground/85">
                         Suggested bio-asset amount for {formatNumber(weightKgForBook, 2)} kg:{' '}
-                        <span className="font-semibold text-teal-900">
+                        <span className="font-semibold text-primary">
                           {sym}
                           {formatNumber(Number(suggestedBookValue), 2)}
                         </span>
@@ -1197,18 +1197,18 @@ export function AquacultureStockLedgerFormModal({
                           <button
                             type="button"
                             onClick={applyBioCostBookValue}
-                            className="ml-2 font-medium text-teal-800 underline hover:text-teal-950"
+                            className="ml-2 font-medium text-primary underline hover:text-teal-950"
                           >
                             Re-apply from cost/kg
                           </button>
                         ) : null}
                       </p>
                     ) : !isMortalityLoss ? (
-                      <p className="mt-1 text-slate-500">
+                      <p className="mt-1 text-muted-foreground">
                         Enter weight — book value fills from accumulated production cost/kg.
                       </p>
                     ) : weightKgForBook != null && suggestedBookValue ? (
-                      <p className="mt-1 tabular-nums text-slate-700">
+                      <p className="mt-1 tabular-nums text-foreground/85">
                         Optional GL write-down for {formatNumber(weightKgForBook, 2)} kg:{' '}
                         <span className="font-semibold">{sym}{formatNumber(Number(suggestedBookValue), 2)}</span>
                         <button
@@ -1221,7 +1221,7 @@ export function AquacultureStockLedgerFormModal({
                             }))
                             setBookValueTouched(true)
                           }}
-                          className="ml-2 font-medium text-teal-800 underline hover:text-teal-950"
+                          className="ml-2 font-medium text-primary underline hover:text-teal-950"
                         >
                           Apply GL write-down
                         </button>
@@ -1229,7 +1229,7 @@ export function AquacultureStockLedgerFormModal({
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     No production cost for this pond yet — enter book value manually if needed.
                   </p>
                 )}
@@ -1246,23 +1246,23 @@ export function AquacultureStockLedgerFormModal({
                       setForm((f) => ({ ...f, book_value: e.target.value }))
                     }}
                   />
-                  <span className="mt-1 block text-xs text-slate-500">
+                  <span className="mt-1 block text-xs text-muted-foreground">
                     {isMortalityLoss
                       ? 'Default 0 — accumulated cost remains on surviving fish unless you post a GL write-down.'
                       : 'Editable — override the suggested amount anytime.'}
                   </span>
                 </label>
                 <label className="flex items-end sm:col-span-1">
-                  <span className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+                  <span className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-white px-4 py-3 text-sm text-foreground/85 shadow-sm">
                     <input
                       type="checkbox"
-                      className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+                      className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-teal-500"
                       checked={form.post_to_books}
                       onChange={(e) => setForm((f) => ({ ...f, post_to_books: e.target.checked }))}
                     />
                     <span>
-                      <span className="font-medium text-slate-900">Post journal on save</span>
-                      <span className="mt-0.5 block text-xs text-slate-500">Requires a non-zero book value</span>
+                      <span className="font-medium text-foreground">Post journal on save</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">Requires a non-zero book value</span>
                     </span>
                   </span>
                 </label>
@@ -1271,7 +1271,7 @@ export function AquacultureStockLedgerFormModal({
             </section>
           ) : null}
 
-          <section className="mt-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <section className="mt-5 rounded-xl border border-border bg-white p-4 sm:p-5">
             <span className={labelCls}>Memo / notes</span>
             <textarea
               className={`${inputCls} mt-1.5`}
@@ -1287,12 +1287,12 @@ export function AquacultureStockLedgerFormModal({
           </section>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/80 px-5 py-4 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-muted/50 px-5 py-4 sm:px-6">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -1300,7 +1300,7 @@ export function AquacultureStockLedgerFormModal({
             type="button"
             onClick={() => void handleSubmit()}
             disabled={submitting || ponds.length === 0}
-            className="inline-flex min-w-[7rem] items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-w-[7rem] items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             {glLinked ? t('stockSaveMemo') : isEdit ? t('stockSaveChanges') : t('stockSaveEntry')}

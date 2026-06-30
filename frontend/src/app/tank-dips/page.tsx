@@ -434,14 +434,14 @@ export default function TankDipsPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
-        <div className="flex min-h-[50vh] items-center justify-center text-gray-600">Loading...</div>
+      <PageLayout>
+        <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">Loading...</div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -492,7 +492,7 @@ export default function TankDipsPage() {
                 if (!showForm) setSkipVarianceGl(false)
                 setShowForm(!showForm)
               }}
-              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>Record Dip</span>
@@ -501,17 +501,17 @@ export default function TankDipsPage() {
         }
       >
         {(selectedCompany?.name || dipsSorted.length > 0) && (
-          <div className="mb-6 text-sm text-gray-600">
+          <div className="mb-6 text-sm text-muted-foreground">
             {selectedCompany?.name && <p>Company: {selectedCompany.name}</p>}
             {dipsSorted.length > 0 && (
-              <p className="mt-1 text-gray-700">
-                <span className="font-semibold text-indigo-800">{dipsSorted.length}</span> dip reading
+              <p className="mt-1 text-foreground/85">
+                <span className="font-semibold text-primary">{dipsSorted.length}</span> dip reading
                 {dipsSorted.length === 1 ? '' : 's'} on file — shown in{' '}
-                <a href="#dip-history-summary" className="text-indigo-600 underline font-medium">
+                <a href="#dip-history-summary" className="text-primary underline font-medium">
                   summary
                 </a>{' '}
                 and{' '}
-                <a href="#dip-readings-detail-table" className="text-indigo-600 underline font-medium">
+                <a href="#dip-readings-detail-table" className="text-primary underline font-medium">
                   full table
                 </a>
                 . (Dips are stick readings, not POS sales.)
@@ -521,7 +521,7 @@ export default function TankDipsPage() {
         )}
 
         {loadError && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="erp-alert-warning mb-4">
             {loadError}
           </div>
         )}
@@ -529,17 +529,17 @@ export default function TankDipsPage() {
         {dipsSorted.length > 0 && (
           <div
             id="dip-history-summary"
-            className="mb-6 rounded-xl border-2 border-indigo-200 bg-gradient-to-b from-indigo-50 to-white p-5 shadow-sm scroll-mt-4"
+            className="erp-callout-primary mb-6 scroll-mt-4"
           >
-            <h2 className="text-lg font-bold text-indigo-950">Your recorded dip readings</h2>
-            <p className="text-sm text-indigo-900/80 mt-1 mb-4">
+            <h2 className="text-lg font-bold text-foreground">Your recorded dip readings</h2>
+            <p className="text-sm text-foreground/80 mt-1 mb-4">
               These are the physical tank measurements you saved. The detailed variance columns are in the{' '}
               <a href="#dip-readings-detail-table" className="underline font-medium">
                 full table
               </a>{' '}
               (scroll down or use the link).
             </p>
-            <ul className="rounded-lg border border-indigo-100 bg-white divide-y divide-slate-100">
+            <ul className="rounded-lg border border-primary/15 bg-white divide-y divide-border/70">
               {dipsSorted.map((dip) => {
                 const tank = tanks.find((t) => t.id === dip.tank_id)
                 const dk = dipDateKey(dip)
@@ -549,15 +549,15 @@ export default function TankDipsPage() {
                     className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm"
                   >
                     <div>
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-foreground">
                         {dip.tank_name || tank?.tank_name || `Tank #${dip.tank_id}`}
                       </span>
-                      <span className="text-slate-500 mx-2">·</span>
-                      <span className="text-slate-600">
+                      <span className="text-muted-foreground mx-2">·</span>
+                      <span className="text-muted-foreground">
                         {dk ? formatDateOnly(dk) : '—'}
                       </span>
                     </div>
-                    <div className="tabular-nums font-medium text-indigo-800">
+                    <div className="tabular-nums font-medium text-primary">
                       {formatNumber(dipMeasuredVolume(dip))} L measured
                     </div>
                   </li>
@@ -574,7 +574,7 @@ export default function TankDipsPage() {
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Tank *
                 </label>
                 <select
@@ -590,7 +590,7 @@ export default function TankDipsPage() {
                     const id = Number(v)
                     setSelectedTank(Number.isFinite(id) ? id : null)
                   }}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 relative z-10 appearance-auto"
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring bg-white text-foreground relative z-10 appearance-auto"
                   required
                   disabled={tanksForDipSelect.length === 0}
                 >
@@ -611,14 +611,14 @@ export default function TankDipsPage() {
                 {tanks.length > 0 &&
                   tanks.every((t) => t.is_active === false) &&
                   tanksForDipSelect.length > 0 && (
-                    <p className="text-xs text-amber-700 mt-1">
+                    <p className="text-xs text-warning-foreground mt-1">
                       All tanks are marked inactive; showing them anyway so you can still record a dip. Activate tanks
                       in Inventory when possible.
                     </p>
                   )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Measured Quantity (Liters) *
                 </label>
                 <input
@@ -626,7 +626,7 @@ export default function TankDipsPage() {
                   step="0.01"
                   value={measuredQty}
                   onChange={(e) => setMeasuredQty(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   placeholder="0.00"
                   required
                 />
@@ -635,7 +635,7 @@ export default function TankDipsPage() {
 
             {selectedTank && measuredQty && (
               <div className="bg-white rounded-lg p-4 mb-4">
-                <h3 className="font-bold text-gray-900 mb-2">Variance Preview</h3>
+                <h3 className="font-bold text-foreground mb-2">Variance Preview</h3>
                 {(() => {
                   const tank = tanks.find(t => t.id === selectedTank)
                   if (!tank) return null
@@ -649,26 +649,26 @@ export default function TankDipsPage() {
                   return (
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <div className="text-sm text-gray-600">System Stock</div>
-                        <div className="text-xl font-bold text-gray-900">
+                        <div className="text-sm text-muted-foreground">System Stock</div>
+                        <div className="text-xl font-bold text-foreground">
                           {formatNumber(Number(systemQty || 0))} L
                         </div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-600">Measured Stock</div>
-                        <div className="text-xl font-bold text-blue-600">
+                        <div className="text-sm text-muted-foreground">Measured Stock</div>
+                        <div className="text-xl erp-stat-highlight">
                           {formatNumber(Number(measured || 0))} L
                         </div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-600">Variance</div>
+                        <div className="text-sm text-muted-foreground">Variance</div>
                         <div className={`text-xl font-bold flex items-center justify-center ${
-                          variance >= 0 ? 'text-green-600' : 'text-red-600'
+                          variance >= 0 ? 'text-success' : 'text-destructive'
                         }`}>
                           {variance >= 0 ? <TrendingUp className="h-5 w-5 mr-1" /> : <TrendingDown className="h-5 w-5 mr-1" />}
                           {formatNumber(Math.abs(Number(variance || 0)))} L
                         </div>
-                        <div className={`text-sm ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <div className={`text-sm ${variance >= 0 ? 'text-success' : 'text-destructive'}`}>
                           {formatCurrency(Math.abs(Number(varianceValue || 0)), VARIANCE_CURRENCY)}{' '}
                           {variance >= 0 ? 'GAIN' : 'LOSS'}
                         </div>
@@ -680,14 +680,14 @@ export default function TankDipsPage() {
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-foreground">
                 Notes (Optional)
               </label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="Any observations..."
               />
             </div>
@@ -698,19 +698,19 @@ export default function TankDipsPage() {
                 const p = t ? products.find((x) => x.id === t.product_id) : undefined
                 if (p && varianceRatePerLiter(p) > 0) return null
                 return (
-                  <p className="text-xs text-amber-800 mb-3">
+                  <p className="text-xs text-warning-foreground mb-3">
                     Item has no cost (and no unit price): variance reports show ৳0 until you set cost on the product or
                     run <code className="bg-amber-100 px-1 rounded">backfill_tank_product_costs</code>.
                   </p>
                 )
               })()}
 
-            <label className="flex items-start gap-2 mb-4 text-sm text-gray-800 cursor-pointer">
+            <label className="flex items-start gap-2 mb-4 text-sm text-foreground cursor-pointer">
               <input
                 type="checkbox"
                 checked={skipVarianceGl}
                 onChange={(e) => setSkipVarianceGl(e.target.checked)}
-                className="mt-1 rounded border-gray-300"
+                className="mt-1 rounded border-border"
               />
               <span>
                 Skip GL posting for this dip (no variance journal). Use for corrections or backfill; reports still use
@@ -722,14 +722,14 @@ export default function TankDipsPage() {
               <button
                 type="submit"
                 disabled={tanksForDipSelect.length === 0 || selectedTank == null}
-                className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="erp-btn-success-lg flex-1"
               >
                 Record Dip
               </button>
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="px-6 py-3 border rounded-lg hover:bg-gray-50"
+                className="px-6 py-3 border rounded-lg hover:bg-muted/40"
               >
                 Cancel
               </button>
@@ -739,9 +739,9 @@ export default function TankDipsPage() {
       )}
 
       {/* Current Tank Status — book stock reconciles to latest dip (server-side) */}
-      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-        <p className="font-medium text-slate-800">Book stock, physical dips, and movement</p>
-        <p className="mt-1 text-slate-600">
+      <div className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">
+        <p className="font-medium text-foreground">Book stock, physical dips, and movement</p>
+        <p className="mt-1 text-muted-foreground">
           <strong>Book stock</strong> is what the ERP uses for tank cards, the dip form, and (with your POS setup)
           sales and deliveries — it goes down on fuel sales and up on receipts. <strong>Dip readings</strong> are the
           physical stick measurements; saving a dip as the <strong>latest</strong> for that tank sets book to that
@@ -750,8 +750,8 @@ export default function TankDipsPage() {
           normal transactions move book again; the next dip reconciles physical vs book and records variance from the
           snapshot (<strong>Book at dip</strong> in the table).
         </p>
-        <p className="mt-3 text-slate-600 border-t border-slate-200 pt-3">
-          <strong className="text-slate-800">Accounting (all tanks / products)</strong>: Fuel in tanks is{' '}
+        <p className="mt-3 text-muted-foreground border-t border-border pt-3">
+          <strong className="text-foreground">Accounting (all tanks / products)</strong>: Fuel in tanks is{' '}
           <strong>inventory (balance-sheet asset</strong>, chart 1200 — wet stock at cost). A dip does not record a
           sale; it only measures what is already on hand. When measured liters differ from book at the dip time, the
           system posts a <strong>variance journal</strong>: gains <strong>debit inventory</strong> and{' '}
@@ -769,11 +769,11 @@ export default function TankDipsPage() {
           const reconciled =
             latestVol != null && Math.abs(latestVol - book) < 0.005
           return (
-            <div key={tank.id} className="bg-white rounded-lg shadow p-6 border border-slate-100">
+            <div key={tank.id} className="erp-surface p-6">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <h3 className="font-bold text-gray-900">{tank.tank_name}</h3>
-                  <p className="text-sm text-gray-600">{getProductName(tank.product_id, tank)}</p>
+                  <h3 className="font-bold text-foreground">{tank.tank_name}</h3>
+                  <p className="text-sm text-muted-foreground">{getProductName(tank.product_id, tank)}</p>
                 </div>
                 <Droplet
                   className={`h-6 w-6 ${
@@ -787,17 +787,17 @@ export default function TankDipsPage() {
               </div>
               <div className="mb-3">
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-600">Fill level (book)</span>
+                  <span className="text-muted-foreground">Fill level (book)</span>
                   <span className="font-bold">{getFillPercentage(tank)}%</span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2">
                   <div
                     className={`h-2 rounded-full ${
                       Number(getFillPercentage(tank)) > 50
                         ? 'bg-blue-500'
                         : Number(getFillPercentage(tank)) > 20
                           ? 'bg-yellow-500'
-                          : 'bg-red-500'
+                          : 'bg-destructive/50'
                     }`}
                     style={{ width: `${Math.min(100, Number(getFillPercentage(tank)))}%` }}
                   />
@@ -805,17 +805,17 @@ export default function TankDipsPage() {
               </div>
               <div className="text-sm space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Book stock</span>
-                  <span className="font-semibold text-gray-900 tabular-nums">{formatNumber(book)} L</span>
+                  <span className="text-muted-foreground">Book stock</span>
+                  <span className="font-semibold text-foreground tabular-nums">{formatNumber(book)} L</span>
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Capacity</span>
                   <span className="tabular-nums">{formatNumber(Number(tank.capacity ?? 0))} L</span>
                 </div>
                 {latest ? (
                   <div
                     className={`mt-2 rounded-md px-2 py-1.5 text-xs ${
-                      reconciled ? 'bg-emerald-50 text-emerald-900 border border-emerald-100' : 'bg-amber-50 text-amber-900 border border-amber-100'
+                      reconciled ? 'bg-emerald-50 text-emerald-900 border border-emerald-100' : 'bg-warning/10 text-warning-foreground border border-amber-100'
                     }`}
                   >
                     <span className="font-medium">Latest dip</span>{' '}
@@ -830,7 +830,7 @@ export default function TankDipsPage() {
                     {reconciled ? (
                       <span className="block mt-0.5 text-emerald-800">Matches book — card reflects this reading.</span>
                     ) : (
-                      <span className="block mt-0.5 text-amber-800">
+                      <span className="block mt-0.5 text-warning-foreground">
                         Differs from book — try Refresh, or use &quot;Sync book to latest dips&quot; if dips are
                         correct. Sales/receipts after the dip also change book while the stick reading stays until the
                         next dip.
@@ -838,7 +838,7 @@ export default function TankDipsPage() {
                     )}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-500 pt-1">No dip recorded yet — book is system stock only.</p>
+                  <p className="text-xs text-muted-foreground pt-1">No dip recorded yet — book is system stock only.</p>
                 )}
               </div>
             </div>
@@ -853,18 +853,18 @@ export default function TankDipsPage() {
           <form onSubmit={handleUpdate}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Tank (Read-only)
                 </label>
                 <input
                   type="text"
                   value={tanks.find(t => t.id === editingDip.tank_id)?.tank_name || 'Unknown'}
                   disabled
-                  className="w-full px-4 py-2 border rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
+                  className="w-full px-4 py-2 border rounded-lg bg-muted text-muted-foreground cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Measured Quantity (Liters) *
                 </label>
                 <input
@@ -872,20 +872,20 @@ export default function TankDipsPage() {
                   step="0.01"
                   value={editMeasuredQty}
                   onChange={(e) => setEditMeasuredQty(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-warning"
                   placeholder="0.00"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="mb-2 block text-sm font-medium text-foreground">
                   Dip date *
                 </label>
                 <input
                   type="date"
                   value={editDipDate}
                   onChange={(e) => setEditDipDate(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-warning"
                   required
                 />
               </div>
@@ -893,7 +893,7 @@ export default function TankDipsPage() {
 
             {editMeasuredQty && editingDip && (
               <div className="bg-white rounded-lg p-4 mb-4">
-                <h3 className="font-bold text-gray-900 mb-2">Variance Preview</h3>
+                <h3 className="font-bold text-foreground mb-2">Variance Preview</h3>
                 {(() => {
                   const tank = tanks.find((t) => t.id === editingDip.tank_id)
                   const systemQty =
@@ -908,26 +908,26 @@ export default function TankDipsPage() {
                   return (
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <div className="text-sm text-gray-600">System Stock</div>
-                        <div className="text-xl font-bold text-gray-900">
+                        <div className="text-sm text-muted-foreground">System Stock</div>
+                        <div className="text-xl font-bold text-foreground">
                           {formatNumber(Number(systemQty || 0))} L
                         </div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-600">Measured Stock</div>
-                        <div className="text-xl font-bold text-blue-600">
+                        <div className="text-sm text-muted-foreground">Measured Stock</div>
+                        <div className="text-xl erp-stat-highlight">
                           {formatNumber(Number(measured || 0))} L
                         </div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-600">Variance</div>
+                        <div className="text-sm text-muted-foreground">Variance</div>
                         <div className={`text-xl font-bold flex items-center justify-center ${
-                          variance >= 0 ? 'text-green-600' : 'text-red-600'
+                          variance >= 0 ? 'text-success' : 'text-destructive'
                         }`}>
                           {variance >= 0 ? <TrendingUp className="h-5 w-5 mr-1" /> : <TrendingDown className="h-5 w-5 mr-1" />}
                           {formatNumber(Math.abs(Number(variance || 0)))} L
                         </div>
-                        <div className={`text-sm ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <div className={`text-sm ${variance >= 0 ? 'text-success' : 'text-destructive'}`}>
                           {formatCurrency(Math.abs(Number(varianceValue || 0)), VARIANCE_CURRENCY)}{' '}
                           {variance >= 0 ? 'GAIN' : 'LOSS'}
                         </div>
@@ -939,24 +939,24 @@ export default function TankDipsPage() {
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-foreground">
                 Notes (Optional)
               </label>
               <textarea
                 value={editNotes}
                 onChange={(e) => setEditNotes(e.target.value)}
                 rows={3}
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-warning"
                 placeholder="Any observations..."
               />
             </div>
 
-            <label className="flex items-start gap-2 mb-4 text-sm text-gray-800 cursor-pointer">
+            <label className="flex items-start gap-2 mb-4 text-sm text-foreground cursor-pointer">
               <input
                 type="checkbox"
                 checked={skipVarianceGl}
                 onChange={(e) => setSkipVarianceGl(e.target.checked)}
-                className="mt-1 rounded border-gray-300"
+                className="mt-1 rounded border-border"
               />
               <span>
                 Skip GL posting for this save (no variance journal). Touch-save old rows without GL, or leave unchecked
@@ -974,7 +974,7 @@ export default function TankDipsPage() {
               <button
                 type="button"
                 onClick={cancelEdit}
-                className="px-6 py-3 border rounded-lg hover:bg-gray-50"
+                className="px-6 py-3 border rounded-lg hover:bg-muted/40"
               >
                 Cancel
               </button>
@@ -989,10 +989,10 @@ export default function TankDipsPage() {
         className="bg-white rounded-lg shadow overflow-hidden scroll-mt-4"
       >
         <div className="px-6 py-4 border-b">
-          <h2 className="text-xl font-bold text-gray-900">
+          <h2 className="text-xl font-bold text-foreground">
             Dip readings — detail ({dipsSorted.length})
           </h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             <strong>Book (at dip)</strong> is the system stock captured when the dip was saved. Variance is measured
             minus that snapshot, so gains/losses stay visible after book is reconciled to the stick reading.{' '}
             <strong>Value (BDT)</strong> is variance liters × the fuel item&apos;s cost (৳/L) when set, else unit
@@ -1001,26 +1001,26 @@ export default function TankDipsPage() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-muted/40">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tank</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Book (at dip)</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Measured</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Variance</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Value (BDT)</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase max-w-[14rem]">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Tank</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Book (at dip)</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Measured</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Variance</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Value (BDT)</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase max-w-[14rem]">
                   GL journal
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-muted-foreground uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-border">
               {dipsSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                  <td colSpan={9} className="px-6 py-8 text-center text-muted-foreground">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-2 text-muted-foreground/70" />
                     <p>No dip readings recorded yet</p>
                     <p className="text-sm">Click &quot;Record Dip&quot; to add your first reading</p>
                   </td>
@@ -1040,25 +1040,25 @@ export default function TankDipsPage() {
                   const dateLabel = dipDateKey(dip)
                   const posted = dip.gl_journal_posted === true
                   return (
-                    <tr key={dip.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <tr key={dip.id} className="hover:bg-muted/40">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                         {dateLabel
                           ? formatDateOnly(dateLabel)
                           : '—'}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
+                      <td className="px-6 py-4 text-sm text-foreground">
                         {dip.tank_name || tank?.tank_name || 'Unknown'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-muted-foreground">
                         {formatNumber(systemAtDip)} L
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-blue-600">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-primary">
                         {formatNumber(measured)} L
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                         <span
                           className={`font-medium flex items-center justify-end ${
-                            varianceType === 'GAIN' ? 'text-green-600' : 'text-red-600'
+                            varianceType === 'GAIN' ? 'text-success' : 'text-destructive'
                           }`}
                         >
                           {varianceType === 'GAIN' ? (
@@ -1072,7 +1072,7 @@ export default function TankDipsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                         <span
                           className={`font-medium ${
-                            varianceType === 'GAIN' ? 'text-green-600' : 'text-red-600'
+                            varianceType === 'GAIN' ? 'text-success' : 'text-destructive'
                           }`}
                         >
                           {formatCurrency(Math.abs(varianceValue), VARIANCE_CURRENCY)}
@@ -1082,28 +1082,28 @@ export default function TankDipsPage() {
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-bold ${
                             varianceType === 'GAIN'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
+                              ? 'bg-success/15 text-success'
+                              : 'bg-destructive/10 text-destructive'
                           }`}
                         >
                           {varianceType}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-xs text-gray-700 max-w-[14rem]">
+                      <td className="px-6 py-4 text-xs text-foreground/85 max-w-[14rem]">
                         {posted ? (
                           <span className="text-emerald-800 font-medium" title={dip.gl_entry_number ?? undefined}>
                             Posted
                             {dip.gl_entry_number ? (
-                              <span className="block text-[10px] text-gray-500 font-normal truncate">
+                              <span className="block text-[10px] text-muted-foreground font-normal truncate">
                                 {dip.gl_entry_number}
                               </span>
                             ) : null}
                           </span>
                         ) : (
-                          <span className="text-gray-600" title={dip.gl_journal_hint ?? dip.gl_skip_reason ?? ''}>
+                          <span className="text-muted-foreground" title={dip.gl_journal_hint ?? dip.gl_skip_reason ?? ''}>
                             Not posted
                             {dip.gl_skip_reason ? (
-                              <span className="block text-[11px] text-amber-800 mt-0.5">
+                              <span className="block text-[11px] text-warning-foreground mt-0.5">
                                 {dip.gl_journal_hint ?? dip.gl_skip_reason}
                               </span>
                             ) : null}
@@ -1117,7 +1117,7 @@ export default function TankDipsPage() {
                             onClick={() => handleEdit(dip)}
                             disabled={posted}
                             className={`p-2 rounded transition-colors ${
-                              posted ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50'
+                              posted ? 'text-muted-foreground/70 cursor-not-allowed' : 'text-primary hover:bg-accent'
                             }`}
                             title={posted ? 'Cannot edit: GL entry already posted' : 'Edit dip'}
                           >
@@ -1128,7 +1128,7 @@ export default function TankDipsPage() {
                             onClick={() => handleDelete(dip.id)}
                             disabled={posted}
                             className={`p-2 rounded transition-colors ${
-                              posted ? 'text-gray-400 cursor-not-allowed' : 'text-red-600 hover:bg-red-50'
+                              posted ? 'text-muted-foreground/70 cursor-not-allowed' : 'text-destructive hover:bg-destructive/5'
                             }`}
                             title={posted ? 'Cannot delete: GL entry already posted' : 'Delete dip'}
                           >

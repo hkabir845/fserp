@@ -50,21 +50,21 @@ function SubscriptionLedgerPageContent() {
   }, [mode, router])
 
   return (
-    <div className="page-with-sidebar flex h-screen bg-gray-50">
+    <div className="page-with-sidebar flex h-screen bg-muted/40">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
         <div className="app-scroll-pad">
           {/* Header Section - Removed duplicate header since SubscriptionLedger component has its own */}
 
           {/* Info Banner - How SaaS Subscription Billing Works */}
-          <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+          <div className="mb-6 bg-gradient-to-r from-accent to-accent border border-primary/25 rounded-lg p-6">
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <Info className="h-6 w-6 text-blue-600 mt-0.5" />
+                <Info className="h-6 w-6 text-primary mt-0.5" />
               </div>
               <div className="ml-4 flex-1">
                 <h3 className="text-lg font-semibold text-blue-900 mb-3">How SaaS Subscription Billing Works</h3>
-                <div className="space-y-3 text-sm text-blue-800">
+                <div className="space-y-3 text-sm text-primary">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <h4 className="font-semibold mb-2">📋 Subscription Invoicing</h4>
@@ -103,9 +103,9 @@ function SubscriptionLedgerPageContent() {
                       </ul>
                     </div>
                   </div>
-                  <div className="mt-4 p-3 bg-blue-100 rounded border border-blue-200">
+                  <div className="mt-4 p-3 bg-blue-100 rounded border border-primary/25">
                     <p className="font-semibold text-blue-900">💡 Best Practice:</p>
-                    <p className="text-blue-800">
+                    <p className="text-primary">
                       Create invoices at the start of each billing period. Mark them as paid when tenants make payments. 
                       Use the filters to track overdue invoices and follow up with tenants on outstanding balances.
                     </p>
@@ -127,9 +127,9 @@ function SubscriptionLedgerPageContent() {
 
 function SubscriptionLedgerPageFallback() {
   return (
-    <div className="flex h-screen bg-gray-50 page-with-sidebar">
+    <div className="flex h-screen bg-muted/40 page-with-sidebar">
       <Sidebar />
-      <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">Loading…</div>
+      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
     </div>
   )
 }

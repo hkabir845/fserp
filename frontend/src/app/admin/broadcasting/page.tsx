@@ -281,8 +281,8 @@ function BroadcastingPageContent() {
         <Sidebar />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading broadcasts...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading broadcasts...</p>
           </div>
         </div>
       </div>
@@ -290,10 +290,10 @@ function BroadcastingPageContent() {
   }
 
   const priorityColors: Record<string, string> = {
-    urgent: 'bg-red-100 text-red-800 border-red-200',
+    urgent: 'bg-destructive/10 text-destructive border-destructive/25',
     high: 'bg-orange-100 text-orange-800 border-orange-200',
     medium: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    low: 'bg-blue-100 text-blue-800 border-blue-200'
+    low: 'bg-blue-100 text-primary border-primary/25'
   }
 
   const typeLabels: Record<string, string> = {
@@ -307,13 +307,13 @@ function BroadcastingPageContent() {
   }
 
   return (
-    <div className="page-with-sidebar flex h-screen bg-gray-50">
+    <div className="page-with-sidebar flex h-screen bg-muted/40">
       <Sidebar />
       <div className="flex-1 overflow-y-auto">
         <div className="app-scroll-pad">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center space-x-2">
-              <Megaphone className="h-6 w-6 text-blue-600" />
+            <h2 className="text-xl font-bold text-foreground flex items-center space-x-2">
+              <Megaphone className="h-6 w-6 text-primary" />
               <span>Broadcasting</span>
             </h2>
             <div className="flex items-center space-x-2">
@@ -328,7 +328,7 @@ function BroadcastingPageContent() {
               )}
               <button
                 onClick={handleCreateBroadcast}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="erp-btn-primary flex items-center space-x-2 transition-colors"
               >
                 <Plus className="h-5 w-5" />
                 <span>New Broadcast</span>
@@ -337,14 +337,14 @@ function BroadcastingPageContent() {
           </div>
 
           {/* Info Banner */}
-          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="mb-6 bg-blue-50 border border-primary/25 rounded-lg p-4">
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <Megaphone className="h-5 w-5 text-blue-600 mt-0.5" />
+                <Megaphone className="h-5 w-5 text-primary mt-0.5" />
               </div>
               <div className="ml-3">
                 <h3 className="text-sm font-medium text-blue-900">Broadcast Messages to All Tenants</h3>
-                <div className="mt-2 text-sm text-blue-700">
+                <div className="mt-2 text-sm text-primary">
                   <p>
                     Send important messages to all tenants about payment due, upgrade requests, service expiry dates, maintenance, and more.
                     Messages can be targeted to specific companies or roles, or sent to everyone.
@@ -361,41 +361,41 @@ function BroadcastingPageContent() {
           <div className="bg-white rounded-lg shadow overflow-hidden">
             {broadcasts.length === 0 ? (
               <div className="p-12 text-center">
-                <Megaphone className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Broadcasts Yet</h3>
-                <p className="text-gray-600 mb-6">Create your first broadcast message to send to all tenants</p>
+                <Megaphone className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-foreground mb-2">No Broadcasts Yet</h3>
+                <p className="text-muted-foreground mb-6">Create your first broadcast message to send to all tenants</p>
                 <button
                   onClick={handleCreateBroadcast}
-                  className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="inline-flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary transition-colors"
                 >
                   <Plus className="h-5 w-5" />
                   <span>Create Broadcast</span>
                 </button>
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-border">
                 {broadcasts.map((broadcast) => (
-                  <div key={broadcast.id} className="p-6 hover:bg-gray-50 transition-colors">
+                  <div key={broadcast.id} className="p-6 hover:bg-muted/40 transition-colors">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900">{broadcast.title}</h3>
+                          <h3 className="text-lg font-semibold text-foreground">{broadcast.title}</h3>
                           <span className={`px-2 py-1 text-xs font-semibold rounded border ${priorityColors[broadcast.priority] || priorityColors.medium}`}>
                             {broadcast.priority.toUpperCase()}
                           </span>
-                          <span className="px-2 py-1 text-xs font-medium text-gray-700 bg-gray-100 rounded">
+                          <span className="px-2 py-1 text-xs font-medium text-foreground/85 bg-muted rounded">
                             {typeLabels[broadcast.broadcast_type] || broadcast.broadcast_type}
                           </span>
                           <span className={`px-2 py-1 text-xs font-semibold rounded ${
                             broadcast.is_active 
-                              ? 'bg-green-100 text-green-800 border border-green-200' 
-                              : 'bg-gray-200 text-gray-700 border border-gray-300'
+                              ? 'bg-success/15 text-success border border-success/25' 
+                              : 'bg-muted text-foreground/85 border border-border'
                           }`}>
                             {broadcast.is_active ? 'ACTIVE' : 'APPLIED'}
                           </span>
                         </div>
-                        <p className="text-gray-700 mb-3 whitespace-pre-wrap">{broadcast.message}</p>
-                        <div className="flex items-center space-x-4 text-sm text-gray-500">
+                        <p className="text-foreground/85 mb-3 whitespace-pre-wrap">{broadcast.message}</p>
+                        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                           <span>Created by: {broadcast.created_by_name || 'System'}</span>
                           <span>•</span>
                           <span>{formatDate(broadcast.created_at, true)}</span>
@@ -422,14 +422,14 @@ function BroadcastingPageContent() {
                       <div className="flex items-center space-x-2 ml-4">
                         <button
                           onClick={() => handleViewBroadcast(broadcast)}
-                          className="p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
+                          className="p-2 text-primary hover:text-blue-900 hover:bg-accent rounded transition-colors"
                           title="View Broadcast"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleEditBroadcast(broadcast)}
-                          className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded transition-colors"
+                          className="p-2 text-success hover:text-green-900 hover:bg-green-50 rounded transition-colors"
                           title="Edit Broadcast"
                         >
                           <Edit2 className="h-4 w-4" />
@@ -445,7 +445,7 @@ function BroadcastingPageContent() {
                         ) : (
                           <button
                             onClick={() => handleMarkAsActive(broadcast.id)}
-                            className="p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded transition-colors"
+                            className="p-2 text-success hover:text-green-900 hover:bg-green-50 rounded transition-colors"
                             title="Mark as Active (Show to tenants)"
                           >
                             <XCircle className="h-4 w-4" />
@@ -453,7 +453,7 @@ function BroadcastingPageContent() {
                         )}
                         <button
                           onClick={() => handleDeleteBroadcast(broadcast.id)}
-                          className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                          className="p-2 text-destructive hover:text-red-900 hover:bg-destructive/5 rounded transition-colors"
                           title="Delete Broadcast"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -472,7 +472,7 @@ function BroadcastingPageContent() {
       {showBroadcastModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+            <div className="erp-hero-strip">
               <h2 className="text-2xl font-bold text-white flex items-center space-x-2">
                 <Megaphone className="h-6 w-6" />
                 <span>{editingBroadcast ? 'Edit Broadcast' : 'Create Broadcast'}</span>
@@ -491,7 +491,7 @@ function BroadcastingPageContent() {
             <form onSubmit={handleSubmitBroadcast} className="p-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Title <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -499,13 +499,13 @@ function BroadcastingPageContent() {
                     required
                     value={broadcastFormData.title}
                     onChange={(e) => setBroadcastFormData({ ...broadcastFormData, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder="e.g., Payment Due Reminder"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Message <span className="text-red-500">*</span>
                   </label>
                   <textarea
@@ -513,20 +513,20 @@ function BroadcastingPageContent() {
                     rows={6}
                     value={broadcastFormData.message}
                     onChange={(e) => setBroadcastFormData({ ...broadcastFormData, message: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     placeholder="Enter your message to all tenants..."
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Type
                     </label>
                     <select
                       value={broadcastFormData.broadcast_type}
                       onChange={(e) => setBroadcastFormData({ ...broadcastFormData, broadcast_type: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="general">General</option>
                       <option value="payment_due">Payment Due</option>
@@ -539,13 +539,13 @@ function BroadcastingPageContent() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Priority
                     </label>
                     <select
                       value={broadcastFormData.priority}
                       onChange={(e) => setBroadcastFormData({ ...broadcastFormData, priority: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
@@ -557,13 +557,13 @@ function BroadcastingPageContent() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Target Company (Optional)
                     </label>
                     <select
                       value={broadcastFormData.target_company_id}
                       onChange={(e) => setBroadcastFormData({ ...broadcastFormData, target_company_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="">All Companies</option>
                       {companies.map((company) => (
@@ -575,13 +575,13 @@ function BroadcastingPageContent() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Target Role (Optional)
                     </label>
                     <select
                       value={broadcastFormData.target_role}
                       onChange={(e) => setBroadcastFormData({ ...broadcastFormData, target_role: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     >
                       <option value="">All Roles</option>
                       <option value="admin">Admin</option>
@@ -594,26 +594,26 @@ function BroadcastingPageContent() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Schedule At (Optional)
                     </label>
                     <input
                       type="datetime-local"
                       value={broadcastFormData.scheduled_at}
                       onChange={(e) => setBroadcastFormData({ ...broadcastFormData, scheduled_at: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Expires At (Optional)
                     </label>
                     <input
                       type="datetime-local"
                       value={broadcastFormData.expires_at}
                       onChange={(e) => setBroadcastFormData({ ...broadcastFormData, expires_at: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                     />
                   </div>
                 </div>
@@ -626,13 +626,13 @@ function BroadcastingPageContent() {
                     setShowBroadcastModal(false)
                     setEditingBroadcast(null)
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary transition-colors"
                 >
                   {editingBroadcast ? 'Update Broadcast' : 'Create Broadcast'}
                 </button>
@@ -646,7 +646,7 @@ function BroadcastingPageContent() {
       {showViewModal && viewingBroadcast && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
+            <div className="erp-hero-strip">
               <h2 className="text-2xl font-bold text-white flex items-center space-x-2">
                 <Eye className="h-6 w-6" />
                 <span>View Broadcast</span>
@@ -665,29 +665,29 @@ function BroadcastingPageContent() {
             <div className="p-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Title
                   </label>
-                  <p className="text-lg font-semibold text-gray-900">{viewingBroadcast.title}</p>
+                  <p className="text-lg font-semibold text-foreground">{viewingBroadcast.title}</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Message
                   </label>
-                  <p className="text-gray-700 whitespace-pre-wrap bg-gray-50 p-3 rounded-lg">{viewingBroadcast.message}</p>
+                  <p className="text-foreground/85 whitespace-pre-wrap bg-muted/40 p-3 rounded-lg">{viewingBroadcast.message}</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Type
                     </label>
-                    <p className="text-gray-900">{typeLabels[viewingBroadcast.broadcast_type] || viewingBroadcast.broadcast_type}</p>
+                    <p className="text-foreground">{typeLabels[viewingBroadcast.broadcast_type] || viewingBroadcast.broadcast_type}</p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Priority
                     </label>
                     <span className={`px-3 py-1 text-sm font-semibold rounded border ${priorityColors[viewingBroadcast.priority] || priorityColors.medium}`}>
@@ -698,26 +698,26 @@ function BroadcastingPageContent() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Target Company
                     </label>
-                    <p className="text-gray-900">{viewingBroadcast.target_company_name || 'All Companies'}</p>
+                    <p className="text-foreground">{viewingBroadcast.target_company_name || 'All Companies'}</p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Target Role
                     </label>
-                    <p className="text-gray-900">{viewingBroadcast.target_role || 'All Roles'}</p>
+                    <p className="text-foreground">{viewingBroadcast.target_role || 'All Roles'}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Scheduled At
                     </label>
-                    <p className="text-gray-900">
+                    <p className="text-foreground">
                       {viewingBroadcast.scheduled_at 
                         ? formatDate(viewingBroadcast.scheduled_at, true) 
                         : 'Not scheduled'}
@@ -725,10 +725,10 @@ function BroadcastingPageContent() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Expires At
                     </label>
-                    <p className="text-gray-900">
+                    <p className="text-foreground">
                       {viewingBroadcast.expires_at 
                         ? formatDate(viewingBroadcast.expires_at, true) 
                         : 'Never expires'}
@@ -738,28 +738,28 @@ function BroadcastingPageContent() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Created By
                     </label>
-                    <p className="text-gray-900">{viewingBroadcast.created_by_name || 'System'}</p>
+                    <p className="text-foreground">{viewingBroadcast.created_by_name || 'System'}</p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Created At
                     </label>
-                    <p className="text-gray-900">{formatDate(viewingBroadcast.created_at, true)}</p>
+                    <p className="text-foreground">{formatDate(viewingBroadcast.created_at, true)}</p>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-foreground">
                     Status
                   </label>
                   <span className={`px-3 py-1 text-sm font-semibold rounded ${
                     viewingBroadcast.is_active 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-gray-100 text-gray-800'
+                      ? 'bg-success/15 text-success' 
+                      : 'bg-muted text-foreground'
                   }`}>
                     {viewingBroadcast.is_active ? 'Active' : 'Inactive'}
                   </span>
@@ -773,7 +773,7 @@ function BroadcastingPageContent() {
                     setShowViewModal(false)
                     setViewingBroadcast(null)
                   }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 text-foreground/85 bg-muted rounded-lg hover:bg-muted transition-colors"
                 >
                   Close
                 </button>
@@ -783,7 +783,7 @@ function BroadcastingPageContent() {
                     setShowViewModal(false)
                     handleEditBroadcast(viewingBroadcast)
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="erp-btn-primary transition-colors"
                 >
                   <Edit2 className="h-4 w-4 inline mr-2" />
                   Edit

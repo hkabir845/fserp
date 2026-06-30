@@ -41,6 +41,124 @@ def _ensure_test_vendor(company_id: int) -> Vendor:
 
 
 @pytest.mark.django_db
+def test_bill_put_blocked_when_payments_allocated(api_client, company_tenant, auth_admin_headers):
+    from api.models import Payment, PaymentBillAllocation
+
+    seed_min_gl_accounts(company_tenant)
+    vendor_id = _ensure_test_vendor(company_tenant.id).id
+    coa = json.loads(api_client.get("/api/chart-of-accounts/", **auth_admin_headers).content.decode())
+    exp = next((a for a in coa if (a.get("account_type") or "").lower() == "expense"), None)
+    assert exp
+
+    r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "bill_date": "2026-05-10",
+                "status": "open",
+                "lines": [
+                    {
+                        "description": "Utilities",
+                        "quantity": 1,
+                        "unit_cost": "100.00",
+                        "amount": "100.00",
+                        "expense_account_id": exp["id"],
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill_id = json.loads(r.content.decode())["id"]
+    bill = Bill.objects.get(pk=bill_id)
+    pay = Payment.objects.create(
+        company_id=company_tenant.id,
+        payment_date=date(2026, 5, 11),
+        payment_type="made",
+        amount=Decimal("50.00"),
+        vendor_id=vendor_id,
+    )
+    PaymentBillAllocation.objects.create(payment=pay, bill=bill, amount=Decimal("50.00"))
+
+    r2 = api_client.put(
+        f"/api/bills/{bill_id}/",
+        data=json.dumps({"memo": "Should not apply"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 409, r2.content.decode()
+    assert "payments" in json.loads(r2.content.decode())["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_invoice_put_blocked_when_paid(api_client, company_tenant, auth_admin_headers):
+    from api.models import Customer, Station
+
+    seed_min_gl_accounts(company_tenant)
+    cid = company_tenant.id
+    st = Station.objects.filter(company_id=cid, is_active=True).first()
+    if not st:
+        st = Station.objects.create(company_id=cid, station_name="Main", is_active=True)
+    cust = Customer.objects.create(
+        company_id=cid, display_name="Buyer", customer_number="C-PAID-1", is_active=True
+    )
+    inv = Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        station=st,
+        invoice_number="INV-PAID-BLOCK",
+        invoice_date=date(2026, 5, 12),
+        status="paid",
+        subtotal=Decimal("100"),
+        total=Decimal("100"),
+        payment_method="cash",
+    )
+    r = api_client.put(
+        f"/api/invoices/{inv.id}/",
+        data=json.dumps({"memo": "nope"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 409, r.content.decode()
+    assert "paid" in json.loads(r.content.decode())["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_journal_put_blocked_when_posted(api_client, company_tenant, auth_admin_headers):
+    from api.models import ChartOfAccount, JournalEntryLine
+
+    seed_min_gl_accounts(company_tenant)
+    cid = company_tenant.id
+    cash = ChartOfAccount.objects.filter(company_id=cid, account_code="1000").first()
+    equity = ChartOfAccount.objects.filter(company_id=cid, account_code="3000").first()
+    assert cash and equity
+    je = JournalEntry.objects.create(
+        company_id=cid,
+        entry_number="JE-POSTED-BLOCK",
+        entry_date=date(2026, 5, 1),
+        description="Test",
+        is_posted=True,
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=cash, debit=Decimal("10"), credit=Decimal("0")
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=equity, debit=Decimal("0"), credit=Decimal("10")
+    )
+    r = api_client.put(
+        f"/api/journal-entries/{je.id}/",
+        data=json.dumps({"description": "Changed"}),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 400, r.content.decode()
+    assert "unpost" in json.loads(r.content.decode())["detail"].lower()
+
+
+@pytest.mark.django_db
 def test_bill_put_material_change_recreates_auto_journal(api_client, company_tenant, auth_admin_headers):
     seed_min_gl_accounts(company_tenant)
     vendor_id = _ensure_test_vendor(company_tenant.id).id

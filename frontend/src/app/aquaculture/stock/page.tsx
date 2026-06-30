@@ -33,16 +33,16 @@ import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormMod
 import { AquacultureBiologicalAssetPanel } from './AquacultureBiologicalAssetPanel'
 
 const iconAction =
-  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-white text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
 const iconActionSm = `${iconAction} size-10 px-0`
 const iconActionLabeled = `${iconAction} px-2 py-1.5 text-xs font-medium`
 const iconActionDanger =
   'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-rose-200/80 bg-rose-50/50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:pointer-events-none disabled:opacity-40'
 const iconActionDangerLabeled = `${iconActionDanger} px-2 py-1.5 text-xs font-medium`
 const stickyActionsHeader =
-  'sticky right-0 z-[2] bg-slate-50/95 px-2 py-2.5 text-right shadow-[-6px_0_10px_-6px_rgba(15,23,42,0.12)] backdrop-blur-sm'
+  'sticky right-0 z-[2] bg-muted/40/95 px-2 py-2.5 text-right shadow-[-6px_0_10px_-6px_rgba(15,23,42,0.12)] backdrop-blur-sm'
 const stickyActionsCell =
-  'sticky right-0 z-[1] bg-white px-2 py-2.5 shadow-[-6px_0_10px_-6px_rgba(15,23,42,0.08)] group-hover:bg-slate-50/90'
+  'sticky right-0 z-[1] bg-white px-2 py-2.5 shadow-[-6px_0_10px_-6px_rgba(15,23,42,0.08)] group-hover:bg-muted/50'
 
 interface Pond {
   id: number
@@ -329,11 +329,11 @@ function MovementCell({
   tone?: 'slate' | 'emerald' | 'rose'
 }) {
   const empty = (signed ? kg === 0 && fish === 0 : kg <= 0 && fish <= 0)
-  if (empty) return <span className="text-slate-300">—</span>
+  if (empty) return <span className="text-muted-foreground/40">—</span>
   const sign = signed && kg > 0 ? '+' : signed && kg < 0 ? '−' : ''
   const fishSign = signed && fish > 0 ? '+' : signed && fish < 0 ? '−' : ''
   const tones: Record<string, [string, string]> = {
-    slate: ['text-slate-700', 'text-slate-500'],
+    slate: ['text-foreground/85', 'text-muted-foreground'],
     emerald: ['text-emerald-700', 'text-emerald-500'],
     rose: ['text-rose-700', 'text-rose-500'],
   }
@@ -367,9 +367,9 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
   const loadBadges: Record<string, string> = {
     understocked: 'bg-sky-50 text-sky-900',
     moderate: 'bg-emerald-50 text-emerald-900',
-    full: 'bg-amber-50 text-amber-900',
+    full: 'bg-warning/10 text-warning-foreground',
     high_risk: 'bg-rose-50 text-rose-900',
-    unknown: 'bg-slate-50 text-slate-700',
+    unknown: 'bg-muted/40 text-foreground/85',
   }
   const ll = r.load_level || 'unknown'
   const badgeClass = loadBadges[ll] || loadBadges.unknown
@@ -397,13 +397,13 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
       <td className="py-2 pr-4 tabular-nums">
         <MovementCell kg={otherKg} fish={otherFish} signed tone="slate" />
       </td>
-      <td className="border-l border-slate-200 bg-teal-50/40 py-2 pl-3 pr-4 tabular-nums">
-        <div className="font-semibold text-teal-900">{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
-        <div className="text-xs font-medium text-teal-700/80">
+      <td className="border-l border-border bg-accent/40 py-2 pl-3 pr-4 tabular-nums">
+        <div className="font-semibold text-primary">{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
+        <div className="text-xs font-medium text-primary/80">
           {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
         </div>
       </td>
-      <td className="py-2 pr-4 text-slate-700">
+      <td className="py-2 pr-4 text-foreground/85">
         <div className="flex flex-col gap-1">
           <span className="flex flex-wrap items-center gap-2">
             {r.load_level_label ? (
@@ -414,12 +414,12 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
             {densityLine ? (
               <span className="tabular-nums text-sm">{densityLine}</span>
             ) : (
-              <span className="text-xs text-slate-500">Set water area and depth on pond</span>
+              <span className="text-xs text-muted-foreground">Set water area and depth on pond</span>
             )}
           </span>
-                            {volDensity ? <span className="tabular-nums text-xs text-slate-500">{volDensity}</span> : null}
+                            {volDensity ? <span className="tabular-nums text-xs text-muted-foreground">{volDensity}</span> : null}
                             {r.partial_harvest_applicable && r.partial_harvest_suggested_kg ? (
-                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                              <span className="rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning-foreground">
                                 Suggest harvest ~{formatNumber(Number(r.partial_harvest_suggested_kg), 0)} kg
                                 {r.partial_harvest_suggested_fish_count
                                   ? ` (~${formatNumber(r.partial_harvest_suggested_fish_count, 0)} fish)`
@@ -427,16 +427,16 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
                               </span>
                             ) : null}
                             {r.advice_summary ? (
-            <span className="text-xs leading-snug text-slate-600">{r.advice_summary}</span>
+            <span className="text-xs leading-snug text-muted-foreground">{r.advice_summary}</span>
           ) : null}
         </div>
       </td>
-      <td className="py-2 text-slate-600">
+      <td className="py-2 text-muted-foreground">
         {r.latest_sample_date ? (
           <div className="flex flex-col gap-1">
-            <span className="text-slate-700">{formatDateOnly(r.latest_sample_date)}</span>
+            <span className="text-foreground/85">{formatDateOnly(r.latest_sample_date)}</span>
             {r.latest_sample_estimated_fish_count != null ? (
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted-foreground">
                 ~{formatNumber(r.latest_sample_estimated_fish_count, 0)} fish
                 {r.latest_sample_fish_species_label ? ` · ${r.latest_sample_fish_species_label}` : ''}
               </span>
@@ -452,13 +452,13 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
                 {formatNumber(Math.abs(diff), 0)} fish vs book
               </span>
             ) : diff === 0 ? (
-              <span className="text-[11px] text-slate-400" title="Sample matches the system book count.">
+              <span className="text-[11px] text-muted-foreground/70" title="Sample matches the system book count.">
                 Matches book
               </span>
             ) : null}
           </div>
         ) : (
-          <span className="text-xs text-slate-400">No sample yet</span>
+          <span className="text-xs text-muted-foreground/70">No sample yet</span>
         )}
       </td>
     </>
@@ -1125,20 +1125,20 @@ function AquacultureStockPageContent() {
     <>
       <div className="mb-6 flex flex-wrap items-center justify-end gap-2">
         {mainTab === 'fish' && ref?.coa_note ? (
-          <p className="mr-auto max-w-2xl text-xs text-slate-500">{ref.coa_note}</p>
+          <p className="mr-auto max-w-2xl text-xs text-muted-foreground">{ref.coa_note}</p>
         ) : null}
         {mainTab === 'warehouse' ? (
-          <p className="mr-auto max-w-2xl text-xs leading-relaxed text-slate-500">
-            Move stock from your shop with <strong className="font-medium text-slate-700">Add stock</strong>, or use{' '}
-            <Link href="/inventory" className="font-medium text-teal-800 underline hover:text-teal-950">
+          <p className="mr-auto max-w-2xl text-xs leading-relaxed text-muted-foreground">
+            Move stock from your shop with <strong className="font-medium text-foreground/85">Add stock</strong>, or use{' '}
+            <Link href="/inventory" className="font-medium text-primary underline hover:text-teal-950">
               Inventory
             </Link>{' '}
             for advanced transfers. Consumption is recorded on{' '}
-            <Link href="/aquaculture/feeding" className="font-medium text-teal-800 underline hover:text-teal-950">
+            <Link href="/aquaculture/feeding" className="font-medium text-primary underline hover:text-teal-950">
               feeding
             </Link>{' '}
             and{' '}
-            <Link href="/aquaculture/medicine" className="font-medium text-teal-800 underline hover:text-teal-950">
+            <Link href="/aquaculture/medicine" className="font-medium text-primary underline hover:text-teal-950">
               medicine
             </Link>
             .
@@ -1156,7 +1156,7 @@ function AquacultureStockPageContent() {
             }
             if (mainTab === 'fish' && fishSubTab === 'history') void loadMovements()
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40"
         >
           <RefreshCw
             className={`h-4 w-4 ${
@@ -1174,7 +1174,7 @@ function AquacultureStockPageContent() {
             onClick={startNewAdjustment}
             disabled={ponds.length === 0}
             title={ponds.length === 0 ? 'Add a pond first' : undefined}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" aria-hidden />
             Record loss / adjustment
@@ -1183,25 +1183,25 @@ function AquacultureStockPageContent() {
       </div>
 
       {mainTab === 'fish' ? (
-        <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm">
+        <div className="mb-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-white px-4 py-3 text-sm shadow-sm">
           <div>
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Total stock</span>
-            <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total stock</span>
+            <p className="mt-0.5 font-semibold tabular-nums text-foreground">
               {positionLoading ? '—' : `${formatNumber(positionSummary.totalKg, 2)} kg`}
-              <span className="ml-2 text-sm font-normal text-slate-500">
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
                 · {positionLoading ? '—' : `${formatNumber(positionSummary.totalFish, 0)} fish`}
                 · {positionLoading ? '—' : `${positionSummary.pondCount} pond${positionSummary.pondCount === 1 ? '' : 's'}`}
               </span>
             </p>
           </div>
-          <div className="hidden h-8 w-px bg-slate-200 sm:block" aria-hidden />
+          <div className="hidden h-8 w-px bg-muted sm:block" aria-hidden />
           <div>
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Manual changes</span>
-            <p className="mt-0.5 font-semibold tabular-nums text-slate-900">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Manual changes</span>
+            <p className="mt-0.5 font-semibold tabular-nums text-foreground">
               {loading || positionLoading
                 ? '—'
                 : `${formatNumber(ledgerComponentFromPosition.kg, 2)} kg · ${formatNumber(ledgerComponentFromPosition.fish, 0)} fish`}
-              <span className="ml-2 text-sm font-normal text-slate-500">
+              <span className="ml-2 text-sm font-normal text-muted-foreground">
                 · {ledgerListMeta?.total_row_count ?? rows.length} entr
                 {(ledgerListMeta?.total_row_count ?? rows.length) === 1 ? 'y' : 'ies'}
               </span>
@@ -1209,17 +1209,17 @@ function AquacultureStockPageContent() {
           </div>
           {posSpecies ? (
             <>
-              <div className="hidden h-8 w-px bg-slate-200 sm:block" aria-hidden />
+              <div className="hidden h-8 w-px bg-muted sm:block" aria-hidden />
               <div>
-                <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Species filter</span>
-                <p className="mt-0.5 font-medium text-teal-900">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Species filter</span>
+                <p className="mt-0.5 font-medium text-primary">
                   {fishSpecies.find((s) => s.id === posSpecies)?.label || posSpecies}
                 </p>
               </div>
             </>
           ) : null}
           {(ledgerTruncated || ledgerTotalsDrift) && (
-            <p className="w-full text-xs text-amber-800">
+            <p className="w-full text-xs text-warning-foreground">
               {ledgerTruncated
                 ? `Showing the most recent ${ledgerListMeta?.returned} manual entries only — filter by pond to narrow the list.`
                 : 'Manual entry totals do not match stock summary — try Refresh.'}
@@ -1228,15 +1228,15 @@ function AquacultureStockPageContent() {
         </div>
       ) : (
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <Package className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <Package className="h-3.5 w-3.5 text-primary" aria-hidden />
               Warehouse lines
             </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
               {whLoading ? '—' : formatNumber(whWarehouseSummary.lineCount, 0)}
             </p>
-            <p className="mt-0.5 text-sm text-slate-600">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {whLoading
                 ? 'Loading…'
                 : whSearch.trim() || whPosCategory
@@ -1244,41 +1244,41 @@ function AquacultureStockPageContent() {
                   : 'SKUs with quantity on hand'}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <BarChart3 className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <BarChart3 className="h-3.5 w-3.5 text-primary" aria-hidden />
               Ponds in view
             </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
               {whLoading ? '—' : formatNumber(filteredWhSummary.pondCount, 0)}
             </p>
-            <p className="mt-0.5 text-sm text-slate-600">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {whPond ? 'Filtered to one pond' : 'Distinct ponds in the table'}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <ListOrdered className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <ListOrdered className="h-3.5 w-3.5 text-primary" aria-hidden />
               On hand total
             </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
               {whLoading ? '—' : formatNumber(filteredWhTotals.quantity, 2)}
             </p>
-            <p className="mt-0.5 text-sm text-slate-600">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {whSearch.trim() || whPosCategory || whPond
                 ? 'Sum of filtered quantities (units vary by SKU)'
                 : 'Sum of on-hand quantities (units vary by SKU)'}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              <BarChart3 className="h-3.5 w-3.5 text-teal-700" aria-hidden />
+          <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <BarChart3 className="h-3.5 w-3.5 text-primary" aria-hidden />
               Value total
             </div>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
               {whLoading ? '—' : `${sym}${formatNumber(filteredWhTotals.value, 2)}`}
             </p>
-            <p className="mt-0.5 text-sm text-slate-600">
+            <p className="mt-0.5 text-sm text-muted-foreground">
               Extended value at average unit cost (reference until consumed)
             </p>
           </div>
@@ -1288,22 +1288,22 @@ function AquacultureStockPageContent() {
       {mainTab === 'fish' ? (
         <div id="stock-panel-fish" role="tabpanel" aria-labelledby="stock-tab-fish">
       {ponds.length === 0 ? (
-        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
+        <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-4 text-sm text-warning-foreground">
           <p className="font-medium">Add at least one pond before recording stock or mortality.</p>
-          <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-teal-800 underline">
+          <Link href="/aquaculture/ponds" className="mt-2 inline-block font-medium text-primary underline">
             Go to Ponds
           </Link>
         </div>
       ) : null}
 
-      <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="mb-4 rounded-xl border border-border bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-xs font-medium text-muted-foreground">
             Pond
             <select
               value={posPond}
               onChange={(e) => setPosPond(e.target.value)}
-              className="mt-1 block min-w-[10rem] rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 block min-w-[10rem] rounded-lg border border-border px-3 py-2 text-sm"
             >
               <option value="">All ponds</option>
               {ponds.map((p) => (
@@ -1313,12 +1313,12 @@ function AquacultureStockPageContent() {
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-xs font-medium text-muted-foreground">
             Stocking batch
             <select
               value={posCycle}
               onChange={(e) => setPosCycle(e.target.value)}
-              className="mt-1 block min-w-[12rem] rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+              className="mt-1 block min-w-[12rem] rounded-lg border border-border px-3 py-2 text-sm disabled:bg-muted/40"
               disabled={!posPond}
             >
               <option value="">All batches (pond total)</option>
@@ -1329,7 +1329,7 @@ function AquacultureStockPageContent() {
               ))}
             </select>
           </label>
-          <label className="text-xs font-medium text-slate-600">
+          <label className="text-xs font-medium text-muted-foreground">
             Species
             <select
               value={posSpecies}
@@ -1338,7 +1338,7 @@ function AquacultureStockPageContent() {
                 setPosSpecies(v)
                 replaceFishSpeciesQuery(v)
               }}
-              className="mt-1 block min-w-[10rem] rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 block min-w-[10rem] rounded-lg border border-border px-3 py-2 text-sm"
             >
               <option value="">All species</option>
               {fishSpecies.map((s) => (
@@ -1349,11 +1349,11 @@ function AquacultureStockPageContent() {
             </select>
           </label>
           {posPond && !positionLoading && posCycles.length === 0 ? (
-            <p className="w-full text-xs text-slate-600">
+            <p className="w-full text-xs text-muted-foreground">
               No stocking batch yet —{' '}
               <Link
                 href={`/aquaculture/cycles?pond_id=${encodeURIComponent(posPond)}`}
-                className="font-medium text-teal-800 underline hover:text-teal-950"
+                className="font-medium text-primary underline hover:text-teal-950"
               >
                 create one
               </Link>
@@ -1361,7 +1361,7 @@ function AquacultureStockPageContent() {
             </p>
           ) : null}
           {posCycle ? (
-            <p className="w-full rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+            <p className="w-full rounded-lg border border-warning/30 bg-warning/10/90 px-3 py-2 text-xs text-warning-foreground">
               Batch filter is on — manual entries without a batch are hidden. Use &quot;All batches&quot; for the full
               pond picture.
             </p>
@@ -1370,19 +1370,19 @@ function AquacultureStockPageContent() {
       </section>
 
       {fishSubTab === 'overview' ? (
-      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Stock by pond</h2>
-        <p className="mt-1 text-xs text-slate-500">
+      <section className="mb-8 rounded-xl border border-border bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">Stock by pond</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
           Current fish from stocking, sales, transfers, and your manual entries. Click a pond name for details, or{' '}
-          <span className="font-medium text-slate-700">Manage entries</span> to edit mortality and adjustments.
+          <span className="font-medium text-foreground/85">Manage entries</span> to edit mortality and adjustments.
         </p>
         <div className="mt-4 overflow-x-auto">
           {positionLoading ? (
-            <p className="py-6 text-center text-sm text-slate-500">Loading positions…</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading positions…</p>
           ) : (
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                <tr className="border-b border-border text-xs uppercase text-muted-foreground">
                   <th className="py-2 pr-4">Pond</th>
                   <th className="py-2 pr-4">Current stock</th>
                   <th className="py-2 pr-4">Manual changes</th>
@@ -1394,7 +1394,7 @@ function AquacultureStockPageContent() {
               <tbody>
                 {position.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-500">
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
                       No stock for this filter yet. Stock builds from vendor bills, transfers, sales, and manual
                       entries.
                     </td>
@@ -1415,41 +1415,41 @@ function AquacultureStockPageContent() {
                     const loadBadges: Record<string, string> = {
                       understocked: 'bg-sky-50 text-sky-900',
                       moderate: 'bg-emerald-50 text-emerald-900',
-                      full: 'bg-amber-50 text-amber-900',
+                      full: 'bg-warning/10 text-warning-foreground',
                       high_risk: 'bg-rose-50 text-rose-900',
-                      unknown: 'bg-slate-50 text-slate-700',
+                      unknown: 'bg-muted/40 text-foreground/85',
                     }
                     const ll = r.load_level || 'unknown'
                     const badgeClass = loadBadges[ll] || loadBadges.unknown
                     return (
-                      <tr key={r.pond_id} className="border-b border-slate-100 transition-colors hover:bg-slate-50/80">
-                        <td className="py-2 pr-4 font-medium text-slate-800">
+                      <tr key={r.pond_id} className="border-b border-border/70 transition-colors hover:bg-muted/50">
+                        <td className="py-2 pr-4 font-medium text-foreground">
                           <Link
                             href={`/aquaculture/ponds/${r.pond_id}`}
-                            className="inline-flex items-center gap-1 text-teal-800 hover:text-teal-950 hover:underline"
+                            className="inline-flex items-center gap-1 text-primary hover:text-teal-950 hover:underline"
                           >
                             {r.pond_name}
                             <ExternalLink className="h-3 w-3 opacity-60" aria-hidden />
                           </Link>
                         </td>
                         <td className="py-2 pr-4 tabular-nums">
-                          <div className="font-medium text-slate-900">
+                          <div className="font-medium text-foreground">
                             {formatNumber(Number(r.implied_net_weight_kg), 2)} kg
                           </div>
-                          <div className="text-xs text-slate-500">
+                          <div className="text-xs text-muted-foreground">
                             {formatNumber(r.implied_net_fish_count, 0)} fish
                             {r.current_fish_per_kg
                               ? ` · ${formatNumber(Number(r.current_fish_per_kg), 1)} pcs/kg`
                               : ''}
                           </div>
                         </td>
-                        <td className="py-2 pr-4 tabular-nums text-slate-700">
+                        <td className="py-2 pr-4 tabular-nums text-foreground/85">
                           <div>{formatNumber(Number(r.ledger_weight_kg_delta), 2)} kg</div>
-                          <div className="text-xs text-slate-500">
+                          <div className="text-xs text-muted-foreground">
                             {formatNumber(r.ledger_fish_count_delta, 0)} fish
                           </div>
                         </td>
-                        <td className="py-2 pr-4 text-slate-700">
+                        <td className="py-2 pr-4 text-foreground/85">
                           <div className="flex flex-col gap-1">
                             <span className="flex flex-wrap items-center gap-2">
                               {r.load_level_label ? (
@@ -1460,14 +1460,14 @@ function AquacultureStockPageContent() {
                               {densityLine ? (
                                 <span className="tabular-nums text-sm">{densityLine}</span>
                               ) : (
-                                <span className="text-xs text-slate-500">Set water area and depth on pond</span>
+                                <span className="text-xs text-muted-foreground">Set water area and depth on pond</span>
                               )}
                             </span>
                             {volDensity ? (
-                              <span className="tabular-nums text-xs text-slate-500">{volDensity}</span>
+                              <span className="tabular-nums text-xs text-muted-foreground">{volDensity}</span>
                             ) : null}
                             {r.partial_harvest_applicable && r.partial_harvest_suggested_kg ? (
-                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                              <span className="rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning-foreground">
                                 Suggest harvest ~{formatNumber(Number(r.partial_harvest_suggested_kg), 0)} kg
                                 {r.partial_harvest_suggested_fish_count
                                   ? ` (~${formatNumber(r.partial_harvest_suggested_fish_count, 0)} fish)`
@@ -1475,16 +1475,16 @@ function AquacultureStockPageContent() {
                               </span>
                             ) : null}
                             {r.advice_summary ? (
-                              <span className="text-xs leading-snug text-slate-600">{r.advice_summary}</span>
+                              <span className="text-xs leading-snug text-muted-foreground">{r.advice_summary}</span>
                             ) : null}
                           </div>
                         </td>
-                        <td className="py-2 pr-4 text-slate-600">
+                        <td className="py-2 pr-4 text-muted-foreground">
                           {r.latest_sample_date ? (
                             <div className="flex flex-col gap-0.5">
                               <span>{formatDateOnly(r.latest_sample_date)}</span>
                               {r.latest_sample_estimated_fish_count != null ? (
-                                <span className="text-xs text-slate-500">
+                                <span className="text-xs text-muted-foreground">
                                   ~{formatNumber(r.latest_sample_estimated_fish_count, 0)} fish
                                 </span>
                               ) : null}
@@ -1498,14 +1498,14 @@ function AquacultureStockPageContent() {
                               ) : null}
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400">No sample</span>
+                            <span className="text-xs text-muted-foreground/70">No sample</span>
                           )}
                         </td>
                         <td className="py-2">
                           <button
                             type="button"
                             onClick={() => viewAdjustmentsForPond(r.pond_id)}
-                            className="rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-900 hover:bg-teal-100"
+                            className="rounded-lg border border-primary/25 bg-accent px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-teal-100"
                           >
                             Manage entries
                           </button>
@@ -1522,18 +1522,18 @@ function AquacultureStockPageContent() {
       ) : null}
 
       {fishSubTab === 'breakdown' ? (
-      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Batch detail</h2>
-        <p className="mt-1 text-xs text-slate-500">
+      <section className="mb-8 rounded-xl border border-border bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-foreground">Batch detail</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
           Stocked − sold − mortality + other adjustments = present stock. Expand a row for the full movement history.
         </p>
         <div className="mt-4 overflow-x-auto">
           {positionLoading ? (
-            <p className="py-6 text-center text-sm text-slate-500">Loading breakdown…</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading breakdown…</p>
           ) : (
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                <tr className="border-b border-border text-xs uppercase text-muted-foreground">
                   <th className="w-8 py-2 pr-2" aria-label="Expand" />
                   <th className="py-2 pr-3">Pond</th>
                   <th className="py-2 pr-3">Batch</th>
@@ -1557,7 +1557,7 @@ function AquacultureStockPageContent() {
                     Other adj.
                   </th>
                   <th
-                    className="border-l border-slate-200 py-2 pl-3 pr-4 text-teal-900"
+                    className="border-l border-border py-2 pl-3 pr-4 text-primary"
                     title="Current live balance = Stocked − Sold − Mortality + Other adj."
                   >
                     Present stock
@@ -1571,7 +1571,7 @@ function AquacultureStockPageContent() {
               <tbody>
                 {positionBreakdown.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-8 text-center text-slate-500">
+                    <td colSpan={11} className="py-8 text-center text-muted-foreground">
                       No batch × species buckets for this filter yet.
                     </td>
                   </tr>
@@ -1583,7 +1583,7 @@ function AquacultureStockPageContent() {
                     const detailBusy = breakdownDetailLoading === key
                     return (
                       <Fragment key={key}>
-                        <tr className="border-b border-slate-100 transition-colors hover:bg-slate-50/80">
+                        <tr className="border-b border-border/70 transition-colors hover:bg-muted/50">
                           <td className="py-2 pr-2">
                             <button
                               type="button"
@@ -1599,34 +1599,34 @@ function AquacultureStockPageContent() {
                               )}
                             </button>
                           </td>
-                          <td className="py-2 pr-3 font-medium text-slate-800">
+                          <td className="py-2 pr-3 font-medium text-foreground">
                             <Link
                               href={`/aquaculture/ponds/${r.pond_id}`}
-                              className="text-teal-800 hover:text-teal-950 hover:underline"
+                              className="text-primary hover:text-teal-950 hover:underline"
                             >
                               {r.pond_name}
                             </Link>
                           </td>
-                          <td className="py-2 pr-3 text-slate-700">
+                          <td className="py-2 pr-3 text-foreground/85">
                             {r.production_cycle_name?.trim() || (
-                              <span className="text-slate-400">— No batch</span>
+                              <span className="text-muted-foreground/70">— No batch</span>
                             )}
                           </td>
-                          <td className="py-2 pr-3 text-slate-700">{r.fish_species_label || r.fish_species || '—'}</td>
+                          <td className="py-2 pr-3 text-foreground/85">{r.fish_species_label || r.fish_species || '—'}</td>
                           <StockPositionMetricCells r={r} />
                         </tr>
                         {open ? (
-                          <tr key={`${key}-detail`} className="border-b border-slate-100 bg-slate-50/60">
+                          <tr key={`${key}-detail`} className="border-b border-border/70 bg-muted/40/60">
                             <td colSpan={11} className="px-3 py-3">
                               {detailBusy ? (
-                                <p className="text-xs text-slate-500">Loading detail ledger…</p>
+                                <p className="text-xs text-muted-foreground">Loading detail ledger…</p>
                               ) : detail.length === 0 ? (
-                                <p className="text-xs text-slate-500">No movements in this bucket.</p>
+                                <p className="text-xs text-muted-foreground">No movements in this bucket.</p>
                               ) : (
-                                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <div className="overflow-x-auto rounded-lg border border-border bg-white">
                                   <table className="min-w-full text-left text-xs">
                                     <thead>
-                                      <tr className="border-b border-slate-200 text-[10px] uppercase text-slate-500">
+                                      <tr className="border-b border-border text-[10px] uppercase text-muted-foreground">
                                         <th className="px-2 py-2">Date</th>
                                         <th className="px-2 py-2">Source</th>
                                         <th className="px-2 py-2 text-right">Heads Δ</th>
@@ -1640,12 +1640,12 @@ function AquacultureStockPageContent() {
                                       {detail.map((d, i) => (
                                         <tr
                                           key={`${d.source}-${d.source_id}-${d.entry_date}-${i}`}
-                                          className="border-b border-slate-50"
+                                          className="border-b border-border/50"
                                         >
-                                          <td className="px-2 py-1.5 tabular-nums text-slate-700">
+                                          <td className="px-2 py-1.5 tabular-nums text-foreground/85">
                                             {formatDateOnly(d.entry_date)}
                                           </td>
-                                          <td className="px-2 py-1.5 text-slate-700">{d.source_label}</td>
+                                          <td className="px-2 py-1.5 text-foreground/85">{d.source_label}</td>
                                           <td className="px-2 py-1.5 text-right tabular-nums">
                                             {d.fish_count_delta > 0 ? '+' : ''}
                                             {formatNumber(d.fish_count_delta, 0)}
@@ -1653,14 +1653,14 @@ function AquacultureStockPageContent() {
                                           <td className="px-2 py-1.5 text-right tabular-nums">
                                             {formatNumber(Number(d.weight_kg_delta), 2)}
                                           </td>
-                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium text-slate-800">
+                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium text-foreground">
                                             {formatNumber(d.running_fish_count, 0)}
                                           </td>
-                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium text-slate-800">
+                                          <td className="px-2 py-1.5 text-right tabular-nums font-medium text-foreground">
                                             {formatNumber(d.running_weight_kg, 2)}
                                           </td>
                                           <td
-                                            className="max-w-[14rem] truncate px-2 py-1.5 text-slate-600"
+                                            className="max-w-[14rem] truncate px-2 py-1.5 text-muted-foreground"
                                             title={d.memo}
                                           >
                                             {d.memo || d.source_doc || '—'}
@@ -1696,11 +1696,11 @@ function AquacultureStockPageContent() {
       ) : null}
 
       {fishSubTab === 'adjustments' ? (
-      <section id="stock-manual-ledger" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section id="stock-manual-ledger" className="rounded-xl border border-border bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Mortality &amp; adjustments</h2>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <h2 className="text-sm font-semibold text-foreground">Mortality &amp; adjustments</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               Record deaths, theft, predation, and manual corrections. Use <span className="font-medium">Edit</span> or{' '}
               <span className="font-medium">Delete</span> on each row — delete reverses the stock change.
             </p>
@@ -1708,7 +1708,7 @@ function AquacultureStockPageContent() {
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <div className="relative min-w-[12rem] flex-1 sm:max-w-xs sm:flex-initial">
               <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70"
                 aria-hidden
               />
               <input
@@ -1716,7 +1716,7 @@ function AquacultureStockPageContent() {
                 value={ledgerQuery}
                 onChange={(e) => setLedgerQuery(e.target.value)}
                 placeholder="Search memo, pond, journal…"
-                className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                className="w-full rounded-lg border border-border py-2 pl-8 pr-3 text-sm placeholder:text-muted-foreground/70 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                 aria-label="Search ledger"
               />
             </div>
@@ -1725,14 +1725,14 @@ function AquacultureStockPageContent() {
         {loading ? (
           <div className="space-y-2 py-6" aria-busy="true">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />
+              <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />
             ))}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <div className="overflow-x-auto rounded-lg border border-border/70">
             <table className="min-w-full text-left text-sm">
-              <thead className="sticky top-0 z-[1] bg-slate-50/95 backdrop-blur-sm">
-                <tr className="border-b border-slate-200 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <thead className="sticky top-0 z-[1] bg-muted/40/95 backdrop-blur-sm">
+                <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   <th className="whitespace-nowrap px-3 py-2.5">Date</th>
                   <th className="px-3 py-2.5">Pond / batch</th>
                   <th className="px-3 py-2.5">Kind</th>
@@ -1749,13 +1749,13 @@ function AquacultureStockPageContent() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-10 text-center text-slate-500">
+                    <td colSpan={11} className="px-3 py-10 text-center text-muted-foreground">
                       <p>No mortality or adjustment rows yet.</p>
                       <button
                         type="button"
                         onClick={startNewAdjustment}
                         disabled={ponds.length === 0}
-                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Plus className="h-4 w-4" aria-hidden />
                         Record loss / adjustment
@@ -1764,12 +1764,12 @@ function AquacultureStockPageContent() {
                   </tr>
                 ) : filteredLedgerRows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-10 text-center text-slate-500">
+                    <td colSpan={11} className="px-3 py-10 text-center text-muted-foreground">
                       No rows match your search.{' '}
                       <button
                         type="button"
                         onClick={() => setLedgerQuery('')}
-                        className="font-medium text-teal-800 underline hover:text-teal-950"
+                        className="font-medium text-primary underline hover:text-teal-950"
                       >
                         Clear search
                       </button>
@@ -1780,7 +1780,7 @@ function AquacultureStockPageContent() {
                     const fc = Number(r.fish_count_delta)
                     const wkg = Number(r.weight_kg_delta)
                     const deltaClass = (n: number) =>
-                      n < 0 ? 'text-rose-700' : n > 0 ? 'text-emerald-700' : 'text-slate-600'
+                      n < 0 ? 'text-rose-700' : n > 0 ? 'text-emerald-700' : 'text-muted-foreground'
                     const kindBadge =
                       r.entry_kind === 'loss'
                         ? 'bg-rose-50 text-rose-900 ring-rose-100'
@@ -1790,20 +1790,20 @@ function AquacultureStockPageContent() {
                     return (
                       <tr
                         key={r.id}
-                        className="group border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/90"
+                        className="group border-b border-border/70 transition-colors last:border-0 hover:bg-muted/50"
                       >
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-800">
+                        <td className="whitespace-nowrap px-3 py-2.5 text-foreground">
                           {formatDateOnly(r.entry_date)}
                         </td>
                         <td className="px-3 py-2.5">
                           <Link
                             href={`/aquaculture/ponds/${r.pond_id}`}
-                            className="font-medium text-teal-800 hover:text-teal-950 hover:underline"
+                            className="font-medium text-primary hover:text-teal-950 hover:underline"
                           >
                             {r.pond_name}
                           </Link>
                           {r.production_cycle_name ? (
-                            <div className="text-xs text-slate-500">{r.production_cycle_name}</div>
+                            <div className="text-xs text-muted-foreground">{r.production_cycle_name}</div>
                           ) : null}
                         </td>
                         <td className="px-3 py-2.5">
@@ -1813,15 +1813,15 @@ function AquacultureStockPageContent() {
                             {r.entry_kind_label}
                           </span>
                         </td>
-                        <td className="px-3 py-2.5 text-slate-600">{r.loss_reason_label || r.loss_reason || '—'}</td>
-                        <td className="px-3 py-2.5 text-slate-600">{r.fish_species_label?.trim() || '—'}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{r.loss_reason_label || r.loss_reason || '—'}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{r.fish_species_label?.trim() || '—'}</td>
                         <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${deltaClass(fc)}`}>
                           {formatNumber(fc, 0)}
                         </td>
                         <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${deltaClass(wkg)}`}>
                           {formatNumber(wkg, 2)}
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2.5 text-right tabular-nums text-foreground/85">
                           {parseFloat(r.book_value) > 0 ? `${sym}${formatNumber(parseFloat(r.book_value), 2)}` : '—'}
                         </td>
                         <td className="px-3 py-2.5">
@@ -1830,15 +1830,15 @@ function AquacultureStockPageContent() {
                               {r.journal_entry_number || 'Posted'}
                             </span>
                           ) : (
-                            <span className="text-xs text-slate-400">—</span>
+                            <span className="text-xs text-muted-foreground/70">—</span>
                           )}
                         </td>
-                        <td className="max-w-[12rem] px-3 py-2.5 text-xs text-slate-600" title={memoFull || undefined}>
+                        <td className="max-w-[12rem] px-3 py-2.5 text-xs text-muted-foreground" title={memoFull || undefined}>
                           {memoShort || '—'}
                         </td>
                         <td className={stickyActionsCell}>
                           <div
-                            className="flex items-center justify-end gap-1 rounded-md border border-slate-100 bg-slate-50/50 p-0.5"
+                            className="flex items-center justify-end gap-1 rounded-md border border-border/70 bg-muted/40 p-0.5"
                             role="group"
                             aria-label="Row actions"
                           >
@@ -1877,14 +1877,14 @@ function AquacultureStockPageContent() {
                 )}
               </tbody>
               {filteredLedgerRows.length > 0 ? (
-                <tfoot className="bg-slate-50/80 text-sm font-medium text-slate-700">
+                <tfoot className="bg-muted/50 text-sm font-medium text-foreground/85">
                   <tr>
-                    <td colSpan={5} className="px-3 py-2 text-right uppercase text-xs tracking-wide text-slate-500">
+                    <td colSpan={5} className="px-3 py-2 text-right uppercase text-xs tracking-wide text-muted-foreground">
                       {ledgerQuery.trim() ? 'Totals (visible after search)' : 'Totals (loaded rows)'}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatNumber(visibleLedgerTotals.fish, 0)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{formatNumber(visibleLedgerTotals.kg, 2)}</td>
-                    <td colSpan={4} className="px-3 py-2 text-xs font-normal text-slate-500">
+                    <td colSpan={4} className="px-3 py-2 text-xs font-normal text-muted-foreground">
                       {!ledgerQuery.trim() && ledgerListMeta != null ? (
                         <>
                           Full-history manual Δ: {formatNumber(ledgerListMeta.total_fish_count_delta, 0)} fish ·{' '}
@@ -1910,16 +1910,16 @@ function AquacultureStockPageContent() {
       ) : null}
 
       {fishSubTab === 'history' ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">All movements</h2>
-              <p className="mt-0.5 text-xs text-slate-500">
+              <h2 className="text-sm font-semibold text-foreground">All movements</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 Read-only history of every stock change — vendor stocking, transfers, sales, and manual entries. To
                 edit mortality, use{' '}
                 <Link
                   href="/aquaculture/stock/adjustments"
-                  className="font-medium text-teal-800 underline hover:text-teal-950"
+                  className="font-medium text-primary underline hover:text-teal-950"
                 >
                   Mortality &amp; adjustments
                 </Link>
@@ -1929,7 +1929,7 @@ function AquacultureStockPageContent() {
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative min-w-[12rem] flex-1 sm:max-w-xs sm:flex-initial">
                 <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70"
                   aria-hidden
                 />
                 <input
@@ -1937,19 +1937,19 @@ function AquacultureStockPageContent() {
                   value={movQuery}
                   onChange={(e) => setMovQuery(e.target.value)}
                   placeholder="Search source, pond, memo, journal…"
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full rounded-lg border border-border py-2 pl-8 pr-3 text-sm placeholder:text-muted-foreground/70 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                   aria-label="Search movements"
                 />
               </div>
             </div>
           </div>
           <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-xs font-medium text-slate-600">
+            <label className="text-xs font-medium text-muted-foreground">
               Pond
               <select
                 value={movPond}
                 onChange={(e) => setMovPond(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               >
                 <option value="">All ponds</option>
                 {ponds.map((p) => (
@@ -1959,12 +1959,12 @@ function AquacultureStockPageContent() {
                 ))}
               </select>
             </label>
-            <label className="text-xs font-medium text-slate-600">
+            <label className="text-xs font-medium text-muted-foreground">
               Source
               <select
                 value={movSource}
                 onChange={(e) => setMovSource(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               >
                 <option value="">All sources</option>
                 {movementsSources.map((s) => (
@@ -1974,29 +1974,29 @@ function AquacultureStockPageContent() {
                 ))}
               </select>
             </label>
-            <label className="text-xs font-medium text-slate-600">
+            <label className="text-xs font-medium text-muted-foreground">
               From
               <input
                 type="date"
                 value={movFrom}
                 onChange={(e) => setMovFrom(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
-            <label className="text-xs font-medium text-slate-600">
+            <label className="text-xs font-medium text-muted-foreground">
               To
               <input
                 type="date"
                 value={movTo}
                 onChange={(e) => setMovTo(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
             </label>
           </div>
           {movementsListCap != null &&
           movementsListCap.returned > 0 &&
           movementsListCap.returned >= movementsListCap.limit ? (
-            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+            <div className="mb-3 rounded-lg border border-warning/30 bg-warning/10/90 px-3 py-2 text-xs text-warning-foreground">
               <span className="font-medium">List capped at {movementsListCap.limit} rows.</span> The API returns the most
               recent events first; older dates may be missing until you narrow the filter (pond, source, or date range).
             </div>
@@ -2004,14 +2004,14 @@ function AquacultureStockPageContent() {
           {movementsLoading ? (
             <div className="space-y-2 py-6" aria-busy="true">
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />
+                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />
               ))}
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-slate-100">
+            <div className="overflow-x-auto rounded-lg border border-border/70">
               <table className="min-w-full text-left text-sm">
-                <thead className="sticky top-0 z-[1] bg-slate-50/95 backdrop-blur-sm">
-                  <tr className="border-b border-slate-200 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <thead className="sticky top-0 z-[1] bg-muted/40/95 backdrop-blur-sm">
+                  <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <th className="whitespace-nowrap px-3 py-2.5">Date</th>
                     <th className="px-3 py-2.5">Pond</th>
                     <th className="px-3 py-2.5">Source</th>
@@ -2025,7 +2025,7 @@ function AquacultureStockPageContent() {
                 <tbody>
                   {filteredMovements.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-3 py-10 text-center text-slate-500">
+                      <td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">
                         {movements.length === 0
                           ? 'No biomass movements yet for this filter.'
                           : 'No rows match your search.'}
@@ -2037,29 +2037,29 @@ function AquacultureStockPageContent() {
                       const wkg = Number(r.weight_kg_delta)
                       const val = Number(r.value_amount)
                       const deltaClass = (n: number) =>
-                        n < 0 ? 'text-rose-700' : n > 0 ? 'text-emerald-700' : 'text-slate-600'
+                        n < 0 ? 'text-rose-700' : n > 0 ? 'text-emerald-700' : 'text-muted-foreground'
                       const sourceBadge: Record<string, string> = {
                         vendor_bill: 'bg-emerald-50 text-emerald-900 ring-emerald-100',
                         transfer_in: 'bg-sky-50 text-sky-900 ring-sky-100',
-                        transfer_out: 'bg-amber-50 text-amber-900 ring-amber-100',
-                        sale: 'bg-indigo-50 text-indigo-900 ring-indigo-100',
+                        transfer_out: 'bg-warning/10 text-warning-foreground ring-amber-100',
+                        sale: 'bg-accent text-foreground/85 ring-indigo-100',
                         ledger_loss: 'bg-rose-50 text-rose-900 ring-rose-100',
-                        ledger_adjustment: 'bg-slate-100 text-slate-800 ring-slate-200',
+                        ledger_adjustment: 'bg-muted text-foreground ring-border',
                       }
-                      const badge = sourceBadge[r.source] || 'bg-slate-100 text-slate-800 ring-slate-200'
+                      const badge = sourceBadge[r.source] || 'bg-muted text-foreground ring-border'
                       const reason = r.loss_reason_label || r.fish_species_label || ''
                       const memoFull = (r.memo || '').trim()
                       const memoShort = memoFull.length > 48 ? `${memoFull.slice(0, 45)}…` : memoFull
                       const key = `${r.source}-${r.source_id}-${r.entry_date}-${r.pond_id}-${r.fish_count_delta}`
                       return (
-                        <tr key={key} className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/90">
-                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-800">
+                        <tr key={key} className="border-b border-border/70 transition-colors last:border-0 hover:bg-muted/50">
+                          <td className="whitespace-nowrap px-3 py-2.5 text-foreground">
                             {formatDateOnly(r.entry_date)}
                           </td>
                           <td className="px-3 py-2.5">
                             <Link
                               href={`/aquaculture/ponds/${r.pond_id}`}
-                              className="font-medium text-teal-800 hover:text-teal-950 hover:underline"
+                              className="font-medium text-primary hover:text-teal-950 hover:underline"
                             >
                               {r.pond_name || `Pond #${r.pond_id}`}
                             </Link>
@@ -2068,19 +2068,19 @@ function AquacultureStockPageContent() {
                             <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${badge}`}>
                               {r.source_label}
                             </span>
-                            <div className="mt-0.5 text-xs text-slate-500">{r.source_doc}</div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">{r.source_doc}</div>
                           </td>
-                          <td className="px-3 py-2.5 text-slate-600">{reason || '—'}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground">{reason || '—'}</td>
                           <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${deltaClass(fc)}`}>
                             {formatNumber(fc, 0)}
                           </td>
                           <td className={`px-3 py-2.5 text-right tabular-nums font-medium ${deltaClass(wkg)}`}>
                             {formatNumber(wkg, 2)}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-foreground/85">
                             {val > 0 ? `${sym}${formatNumber(val, 2)}` : '—'}
                           </td>
-                          <td className="max-w-[12rem] px-3 py-2.5 text-xs text-slate-600" title={memoFull || undefined}>
+                          <td className="max-w-[12rem] px-3 py-2.5 text-xs text-muted-foreground" title={memoFull || undefined}>
                             {memoShort || '—'}
                           </td>
                         </tr>
@@ -2089,9 +2089,9 @@ function AquacultureStockPageContent() {
                   )}
                 </tbody>
                 {filteredMovements.length > 0 ? (
-                  <tfoot className="bg-slate-50/80 text-sm font-medium text-slate-700">
+                  <tfoot className="bg-muted/50 text-sm font-medium text-foreground/85">
                     <tr>
-                      <td colSpan={4} className="px-3 py-2 text-right uppercase text-xs tracking-wide text-slate-500">
+                      <td colSpan={4} className="px-3 py-2 text-right uppercase text-xs tracking-wide text-muted-foreground">
                         Totals ({filteredMovements.length})
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(movementsTotals.fish, 0)}</td>
@@ -2116,11 +2116,11 @@ function AquacultureStockPageContent() {
         <div id="stock-panel-warehouse" role="tabpanel" aria-labelledby="stock-tab-warehouse">
           {whSubTab === 'on_hand' ? (
           <>
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">Pond warehouse on hand</h2>
-                <p className="mt-1 text-xs text-slate-500">
+                <h2 className="text-sm font-semibold text-foreground">Pond warehouse on hand</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
                   Current quantities by pond and SKU. Filter by pond (loads from server), then narrow by product type or
                   search.
                 </p>
@@ -2132,7 +2132,7 @@ function AquacultureStockPageContent() {
                     setEditingWhTransfer(null)
                     setInterPondOpen(true)
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
                 >
                   <ArrowRightLeft className="h-4 w-4" aria-hidden />
                   Move between ponds
@@ -2143,7 +2143,7 @@ function AquacultureStockPageContent() {
                     setEditingWhReceipt(null)
                     setAddWhOpen(true)
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-teal-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                   Add stock
@@ -2151,12 +2151,12 @@ function AquacultureStockPageContent() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-end gap-3">
-              <label className="block min-w-[11rem] text-xs font-medium text-slate-600">
+              <label className="block min-w-[11rem] text-xs font-medium text-muted-foreground">
                 Pond
                 <select
                   value={whPond}
                   onChange={(e) => setWhPond(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   aria-label="Filter warehouse stock by pond"
                 >
                   <option value="">All ponds</option>
@@ -2167,12 +2167,12 @@ function AquacultureStockPageContent() {
                   ))}
                 </select>
               </label>
-              <label className="block min-w-[11rem] text-xs font-medium text-slate-600">
+              <label className="block min-w-[11rem] text-xs font-medium text-muted-foreground">
                 Product type
                 <select
                   value={whPosCategory}
                   onChange={(e) => setWhPosCategory(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   aria-label="Filter by POS category"
                 >
                   <option value="">All types</option>
@@ -2185,7 +2185,7 @@ function AquacultureStockPageContent() {
               </label>
               <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
                 <Search
-                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70"
                   aria-hidden
                 />
                 <input
@@ -2193,16 +2193,16 @@ function AquacultureStockPageContent() {
                   value={whSearch}
                   onChange={(e) => setWhSearch(e.target.value)}
                   placeholder="Search product, pond, category…"
-                  className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full rounded-lg border border-border py-2 pl-8 pr-3 text-sm placeholder:text-muted-foreground/70 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                   aria-label="Search warehouse stock"
                 />
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
               {whLoading ? (
-                <p className="py-8 text-center text-sm text-slate-500">Loading pond warehouse…</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">Loading pond warehouse…</p>
               ) : filteredWhRows.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-500">
+                <p className="py-8 text-center text-sm text-muted-foreground">
                   {whRows.length === 0
                     ? 'No pond warehouse stock yet. Click Add stock above to move feed or medicine from your shop.'
                     : 'No rows match your filters.'}{' '}
@@ -2213,7 +2213,7 @@ function AquacultureStockPageContent() {
                         setWhSearch('')
                         setWhPosCategory('')
                       }}
-                      className="font-medium text-teal-800 underline hover:text-teal-950"
+                      className="font-medium text-primary underline hover:text-teal-950"
                     >
                       Clear filters
                     </button>
@@ -2222,7 +2222,7 @@ function AquacultureStockPageContent() {
               ) : (
                 <table className="min-w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                    <tr className="border-b border-border text-xs uppercase text-muted-foreground">
                       <th className="py-2 pr-4">Pond</th>
                       <th className="py-2 pr-4">Shared group</th>
                       <th className="py-2 pr-4">Product</th>
@@ -2239,38 +2239,38 @@ function AquacultureStockPageContent() {
                       const uc = Number(r.unit_cost)
                       const ext = Number.isFinite(q) && Number.isFinite(uc) ? q * uc : null
                       return (
-                        <tr key={`${r.pond_id}-${r.item_id}`} className="border-b border-slate-100 hover:bg-slate-50/80">
-                          <td className="py-2 pr-4 font-medium text-slate-800">
+                        <tr key={`${r.pond_id}-${r.item_id}`} className="border-b border-border/70 hover:bg-muted/50">
+                          <td className="py-2 pr-4 font-medium text-foreground">
                             <Link
                               href={`/aquaculture/ponds/${r.pond_id}`}
-                              className="inline-flex items-center gap-1 text-teal-800 hover:text-teal-950 hover:underline"
+                              className="inline-flex items-center gap-1 text-primary hover:text-teal-950 hover:underline"
                             >
                               {r.pond_name}
                               <ExternalLink className="h-3 w-3 opacity-60" aria-hidden />
                             </Link>
                           </td>
-                          <td className="py-2 pr-4 text-slate-600">
+                          <td className="py-2 pr-4 text-muted-foreground">
                             {r.warehouse_group_name ? (
-                              <span className="rounded bg-teal-50 px-1.5 py-0.5 text-xs font-medium text-teal-900">
+                              <span className="rounded bg-accent px-1.5 py-0.5 text-xs font-medium text-primary">
                                 {r.warehouse_group_name}
                               </span>
                             ) : (
                               '—'
                             )}
                           </td>
-                          <td className="py-2 pr-4 text-slate-800">{r.item_name}</td>
-                          <td className="py-2 pr-4 text-slate-600">{warehouseShelfLabel(r.pos_category)}</td>
-                          <td className="py-2 pr-4 text-slate-600">{r.reporting_category}</td>
-                          <td className="py-2 pr-4 text-right tabular-nums text-slate-800">
+                          <td className="py-2 pr-4 text-foreground">{r.item_name}</td>
+                          <td className="py-2 pr-4 text-muted-foreground">{warehouseShelfLabel(r.pos_category)}</td>
+                          <td className="py-2 pr-4 text-muted-foreground">{r.reporting_category}</td>
+                          <td className="py-2 pr-4 text-right tabular-nums text-foreground">
                             {formatNumber(q, 2)} {r.unit}
                           </td>
-                          <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
+                          <td className="py-2 pr-4 text-right tabular-nums text-foreground/85">
                             {ext != null && Number.isFinite(ext) ? `${sym}${formatNumber(ext, 2)}` : '—'}
                           </td>
                           <td className="py-2 text-right">
                             <Link
                               href={`/aquaculture/ponds/${r.pond_id}`}
-                              className="text-xs font-medium text-teal-800 hover:underline"
+                              className="text-xs font-medium text-primary hover:underline"
                             >
                               Pond detail
                             </Link>
@@ -2280,7 +2280,7 @@ function AquacultureStockPageContent() {
                     })}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-slate-900">
+                    <tr className="border-t-2 border-border bg-muted/40 font-semibold text-foreground">
                       <td className="py-2.5 pr-4" colSpan={5}>
                         Total ({filteredWhRows.length} {filteredWhRows.length === 1 ? 'line' : 'lines'})
                       </td>
@@ -2305,11 +2305,11 @@ function AquacultureStockPageContent() {
           ) : null}
 
           {whSubTab === 'movements' ? (
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mt-4">
+            <section className="rounded-xl border border-border bg-white p-4 shadow-sm mt-4">
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-slate-900">Warehouse movements</h2>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <h2 className="text-sm font-semibold text-foreground">Warehouse movements</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Shop → pond receipts and pond-to-pond reallocations. Edit reverses the prior move and applies your
                     changes on both locations; reverse returns stock to the source.
                   </p>
@@ -2317,7 +2317,7 @@ function AquacultureStockPageContent() {
                 <button
                   type="button"
                   onClick={() => void loadWhMovements()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/40"
                 >
                   <RefreshCw className="h-4 w-4" aria-hidden />
                   Refresh
@@ -2325,13 +2325,13 @@ function AquacultureStockPageContent() {
               </div>
               <div className="overflow-x-auto">
                 {whMovementsLoading ? (
-                  <p className="py-8 text-center text-sm text-slate-500">Loading movements…</p>
+                  <p className="py-8 text-center text-sm text-muted-foreground">Loading movements…</p>
                 ) : whMovementRows.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-slate-500">No warehouse movements yet for this filter.</p>
+                  <p className="py-8 text-center text-sm text-muted-foreground">No warehouse movements yet for this filter.</p>
                 ) : (
                   <table className="min-w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                      <tr className="border-b border-border text-xs uppercase text-muted-foreground">
                         <th className="py-2 pr-4">When</th>
                         <th className="py-2 pr-4">Type</th>
                         <th className="py-2 pr-4">#</th>
@@ -2355,16 +2355,16 @@ function AquacultureStockPageContent() {
                         const val = doc.total_value
                         const busyKey = `${row.kind}-${doc.id}`
                         return (
-                          <tr key={busyKey} className="border-b border-slate-100 hover:bg-slate-50/80">
-                            <td className="py-2 pr-4 whitespace-nowrap text-slate-600">
+                          <tr key={busyKey} className="border-b border-border/70 hover:bg-muted/50">
+                            <td className="py-2 pr-4 whitespace-nowrap text-muted-foreground">
                               {doc.created_at ? formatDateOnly(doc.created_at) : '—'}
                             </td>
-                            <td className="py-2 pr-4 text-slate-700">
+                            <td className="py-2 pr-4 text-foreground/85">
                               {isReceipt ? 'Shop → pond' : 'Pond → pond'}
                             </td>
                             <td className="py-2 pr-4 font-mono text-xs">{docNum}</td>
-                            <td className="py-2 pr-4 text-slate-800">{route}</td>
-                            <td className="max-w-xs py-2 pr-4 text-slate-600">
+                            <td className="py-2 pr-4 text-foreground">{route}</td>
+                            <td className="max-w-xs py-2 pr-4 text-muted-foreground">
                               <span className="line-clamp-2">{lines}</span>
                             </td>
                             <td className="py-2 pr-4 text-right tabular-nums font-medium">
@@ -2433,18 +2433,18 @@ function AquacultureStockPageContent() {
           ) : null}
 
           {whSubTab === 'consumed' ? (
-            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section className="rounded-xl border border-border bg-white p-4 shadow-sm">
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold text-slate-900">Feed &amp; medicine consumed</h2>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <h2 className="text-sm font-semibold text-foreground">Feed &amp; medicine consumed</h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Posted from feeding-advice apply or manual pond-warehouse consumption. Each row is paired with a
                     COGS journal entry (Dr COGS / Cr inventory at average cost).
                   </p>
                 </div>
                 <div className="relative min-w-[12rem] sm:max-w-xs">
                   <Search
-                    className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70"
                     aria-hidden
                   />
                   <input
@@ -2452,18 +2452,18 @@ function AquacultureStockPageContent() {
                     value={conQuery}
                     onChange={(e) => setConQuery(e.target.value)}
                     placeholder="Search pond, memo, journal…"
-                    className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-sm placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                    className="w-full rounded-lg border border-border py-2 pl-8 pr-3 text-sm placeholder:text-muted-foreground/70 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                     aria-label="Search consumption"
                   />
                 </div>
               </div>
               <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted-foreground">
                   Pond
                   <select
                     value={conPond}
                     onChange={(e) => setConPond(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   >
                     <option value="">All ponds</option>
                     {ponds.map((p) => (
@@ -2473,48 +2473,48 @@ function AquacultureStockPageContent() {
                     ))}
                   </select>
                 </label>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted-foreground">
                   Type
                   <select
                     value={conKind}
                     onChange={(e) => setConKind(e.target.value as '' | 'feed' | 'medicine')}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   >
                     <option value="">Feed and medicine</option>
                     <option value="feed">Feed only</option>
                     <option value="medicine">Medicine only</option>
                   </select>
                 </label>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted-foreground">
                   From
                   <input
                     type="date"
                     value={conFrom}
                     onChange={(e) => setConFrom(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </label>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-medium text-muted-foreground">
                   To
                   <input
                     type="date"
                     value={conTo}
                     onChange={(e) => setConTo(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   />
                 </label>
               </div>
               {consumptionLoading ? (
                 <div className="space-y-2 py-6" aria-busy="true">
                   {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="h-10 animate-pulse rounded-lg bg-slate-100" />
+                    <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />
                   ))}
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-slate-100">
+                <div className="overflow-x-auto rounded-lg border border-border/70">
                   <table className="min-w-full text-left text-sm">
-                    <thead className="sticky top-0 z-[1] bg-slate-50/95 backdrop-blur-sm">
-                      <tr className="border-b border-slate-200 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <thead className="sticky top-0 z-[1] bg-muted/40/95 backdrop-blur-sm">
+                      <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         <th className="whitespace-nowrap px-3 py-2.5">Date</th>
                         <th className="px-3 py-2.5">Pond / batch</th>
                         <th className="px-3 py-2.5">Type</th>
@@ -2530,7 +2530,7 @@ function AquacultureStockPageContent() {
                     <tbody>
                       {filteredConsumption.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="px-3 py-10 text-center text-slate-500">
+                          <td colSpan={10} className="px-3 py-10 text-center text-muted-foreground">
                             {consumption.length === 0
                               ? 'No feed or medicine has been consumed for this filter yet. Apply feeding advice or use pond-warehouse consume.'
                               : 'No rows match your search.'}
@@ -2547,20 +2547,20 @@ function AquacultureStockPageContent() {
                           return (
                             <tr
                               key={`con-${r.id}`}
-                              className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/90"
+                              className="border-b border-border/70 transition-colors last:border-0 hover:bg-muted/50"
                             >
-                              <td className="whitespace-nowrap px-3 py-2.5 text-slate-800">
+                              <td className="whitespace-nowrap px-3 py-2.5 text-foreground">
                                 {formatDateOnly(r.entry_date)}
                               </td>
                               <td className="px-3 py-2.5">
                                 <Link
                                   href={`/aquaculture/ponds/${r.pond_id}`}
-                                  className="font-medium text-teal-800 hover:text-teal-950 hover:underline"
+                                  className="font-medium text-primary hover:text-teal-950 hover:underline"
                                 >
                                   {r.pond_name || `Pond #${r.pond_id}`}
                                 </Link>
                                 {r.production_cycle_name ? (
-                                  <div className="text-xs text-slate-500">{r.production_cycle_name}</div>
+                                  <div className="text-xs text-muted-foreground">{r.production_cycle_name}</div>
                                 ) : null}
                               </td>
                               <td className="px-3 py-2.5">
@@ -2570,11 +2570,11 @@ function AquacultureStockPageContent() {
                                   {r.kind_label}
                                 </span>
                               </td>
-                              <td className="px-3 py-2.5 text-xs text-slate-600">
+                              <td className="px-3 py-2.5 text-xs text-muted-foreground">
                                 {r.feeding_advice_id ? (
                                   <Link
                                     href="/aquaculture/feeding"
-                                    className="text-teal-800 hover:text-teal-950 hover:underline"
+                                    className="text-primary hover:text-teal-950 hover:underline"
                                   >
                                     {r.source_doc}
                                   </Link>
@@ -2582,13 +2582,13 @@ function AquacultureStockPageContent() {
                                   r.source_doc
                                 )}
                               </td>
-                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                              <td className="px-3 py-2.5 text-right tabular-nums text-foreground/85">
                                 {r.feed_weight_kg ? formatNumber(Number(r.feed_weight_kg), 2) : '—'}
                               </td>
-                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                              <td className="px-3 py-2.5 text-right tabular-nums text-foreground/85">
                                 {r.feed_sack_count ? formatNumber(Number(r.feed_sack_count), 2) : '—'}
                               </td>
-                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                              <td className="px-3 py-2.5 text-right tabular-nums text-foreground/85">
                                 {sym}
                                 {formatNumber(Number(r.amount), 2)}
                               </td>
@@ -2598,11 +2598,11 @@ function AquacultureStockPageContent() {
                                     {r.journal_entry_number}
                                   </span>
                                 ) : (
-                                  <span className="text-xs text-slate-400">—</span>
+                                  <span className="text-xs text-muted-foreground/70">—</span>
                                 )}
                               </td>
                               <td
-                                className="max-w-[12rem] px-3 py-2.5 text-xs text-slate-600"
+                                className="max-w-[12rem] px-3 py-2.5 text-xs text-muted-foreground"
                                 title={memoFull || undefined}
                               >
                                 {memoShort || '—'}
@@ -2645,9 +2645,9 @@ function AquacultureStockPageContent() {
                       )}
                     </tbody>
                     {filteredConsumption.length > 0 ? (
-                      <tfoot className="bg-slate-50/80 text-sm font-medium text-slate-700">
+                      <tfoot className="bg-muted/50 text-sm font-medium text-foreground/85">
                         <tr>
-                          <td colSpan={4} className="px-3 py-2 text-right uppercase text-xs tracking-wide text-slate-500">
+                          <td colSpan={4} className="px-3 py-2 text-right uppercase text-xs tracking-wide text-muted-foreground">
                             Totals ({filteredConsumption.length})
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">
@@ -2691,7 +2691,7 @@ function AquacultureStockPageContent() {
 
       {rollbackTarget ? (
         <div
-          className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-900/50 p-4 sm:items-center"
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/50 p-4 sm:items-center"
           role="presentation"
           onClick={(e) => {
             if (e.target === e.currentTarget && !rollbackBusy) setRollbackTarget(null)
@@ -2702,24 +2702,24 @@ function AquacultureStockPageContent() {
             aria-modal="true"
             aria-labelledby="rollback-dialog-title"
             aria-describedby="rollback-dialog-desc"
-            className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+            className="w-full max-w-md rounded-xl border border-border bg-white p-5 shadow-xl"
           >
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
                 <Trash2 className="h-5 w-5" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <h3 id="rollback-dialog-title" className="text-lg font-semibold text-slate-900">
+                <h3 id="rollback-dialog-title" className="text-lg font-semibold text-foreground">
                   Delete this entry?
                 </h3>
-                <p id="rollback-dialog-desc" className="mt-2 text-sm leading-relaxed text-slate-600">
-                  This removes the row and <strong className="font-medium text-slate-800">reverses</strong> its fish
+                <p id="rollback-dialog-desc" className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  This removes the row and <strong className="font-medium text-foreground">reverses</strong> its fish
                   and weight from pond stock.
                   {rollbackTarget.journal_entry_id ? (
                     <>
                       {' '}
                       The automatic journal{' '}
-                      <span className="font-mono text-xs text-slate-700">
+                      <span className="font-mono text-xs text-foreground/85">
                         {(rollbackTarget.journal_entry_number || '').trim() || `#${rollbackTarget.journal_entry_id}`}
                       </span>{' '}
                       is deleted when it matches the system fish-stock entry for this row. If rollback fails, adjust the
@@ -2729,19 +2729,19 @@ function AquacultureStockPageContent() {
                     <> No general-ledger journal was posted for this row.</>
                   )}
                 </p>
-                <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <p className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                   {formatDateOnly(rollbackTarget.entry_date)} · {rollbackTarget.pond_name} ·{' '}
                   {rollbackTarget.entry_kind_label} · Δ {formatNumber(Number(rollbackTarget.fish_count_delta), 0)} fish,{' '}
                   {formatNumber(Number(rollbackTarget.weight_kg_delta), 2)} kg
                 </p>
               </div>
             </div>
-            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
               <button
                 type="button"
                 disabled={rollbackBusy}
                 onClick={() => setRollbackTarget(null)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -2831,7 +2831,7 @@ function AquacultureStockPageContent() {
       >
         {viewWhMovement ? (
           <div className="space-y-3 text-sm">
-            <p className="text-slate-600">
+            <p className="text-muted-foreground">
               {viewWhMovement.kind === 'shop_to_pond' ? 'Shop → pond receipt' : 'Pond → pond transfer'}
             </p>
             <p>
@@ -2840,7 +2840,7 @@ function AquacultureStockPageContent() {
                 ? `${viewWhMovement.receipt.from_station_name} → ${viewWhMovement.receipt.pond_name}`
                 : `${viewWhMovement.transfer.from_pond_name} → ${viewWhMovement.transfer.to_pond_name}`}
             </p>
-            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            <ul className="divide-y divide-border/70 rounded-lg border border-border">
               {(viewWhMovement.kind === 'shop_to_pond'
                 ? viewWhMovement.receipt.lines
                 : viewWhMovement.transfer.lines
@@ -2861,10 +2861,10 @@ function AquacultureStockPageContent() {
       <Modal isOpen={confirmWhReverse != null} onClose={() => setConfirmWhReverse(null)} title="Reverse movement?" size="sm">
         {confirmWhReverse ? (
           <div className="space-y-4 text-sm">
-            <p className="text-slate-600">
+            <p className="text-muted-foreground">
               This returns quantities to the source location. It fails if stock was already consumed at the destination.
             </p>
-            <p className="font-medium text-slate-900">{confirmWhReverse.label}</p>
+            <p className="font-medium text-foreground">{confirmWhReverse.label}</p>
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-lg border px-3 py-2" onClick={() => setConfirmWhReverse(null)}>
                 Cancel
@@ -2921,33 +2921,33 @@ function AquacultureStockPageContent() {
       <Modal isOpen={editConsumption != null} onClose={() => setEditConsumption(null)} title="Edit consumption" size="md">
         {editConsumption ? (
           <div className="space-y-3 text-sm">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Saving reverses the prior consumption and reposts COGS / pond warehouse stock with your changes.
             </p>
             <label className="block">
-              <span className="text-xs font-medium text-slate-600">COGS amount</span>
+              <span className="text-xs font-medium text-muted-foreground">COGS amount</span>
               <input
                 type="text"
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                 value={consumptionEditForm.amount}
                 onChange={(e) => setConsumptionEditForm((f) => ({ ...f, amount: e.target.value }))}
               />
             </label>
             {editConsumption.kind === 'feed' ? (
               <label className="block">
-                <span className="text-xs font-medium text-slate-600">Feed kg</span>
+                <span className="text-xs font-medium text-muted-foreground">Feed kg</span>
                 <input
                   type="text"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={consumptionEditForm.feed_weight_kg}
                   onChange={(e) => setConsumptionEditForm((f) => ({ ...f, feed_weight_kg: e.target.value }))}
                 />
               </label>
             ) : null}
             <label className="block">
-              <span className="text-xs font-medium text-slate-600">Memo</span>
+              <span className="text-xs font-medium text-muted-foreground">Memo</span>
               <textarea
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                 rows={3}
                 value={consumptionEditForm.memo}
                 onChange={(e) => setConsumptionEditForm((f) => ({ ...f, memo: e.target.value }))}
@@ -2960,7 +2960,7 @@ function AquacultureStockPageContent() {
               <button
                 type="button"
                 disabled={consumptionEditSaving}
-                className="rounded-lg bg-teal-700 px-3 py-2 text-white hover:bg-teal-800 disabled:opacity-50"
+                className="rounded-lg bg-primary px-3 py-2 text-white hover:bg-primary/90 disabled:opacity-50"
                 onClick={() => void saveConsumptionEdit()}
               >
                 Save
@@ -3004,7 +3004,7 @@ export default function AquacultureStockPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-6xl px-4 py-12 text-center text-sm text-slate-600">Loading pond stock…</div>
+        <div className="mx-auto max-w-6xl px-4 py-12 text-center text-sm text-muted-foreground">Loading pond stock…</div>
       }
     >
       <AquacultureStockPageContent />

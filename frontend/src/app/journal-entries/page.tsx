@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, Fragment, useRef, useCallback } from 'react'
+import { useEffect, useState, Fragment, useRef, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
-import { CompanyDateInput } from '@/components/CompanyDateInput'
+import { CompanyDateInput, type CompanyDateInputHandle } from '@/components/CompanyDateInput'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { Plus, Edit2, Trash2, X, Eye, CheckCircle, XCircle, AlertCircle, Search, Filter, AlertTriangle, RefreshCw, ScrollText } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
@@ -29,9 +29,24 @@ import { escapeHtml } from '@/utils/printDocument'
 import { AMOUNT_JE_LINE_CLASS } from '@/utils/amountFieldStyles'
 import {
   accountNeedsEntityTag,
-  lineHasEntityTag,
+  lineHasBusinessEntityTag,
   resolveJournalLinePondId,
+  type JournalEntryDefaultEntity,
 } from '@/utils/entityGlScoping'
+import {
+  applyJournalLineEntityKey,
+  HEAD_OFFICE_SCOPE_KEY,
+  inferJournalDefaultEntityKey,
+  inferLineEntityKeyFromSaved,
+  journalLineEntitySelectValue,
+  parseJournalDefaultEntityKey,
+} from '@/lib/journalEntryEntityScope'
+import { JournalDefaultEntitySelect } from '@/components/journal/JournalDefaultEntitySelect'
+import { BillLineEntitySelect } from '@/components/bills/BillLineEntitySelect'
+import { useCompany } from '@/contexts/CompanyContext'
+import { fetchJournalEntityScopeDirectory } from '@/lib/entityScopeDirectory'
+import type { BillReceiptLocationPond, BillReceiptLocationStation } from '@/lib/billReceiptLocation'
+import { countBusinessEntities, formatEntityCountSummary } from '@/lib/billLineEntity'
 import {
   applyJournalQuickEntryTemplate,
   JOURNAL_QUICK_ENTRY_TEMPLATES,
@@ -91,8 +106,8 @@ interface Account {
   is_active?: boolean
 }
 
-type StationRow = { id: number; station_name: string; is_active?: boolean }
-type PondRow = { id: number; name: string; is_active?: boolean }
+type StationRow = BillReceiptLocationStation
+type PondRow = BillReceiptLocationPond
 type LineForm = Omit<
   JournalEntryLine,
   | 'id'
@@ -104,7 +119,12 @@ type LineForm = Omit<
   | 'station_id'
   | 'pond_name'
   | 'aquaculture_pond_id'
-> & { station_id?: number | ''; aquaculture_pond_id?: number | '' }
+> & {
+  station_id?: number | ''
+  aquaculture_pond_id?: number | ''
+  /** `__inherit__` = use entry default; `ho` = explicit head office; else station/pond key */
+  entity_key?: string
+}
 
 /** Resolve per-line site at save: line override, else entry default, else untagged. */
 function resolveJournalLineStationId(
@@ -120,9 +140,32 @@ function resolveJournalLineStationId(
   return null
 }
 
+function resolveLineEntityForSave(
+  line: LineForm,
+  entryDefault: JournalEntryDefaultEntity
+): { station_id: number | null; aquaculture_pond_id: number | null } {
+  if (line.entity_key === HEAD_OFFICE_SCOPE_KEY) {
+    return { station_id: null, aquaculture_pond_id: null }
+  }
+  const inherit =
+    line.entity_key === '__inherit__' ||
+    line.entity_key === '' ||
+    line.entity_key == null
+  if (inherit) {
+    return {
+      station_id: resolveJournalLineStationId(line.station_id, entryDefault.stationId),
+      aquaculture_pond_id: resolveJournalLinePondId(line.aquaculture_pond_id, entryDefault.pondId),
+    }
+  }
+  return {
+    station_id: resolveJournalLineStationId(line.station_id, ''),
+    aquaculture_pond_id: resolveJournalLinePondId(line.aquaculture_pond_id, ''),
+  }
+}
+
 function validateEntityScopingForLines(
   lines: LineForm[],
-  entryStationId: number | '' | null | undefined,
+  entryDefaultKey: string,
   accounts: Account[]
 ): string | null {
   const byId = new Map(accounts.map((a) => [a.id, a]))
@@ -131,15 +174,27 @@ function validateEntityScopingForLines(
     if (!accId || !(Number(line.amount) > 0)) continue
     const acc = byId.get(accId)
     if (!accountNeedsEntityTag(acc)) continue
-    if (!lineHasEntityTag(line, entryStationId)) {
+    if (!lineHasBusinessEntityTag(line, entryDefaultKey)) {
       const label = acc ? formatCoaOptionLabel(acc) : `account #${accId}`
       return (
-        `${label} is income, COGS, or expense — assign a site or pond on that line ` +
-        '(or set Default site for the entry). Balance-sheet lines (cash, AP, AR) can stay untagged.'
+        `${label} is income, COGS, or expense — assign a fuel station, shop hub (e.g. Premium Agro), ` +
+        'or pond on that line (or set Default entity for the entry). Head office is for balance-sheet lines only.'
       )
     }
   }
   return null
+}
+
+function entryOutsideListDateFilter(
+  entryDate: string,
+  start: string,
+  end: string,
+  skipDateFilter: boolean
+): boolean {
+  if (skipDateFilter || !entryDate) return false
+  if (start && entryDate < start) return true
+  if (end && entryDate > end) return true
+  return false
 }
 
 export default function JournalEntriesPage() {
@@ -147,6 +202,8 @@ export default function JournalEntriesPage() {
   const searchParams = useSearchParams()
   const toast = useToast()
   const pageMeta = usePageMeta()
+  const { selectedCompany } = useCompany()
+  const companyName = selectedCompany?.name?.trim() || ''
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -164,6 +221,9 @@ export default function JournalEntriesPage() {
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳') // Default to BDT
   const [stations, setStations] = useState<StationRow[]>([])
   const [ponds, setPonds] = useState<PondRow[]>([])
+  const [entityDirectoryLoading, setEntityDirectoryLoading] = useState(false)
+  const [entityDirectoryError, setEntityDirectoryError] = useState<string | null>(null)
+  const entryDateInputRef = useRef<CompanyDateInputHandle>(null)
 
   // Filter states
   const [filterColumn, setFilterColumn] = useState<string>('all')
@@ -178,13 +238,13 @@ export default function JournalEntriesPage() {
     entry_date: string
     reference: string
     description: string
-    station_id: number | ''
+    defaultEntityKey: string
     lines: LineForm[]
   }>({
     entry_date: new Date().toISOString().split('T')[0],
     reference: '',
     description: '',
-    station_id: '',
+    defaultEntityKey: '',
     lines: [
       {
         line_number: 1,
@@ -194,6 +254,7 @@ export default function JournalEntriesPage() {
         amount: 0,
         station_id: '',
         aquaculture_pond_id: '',
+        entity_key: '__inherit__',
       },
       {
         line_number: 2,
@@ -203,13 +264,42 @@ export default function JournalEntriesPage() {
         amount: 0,
         station_id: '',
         aquaculture_pond_id: '',
+        entity_key: '__inherit__',
       },
     ],
   })
 
-  const showSiteCol = stations.length > 0
-  const showPondCol = ponds.length > 0
-  const lineTableMetaCols = 4 + (showSiteCol ? 1 : 0) + (showPondCol ? 1 : 0)
+  const showEntityCol = true
+  const lineTableMetaCols = 4 + (showEntityCol ? 1 : 0)
+  const entryDefault = useMemo(
+    () => parseJournalDefaultEntityKey(formData.defaultEntityKey),
+    [formData.defaultEntityKey]
+  )
+  const showDefaultEntitySelect = true
+  const entityCountSummary = useMemo(
+    () => formatEntityCountSummary(countBusinessEntities(stations, ponds)),
+    [stations, ponds]
+  )
+
+  const loadEntityDirectory = useCallback(async () => {
+    setEntityDirectoryLoading(true)
+    setEntityDirectoryError(null)
+    try {
+      const { stations: st, ponds: pd } = await fetchJournalEntityScopeDirectory()
+      setStations(st)
+      setPonds(pd)
+      if (st.length === 0 && pd.length === 0) {
+        setEntityDirectoryError('No stations or ponds found for this company.')
+      }
+    } catch (error) {
+      console.error('Failed to load journal entity directory:', error)
+      setEntityDirectoryError('Could not load entity list (stations / ponds).')
+      setStations([])
+      setPonds([])
+    } finally {
+      setEntityDirectoryLoading(false)
+    }
+  }, [])
 
   const coaPickOptions = coaPickFromRows(accounts)
   const recommendedAccountIds = new Set(
@@ -223,20 +313,27 @@ export default function JournalEntriesPage() {
 
   const applyQuickEntry = (kind: JournalQuickEntryKind) => {
     const applied = applyJournalQuickEntryTemplate(kind, coaPickOptions, {
-      defaultStationId: formData.station_id,
+      defaultStationId: entryDefault.stationId,
+      defaultPondId: entryDefault.pondId,
     })
     if (!applied) {
       toast.error('Could not apply template — check that template GL accounts exist in Chart of Accounts.')
       return
     }
-    setFormData((prev) => ({
-      ...prev,
-      description: prev.description.trim() ? prev.description : applied.description,
-      station_id: applied.station_id !== '' ? applied.station_id : prev.station_id,
-      lines: applied.lines,
-    }))
+    setFormData((prev) => {
+      const nextDefaultKey =
+        applied.station_id !== ''
+          ? String(applied.station_id)
+          : prev.defaultEntityKey
+      return {
+        ...prev,
+        description: prev.description.trim() ? prev.description : applied.description,
+        defaultEntityKey: nextDefaultKey,
+        lines: applied.lines,
+      }
+    })
     setQuickEntryKind(kind)
-    toast.success('Suggested accounts and entity tags applied — enter amounts and review site/pond tags.')
+    toast.success('Suggested accounts and entity tags applied — enter amounts and review entity tags.')
   }
 
   useEffect(() => {
@@ -246,7 +343,13 @@ export default function JournalEntriesPage() {
       return
     }
     void fetchReferenceData()
-  }, [router])
+    void loadEntityDirectory()
+  }, [router, loadEntityDirectory])
+
+  useEffect(() => {
+    if (!showModal) return
+    void loadEntityDirectory()
+  }, [showModal, loadEntityDirectory])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(filterValue.trim()), 350)
@@ -292,10 +395,8 @@ export default function JournalEntriesPage() {
         console.error('Error fetching company currency:', error)
       }
 
-      const [accountsRes, stationsRes, pondsRes] = await Promise.allSettled([
+      const [accountsRes] = await Promise.allSettled([
         api.get('/chart-of-accounts/'),
-        api.get<unknown[]>('/stations/', { timeout: 8000 }),
-        api.get<unknown[]>('/aquaculture/ponds/', { timeout: 8000 }),
       ])
 
       if (accountsRes.status === 'fulfilled') {
@@ -303,42 +404,6 @@ export default function JournalEntriesPage() {
         setAccounts(accountsData.filter((acc: Account) => acc.is_active))
       } else {
         console.error('Failed to load chart of accounts:', accountsRes.reason)
-      }
-
-      if (stationsRes.status === 'fulfilled') {
-        const raw = stationsRes.value.data
-        const rows = Array.isArray(raw) ? raw : []
-        const parsed: StationRow[] = []
-        for (const r of rows) {
-          const o = r as { id?: number; station_name?: string; is_active?: boolean }
-          if (typeof o.id !== 'number') continue
-          parsed.push({
-            id: o.id,
-            station_name: o.station_name || `Site #${o.id}`,
-            is_active: o.is_active,
-          })
-        }
-        setStations(parsed)
-      } else {
-        setStations([])
-      }
-
-      if (pondsRes.status === 'fulfilled') {
-        const raw = pondsRes.value.data
-        const rows = Array.isArray(raw) ? raw : []
-        const parsed: PondRow[] = []
-        for (const r of rows) {
-          const o = r as { id?: number; name?: string; is_active?: boolean }
-          if (typeof o.id !== 'number') continue
-          parsed.push({
-            id: o.id,
-            name: o.name || `Pond #${o.id}`,
-            is_active: o.is_active,
-          })
-        }
-        setPonds(parsed)
-      } else {
-        setPonds([])
       }
     } catch (error: unknown) {
       console.error('Error fetching reference data:', error)
@@ -440,6 +505,7 @@ export default function JournalEntriesPage() {
           amount: 0,
           station_id: '',
           aquaculture_pond_id: '',
+          entity_key: '__inherit__',
         },
       ],
     })
@@ -459,26 +525,63 @@ export default function JournalEntriesPage() {
 
   const updateLine = (index: number, field: string, value: any) => {
     const newLines = [...formData.lines]
-    const applyDefaultSiteIfNeeded = (lineIdx: number, accountId: number | null) => {
+    const applyDefaultEntityIfNeeded = (lineIdx: number, accountId: number | null) => {
       if (!accountId) return
       const acc = accounts.find((a) => a.id === accountId)
       if (!accountNeedsEntityTag(acc)) return
       const line = newLines[lineIdx]
-      if (lineHasEntityTag(line, formData.station_id)) return
-      if (formData.station_id !== '' && formData.station_id != null) {
-        newLines[lineIdx] = { ...line, station_id: formData.station_id }
+      if (lineHasBusinessEntityTag(line, formData.defaultEntityKey)) return
+      if (entryDefault.isHeadOffice) return
+      if (entryDefault.stationId !== '' && entryDefault.stationId != null) {
+        newLines[lineIdx] = {
+          ...line,
+          entity_key: '__inherit__',
+          station_id: '',
+          aquaculture_pond_id: '',
+        }
+      } else if (entryDefault.pondId !== '' && entryDefault.pondId != null) {
+        newLines[lineIdx] = {
+          ...line,
+          entity_key: '__inherit__',
+          station_id: '',
+          aquaculture_pond_id: '',
+        }
       }
     }
     if (field === 'debit_account_id') {
       const accountId = value ? parseInt(value) : null
       newLines[index] = { ...newLines[index], debit_account_id: accountId, credit_account_id: null }
-      applyDefaultSiteIfNeeded(index, accountId)
+      applyDefaultEntityIfNeeded(index, accountId)
     } else if (field === 'credit_account_id') {
       const accountId = value ? parseInt(value) : null
       newLines[index] = { ...newLines[index], credit_account_id: accountId, debit_account_id: null }
-      applyDefaultSiteIfNeeded(index, accountId)
+      applyDefaultEntityIfNeeded(index, accountId)
     } else {
       newLines[index] = { ...newLines[index], [field]: value }
+    }
+    setFormData({ ...formData, lines: newLines })
+  }
+
+  const updateLineEntity = (index: number, key: string) => {
+    const newLines = [...formData.lines]
+    const line = newLines[index]
+    if (key === '') {
+      newLines[index] = {
+        ...line,
+        entity_key: '__inherit__',
+        station_id: '',
+        aquaculture_pond_id: '',
+      }
+    } else if (key === HEAD_OFFICE_SCOPE_KEY) {
+      newLines[index] = {
+        ...line,
+        entity_key: HEAD_OFFICE_SCOPE_KEY,
+        station_id: '',
+        aquaculture_pond_id: '',
+      }
+    } else {
+      const applied = applyJournalLineEntityKey(line, key)
+      newLines[index] = { ...applied, entity_key: key }
     }
     setFormData({ ...formData, lines: newLines })
   }
@@ -488,12 +591,25 @@ export default function JournalEntriesPage() {
     if (!accId || !(Number(line.amount) > 0)) return null
     const acc = accounts.find((a) => a.id === accId)
     if (!accountNeedsEntityTag(acc)) return null
-    if (lineHasEntityTag(line, formData.station_id)) return null
-    return 'Assign a site or pond so this amount appears on entity P&L.'
+    if (lineHasBusinessEntityTag(line, formData.defaultEntityKey)) return null
+    if (line.entity_key === HEAD_OFFICE_SCOPE_KEY) {
+      return 'Head office is for balance-sheet lines. Pick a fuel station, shop hub, or pond for P&L.'
+    }
+    return 'Assign an entity (fuel station, shop hub, or pond) so this amount appears on entity P&L.'
+  }
+
+  const commitEntryDate = (): boolean => {
+    if (!entryDateInputRef.current?.commit()) {
+      toast.error('Enter a valid entry date (use the company date format, then save again).')
+      return false
+    }
+    return true
   }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!commitEntryDate()) return
 
     if (!isBalanced()) {
       toast.error('Journal entry must be balanced (Total Debit = Total Credit)')
@@ -509,7 +625,7 @@ export default function JournalEntriesPage() {
       return
     }
 
-    const scopeErr = validateEntityScopingForLines(linesToSubmit, formData.station_id, accounts)
+    const scopeErr = validateEntityScopingForLines(linesToSubmit, formData.defaultEntityKey, accounts)
     if (scopeErr) {
       toast.error(scopeErr)
       return
@@ -520,19 +636,34 @@ export default function JournalEntriesPage() {
         entry_date: formData.entry_date,
         reference: formData.reference || null,
         description: formData.description || null,
-        lines: linesToSubmit.map((line) => ({
-          line_number: line.line_number,
-          description: line.description || null,
-          debit_account_id: line.debit_account_id || null,
-          credit_account_id: line.credit_account_id || null,
-          amount: Number(line.amount),
-          station_id: resolveJournalLineStationId(line.station_id, formData.station_id),
-          aquaculture_pond_id: resolveJournalLinePondId(line.aquaculture_pond_id),
-        })),
+        lines: linesToSubmit.map((line) => {
+          const resolved = resolveLineEntityForSave(line, entryDefault)
+          return {
+            line_number: line.line_number,
+            description: line.description || null,
+            debit_account_id: line.debit_account_id || null,
+            credit_account_id: line.credit_account_id || null,
+            amount: Number(line.amount),
+            station_id: resolved.station_id,
+            aquaculture_pond_id: resolved.aquaculture_pond_id,
+          }
+        }),
       }
-      body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
+      body.station_id =
+        entryDefault.isHeadOffice || entryDefault.stationId === ''
+          ? null
+          : Number(entryDefault.stationId)
       await api.post('/journal-entries/', body)
-      toast.success('Journal entry created successfully!')
+      const savedDate = String(body.entry_date || '')
+      toast.success('Journal entry saved as draft.')
+      toast.info(
+        'Post the entry (green check icon) so it appears in Trial Balance, P&L, and other GL reports.'
+      )
+      if (entryOutsideListDateFilter(savedDate, startDate, endDate, hasTextSearch)) {
+        toast.info(
+          'Entry date is outside your current list date filter — clear the date range to find it here.'
+        )
+      }
       setShowModal(false)
       resetForm()
       fetchEntries()
@@ -548,30 +679,51 @@ export default function JournalEntriesPage() {
       return
     }
     setEditingEntry(entry)
-    const entryStationId =
-      entry.station_id != null && entry.station_id !== undefined ? Number(entry.station_id) : ''
+    const defaultEntityKey = inferJournalDefaultEntityKey(entry)
+    const entryDefaultForEdit = parseJournalDefaultEntityKey(defaultEntityKey)
     setFormData({
       entry_date: entry.entry_date.split('T')[0],
       reference: entry.reference || '',
       description: entry.description || '',
-      station_id: entryStationId,
+      defaultEntityKey,
       lines: entry.lines.map((line) => {
         const lineStationId =
           line.station_id != null && line.station_id !== undefined ? Number(line.station_id) : ''
-        const matchesEntryDefault =
-          entryStationId !== '' && lineStationId !== '' && lineStationId === entryStationId
         const linePondId =
           line.aquaculture_pond_id != null && line.aquaculture_pond_id !== undefined
             ? Number(line.aquaculture_pond_id)
             : ''
+        const entityKey = inferLineEntityKeyFromSaved(
+          { station_id: lineStationId, aquaculture_pond_id: linePondId },
+          defaultEntityKey
+        )
+        const matchesEntryStationDefault =
+          entityKey === '__inherit__' &&
+          entryDefaultForEdit.stationId !== '' &&
+          lineStationId !== '' &&
+          lineStationId === entryDefaultForEdit.stationId
+        const matchesEntryPondDefault =
+          entityKey === '__inherit__' &&
+          entryDefaultForEdit.pondId !== '' &&
+          linePondId !== '' &&
+          linePondId === entryDefaultForEdit.pondId
         return {
           line_number: line.line_number,
           description: line.description || '',
           debit_account_id: line.debit_account_id || null,
           credit_account_id: line.credit_account_id || null,
           amount: Number(line.amount),
-          station_id: matchesEntryDefault ? '' : lineStationId,
-          aquaculture_pond_id: linePondId === '' ? '' : linePondId,
+          entity_key: entityKey,
+          station_id:
+            matchesEntryStationDefault || entityKey === '__inherit__' || entityKey === HEAD_OFFICE_SCOPE_KEY
+              ? ''
+              : lineStationId,
+          aquaculture_pond_id:
+            matchesEntryPondDefault || entityKey === '__inherit__' || entityKey === HEAD_OFFICE_SCOPE_KEY
+              ? ''
+              : linePondId === ''
+                ? ''
+                : linePondId,
         }
       }),
     })
@@ -581,6 +733,8 @@ export default function JournalEntriesPage() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingEntry) return
+
+    if (!commitEntryDate()) return
 
     if (!isBalanced()) {
       toast.error('Journal entry must be balanced (Total Debit = Total Credit)')
@@ -596,7 +750,7 @@ export default function JournalEntriesPage() {
       return
     }
 
-    const scopeErr = validateEntityScopingForLines(linesToSubmit, formData.station_id, accounts)
+    const scopeErr = validateEntityScopingForLines(linesToSubmit, formData.defaultEntityKey, accounts)
     if (scopeErr) {
       toast.error(scopeErr)
       return
@@ -607,17 +761,23 @@ export default function JournalEntriesPage() {
         entry_date: formData.entry_date,
         reference: formData.reference || null,
         description: formData.description || null,
-        lines: linesToSubmit.map((line) => ({
-          line_number: line.line_number,
-          description: line.description || null,
-          debit_account_id: line.debit_account_id || null,
-          credit_account_id: line.credit_account_id || null,
-          amount: Number(line.amount),
-          station_id: resolveJournalLineStationId(line.station_id, formData.station_id),
-          aquaculture_pond_id: resolveJournalLinePondId(line.aquaculture_pond_id),
-        })),
+        lines: linesToSubmit.map((line) => {
+          const resolved = resolveLineEntityForSave(line, entryDefault)
+          return {
+            line_number: line.line_number,
+            description: line.description || null,
+            debit_account_id: line.debit_account_id || null,
+            credit_account_id: line.credit_account_id || null,
+            amount: Number(line.amount),
+            station_id: resolved.station_id,
+            aquaculture_pond_id: resolved.aquaculture_pond_id,
+          }
+        }),
       }
-      body.station_id = formData.station_id === '' ? null : Number(formData.station_id)
+      body.station_id =
+        entryDefault.isHeadOffice || entryDefault.stationId === ''
+          ? null
+          : Number(entryDefault.stationId)
       await api.put(`/journal-entries/${editingEntry.id}/`, body)
       toast.success('Journal entry updated successfully!')
       setShowModal(false)
@@ -692,7 +852,7 @@ export default function JournalEntriesPage() {
       entry_date: new Date().toISOString().split('T')[0],
       reference: '',
       description: '',
-      station_id: '',
+      defaultEntityKey: '',
       lines: [
         {
           line_number: 1,
@@ -702,6 +862,7 @@ export default function JournalEntriesPage() {
           amount: 0,
           station_id: '',
           aquaculture_pond_id: '',
+          entity_key: '__inherit__',
         },
         {
           line_number: 2,
@@ -711,6 +872,7 @@ export default function JournalEntriesPage() {
           amount: 0,
           station_id: '',
           aquaculture_pond_id: '',
+          entity_key: '__inherit__',
         },
       ],
     })
@@ -819,16 +981,16 @@ export default function JournalEntriesPage() {
 
   if (initialLoad && loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout className="bg-background">
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="erp-loading-spinner h-12 w-12"></div>
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout className="bg-background">
       <ErpPageShell
         showBackLink={false}
         titleId="journal-entries-title"
@@ -843,7 +1005,7 @@ export default function JournalEntriesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 px-4 py-2 border border-white/25 bg-white/10 text-white rounded-lg hover:bg-white/15 transition-colors"
+              className="flex items-center space-x-2 px-4 py-2 border border-white/25 bg-card/10 text-white rounded-lg hover:bg-card/15 transition-colors"
             >
               <Filter className="h-5 w-5" />
               <span>Filter</span>
@@ -859,7 +1021,7 @@ export default function JournalEntriesPage() {
                 resetForm()
                 setShowModal(true)
               }}
-              className="flex items-center space-x-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 transition-colors"
+              className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-accent0 transition-colors"
             >
               <Plus className="h-5 w-5" />
               <span>New Journal Entry</span>
@@ -868,13 +1030,13 @@ export default function JournalEntriesPage() {
         }
       >
           {error ? (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-              <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-red-800 mb-2">Error Loading Journal Entries</h3>
-              <p className="text-red-700 mb-4">{error}</p>
+            <div className="rounded-lg border border-red-900/50 bg-red-950/40 p-6 text-center">
+              <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-red-200 mb-2">Error Loading Journal Entries</h3>
+              <p className="text-red-300 mb-4">{error}</p>
               <button
                 onClick={() => void fetchEntries()}
-                className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                className="inline-flex items-center space-x-2 px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors"
               >
                 <RefreshCw className="h-5 w-5" />
                 <span>Retry</span>
@@ -885,9 +1047,9 @@ export default function JournalEntriesPage() {
 
           {/* Filter Panel */}
           {showFilters && (
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6 border border-gray-200">
+            <div className="bg-card rounded-lg shadow-md p-6 mb-6 border border-border">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">Filter Transactions</h2>
+                <h2 className="text-lg font-semibold text-foreground">Filter Transactions</h2>
                 <button
                   onClick={() => {
                     setFilterColumn('all')
@@ -898,7 +1060,7 @@ export default function JournalEntriesPage() {
                     setMaxAmount('')
                     setShowFilters(false)
                   }}
-                  className="text-sm text-gray-500 hover:text-gray-700"
+                  className="text-sm text-muted-foreground hover:text-muted-foreground"
                 >
                   Clear All
                 </button>
@@ -907,7 +1069,7 @@ export default function JournalEntriesPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                 {/* Date Range */}
                 <div className="md:col-span-2 lg:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     Date range
                   </label>
                   <div className="flex items-center space-x-2">
@@ -915,24 +1077,24 @@ export default function JournalEntriesPage() {
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                       placeholder="From Date"
                     />
-                    <span className="text-gray-500">to</span>
+                    <span className="text-muted-foreground">to</span>
                     <input
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                       placeholder="To Date"
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">Leave blank to include all dates, including back-dated entries.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Leave blank to include all dates, including back-dated entries.</p>
                 </div>
 
                 {/* Amount Range */}
                 <div className="md:col-span-2 lg:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     Amount range (entry total)
                   </label>
                   <div className="flex items-center space-x-2">
@@ -942,17 +1104,17 @@ export default function JournalEntriesPage() {
                       step="0.01"
                       value={minAmount}
                       onChange={(e) => setMinAmount(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                       placeholder="Min amount"
                     />
-                    <span className="text-gray-500">to</span>
+                    <span className="text-muted-foreground">to</span>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={maxAmount}
                       onChange={(e) => setMaxAmount(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                       placeholder="Max amount"
                     />
                   </div>
@@ -960,7 +1122,7 @@ export default function JournalEntriesPage() {
 
                 {/* Filter Column Dropdown */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     Filter By Column
                   </label>
                   <select
@@ -969,7 +1131,7 @@ export default function JournalEntriesPage() {
                       setFilterColumn(e.target.value)
                       setFilterValue('')
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                   >
                     <option value="all">All Columns</option>
                     <option value="entry_number">Entry Number</option>
@@ -983,7 +1145,7 @@ export default function JournalEntriesPage() {
 
                 {/* Filter Value Input */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     {filterColumn === 'all' ? 'Search Value' : `Search ${filterColumn.replace('_', ' ')}`}
                   </label>
                   <div className="relative">
@@ -1000,23 +1162,23 @@ export default function JournalEntriesPage() {
                               ? 'true/false or posted/draft'
                               : 'Enter search value'
                       }
-                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 pr-10 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                     />
-                    <Search className="absolute right-3 top-2.5 h-5 w-5 text-gray-400" />
+                    <Search className="absolute right-3 top-2.5 h-5 w-5 text-muted-foreground/80" />
                   </div>
                   {filterColumn === 'all' && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Searches all dates — old and new entries. Date range is ignored while searching.
                     </p>
                   )}
                   {filterColumn === 'amount' && (
-                    <p className="text-xs text-gray-500 mt-1">Enter amount or range (e.g., 100-500)</p>
+                    <p className="text-xs text-muted-foreground mt-1">Enter amount or range (e.g., 100-500)</p>
                   )}
                   {filterColumn === 'is_posted' && (
-                    <p className="text-xs text-gray-500 mt-1">Enter: true/false, posted/draft, yes/no</p>
+                    <p className="text-xs text-muted-foreground mt-1">Enter: true/false, posted/draft, yes/no</p>
                   )}
                   {filterColumn !== 'all' && filterColumn !== 'amount' && filterColumn !== 'is_posted' && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Column search includes all dates; clear search to apply the date range again.
                     </p>
                   )}
@@ -1025,45 +1187,45 @@ export default function JournalEntriesPage() {
               
               {/* Active Filters Display */}
               {(hasTextSearch || startDate || endDate || minAmount || maxAmount) && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="mt-4 pt-4 border-t border-border">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-gray-600">Active Filters:</span>
+                    <span className="text-sm text-muted-foreground">Active Filters:</span>
                     {hasTextSearch && (
-                      <span className="px-2 py-1 bg-amber-100 text-amber-900 rounded text-xs">
+                      <span className="px-2 py-1 bg-amber-100 text-warning-foreground rounded text-xs">
                         Search: {debouncedSearch}
                         {filterColumn !== 'all' ? ` (${filterColumn.replace('_', ' ')})` : ' (all columns)'}
                         <button
                           onClick={() => setFilterValue('')}
-                          className="ml-1 hover:text-amber-700"
+                          className="ml-1 hover:text-warning-foreground"
                         >
                           ×
                         </button>
                       </span>
                     )}
                     {startDate && !hasTextSearch && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                      <span className="px-2 py-1 bg-blue-950/50 text-blue-200 rounded text-xs">
                         From: {formatDateOnly(startDate)}
                         <button
                           onClick={() => setStartDate('')}
-                          className="ml-1 hover:text-blue-600"
+                          className="ml-1 hover:text-primary"
                         >
                           ×
                         </button>
                       </span>
                     )}
                     {endDate && !hasTextSearch && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                      <span className="px-2 py-1 bg-blue-950/50 text-blue-200 rounded text-xs">
                         To: {formatDateOnly(endDate)}
                         <button
                           onClick={() => setEndDate('')}
-                          className="ml-1 hover:text-blue-600"
+                          className="ml-1 hover:text-primary"
                         >
                           ×
                         </button>
                       </span>
                     )}
                     {hasTextSearch && (startDate || endDate) && (
-                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs italic">
+                      <span className="px-2 py-1 bg-muted text-muted-foreground rounded text-xs italic">
                         Date range paused during search
                       </span>
                     )}
@@ -1090,7 +1252,7 @@ export default function JournalEntriesPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     {totalCount} matching {totalCount === 1 ? 'entry' : 'entries'} — use pagination below to browse all results.
                   </p>
                 </div>
@@ -1098,49 +1260,49 @@ export default function JournalEntriesPage() {
             </div>
           )}
 
-          <div className="bg-white rounded-lg shadow overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="bg-card rounded-lg shadow overflow-x-auto">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entry #</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Entry #</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Reference</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Site</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Debit</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Credit</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-card divide-y divide-border">
                 {entries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr key={entry.id} className="hover:bg-muted">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                       {entry.entry_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateOnly(entry.entry_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {entry.reference || '-'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
+                    <td className="px-6 py-4 text-sm text-foreground">
                       {entry.description || '-'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 max-w-[14rem] truncate" title={entry.station_name?.trim() || undefined}>
+                    <td className="px-6 py-4 text-sm text-muted-foreground max-w-[14rem] truncate" title={entry.station_name?.trim() || undefined}>
                       {entry.station_name?.trim() ? entry.station_name : '—'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 tabular-nums">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-foreground tabular-nums">
                       {currencySymbol}{formatNumber(Number(entry.total_debit || 0))}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 tabular-nums">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-foreground tabular-nums">
                       {currencySymbol}{formatNumber(Number(entry.total_credit || 0))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs rounded-full ${
                         entry.is_posted 
-                          ? 'bg-green-100 text-green-800' 
+                          ? 'bg-success/15 text-success' 
                           : 'bg-yellow-100 text-yellow-800'
                       }`}>
                         {entry.is_posted ? 'Posted' : 'Draft'}
@@ -1150,7 +1312,7 @@ export default function JournalEntriesPage() {
                       <div className="flex items-center justify-end space-x-2">
                         <button
                           onClick={() => handleView(entry.id)}
-                          className="text-blue-600 hover:text-blue-900"
+                          className="text-primary hover:text-blue-900"
                           title="View"
                         >
                           <Eye className="h-4 w-4" />
@@ -1159,14 +1321,14 @@ export default function JournalEntriesPage() {
                           <>
                             <button
                               onClick={() => handleEdit(entry)}
-                              className="text-blue-600 hover:text-blue-900"
+                              className="text-primary hover:text-blue-900"
                               title="Edit"
                             >
                               <Edit2 className="h-4 w-4" />
                             </button>
                             <button
                               onClick={() => setShowDeleteConfirm(entry.id)}
-                              className="text-red-600 hover:text-red-900"
+                              className="text-destructive hover:text-red-900"
                               title="Delete"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1184,7 +1346,7 @@ export default function JournalEntriesPage() {
                         ) : (
                           <button
                             onClick={() => handlePost(entry.id)}
-                            className="text-green-600 hover:text-green-900"
+                            className="text-success hover:text-green-900"
                             title="Post"
                           >
                             <CheckCircle className="h-4 w-4" />
@@ -1197,13 +1359,13 @@ export default function JournalEntriesPage() {
               </tbody>
             </table>
             {entries.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-muted-foreground">
                 No journal entries found. Create your first entry to get started.
               </div>
             )}
           </div>
 
-          <div className="mt-4 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mt-4 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
             <OffsetPaginationControls
               page={listPage}
               pageSize={pageSize}
@@ -1216,22 +1378,22 @@ export default function JournalEntriesPage() {
 
           {/* Delete Confirmation Modal */}
           {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+        <div className="erp-modal-backdrop">
+          <div className="bg-card rounded-lg p-6 max-w-md w-full">
             <h2 className="text-xl font-bold mb-4">Delete Journal Entry</h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-muted-foreground mb-6">
               Are you sure you want to delete this journal entry? This action cannot be undone.
             </p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 border border-input rounded-lg hover:bg-muted"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(showDeleteConfirm)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                className="erp-btn-danger"
               >
                 Delete
               </button>
@@ -1243,9 +1405,9 @@ export default function JournalEntriesPage() {
       {/* View Modal */}
       {showViewModal && viewingEntry && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-card rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
-              <h2 className="text-2xl font-bold">Journal Entry: {viewingEntry.entry_number}</h2>
+              <h2 className="text-2xl font-bold text-foreground">Journal Entry: {viewingEntry.entry_number}</h2>
               <div className="flex flex-wrap items-center gap-2">
                 <DocumentExportButtons
                   size="compact"
@@ -1259,7 +1421,7 @@ export default function JournalEntriesPage() {
                     setShowViewModal(false)
                     setViewingEntry(null)
                   }}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/80 hover:text-muted-foreground"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -1268,28 +1430,28 @@ export default function JournalEntriesPage() {
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <p className="text-gray-900">{formatDateOnly(viewingEntry.entry_date)}</p>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Date</label>
+                <p className="text-foreground">{formatDateOnly(viewingEntry.entry_date)}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
-                <p className="text-gray-900">{viewingEntry.reference || '-'}</p>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Reference</label>
+                <p className="text-foreground">{viewingEntry.reference || '-'}</p>
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <p className="text-gray-900">{viewingEntry.description || '-'}</p>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Description</label>
+                <p className="text-foreground">{viewingEntry.description || '-'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Default site</label>
-                <p className="text-gray-900">
-                  {viewingEntry.station_name?.trim() ? viewingEntry.station_name : '—'}
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Default entity</label>
+                <p className="text-foreground">
+                  {viewingEntry.station_name?.trim() ? viewingEntry.station_name : 'Head office / not set'}
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Status</label>
                 <span className={`px-2 py-1 text-xs rounded-full ${
                   viewingEntry.is_posted 
-                    ? 'bg-green-100 text-green-800' 
+                    ? 'bg-success/15 text-success' 
                     : 'bg-yellow-100 text-yellow-800'
                 }`}>
                   {viewingEntry.is_posted ? 'Posted' : 'Draft'}
@@ -1299,23 +1461,22 @@ export default function JournalEntriesPage() {
 
             <div className="border-t pt-4">
               <h3 className="text-lg font-semibold mb-4">Entry Lines</h3>
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Line</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Line</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Account</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Description</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Entity</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Debit</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Credit</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-card divide-y divide-border">
                   {viewingEntry.lines.map((line) => (
                     <tr key={line.id}>
-                      <td className="px-4 py-2 text-sm text-gray-900">{line.line_number}</td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
+                      <td className="px-4 py-2 text-sm text-foreground">{line.line_number}</td>
+                      <td className="px-4 py-2 text-sm text-foreground">
                         {line.debit_account_id 
                           ? `${line.debit_account_code} - ${line.debit_account_name}`
                           : line.credit_account_id
@@ -1323,19 +1484,20 @@ export default function JournalEntriesPage() {
                           : '-'
                         }
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-600">{line.description || '-'}</td>
-                      <td className="px-4 py-2 text-sm text-gray-600">
-                        {line.station_name?.trim() ? line.station_name : '—'}
+                      <td className="px-4 py-2 text-sm text-muted-foreground">{line.description || '-'}</td>
+                      <td className="px-4 py-2 text-sm text-muted-foreground">
+                        {line.station_name?.trim()
+                          ? line.station_name
+                          : line.pond_name?.trim()
+                            ? line.pond_name
+                            : 'Head office'}
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-600">
-                        {line.pond_name?.trim() ? line.pond_name : '—'}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 tabular-nums">
+                      <td className="px-4 py-2 text-sm text-right font-medium text-foreground tabular-nums">
                         {Number(line.debit) > 0
                           ? `${currencySymbol}${formatNumber(Number(line.debit))}`
                           : '-'}
                       </td>
-                      <td className="px-4 py-2 text-sm text-right font-medium text-gray-900 tabular-nums">
+                      <td className="px-4 py-2 text-sm text-right font-medium text-foreground tabular-nums">
                         {Number(line.credit) > 0
                           ? `${currencySymbol}${formatNumber(Number(line.credit))}`
                           : '-'}
@@ -1343,13 +1505,13 @@ export default function JournalEntriesPage() {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="bg-gray-50">
+                <tfoot className="bg-muted">
                   <tr>
-                    <td colSpan={5} className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">Total:</td>
-                    <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">
+                    <td colSpan={4} className="px-4 py-2 text-sm font-semibold text-foreground text-right">Total:</td>
+                    <td className="px-4 py-2 text-sm font-semibold text-foreground text-right">
                       {currencySymbol}{formatNumber(Number(viewingEntry.total_debit))}
                     </td>
-                    <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">
+                    <td className="px-4 py-2 text-sm font-semibold text-foreground text-right">
                       {currencySymbol}{formatNumber(Number(viewingEntry.total_credit))}
                     </td>
                   </tr>
@@ -1363,14 +1525,14 @@ export default function JournalEntriesPage() {
           {/* Create/Edit Modal */}
           {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded-lg app-modal-pad max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-card rounded-lg app-modal-pad max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">
+              <h2 className="text-2xl font-bold text-foreground">
                 {editingEntry ? 'Edit Journal Entry' : 'New Journal Entry'}
               </h2>
               <button
                 onClick={handleCloseModal}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-muted-foreground/80 hover:text-muted-foreground"
               >
                 <X className="h-6 w-6" />
               </button>
@@ -1379,76 +1541,81 @@ export default function JournalEntriesPage() {
             <form onSubmit={editingEntry ? handleUpdate : handleCreate}>
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     Entry Date *
                   </label>
                   <CompanyDateInput
+                    ref={entryDateInputRef}
                     required
                     value={formData.entry_date}
                     onChange={(iso) => setFormData({ ...formData, entry_date: iso })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                   />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Past dates are allowed for back-dated GL entries.
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Past dates (including years back) are allowed. Tab out of the date field or press
+                    Enter before Save. Then post the draft so GL reports include it.
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     Reference
                   </label>
                   <input
                     type="text"
                     value={formData.reference}
                     onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                     placeholder="Optional reference"
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-muted-foreground mb-2">
                     Description
                   </label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
                     placeholder="Optional description"
                   />
                 </div>
-                {stations.length > 0 ? (
+                {showDefaultEntitySelect ? (
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Default site for lines (optional)
+                    <label className="block text-sm font-medium text-muted-foreground mb-2">
+                      Default entity for lines (optional)
                     </label>
-                    <select
-                      value={formData.station_id === '' ? '' : String(formData.station_id)}
-                      onChange={(e) =>
+                    <JournalDefaultEntitySelect
+                      value={formData.defaultEntityKey}
+                      onChange={(defaultEntityKey) =>
                         setFormData({
                           ...formData,
-                          station_id: e.target.value === '' ? '' : Number(e.target.value),
+                          defaultEntityKey,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">— Not set —</option>
-                      {stations.map((s) => (
-                        <option key={s.id} value={String(s.id)}>
-                          {s.station_name}
-                          {s.is_active === false ? ' (inactive)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Per-line site or pond overrides the default. Income, COGS, and expense lines need a
-                      site or pond tag for entity P&L reports.
+                      stations={stations}
+                      ponds={ponds}
+                      companyName={companyName}
+                      className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Fuel station, shop hub (Premium Agro), head office, or pond. Per-line entity
+                      overrides the default. Income, COGS, and expense lines need a station, shop hub, or
+                      pond tag for entity P&amp;L — head office is for balance-sheet lines (cash, AP, AR).
                     </p>
+                    {entityDirectoryLoading ? (
+                      <p className="mt-1 text-xs text-primary">Loading entity list…</p>
+                    ) : entityDirectoryError ? (
+                      <p className="mt-1 text-xs text-warning-foreground">{entityDirectoryError}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">{entityCountSummary}</p>
+                    )}
                   </div>
                 ) : null}
               </div>
 
-              <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
-                <label className="block text-sm font-medium text-indigo-950 mb-2">
+              <div className="mb-6 rounded-lg border border-indigo-800/60 bg-indigo-950/40 p-4">
+                <label className="block text-sm font-medium text-indigo-100 mb-2">
                   Quick entry (suggested GL + entity tags)
                 </label>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1459,7 +1626,7 @@ export default function JournalEntriesPage() {
                       setQuickEntryKind(v)
                       if (v) applyQuickEntry(v)
                     }}
-                    className="min-w-[14rem] flex-1 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm"
+                    className="min-w-[14rem] flex-1 rounded-lg border border-indigo-700/50 bg-background px-3 py-2 text-sm text-foreground"
                   >
                     <option value="">— Choose a pattern —</option>
                     {JOURNAL_QUICK_ENTRY_TEMPLATES.map((t) => (
@@ -1469,13 +1636,13 @@ export default function JournalEntriesPage() {
                     ))}
                   </select>
                   {quickEntryKind ? (
-                    <p className="text-xs text-indigo-800 sm:max-w-md">
+                    <p className="text-xs text-indigo-200/90 sm:max-w-md">
                       {JOURNAL_QUICK_ENTRY_TEMPLATES.find((t) => t.kind === quickEntryKind)?.hint}
                     </p>
                   ) : (
-                    <p className="text-xs text-indigo-700">
+                    <p className="text-xs text-indigo-300/90">
                       Pre-fills debit/credit from the fuel-station + aquaculture chart template. Income, COGS,
-                      and expense lines get a site or pond tag when required.
+                      and expense lines get a fuel station, shop hub, or pond tag when required.
                     </p>
                   )}
                 </div>
@@ -1487,34 +1654,33 @@ export default function JournalEntriesPage() {
                   <button
                     type="button"
                     onClick={addLine}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                    className="px-3 py-1 text-sm bg-primary text-white rounded hover:bg-primary"
                   >
                     Add Line
                   </button>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-border">
+                    <thead className="bg-muted">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Line</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                        {showSiteCol ? (
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Line</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Account</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Type</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Description</th>
+                        {showEntityCol ? (
+                          <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">
+                            Entity
+                          </th>
                         ) : null}
-                        {showPondCol ? (
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
-                        ) : null}
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                        <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase">Amount</th>
+                        <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-card divide-y divide-border">
                       {formData.lines.map((line, index) => (
                         <tr key={index}>
-                          <td className="px-3 py-2 text-sm text-gray-900">{line.line_number}</td>
+                          <td className="px-3 py-2 text-sm text-foreground">{line.line_number}</td>
                           <td className="px-3 py-2">
                             <select
                               value={line.debit_account_id || line.credit_account_id || ''}
@@ -1535,7 +1701,7 @@ export default function JournalEntriesPage() {
                                   updateLine(index, 'credit_account_id', null)
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-input rounded bg-background text-foreground focus:ring-2 focus:ring-ring"
                               required
                             >
                               <option value="">Select Account</option>
@@ -1572,7 +1738,7 @@ export default function JournalEntriesPage() {
                                   }
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-input rounded bg-background text-foreground focus:ring-2 focus:ring-ring"
                               required
                             >
                               <option value="">Select Type</option>
@@ -1585,56 +1751,27 @@ export default function JournalEntriesPage() {
                               type="text"
                               value={line.description}
                               onChange={(e) => updateLine(index, 'description', e.target.value)}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-2 py-1 text-sm border border-input rounded bg-background text-foreground focus:ring-2 focus:ring-ring"
                               placeholder="Optional"
                             />
                           </td>
-                          {showSiteCol ? (
-                            <td className="px-3 py-2 min-w-[8rem]">
-                              <select
-                                value={line.station_id === '' || line.station_id === undefined ? '' : String(line.station_id)}
-                                onChange={(e) =>
-                                  updateLine(
-                                    index,
-                                    'station_id',
-                                    e.target.value === '' ? '' : Number(e.target.value)
-                                  )
-                                }
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">— Not set —</option>
-                                {stations.map((s) => (
-                                  <option key={s.id} value={String(s.id)}>
-                                    {s.station_name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                          ) : null}
-                          {showPondCol ? (
-                            <td className="px-3 py-2 min-w-[8rem]">
-                              <select
-                                value={
-                                  line.aquaculture_pond_id === '' || line.aquaculture_pond_id === undefined
-                                    ? ''
-                                    : String(line.aquaculture_pond_id)
-                                }
-                                onChange={(e) =>
-                                  updateLine(
-                                    index,
-                                    'aquaculture_pond_id',
-                                    e.target.value === '' ? '' : Number(e.target.value)
-                                  )
-                                }
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                              >
-                                <option value="">— Not set —</option>
-                                {ponds.map((p) => (
-                                  <option key={p.id} value={String(p.id)}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
+                          {showEntityCol ? (
+                            <td className="px-3 py-2 min-w-[12rem]">
+                              <BillLineEntitySelect
+                                value={journalLineEntitySelectValue(line, formData.defaultEntityKey)}
+                                onChange={(key) => updateLineEntity(index, key)}
+                                stations={stations}
+                                ponds={ponds}
+                                companyName={companyName}
+                                showHeadOffice
+                                unsetOption={{
+                                  label: formData.defaultEntityKey
+                                    ? '— Use entry default —'
+                                    : '— Not set —',
+                                }}
+                                className="w-full px-2 py-1 text-sm border border-input rounded bg-background text-foreground focus:ring-2 focus:ring-ring"
+                                placeholder="Entity…"
+                              />
                             </td>
                           ) : null}
                           <td className="px-3 py-2 min-w-[10rem]">
@@ -1649,7 +1786,7 @@ export default function JournalEntriesPage() {
                               required
                             />
                             {lineEntityScopeWarning(line) ? (
-                              <p className="mt-1 text-xs text-amber-700">{lineEntityScopeWarning(line)}</p>
+                              <p className="mt-1 text-xs text-warning-foreground">{lineEntityScopeWarning(line)}</p>
                             ) : null}
                           </td>
                           <td className="px-3 py-2 text-center">
@@ -1657,7 +1794,7 @@ export default function JournalEntriesPage() {
                               <button
                                 type="button"
                                 onClick={() => removeLine(index)}
-                                className="text-red-600 hover:text-red-900"
+                                className="text-destructive hover:text-red-900"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -1666,11 +1803,11 @@ export default function JournalEntriesPage() {
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-gray-50">
+                    <tfoot className="bg-muted">
                       <tr>
                         <td
                           colSpan={lineTableMetaCols}
-                          className="px-3 py-2 text-sm font-semibold text-gray-900 text-right"
+                          className="px-3 py-2 text-sm font-semibold text-foreground text-right"
                         >
                           Total:
                         </td>
@@ -1680,13 +1817,13 @@ export default function JournalEntriesPage() {
                             <span className="font-semibold">Credit: {currencySymbol}{formatNumber(totalCredit)}</span>
                           </div>
                           {balanceDifference > 0.01 && (
-                            <div className="mt-1 text-xs text-red-600 flex items-center">
+                            <div className="mt-1 text-xs text-destructive flex items-center">
                               <AlertCircle className="h-3 w-3 mr-1" />
                               Difference: {currencySymbol}{formatNumber(balanceDifference)}
                             </div>
                           )}
                           {isBalanced() && (
-                            <div className="mt-1 text-xs text-green-600 flex items-center">
+                            <div className="mt-1 text-xs text-success flex items-center">
                               <CheckCircle className="h-3 w-3 mr-1" />
                               Balanced
                             </div>
@@ -1702,7 +1839,7 @@ export default function JournalEntriesPage() {
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="px-4 py-2 border border-input rounded-lg hover:bg-muted"
                 >
                   Cancel
                 </button>
@@ -1711,8 +1848,8 @@ export default function JournalEntriesPage() {
                   disabled={!isBalanced()}
                   className={`px-4 py-2 rounded-lg ${
                     isBalanced()
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      ? 'bg-primary text-white hover:bg-primary'
+                      : 'bg-muted text-muted-foreground cursor-not-allowed'
                   }`}
                 >
                   {editingEntry ? 'Update Entry' : 'Create Entry'}

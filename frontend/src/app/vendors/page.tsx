@@ -11,6 +11,7 @@ import {
   Plus,
   Edit,
   Trash2,
+  Undo2,
   Search,
   AlertTriangle,
   RefreshCw,
@@ -110,6 +111,7 @@ export default function VendorsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [includeInactive, setIncludeInactive] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
@@ -280,6 +282,7 @@ export default function VendorsPage() {
         q: debouncedSearch,
         sort: 'id',
         dir: 'asc',
+        extra: { include_inactive: includeInactive ? 'true' : undefined },
       })
       const response = await api.get('/vendors/', { params })
       if (response.status === 401 || response.status === 403) {
@@ -326,7 +329,7 @@ export default function VendorsPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, listPage, pageSize, router, toast])
+  }, [debouncedSearch, includeInactive, listPage, pageSize, router, toast])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -469,12 +472,24 @@ export default function VendorsPage() {
   const handleDelete = async (vendorId: number) => {
     try {
       await api.delete(`/vendors/${vendorId}/`)
-      toast.success(tr('entityDeleted', { entity: ct('Vendor') }))
+      toast.success(tr('entityDeleted', { entity: ct('Vendor') }) + ' You can restore inactive vendors when needed.')
       setShowDeleteConfirm(null)
       fetchVendors()
     } catch (error) {
       console.error('Error deleting vendor:', error)
       const errorMessage = extractErrorMessage(error, tr('failedDeleteEntity', { entity: ct('vendor') }))
+      toast.error(errorMessage)
+    }
+  }
+
+  const handleRestore = async (vendorId: number) => {
+    try {
+      await api.put(`/vendors/${vendorId}/`, { is_active: true })
+      toast.success(tr('entityUpdated', { entity: ct('Vendor') }) + ' — restored to active.')
+      fetchVendors()
+    } catch (error) {
+      console.error('Error restoring vendor:', error)
+      const errorMessage = extractErrorMessage(error, tr('failedUpdateEntity', { entity: ct('vendor') }))
       toast.error(errorMessage)
     }
   }
@@ -568,7 +583,7 @@ export default function VendorsPage() {
 
   return (
     <CompanyProvider>
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <ErpPageShell
           showBackLink={false}
           titleId="vendors-title"
@@ -603,15 +618,15 @@ export default function VendorsPage() {
         >
         <p className="mb-4 text-sm text-muted-foreground">
           One record per supplier (payables). Where each delivery goes is chosen on{' '}
-          <Link href="/bills" className="text-blue-600 hover:underline">
+          <Link href="/bills" className="text-primary hover:underline">
             vendor bills
           </Link>
           , not by duplicating vendors per pond or site.
         </p>
 
-        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
+        <div className="mb-6 rounded-lg border border-primary/25 bg-blue-50/90 px-4 py-3 text-sm text-blue-950">
           <div className="flex gap-3">
-            <Info className="h-5 w-5 shrink-0 text-blue-600 mt-0.5" aria-hidden />
+            <Info className="h-5 w-5 shrink-0 text-primary mt-0.5" aria-hidden />
             <div className="space-y-1.5 min-w-0">
               <p className="font-medium">How to set up suppliers</p>
               <ul className="list-disc pl-4 space-y-1 text-blue-900/95">
@@ -625,7 +640,7 @@ export default function VendorsPage() {
                 </li>
                 <li>
                   Fuel vs aquaculture vs general POS is configured on{' '}
-                  <Link href="/stations" className="text-blue-700 underline hover:text-blue-900">
+                  <Link href="/stations" className="text-primary underline hover:text-blue-900">
                     Stations
                   </Link>
                   ; do not create separate vendor records per business line.
@@ -635,87 +650,99 @@ export default function VendorsPage() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-muted-foreground/70" />
             <input
               type="text"
               placeholder={ct('searchVendors')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-border py-2 pl-10 pr-4 focus:border-ring focus:ring-2 focus:ring-ring"
             />
           </div>
+          <label className="inline-flex items-center gap-2 text-sm text-foreground/85">
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(e) => {
+                setIncludeInactive(e.target.checked)
+                setListPage(1)
+              }}
+              className="h-4 w-4 rounded border-border text-primary"
+            />
+            Include inactive
+          </label>
         </div>
 
         {loading ? (
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="erp-loading-spinner h-12 w-12"></div>
           </div>
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-red-800 mb-2">{tr('errorLoading', { entity: ct('Vendors') })}</h3>
-            <p className="text-red-700 mb-4">{error}</p>
+          <div className="bg-destructive/5 border border-destructive/25 rounded-lg p-6 text-center">
+            <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+            <h3 className="text-xl font-bold text-destructive mb-2">{tr('errorLoading', { entity: ct('Vendors') })}</h3>
+            <p className="text-destructive mb-4">{error}</p>
             <button
               onClick={fetchVendors}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-destructive text-white rounded-lg hover:bg-destructive/90 transition-colors"
             >
               <RefreshCw className="h-5 w-5" />
               <span>{tr('retry')}</span>
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-border">
             <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Vendor #
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Company
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Display Name
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider hidden md:table-cell">
                     <span className="inline-flex items-center gap-1">
                       <Building2 className="h-3.5 w-3.5 text-amber-600/90" />
                       Usual location
                     </span>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Email
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Balance
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-border">
                 {vendors.map((vendor) => (
-                  <tr key={vendor.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr key={vendor.id} className="hover:bg-muted/40">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                       {vendor.vendor_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {vendor.company_name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {vendor.display_name}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-700 max-w-[14rem] hidden md:table-cell">
+                    <td className="px-6 py-4 text-sm text-foreground/85 max-w-[14rem] hidden md:table-cell">
                       <span className="inline-flex items-center gap-1.5">
                         {(vendor.default_aquaculture_pond_name || '').trim() ? (
-                          <MapPin className="h-3.5 w-3.5 text-teal-600/85 shrink-0" />
+                          <MapPin className="h-3.5 w-3.5 text-primary/85 shrink-0" />
                         ) : (
                           <Building2 className="h-3.5 w-3.5 text-amber-600/80 shrink-0" />
                         )}
@@ -724,15 +751,15 @@ export default function VendorsPage() {
                         </span>
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {vendor.email}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {currencySymbol}{formatNumber(Number(vendor.current_balance || 0))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        vendor.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        vendor.is_active ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
                       }`}>
                         {vendor.is_active ? t('active') : t('inactive')}
                       </span>
@@ -749,19 +776,30 @@ export default function VendorsPage() {
                         <button
                           type="button"
                           onClick={() => handleEdit(vendor)}
-                          className="inline-flex touch-min items-center justify-center rounded-md text-blue-600 hover:bg-blue-50 hover:text-blue-800 transition-colors"
+                          className="inline-flex touch-min items-center justify-center rounded-md text-primary hover:bg-accent hover:text-primary/80 transition-colors"
                           title="Edit vendor"
                         >
                           <Edit className="h-4 w-4 shrink-0" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowDeleteConfirm(vendor.id)}
-                          className="inline-flex touch-min items-center justify-center rounded-md text-red-600 hover:bg-red-50 hover:text-red-800 transition-colors"
-                          title="Delete vendor"
-                        >
-                          <Trash2 className="h-4 w-4 shrink-0" />
-                        </button>
+                        {vendor.is_active ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowDeleteConfirm(vendor.id)}
+                            className="inline-flex touch-min items-center justify-center rounded-md text-destructive hover:bg-destructive/5 hover:text-destructive transition-colors"
+                            title="Delete vendor"
+                          >
+                            <Trash2 className="h-4 w-4 shrink-0" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRestore(vendor.id)}
+                            className="inline-flex touch-min items-center justify-center rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                            title="Restore vendor"
+                          >
+                            <Undo2 className="h-4 w-4 shrink-0" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -770,7 +808,7 @@ export default function VendorsPage() {
             </table>
             </div>
             {totalCount > 0 && (
-              <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="border-t border-border bg-muted/40 px-4 py-3">
                 <OffsetPaginationControls
                   page={listPage}
                   pageSize={pageSize}
@@ -789,20 +827,22 @@ export default function VendorsPage() {
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="erp-modal-backdrop">
             <div className="bg-white rounded-lg p-6 max-w-md w-full">
               <h2 className="text-xl font-bold mb-4">{tr('deleteEntity', { entity: ct('Vendor') })}</h2>
-              <p className="text-gray-600 mb-6">{tr('deleteConfirmBody', { entity: ct('vendor') })}</p>
+              <p className="text-muted-foreground mb-6">
+                {tr('deleteConfirmBody', { entity: ct('vendor') })} Enable &quot;Include inactive&quot; to find and restore this vendor later.
+              </p>
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={() => setShowDeleteConfirm(null)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="erp-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleDelete(showDeleteConfirm)}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="erp-btn-danger"
                 >
                   Delete
                 </button>
@@ -813,9 +853,9 @@ export default function VendorsPage() {
 
         {/* Create/Edit Modal */}
         {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="erp-modal-backdrop">
             <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-2xl font-bold mb-6">
+              <h2 className="mb-6 text-2xl font-bold text-foreground">
                 {editingVendor ? tr('editEntity', { entity: ct('Vendor') }) : tr('addNewEntity', { entity: ct('Vendor') })}
               </h2>
               <form onSubmit={editingVendor ? handleUpdate : handleCreate}>
@@ -842,47 +882,47 @@ export default function VendorsPage() {
                 )}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Company Name
                     </label>
                     <input
                       type="text"
                       value={formData.company_name}
                       onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Contact Person
                     </label>
                     <input
                       type="text"
                       value={formData.contact_person}
                       onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <label className="mb-2 block text-sm font-medium text-foreground">Email</label>
                     <input
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                    <label className="mb-2 block text-sm font-medium text-foreground">Phone</label>
                     <input
                       type="text"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2 inline-flex items-center gap-1.5">
+                    <label className="block text-sm font-medium text-foreground/85 mb-2 inline-flex items-center gap-1.5">
                       <Building2 className="h-4 w-4 text-amber-600" />
                       Usual receiving location (optional)
                     </label>
@@ -905,22 +945,22 @@ export default function VendorsPage() {
                       }}
                       stations={stations}
                       ponds={ponds}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                     />
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Does not restrict this supplier to one place. Pre-fills{' '}
-                      <Link href="/bills" className="text-blue-600 hover:underline">
+                      <Link href="/bills" className="text-primary hover:underline">
                         vendor bills
                       </Link>{' '}
                       only. For pond defaults, a shop linked to that pond on{' '}
-                      <Link href="/stations" className="text-blue-600 hover:underline">
+                      <Link href="/stations" className="text-primary hover:underline">
                         Stations
                       </Link>{' '}
                       is used when you pick a pond here.
                     </p>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Default expense account (optional)
                     </label>
                     <CoaAccountCombobox
@@ -941,33 +981,33 @@ export default function VendorsPage() {
                             )
                           : '— No vendor override (bill uses line item or system default) —'
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                     />
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       <strong>Expense category for vendor bills</strong> (P&amp;L), not the account you pay from.
                       Suggested when you pick a usual location: site → 6920 station operating, pond → 6725 aquaculture
                       misc. You can change or clear this anytime. To pay from{' '}
                       <strong>bank or cash</strong>, use{' '}
-                      <Link href="/payments/made/new" className="text-blue-600 hover:underline">
+                      <Link href="/payments/made/new" className="text-primary hover:underline">
                         Record vendor payment
                       </Link>{' '}
                       and select your bank register there.
                     </p>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                    <label className="mb-2 block text-sm font-medium text-foreground">Address</label>
                     <input
                       type="text"
                       value={formData.billing_address_line1}
                       onChange={(e) => setFormData({ ...formData, billing_address_line1: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div className="col-span-2">
-                    <p className="text-sm font-semibold text-gray-800 mb-2">Bank details (optional)</p>
+                    <p className="text-sm font-semibold text-foreground mb-2">Bank details (optional)</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Account number
                         </label>
                         <input
@@ -976,12 +1016,12 @@ export default function VendorsPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, bank_account_number: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="erp-field"
                           autoComplete="off"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Bank name
                         </label>
                         <input
@@ -990,11 +1030,11 @@ export default function VendorsPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, bank_name: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="erp-field"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Branch
                         </label>
                         <input
@@ -1003,11 +1043,11 @@ export default function VendorsPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, bank_branch: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="erp-field"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Routing number
                         </label>
                         <input
@@ -1016,14 +1056,14 @@ export default function VendorsPage() {
                           onChange={(e) =>
                             setFormData({ ...formData, bank_routing_number: e.target.value })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="erp-field"
                           placeholder="ABA / sort code / SWIFT as needed"
                         />
                       </div>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Opening Balance ({currencySymbol})
                     </label>
                     <input
@@ -1031,24 +1071,24 @@ export default function VendorsPage() {
                       step="0.01"
                       value={formData.opening_balance}
                       onChange={(e) => setFormData({ ...formData, opening_balance: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                       placeholder="0.00"
                     />
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {editingVendor ? 'Update opening balance if needed' : 'Starting balance you owe this vendor'}
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       As of Date
                     </label>
                     <input
                       type="date"
                       value={formData.opening_balance_date}
                       onChange={(e) => setFormData({ ...formData, opening_balance_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Date of the opening balance
                     </p>
                   </div>
@@ -1058,9 +1098,9 @@ export default function VendorsPage() {
                         type="checkbox"
                         checked={formData.is_active}
                         onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        className="w-4 h-4 text-primary border-border rounded focus:ring-ring"
                       />
-                      <span className="text-sm font-medium text-gray-700">Active</span>
+                      <span className="text-sm font-medium text-foreground/85">Active</span>
                     </label>
                   </div>
                 </div>
@@ -1068,13 +1108,13 @@ export default function VendorsPage() {
                   <button
                     type="button"
                     onClick={handleCloseModal}
-                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="erp-btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="erp-btn-primary"
                   >
                     {editingVendor ? 'Update Vendor' : 'Create Vendor'}
                   </button>

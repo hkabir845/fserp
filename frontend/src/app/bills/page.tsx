@@ -98,7 +98,7 @@ import type { CoaPickForItemDefault } from '@/lib/itemGlDefaults'
 
 /** Bill line inputs: fixed height so grid rows align across columns */
 const BILL_LINE_CTL =
-  'w-full min-w-0 h-9 px-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500'
+  'w-full min-w-0 h-9 px-2 text-sm border border-border rounded-md focus:ring-1 focus:ring-ring focus:border-blue-500'
 const BILL_LINE_NUM = `${BILL_LINE_CTL} text-right tabular-nums`
 
 interface BillLineItem {
@@ -549,9 +549,9 @@ function FishBillLineDimensionRow({
   const speciesValue = (line.aquaculture_fish_species || '').trim()
   const costPerHead = fishCostPerHead(line)
   return (
-    <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-gray-200 pt-2">
+    <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-border pt-2">
       <div className="w-[9rem] shrink-0">
-        <label className="block text-xs font-medium text-gray-700 mb-1">Species *</label>
+        <label className="block text-xs font-medium text-foreground/85 mb-1">Species *</label>
         <select
           value={speciesValue}
           onChange={(e) => onFieldChange(index, 'aquaculture_fish_species', e.target.value)}
@@ -571,7 +571,7 @@ function FishBillLineDimensionRow({
       </div>
       {speciesValue === 'other' ? (
         <div className="w-[10rem] shrink-0">
-          <label className="block text-xs font-medium text-gray-700 mb-1">Species name *</label>
+          <label className="block text-xs font-medium text-foreground/85 mb-1">Species name *</label>
           <input
             type="text"
             value={line.aquaculture_fish_species_other || ''}
@@ -582,17 +582,17 @@ function FishBillLineDimensionRow({
         </div>
       ) : null}
       <div className="w-[7.5rem] shrink-0">
-        <label className="block text-xs font-medium text-gray-700 mb-1">Line (pcs/kg)</label>
+        <label className="block text-xs font-medium text-foreground/85 mb-1">Line (pcs/kg)</label>
         <input
           type="text"
           readOnly
           value={formatFishLinePcsPerKg(lineItem)}
           title="From item catalog — Line (pieces per 1 kg)"
-          className="w-full px-2 py-1 text-sm border border-gray-200 rounded bg-gray-50 text-gray-800 tabular-nums"
+          className="w-full px-2 py-1 text-sm border border-border rounded bg-muted/40 text-foreground tabular-nums"
         />
       </div>
       <div className="w-[7.5rem] shrink-0">
-        <label className="block text-xs font-medium text-gray-700 mb-1">
+        <label className="block text-xs font-medium text-foreground/85 mb-1">
           Total fish (heads){fishLineAuto ? ' *' : ''}
         </label>
         <input
@@ -612,14 +612,14 @@ function FishBillLineDimensionRow({
           className={
             fishLineAuto
               ? 'w-full px-2 py-1 text-sm border border-sky-300 rounded focus:ring-1 focus:ring-sky-500 bg-white tabular-nums'
-              : 'w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white'
+              : 'w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white'
           }
           placeholder="—"
           title={fishLineAuto ? 'Fry/fingerling count from the vendor invoice' : undefined}
         />
       </div>
       <div className="w-[7.5rem] shrink-0">
-        <label className="block text-xs font-medium text-gray-700 mb-1">Weight (kg)</label>
+        <label className="block text-xs font-medium text-foreground/85 mb-1">Weight (kg)</label>
         <input
           type={fishLineAuto ? 'text' : 'number'}
           readOnly={fishLineAuto}
@@ -641,25 +641,25 @@ function FishBillLineDimensionRow({
           }
           className={
             fishLineAuto
-              ? 'w-full px-2 py-1 text-sm border border-gray-200 rounded bg-gray-50 text-gray-800 tabular-nums cursor-default'
-              : 'w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white'
+              ? 'w-full px-2 py-1 text-sm border border-border rounded bg-muted/40 text-foreground tabular-nums cursor-default'
+              : 'w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white'
           }
           placeholder="—"
           title={fishLineAuto ? 'Heads ÷ Line (pcs/kg); also used as billing Qty (kg)' : undefined}
         />
       </div>
       <div className="w-[8rem] shrink-0">
-        <label className="block text-xs font-medium text-gray-700 mb-1">Cost / head</label>
+        <label className="block text-xs font-medium text-foreground/85 mb-1">Cost / head</label>
         <input
           type="text"
           readOnly
           tabIndex={-1}
           value={costPerHead == null ? '—' : `${currencySymbol}${formatNumber(costPerHead, 4)}`}
           title="Auto: line Amount ÷ total fish (heads) — cost per fry/fingerling"
-          className="w-full px-2 py-1 text-sm border border-gray-200 rounded bg-gray-50 text-gray-800 tabular-nums cursor-default"
+          className="w-full px-2 py-1 text-sm border border-border rounded bg-muted/40 text-foreground tabular-nums cursor-default"
         />
       </div>
-      <p className="text-xs text-gray-500 flex-1 min-w-[12rem] pb-1">
+      <p className="text-xs text-muted-foreground flex-1 min-w-[12rem] pb-1">
         {fishLineAuto ? (
           <>
             Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total).{' '}
@@ -2634,27 +2634,27 @@ export default function BillsPage() {
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'open':
-        return 'bg-blue-100 text-blue-800'
+        return 'bg-blue-100 text-primary'
       case 'paid':
-        return 'bg-green-100 text-green-800'
+        return 'bg-success/15 text-success'
       case 'partial':
       case 'partially_paid':
         return 'bg-yellow-100 text-yellow-800'
       case 'overdue':
-        return 'bg-red-100 text-red-800'
+        return 'bg-destructive/10 text-destructive'
       case 'draft':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-muted text-foreground'
       case 'void':
-        return 'bg-gray-100 text-gray-600'
+        return 'bg-muted text-muted-foreground'
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-muted text-foreground'
     }
   }
 
   const { subtotal, taxAmount, total } = calculateTotals()
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         titleId="bills-title"
@@ -2687,30 +2687,30 @@ export default function BillsPage() {
           </div>
         }
       >
-          <div className="mb-6 max-w-4xl rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-            <p className="font-semibold text-slate-900">{bt('howToRecordExpenses')}</p>
-            <p className="mt-1 text-sm text-slate-600">{bt('howToRecordHint')}</p>
+          <div className="mb-6 max-w-4xl rounded-lg border border-border bg-white px-4 py-3 text-sm text-foreground/85 shadow-sm">
+            <p className="font-semibold text-foreground">{bt('howToRecordExpenses')}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{bt('howToRecordHint')}</p>
             <ul className="mt-2 list-disc space-y-1.5 pl-5 leading-relaxed">
               <li>
-                <span className="font-medium text-slate-800">Station / shop:</span> fuel + <span className="font-medium">tank</span>;
+                <span className="font-medium text-foreground">Station / shop:</span> fuel + <span className="font-medium">tank</span>;
                 shop <span className="font-medium">items</span> + header station; site costs with{' '}
                 <span className="font-medium">Station cost type</span> — split across sites with{' '}
                 <span className="font-medium">Shared</span> on a line.
               </li>
               {aquaculturePonds.length > 0 ? (
                 <li>
-                  <span className="font-medium text-teal-900">Ponds:</span>{' '}
+                  <span className="font-medium text-primary">Ponds:</span>{' '}
                   <span className="font-medium">Pond cost allocation</span> (one pond or shared split), category, fish
                   kg/heads. Record new pond vendor costs here (not Pond costs).
                 </li>
               ) : null}
               <li>
-                <span className="font-medium text-slate-800">Head office:</span> expense accounts only.
+                <span className="font-medium text-foreground">Head office:</span> expense accounts only.
               </li>
             </ul>
-            <p className="mt-2 text-xs text-slate-600">
+            <p className="mt-2 text-xs text-muted-foreground">
               Custom labels for aquaculture and fuel-station categories are set under{' '}
-              <Link href="/reporting-categories" className="font-medium text-blue-700 underline hover:text-blue-800">
+              <Link href="/reporting-categories" className="font-medium text-primary underline hover:text-primary/80">
                 {bt('reportingCategories')}
               </Link>{' '}
               (company admin). Built-in categories appear in the line pickers when you tag a pond or leave the pond unset.
@@ -2720,19 +2720,19 @@ export default function BillsPage() {
         <div className="mb-6 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-4">
             <div className="relative max-w-md flex-1 min-w-[12rem]">
-              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-gray-400" />
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 transform text-muted-foreground/70" />
               <input
                 type="text"
                 placeholder={tr('searchBills')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-border py-2 pl-10 pr-4 focus:border-ring focus:ring-2 focus:ring-ring"
               />
             </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-lg border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500"
+              className="rounded-lg border border-border px-4 py-2 focus:ring-2 focus:ring-ring"
             >
               <option value="">{tr('allStatus')}</option>
               <option value="draft">{t('draft')}</option>
@@ -2741,15 +2741,15 @@ export default function BillsPage() {
               <option value="partial">{tr('partiallyPaid')}</option>
               <option value="overdue">{tr('overdue')}</option>
             </select>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2" aria-label="From date" />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2" aria-label="To date" />
-            <input type="number" min="0" step="0.01" placeholder="Min amount" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-3 py-2" />
-            <input type="number" min="0" step="0.01" placeholder="Max amount" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-28 rounded-lg border border-gray-300 px-3 py-2" />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-lg border border-border px-3 py-2" aria-label="From date" />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-lg border border-border px-3 py-2" aria-label="To date" />
+            <input type="number" min="0" step="0.01" placeholder="Min amount" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-28 rounded-lg border border-border px-3 py-2" />
+            <input type="number" min="0" step="0.01" placeholder="Max amount" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-28 rounded-lg border border-border px-3 py-2" />
             {hasActiveFilters ? (
               <button
                 type="button"
                 onClick={clearFilters}
-                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-border bg-white px-3 py-1.5 text-sm font-medium text-foreground/85 shadow-sm hover:bg-muted/40"
               >
                 <X className="h-3.5 w-3.5" aria-hidden />
                 Clear filters
@@ -2757,73 +2757,73 @@ export default function BillsPage() {
             ) : null}
           </div>
           {hasTextSearch ? (
-            <p className="text-xs text-gray-500">Bill search spans all dates — date range paused while searching.</p>
+            <p className="text-xs text-muted-foreground">Bill search spans all dates — date range paused while searching.</p>
           ) : null}
         </div>
 
         {loading ? (
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="erp-loading-spinner h-12 w-12"></div>
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {tr('billHash')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {t('vendor')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {tr('receivingLocation')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {tr('billDate')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {tr('dueDate')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {t('total')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {tr('balance')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {t('status')}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {t('actions')}
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-border">
                 {bills.map((bill) => (
-                  <tr key={bill.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <tr key={bill.id} className="hover:bg-muted/40">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                       {bill.bill_number}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {resolveBillVendorLabel(bill)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 max-w-[14rem]">
+                    <td className="px-6 py-4 text-sm text-foreground max-w-[14rem]">
                       <span className="line-clamp-2" title={resolveBillReceiptLabel(bill)}>
                         {resolveBillReceiptLabel(bill)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {formatDateOnly(bill.bill_date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {bill.due_date ? formatDateOnly(bill.due_date) : '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {currencySymbol}{formatNumber(billTotal(bill))}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {currencySymbol}{formatNumber(billBalance(bill))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -2836,7 +2836,7 @@ export default function BillsPage() {
                         <button
                           type="button"
                           onClick={() => handleViewBill(bill.id)}
-                          className="group/btn inline-flex items-center rounded-lg p-2 text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                          className="group/btn inline-flex items-center rounded-lg p-2 text-primary hover:bg-accent hover:text-primary transition-colors"
                           title={tr('viewBill')}
                         >
                           <Eye className="h-4 w-4 shrink-0" />
@@ -2850,8 +2850,8 @@ export default function BillsPage() {
                               disabled={isBillEditDisabled(bill)}
                               className={`group/btn inline-flex items-center rounded-lg p-2 transition-colors ${
                                 isBillEditDisabled(bill)
-                                  ? 'text-gray-400 cursor-not-allowed'
-                                  : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
+                                  ? 'text-muted-foreground/70 cursor-not-allowed'
+                                  : 'text-primary hover:text-primary hover:bg-accent'
                               }`}
                               title={
                                 isBillEditDisabled(bill)
@@ -2868,8 +2868,8 @@ export default function BillsPage() {
                               disabled={isBillVoidDisabled(bill)}
                               className={`group/btn inline-flex items-center rounded-lg p-2 transition-colors ${
                                 isBillVoidDisabled(bill)
-                                  ? 'text-gray-400 cursor-not-allowed'
-                                  : 'text-amber-700 hover:text-amber-800 hover:bg-amber-50'
+                                  ? 'text-muted-foreground/70 cursor-not-allowed'
+                                  : 'text-warning-foreground hover:text-warning-foreground hover:bg-warning/10'
                               }`}
                               title={
                                 isBillVoidDisabled(bill)
@@ -2890,8 +2890,8 @@ export default function BillsPage() {
                               disabled={isBillDeleteDisabled(bill)}
                               className={`group/btn inline-flex items-center rounded-lg p-2 transition-colors ${
                                 isBillDeleteDisabled(bill)
-                                  ? 'text-gray-400 cursor-not-allowed'
-                                  : 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                                  ? 'text-muted-foreground/70 cursor-not-allowed'
+                                  : 'text-destructive hover:text-destructive hover:bg-destructive/5'
                               }`}
                               title={
                                 isBillDeleteDisabled(bill)
@@ -2913,7 +2913,7 @@ export default function BillsPage() {
             </div>
             {bills.length === 0 && !loading && (
               <TransactionListEmptyState
-                icon={<FileText className="h-10 w-10 text-gray-400" />}
+                icon={<FileText className="h-10 w-10 text-muted-foreground/70" />}
                 title={hasActiveFilters ? 'No bills match your filters' : tr('noBillsFound')}
                 description={
                   hasActiveFilters
@@ -2925,7 +2925,7 @@ export default function BillsPage() {
               />
             )}
             {billsTotal > 0 && (
-              <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="border-t border-border bg-muted/40 px-4 py-3">
                 <OffsetPaginationControls
                   page={listPage}
                   pageSize={pageSize}
@@ -2957,7 +2957,7 @@ export default function BillsPage() {
                   />
                   <button
                     onClick={handleCloseViewModal}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-muted-foreground/70 hover:text-muted-foreground"
                     aria-label="Close"
                   >
                     <X className="h-6 w-6" />
@@ -2969,24 +2969,24 @@ export default function BillsPage() {
                 {/* Bill Header */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-gray-600">Bill Number</p>
+                    <p className="text-sm text-muted-foreground">Bill Number</p>
                     <p className="text-lg font-semibold">{viewingBill.bill_number}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Status</p>
+                    <p className="text-sm text-muted-foreground">Status</p>
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(viewingBill.status)}`}>
                       {formatBillStatusLabel(viewingBill.status)}
                     </span>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-600">Vendor</p>
+                    <p className="text-sm text-muted-foreground">Vendor</p>
                     <p className="text-lg">{resolveBillVendorLabel(viewingBill)}</p>
                   </div>
                   {(viewingBill.receipt_station_name ||
                     viewingBill.receipt_station_id ||
                     viewingBill.lines?.some((l) => l.aquaculture_pond_id)) && (
                     <div>
-                      <p className="text-sm text-gray-600">Receiving location</p>
+                      <p className="text-sm text-muted-foreground">Receiving location</p>
                       <p className="text-lg">
                         {(() => {
                           const pondIds = new Set<number>()
@@ -3010,7 +3010,7 @@ export default function BillsPage() {
                               <>
                                 Pond: {pondLabel}
                                 {shop ? (
-                                  <span className="block text-sm font-normal text-gray-600">
+                                  <span className="block text-sm font-normal text-muted-foreground">
                                     Shop hub: {shop}
                                   </span>
                                 ) : null}
@@ -3028,12 +3028,12 @@ export default function BillsPage() {
                     </div>
                   )}
                   <div>
-                    <p className="text-sm text-gray-600">Bill Date</p>
+                    <p className="text-sm text-muted-foreground">Bill Date</p>
                     <p className="text-lg">{formatDateOnly(viewingBill.bill_date)}</p>
                   </div>
                   {viewingBill.due_date && (
                     <div>
-                      <p className="text-sm text-gray-600">Due Date</p>
+                      <p className="text-sm text-muted-foreground">Due Date</p>
                       <p className="text-lg">{formatDateOnly(viewingBill.due_date)}</p>
                     </div>
                   )}
@@ -3042,58 +3042,58 @@ export default function BillsPage() {
                 {/* Line Items */}
                 <div className="min-w-0">
                   <h3 className="text-lg font-semibold mb-4">Line Items</h3>
-                  <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="min-w-[56rem] w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="min-w-[56rem] w-full divide-y divide-border text-sm">
+                    <thead className="bg-muted/40">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tank</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pond</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cycle</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Line (pcs/kg)</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Wt (kg)</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Fish #</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Unit Cost</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Item</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Description</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Tank</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Pond</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Cycle</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Line (pcs/kg)</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Wt (kg)</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Fish #</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Quantity</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Unit Cost</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Amount</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-border">
                       {viewingBill.lines?.map((item: BillLineItem) => {
                         const rowItem = item.item_id ? items.find((i) => i.id === item.item_id) : undefined
                         const showFishCols = billLineShowFishColumns(item, rowItem)
                         const fc = item.aquaculture_fish_count
                         return (
                           <tr key={item.id}>
-                            <td className="px-4 py-3 text-sm text-gray-900">
+                            <td className="px-4 py-3 text-sm text-foreground">
                               {billLineItemDisplayName(item, items, expenseAccounts)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">{item.description || '—'}</td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{item.description || '—'}</td>
+                            <td className="px-4 py-3 text-sm text-foreground/85">
                               {item.tank_name ||
                                 (item.tank_id
                                   ? tanks.find((t) => t.id === item.tank_id)?.tank_name || `Tank #${item.tank_id}`
                                   : '—')}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
+                            <td className="px-4 py-3 text-sm text-foreground/85">
                               {billLinePondDisplayName(item, aquaculturePonds)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
+                            <td className="px-4 py-3 text-sm text-foreground/85">
                               {billLineCycleDisplayName(item, productionCycles)}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                            <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">
                               {showFishCols ? formatBillLinePcsPerKg(item, rowItem) : '—'}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                            <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">
                               {showFishCols ? formatBillLineFishWeightKg(item, rowItem, showFishCols) : '—'}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                            <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">
                               {showFishCols && fc != null && String(fc) !== '' ? formatNumber(Number(fc)) : '—'}
                             </td>
-                            <td className="px-4 py-3 text-sm text-gray-900 text-right">{formatNumber(Number(item.quantity))}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.unit_cost ?? item.unit_price ?? 0))}</td>
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">{currencySymbol}{formatNumber(Number(item.amount || 0))}</td>
+                            <td className="px-4 py-3 text-sm text-foreground text-right">{formatNumber(Number(item.quantity))}</td>
+                            <td className="px-4 py-3 text-sm text-foreground text-right">{currencySymbol}{formatNumber(Number(item.unit_cost ?? item.unit_price ?? 0))}</td>
+                            <td className="px-4 py-3 text-sm font-medium text-foreground text-right">{currencySymbol}{formatNumber(Number(item.amount || 0))}</td>
                           </tr>
                         )
                       })}
@@ -3106,18 +3106,18 @@ export default function BillsPage() {
                 <div className="border-t pt-4">
                   <div className="flex justify-end space-x-8">
                     <div className="text-right">
-                      <p className="text-sm text-gray-600">Subtotal:</p>
-                      <p className="text-sm text-gray-600">Tax:</p>
-                      <p className="text-lg font-semibold text-gray-900">Total:</p>
-                      <p className="text-sm text-gray-600 mt-2">Amount paid:</p>
-                      <p className="text-sm font-medium text-gray-800">Balance due:</p>
+                      <p className="text-sm text-muted-foreground">Subtotal:</p>
+                      <p className="text-sm text-muted-foreground">Tax:</p>
+                      <p className="text-lg font-semibold text-foreground">Total:</p>
+                      <p className="text-sm text-muted-foreground mt-2">Amount paid:</p>
+                      <p className="text-sm font-medium text-foreground">Balance due:</p>
                     </div>
                     <div className="text-right min-w-[120px]">
-                      <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(billSubtotal(viewingBill))}</p>
-                      <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(billTax(viewingBill))}</p>
-                      <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(billTotal(viewingBill))}</p>
-                      <p className="text-sm text-gray-900 mt-2">{currencySymbol}{formatNumber(billPaid(viewingBill))}</p>
-                      <p className="text-sm font-medium text-gray-900">{currencySymbol}{formatNumber(billBalance(viewingBill))}</p>
+                      <p className="text-sm text-foreground">{currencySymbol}{formatNumber(billSubtotal(viewingBill))}</p>
+                      <p className="text-sm text-foreground">{currencySymbol}{formatNumber(billTax(viewingBill))}</p>
+                      <p className="text-lg font-semibold text-foreground">{currencySymbol}{formatNumber(billTotal(viewingBill))}</p>
+                      <p className="text-sm text-foreground mt-2">{currencySymbol}{formatNumber(billPaid(viewingBill))}</p>
+                      <p className="text-sm font-medium text-foreground">{currencySymbol}{formatNumber(billBalance(viewingBill))}</p>
                     </div>
                   </div>
                 </div>
@@ -3136,8 +3136,8 @@ export default function BillsPage() {
                     }}
                     className={`px-4 py-2 rounded-lg text-white ${
                       isBillEditDisabled(viewingBill)
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-indigo-600 hover:bg-indigo-700'
+                        ? 'bg-muted-foreground/50 cursor-not-allowed'
+                        : 'bg-primary hover:bg-primary/90'
                     }`}
                     title={
                       isBillEditDisabled(viewingBill)
@@ -3153,7 +3153,7 @@ export default function BillsPage() {
                       onClick={() => void handleVoidBill(viewingBill.id, viewingBill.bill_number)}
                       className={`px-4 py-2 rounded-lg text-white ${
                         isBillVoidDisabled(viewingBill)
-                          ? 'bg-gray-400 cursor-not-allowed'
+                          ? 'bg-muted-foreground/50 cursor-not-allowed'
                           : 'bg-amber-600 hover:bg-amber-700'
                       }`}
                       title={
@@ -3173,7 +3173,7 @@ export default function BillsPage() {
                 <button
                   type="button"
                   onClick={handleCloseViewModal}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  className="px-4 py-2 bg-muted-foreground text-white rounded-lg hover:bg-muted-foreground"
                 >
                   Close
                 </button>
@@ -3190,7 +3190,7 @@ export default function BillsPage() {
                 <h2 className="text-2xl font-bold">Edit Bill {editingBill.bill_number}</h2>
                 <button
                   onClick={handleCloseEditModal}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -3200,21 +3200,21 @@ export default function BillsPage() {
                 {/* Edit Bill Form Content - reuse same form structure as Create Modal */}
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Vendor *
                     </label>
                     <VendorReferenceCombobox
                       value={formData.vendor_id}
                       onChange={(id) => handleFormVendorChange(String(id))}
                       vendors={vendors}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                     {selectedVendorReceivingHint ? (
-                      <p className="mt-1 text-xs text-teal-800">{selectedVendorReceivingHint}</p>
+                      <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Bill Date *
                     </label>
                     <input
@@ -3222,22 +3222,22 @@ export default function BillsPage() {
                       required
                       value={formData.bill_date}
                       onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
                     <input
                       type="date"
                       value={formData.due_date}
                       onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Vendor Reference
                     </label>
                     <input
@@ -3245,11 +3245,11 @@ export default function BillsPage() {
                       value={formData.vendor_reference}
                       onChange={(e) => setFormData({ ...formData, vendor_reference: e.target.value })}
                       placeholder="Vendor invoice number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Receiving location (station or pond)
                     </label>
                     <BillReceiptLocationSelect
@@ -3257,20 +3257,20 @@ export default function BillsPage() {
                       onChange={handleReceiptLocationChange}
                       stations={stations}
                       ponds={aquaculturePonds}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                     {stations.length === 0 && aquaculturePonds.length === 0 ? (
-                      <p className="mt-1 text-xs text-amber-800">
+                      <p className="mt-1 text-xs text-warning-foreground">
                         No stations or ponds loaded. Add sites under Stations or enable aquaculture ponds, then refresh.
                       </p>
                     ) : null}
                     {formData.receipt_location_key.startsWith('p:') ? (
-                      <p className="mt-1 text-xs text-teal-800">
+                      <p className="mt-1 text-xs text-primary">
                         Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
                         automatically for payments and non-pond inventory.
                       </p>
                     ) : null}
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Pre-filled from the vendor&apos;s usual pond or site when set. Pick a{' '}
                       <strong className="font-medium">fuel/shop station</strong> for site costs and tank/shop stock, or
                       a <strong className="font-medium">pond</strong> for lease, feed, electricity, and other pond
@@ -3278,7 +3278,7 @@ export default function BillsPage() {
                     </p>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Memo/Notes
                     </label>
                     <textarea
@@ -3286,7 +3286,7 @@ export default function BillsPage() {
                       onChange={(e) => setFormData({ ...formData, memo: e.target.value })}
                       placeholder="Additional notes"
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                 </div>
@@ -3312,7 +3312,7 @@ export default function BillsPage() {
                           )
                         }
                         title="Adds a new line of the same type (Item or Expense) as the last line. Switch a line's type any time with its Item/Expense toggle."
-                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                       >
                         <PlusCircle className="h-4 w-4" />
                         <span>Add line</span>
@@ -3329,11 +3329,11 @@ export default function BillsPage() {
                       return (
                         <div
                           key={index}
-                          className="border border-gray-200 rounded-lg p-3 min-w-0 bg-white shadow-sm"
+                          className="border border-border rounded-lg p-3 min-w-0 bg-white shadow-sm"
                         >
                           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
                             <div className="col-span-12 lg:col-span-2 min-w-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {billLineKind(line) === 'item' ? 'Item / product' : 'Expense account'}
                               </label>
                               <BillLineTypePicker
@@ -3357,7 +3357,7 @@ export default function BillsPage() {
                                   />
                                 )}
                                 {billLineKind(line) === 'expense' && !line.expense_account_id && (
-                                  <p className="mt-1 text-[11px] text-slate-600">
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
                                     Pick an expense account, or leave blank for{' '}
                                     {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
                                   </p>
@@ -3366,7 +3366,7 @@ export default function BillsPage() {
                             </div>
                             {availableTanks.length > 0 && (
                               <div className="col-span-12 lg:col-span-2 min-w-0">
-                                <label className="block text-xs font-medium text-gray-700 mb-0.5">Tank</label>
+                                <label className="block text-xs font-medium text-foreground/85 mb-0.5">Tank</label>
                                 <select
                                   value={line.tank_id || ''}
                                   onChange={(e) =>
@@ -3391,7 +3391,7 @@ export default function BillsPage() {
                             <div
                               className={`col-span-12 min-w-0 ${availableTanks.length > 0 ? 'lg:col-span-4' : 'lg:col-span-6'}`}
                             >
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Description</label>
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">Description</label>
                               <input
                                 type="text"
                                 value={line.description || ''}
@@ -3401,7 +3401,7 @@ export default function BillsPage() {
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {fishLineAuto ? 'Qty (kg)' : 'Qty'}
                               </label>
                               <input
@@ -3419,14 +3419,14 @@ export default function BillsPage() {
                                 }
                                 className={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
                                     : BILL_LINE_NUM
                                 }
                                 title={fishLineAuto ? 'Derived: heads ÷ Line (pcs/kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {fishLineAuto ? 'Rate (per kg)' : 'Unit'}
                               </label>
                               <input
@@ -3444,14 +3444,14 @@ export default function BillsPage() {
                                 }
                                 className={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
                                     : BILL_LINE_NUM
                                 }
                                 title={fishLineAuto ? 'Derived: Amount ÷ Qty (kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Amount</label>
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">Amount</label>
                               {fishLineAuto ? (
                                 <input
                                   type="number"
@@ -3483,7 +3483,7 @@ export default function BillsPage() {
                                     .map((line, i) => ({ ...line, line_number: i + 1 }))
                                   setFormData({ ...formData, lines: newLines })
                                 }}
-                                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md border border-transparent hover:border-red-100"
+                                className="p-2 text-destructive hover:text-destructive hover:bg-destructive/5 rounded-md border border-transparent hover:border-red-100"
                                 aria-label="Remove line"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -3529,7 +3529,7 @@ export default function BillsPage() {
                   </div>
 
                   {formData.lines.length === 0 && (
-                    <p className="text-center text-gray-500 py-4">No line items added. Click &quot;Add Line&quot; to add items.</p>
+                    <p className="text-center text-muted-foreground py-4">No line items added. Click &quot;Add Line&quot; to add items.</p>
                   )}
                 </div>
 
@@ -3538,31 +3538,31 @@ export default function BillsPage() {
                   <div className="border-t pt-4 mb-6">
                     <div className="flex justify-end space-x-8">
                       <div className="text-right">
-                        <p className="text-sm text-gray-600">Subtotal:</p>
-                        <p className="text-sm text-gray-600">Tax:</p>
-                        <p className="text-lg font-semibold text-gray-900">Total:</p>
+                        <p className="text-sm text-muted-foreground">Subtotal:</p>
+                        <p className="text-sm text-muted-foreground">Tax:</p>
+                        <p className="text-lg font-semibold text-foreground">Total:</p>
                       </div>
                       <div className="text-right min-w-[120px]">
-                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().subtotal)}</p>
-                        <p className="text-sm text-gray-900">{currencySymbol}{formatNumber(calculateTotals().taxAmount)}</p>
-                        <p className="text-lg font-semibold text-gray-900">{currencySymbol}{formatNumber(calculateTotals().total)}</p>
+                        <p className="text-sm text-foreground">{currencySymbol}{formatNumber(calculateTotals().subtotal)}</p>
+                        <p className="text-sm text-foreground">{currencySymbol}{formatNumber(calculateTotals().taxAmount)}</p>
+                        <p className="text-lg font-semibold text-foreground">{currencySymbol}{formatNumber(calculateTotals().total)}</p>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {editingBill.status === 'draft' && (
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+                  <div className="mb-4 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                    <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer">
                       <input
                         type="checkbox"
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="mt-1 rounded border-border text-primary focus:ring-ring"
                         checked={postDraftBillOnUpdate}
                         onChange={(e) => setPostDraftBillOnUpdate(e.target.checked)}
                       />
                       <span>
                         <span className="font-medium">Approve on save</span>
-                        <span className="block text-gray-600">
+                        <span className="block text-muted-foreground">
                           Mark Open and post this bill to the general ledger when you save.
                         </span>
                       </span>
@@ -3575,13 +3575,13 @@ export default function BillsPage() {
                   <button
                     type="button"
                     onClick={handleCloseEditModal}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                    className="px-4 py-2 border border-border rounded-lg text-foreground/85 hover:bg-muted/40"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="erp-btn-primary"
                   >
                     {postDraftBillOnUpdate && editingBill.status === 'draft' ? 'Save & approve' : 'Update Bill'}
                   </button>
@@ -3595,38 +3595,38 @@ export default function BillsPage() {
         {stockReviewOpen && stockReviewPayload && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] overflow-y-auto p-4">
             <div
-              className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 border border-amber-200"
+              className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 border border-warning/30"
               role="dialog"
               aria-labelledby="stock-review-title"
             >
-              <h3 id="stock-review-title" className="text-lg font-semibold text-amber-900 mb-2">
+              <h3 id="stock-review-title" className="text-lg font-semibold text-warning-foreground mb-2">
                 Tank capacity notice
               </h3>
-              <p className="text-sm text-gray-700 mb-4">
+              <p className="text-sm text-foreground/85 mb-4">
                 This bill would receive more fuel than fits in the tank(s) below (current stock + this bill &gt; tank
                 capacity). You can still continue if overflow will be stored elsewhere (for example in drums).
               </p>
               {stockReviewPayload.draftNote && (
-                <p className="text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-4">
+                <p className="text-sm text-primary bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mb-4">
                   You are saving as draft — inventory is not received until the bill is posted (Open).
                 </p>
               )}
               <div className="overflow-x-auto mb-4">
-                <table className="min-w-full text-sm border border-gray-200 rounded-md">
-                  <thead className="bg-gray-50 text-left">
+                <table className="min-w-full text-sm border border-border rounded-md">
+                  <thead className="bg-muted/40 text-left">
                     <tr>
-                      <th className="px-3 py-2 font-medium text-gray-700">Tank</th>
-                      <th className="px-3 py-2 font-medium text-gray-700 text-right">In tank</th>
-                      <th className="px-3 py-2 font-medium text-gray-700 text-right">Capacity</th>
-                      <th className="px-3 py-2 font-medium text-gray-700 text-right">Free space</th>
-                      <th className="px-3 py-2 font-medium text-gray-700 text-right">This bill</th>
-                      <th className="px-3 py-2 font-medium text-gray-700 text-right">Over by</th>
+                      <th className="px-3 py-2 font-medium text-foreground/85">Tank</th>
+                      <th className="px-3 py-2 font-medium text-foreground/85 text-right">In tank</th>
+                      <th className="px-3 py-2 font-medium text-foreground/85 text-right">Capacity</th>
+                      <th className="px-3 py-2 font-medium text-foreground/85 text-right">Free space</th>
+                      <th className="px-3 py-2 font-medium text-foreground/85 text-right">This bill</th>
+                      <th className="px-3 py-2 font-medium text-foreground/85 text-right">Over by</th>
                     </tr>
                   </thead>
                   <tbody>
                     {stockReviewPayload.tankIssues.map((row) => (
-                      <tr key={row.tankId} className="border-t border-gray-100">
-                        <td className="px-3 py-2 text-gray-900">{row.tankName}</td>
+                      <tr key={row.tankId} className="border-t border-border/70">
+                        <td className="px-3 py-2 text-foreground">{row.tankName}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatNumber(row.currentStock)} {row.unit}
                         </td>
@@ -3637,7 +3637,7 @@ export default function BillsPage() {
                           {formatNumber(row.remainingUllage)} {row.unit}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatNumber(row.receiptQty)} {row.unit}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-amber-800">
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-warning-foreground">
                           {formatNumber(row.overBy)} {row.unit}
                         </td>
                       </tr>
@@ -3647,15 +3647,15 @@ export default function BillsPage() {
               </div>
               {stockReviewPayload.catalogLines.length > 0 && (
                 <div className="mb-4">
-                  <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2">Items on this bill</p>
-                  <ul className="text-sm text-gray-800 space-y-1 border border-gray-100 rounded-md px-3 py-2 bg-gray-50/80">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Items on this bill</p>
+                  <ul className="text-sm text-foreground space-y-1 border border-border/70 rounded-md px-3 py-2 bg-muted/40/80">
                     {stockReviewPayload.catalogLines.map((row, i) => (
                       <li key={i}>
                         <span className="font-medium">{row.itemName}</span>
                         {' — '}
                         bill qty {formatNumber(row.billQty)} {row.unit}
                         {row.quantityOnHand !== null && (
-                          <span className="text-gray-600">
+                          <span className="text-muted-foreground">
                             {' '}
                             · current stock (system) {formatNumber(row.quantityOnHand)} {row.unit}
                           </span>
@@ -3672,7 +3672,7 @@ export default function BillsPage() {
                     setStockReviewOpen(false)
                     setStockReviewPayload(null)
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 border border-border rounded-lg text-foreground/85 hover:bg-muted/40"
                 >
                   Cancel
                 </button>
@@ -3695,11 +3695,11 @@ export default function BillsPage() {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Add New Bill</h2>
                 {referenceLoading ? (
-                  <span className="text-sm font-normal text-gray-500">Loading form data…</span>
+                  <span className="text-sm font-normal text-muted-foreground">Loading form data…</span>
                 ) : null}
                 <button
                   onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -3708,26 +3708,26 @@ export default function BillsPage() {
               <form onSubmit={handleCreate} className={referenceLoading ? 'pointer-events-none opacity-60' : undefined}>
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Vendor *
                     </label>
                     <VendorReferenceCombobox
                       value={formData.vendor_id}
                       onChange={(id) => handleFormVendorChange(String(id))}
                       vendors={vendors}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                     {vendors.length === 0 && (
-                      <p className="mt-1 text-xs text-red-600">
+                      <p className="mt-1 text-xs text-destructive">
                         No active vendors found. Please create a vendor first or check if vendors are active.
                       </p>
                     )}
                     {selectedVendorReceivingHint ? (
-                      <p className="mt-1 text-xs text-teal-800">{selectedVendorReceivingHint}</p>
+                      <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Bill Date *
                     </label>
                     <input
@@ -3735,22 +3735,22 @@ export default function BillsPage() {
                       required
                       value={formData.bill_date}
                       onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
                     <input
                       type="date"
                       value={formData.due_date}
                       onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Vendor Reference
                     </label>
                     <input
@@ -3758,11 +3758,11 @@ export default function BillsPage() {
                       value={formData.vendor_reference}
                       onChange={(e) => setFormData({ ...formData, vendor_reference: e.target.value })}
                       placeholder="Vendor invoice number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Receiving location (station or pond)
                     </label>
                     <BillReceiptLocationSelect
@@ -3770,20 +3770,20 @@ export default function BillsPage() {
                       onChange={handleReceiptLocationChange}
                       stations={stations}
                       ponds={aquaculturePonds}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                     {stations.length === 0 && aquaculturePonds.length === 0 ? (
-                      <p className="mt-1 text-xs text-amber-800">
+                      <p className="mt-1 text-xs text-warning-foreground">
                         No stations or ponds loaded. Add sites under Stations or enable aquaculture ponds, then refresh.
                       </p>
                     ) : null}
                     {formData.receipt_location_key.startsWith('p:') ? (
-                      <p className="mt-1 text-xs text-teal-800">
+                      <p className="mt-1 text-xs text-primary">
                         Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
                         automatically for payments and non-pond inventory.
                       </p>
                     ) : null}
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-muted-foreground">
                       Pre-filled from the vendor&apos;s usual pond or site when set. Pick a{' '}
                       <strong className="font-medium">fuel/shop station</strong> for site costs and tank/shop stock, or
                       a <strong className="font-medium">pond</strong> for lease, feed, electricity, and other pond
@@ -3791,14 +3791,14 @@ export default function BillsPage() {
                     </p>
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Memo/Notes
                     </label>
                     <textarea
                       value={formData.memo}
                       onChange={(e) => setFormData({ ...formData, memo: e.target.value })}
                       rows={2}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="erp-field"
                     />
                   </div>
                 </div>
@@ -3824,7 +3824,7 @@ export default function BillsPage() {
                           )
                         }
                         title="Adds a new line of the same type (Item or Expense) as the last line. Switch a line's type any time with its Item/Expense toggle."
-                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-primary text-white rounded-lg hover:bg-primary"
                       >
                         <PlusCircle className="h-4 w-4" />
                         <span>Add line</span>
@@ -3851,11 +3851,11 @@ export default function BillsPage() {
                       return (
                         <div
                           key={index}
-                          className="border border-gray-200 rounded-lg p-3 min-w-0 bg-gray-50/80 shadow-sm"
+                          className="border border-border rounded-lg p-3 min-w-0 bg-muted/40/80 shadow-sm"
                         >
                           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
                             <div className="col-span-12 lg:col-span-2 min-w-0">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {billLineKind(line) === 'item' ? 'Item / product' : 'Expense account'}
                               </label>
                               <BillLineTypePicker
@@ -3879,7 +3879,7 @@ export default function BillsPage() {
                                   />
                                 )}
                                 {billLineKind(line) === 'expense' && !line.expense_account_id && (
-                                  <p className="mt-1 text-[11px] text-slate-600">
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
                                     Pick an expense account, or leave blank for{' '}
                                     {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
                                   </p>
@@ -3889,7 +3889,7 @@ export default function BillsPage() {
 
                             {isFuelItem && (
                               <div className="col-span-12 lg:col-span-2 min-w-0">
-                                <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                                <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                   Tank <span className="text-red-500">*</span>
                                 </label>
                                 <select
@@ -3902,7 +3902,7 @@ export default function BillsPage() {
                                       e.target.value ? parseInt(e.target.value) : undefined
                                     )
                                   }
-                                  className={`${BILL_LINE_CTL} border-yellow-400 bg-yellow-50 focus:ring-yellow-500`}
+                                  className={`${BILL_LINE_CTL} border-yellow-400 bg-yellow-50 focus:ring-warning`}
                                   required={isFuelItem}
                                 >
                                   <option value="">Select…</option>
@@ -3919,7 +3919,7 @@ export default function BillsPage() {
                             <div
                               className={`col-span-12 min-w-0 ${isFuelItem ? 'lg:col-span-3' : 'lg:col-span-5'}`}
                             >
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Description</label>
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">Description</label>
                               <input
                                 type="text"
                                 value={line.description || ''}
@@ -3929,7 +3929,7 @@ export default function BillsPage() {
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {fishLineAuto ? 'Qty (kg)' : 'Qty'}
                               </label>
                               <input
@@ -3947,14 +3947,14 @@ export default function BillsPage() {
                                 }
                                 className={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
                                     : BILL_LINE_NUM
                                 }
                                 title={fishLineAuto ? 'Derived: heads ÷ Line (pcs/kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {fishLineAuto ? 'Rate (per kg)' : 'Rate'}
                               </label>
                               <input
@@ -3972,14 +3972,14 @@ export default function BillsPage() {
                                 }
                                 className={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-gray-50 cursor-default border-gray-200`
+                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
                                     : BILL_LINE_NUM
                                 }
                                 title={fishLineAuto ? 'Derived: Amount ÷ Qty (kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Tax</label>
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">Tax</label>
                               <input
                                 type="number"
                                 step="0.01"
@@ -3990,7 +3990,7 @@ export default function BillsPage() {
                               />
                             </div>
                             <div className="col-span-6 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
-                              <label className="block text-xs font-medium text-gray-700 mb-0.5">Amount</label>
+                              <label className="block text-xs font-medium text-foreground/85 mb-0.5">Amount</label>
                               {fishLineAuto ? (
                                 <input
                                   type="number"
@@ -4018,7 +4018,7 @@ export default function BillsPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveLine(index)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-md border border-transparent hover:border-red-100"
+                                className="p-2 text-destructive hover:bg-destructive/5 rounded-md border border-transparent hover:border-red-100"
                                 aria-label="Remove line"
                               >
                                 <X className="h-4 w-4" />
@@ -4064,7 +4064,7 @@ export default function BillsPage() {
                   </div>
 
                   {formData.lines.length === 0 && (
-                    <div className="text-center py-8 text-gray-500 border border-dashed border-gray-300 rounded-lg">
+                    <div className="text-center py-8 text-muted-foreground border border-dashed border-border rounded-lg">
                       <p>No line items. Click "Add Line" to add items or expense accounts.</p>
                     </div>
                   )}
@@ -4073,27 +4073,27 @@ export default function BillsPage() {
                 {/* Totals */}
                 <div className="border-t pt-4 mb-6">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                    <label className="flex items-start gap-2 text-sm text-gray-700 max-w-md cursor-pointer">
+                    <label className="flex items-start gap-2 text-sm text-foreground/85 max-w-md cursor-pointer">
                       <input
                         type="checkbox"
-                        className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="mt-1 rounded border-border text-primary focus:ring-ring"
                         checked={approveBill}
                         onChange={(e) => setApproveBill(e.target.checked)}
                       />
                       <span>
-                        <span className="font-medium text-gray-900">Approve for payment</span>
-                        <span className="block text-gray-600">
+                        <span className="font-medium text-foreground">Approve for payment</span>
+                        <span className="block text-muted-foreground">
                           Mark as Open and post to the general ledger (A/P). Leave unchecked to save as a draft you can edit later.
                         </span>
                       </span>
                     </label>
                     <div className="w-full sm:w-64 space-y-2 sm:text-right">
                       <div className="flex justify-between text-sm sm:flex sm:justify-between">
-                        <span className="text-gray-600">Subtotal:</span>
+                        <span className="text-muted-foreground">Subtotal:</span>
                         <span className="font-medium">{currencySymbol}{formatNumber(Number(subtotal) || 0)}</span>
                       </div>
                       <div className="flex justify-between text-sm sm:flex sm:justify-between">
-                        <span className="text-gray-600">Tax:</span>
+                        <span className="text-muted-foreground">Tax:</span>
                         <span className="font-medium">{currencySymbol}{formatNumber(Number(taxAmount) || 0)}</span>
                       </div>
                       <div className="flex justify-between text-lg font-bold border-t pt-2 sm:flex sm:justify-between">
@@ -4108,13 +4108,13 @@ export default function BillsPage() {
                   <button
                     type="button"
                     onClick={handleCloseModal}
-                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="erp-btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="erp-btn-primary"
                   >
                     {approveBill ? 'Save & approve' : 'Save as draft'}
                   </button>

@@ -89,7 +89,7 @@ function UserStatusBadge({ isActive }: { isActive: boolean }) {
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-        isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+        isActive ? 'bg-success/15 text-success' : 'bg-destructive/10 text-destructive'
       }`}
     >
       {isActive ? (
@@ -840,9 +840,9 @@ export default function UsersPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-border border-t-blue-600" />
         </div>
       </PageLayout>
     )
@@ -854,7 +854,7 @@ export default function UsersPage() {
     : 'Create and review accounts, assign a job type and company, and (for tenants) optional custom access profiles.'
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         eyebrow={pageMeta.eyebrow}
@@ -865,7 +865,7 @@ export default function UsersPage() {
         contentClassName="mt-4"
         actions={
           <div className="flex flex-shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
-              <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
+              <div className="flex items-center rounded-lg border border-border bg-white p-0.5 shadow-sm">
                 <button
                   type="button"
                   onClick={() => {
@@ -874,8 +874,8 @@ export default function UsersPage() {
                   }}
                   className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     viewMode === 'card'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-foreground text-white shadow-sm'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
                   title="Card view"
                 >
@@ -890,8 +890,8 @@ export default function UsersPage() {
                   }}
                   className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                     viewMode === 'list'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-foreground text-white shadow-sm'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
                   title="List view"
                 >
@@ -905,7 +905,7 @@ export default function UsersPage() {
                   resetForm()
                   setShowModal(true)
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-primary"
               >
                 <Users className="h-4 w-4" />
                 Add user
@@ -916,10 +916,10 @@ export default function UsersPage() {
           {users.length > 0 && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="relative min-w-0 flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" aria-hidden />
                 <input
                   type="search"
-                  className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
                   placeholder="Search by name, email, username, or access profile…"
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
@@ -932,7 +932,7 @@ export default function UsersPage() {
                 </label>
                 <select
                   id="users-role-filter"
-                  className="w-full rounded-lg border border-gray-200 py-2 pl-2 pr-8 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-border py-2 pl-2 pr-8 text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
                 >
@@ -945,7 +945,7 @@ export default function UsersPage() {
                 </select>
               </div>
               <div
-                className="flex w-full shrink-0 items-center rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm sm:w-auto"
+                className="flex w-full shrink-0 items-center rounded-lg border border-border bg-white p-0.5 shadow-sm sm:w-auto"
                 role="group"
                 aria-label="Filter by account status"
               >
@@ -962,8 +962,8 @@ export default function UsersPage() {
                     onClick={() => setStatusFilter(id)}
                     className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                       statusFilter === id
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        ? 'bg-foreground text-white shadow-sm'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     }`}
                     aria-pressed={statusFilter === id}
                   >
@@ -972,7 +972,7 @@ export default function UsersPage() {
                     {id === 'inactive' && inactiveUserCount > 0 ? (
                       <span
                         className={`tabular-nums text-xs ${
-                          statusFilter === id ? 'text-white/80' : 'text-gray-400'
+                          statusFilter === id ? 'text-white/80' : 'text-muted-foreground/70'
                         }`}
                       >
                         ({inactiveUserCount})
@@ -985,11 +985,11 @@ export default function UsersPage() {
           )}
 
         {users.length > 0 && hasListFilters && filteredUsers.length === 0 && (
-          <div className="mb-6 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-6 flex flex-col gap-2 rounded-xl border border-warning/30 bg-warning/10/90 px-4 py-3 text-sm text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>No users match your filters.</span>
             <button
               type="button"
-              className="shrink-0 text-sm font-medium text-amber-800 underline decoration-amber-400 hover:text-amber-950"
+              className="shrink-0 text-sm font-medium text-warning-foreground underline decoration-amber-400 hover:text-warning-foreground"
               onClick={() => {
                 setUserSearch('')
                 setRoleFilter('')
@@ -1007,28 +1007,28 @@ export default function UsersPage() {
                 <div key={user.id} className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-gray-100 rounded-full">
-                        <User className="h-6 w-6 text-gray-600" />
+                      <div className="p-2 bg-muted rounded-full">
+                        <User className="h-6 w-6 text-muted-foreground" />
                       </div>
                       <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{user.full_name}</h3>
-                        <p className="text-sm text-gray-600">@{user.username}</p>
+                        <h3 className="text-lg font-semibold text-foreground">{user.full_name}</h3>
+                        <p className="text-sm text-muted-foreground">@{user.username}</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2 mb-4">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       <span className="font-medium">Email:</span> {user.email}
                     </p>
                     {(user.company_id != null || user.company_name) && !isCompanyOwner && (
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-muted-foreground">
                         <span className="font-medium">Company:</span> {user.company_name || '—'} (ID:{' '}
                         {user.company_id ?? '—'})
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
-                      <Shield className="h-4 w-4 shrink-0 text-gray-400" />
+                      <Shield className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${getRoleBadgeColor(user.role)}`}
                         title="Job type"
@@ -1037,7 +1037,7 @@ export default function UsersPage() {
                       </span>
                       {user.custom_role_name ? (
                         <span
-                          className="max-w-full truncate rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-900"
+                          className="max-w-full truncate rounded-full border border-primary/15 bg-accent px-2 py-0.5 text-xs font-medium text-foreground/85"
                           title="Access profile"
                         >
                           {user.custom_role_name}
@@ -1047,7 +1047,7 @@ export default function UsersPage() {
 
                     <div className="flex items-center justify-between pt-2">
                       <UserStatusBadge isActive={user.is_active} />
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-muted-foreground">
                         Joined {user.created_at ? formatDate(user.created_at, true) : 'N/A'}
                       </span>
                     </div>
@@ -1057,7 +1057,7 @@ export default function UsersPage() {
                     <button
                       type="button"
                       onClick={() => handleEdit(user)}
-                      className="inline-flex items-center gap-1 rounded p-2 text-blue-600 hover:bg-blue-50"
+                      className="inline-flex items-center gap-1 rounded p-2 text-primary hover:bg-accent"
                       title="Edit user"
                       aria-label="Edit user"
                     >
@@ -1065,7 +1065,7 @@ export default function UsersPage() {
                       <span className="sr-only sm:not-sr-only sm:text-xs sm:font-medium">Edit</span>
                     </button>
                     {currentSessionUserId !== null && user.id === currentSessionUserId ? (
-                      <span className="px-2 text-xs text-gray-400" title="You cannot change your own account here">
+                      <span className="px-2 text-xs text-muted-foreground/70" title="You cannot change your own account here">
                         —
                       </span>
                     ) : (
@@ -1074,7 +1074,7 @@ export default function UsersPage() {
                           <button
                             type="button"
                             onClick={() => handleSetUserActive(user, false)}
-                            className="inline-flex items-center gap-1 rounded p-2 text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded p-2 text-warning-foreground hover:bg-warning/10"
                             title="Deactivate login (keeps the user record)"
                             aria-label="Deactivate user"
                           >
@@ -1085,7 +1085,7 @@ export default function UsersPage() {
                           <button
                             type="button"
                             onClick={() => handleSetUserActive(user, true)}
-                            className="inline-flex items-center gap-1 rounded p-2 text-green-700 hover:bg-green-50"
+                            className="inline-flex items-center gap-1 rounded p-2 text-success hover:bg-green-50"
                             title="Activate login"
                             aria-label="Activate user"
                           >
@@ -1096,7 +1096,7 @@ export default function UsersPage() {
                         <button
                           type="button"
                           onClick={() => handleDelete(user)}
-                          className="inline-flex items-center gap-1 rounded p-2 text-red-600 hover:bg-red-50"
+                          className="inline-flex items-center gap-1 rounded p-2 text-destructive hover:bg-destructive/5"
                           title="Permanently delete user from database"
                           aria-label="Delete user permanently"
                         >
@@ -1112,58 +1112,58 @@ export default function UsersPage() {
           )}
 
           {users.length > 0 && viewMode === 'list' && (
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow">
+            <div className="overflow-hidden rounded-lg border border-border bg-white shadow">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/40">
                     <tr>
                       <th
                         scope="col"
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Name
                       </th>
                       <th
                         scope="col"
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Username
                       </th>
                       <th
                         scope="col"
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Email
                       </th>
                       {!isCompanyOwner && (
                         <th
                           scope="col"
-                          className="hidden lg:table-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                          className="hidden lg:table-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                         >
                           Company
                         </th>
                       )}
                       <th
                         scope="col"
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Job type
                       </th>
                       <th
                         scope="col"
-                        className="hidden sm:table-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="hidden sm:table-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Access profile
                       </th>
                       <th
                         scope="col"
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Status
                       </th>
                       <th
                         scope="col"
-                        className="hidden md:table-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600"
+                        className="hidden md:table-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                       >
                         Joined
                       </th>
@@ -1172,21 +1172,21 @@ export default function UsersPage() {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
+                  <tbody className="divide-y divide-border bg-white">
                     {filteredUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-50/80">
-                        <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
+                      <tr key={user.id} className="hover:bg-muted/40/80">
+                        <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-foreground">
                           {user.full_name}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">@{user.username}</td>
-                        <td className="max-w-[200px] truncate px-4 py-3 text-sm text-gray-600" title={user.email}>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">@{user.username}</td>
+                        <td className="max-w-[200px] truncate px-4 py-3 text-sm text-muted-foreground" title={user.email}>
                           {user.email}
                         </td>
                         {!isCompanyOwner && (
-                          <td className="hidden max-w-[180px] truncate px-4 py-3 text-sm text-gray-600 lg:table-cell">
+                          <td className="hidden max-w-[180px] truncate px-4 py-3 text-sm text-muted-foreground lg:table-cell">
                             {user.company_name || '—'}
                             {user.company_id != null ? (
-                              <span className="text-gray-400"> · {user.company_id}</span>
+                              <span className="text-muted-foreground/70"> · {user.company_id}</span>
                             ) : null}
                           </td>
                         )}
@@ -1198,13 +1198,13 @@ export default function UsersPage() {
                             {getRoleDisplayName(user.role)}
                           </span>
                         </td>
-                        <td className="hidden max-w-[160px] truncate px-4 py-3 text-sm text-gray-600 sm:table-cell">
+                        <td className="hidden max-w-[160px] truncate px-4 py-3 text-sm text-muted-foreground sm:table-cell">
                           {user.custom_role_name || '—'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3">
                           <UserStatusBadge isActive={user.is_active} />
                         </td>
-                        <td className="hidden whitespace-nowrap px-4 py-3 text-sm text-gray-500 md:table-cell">
+                        <td className="hidden whitespace-nowrap px-4 py-3 text-sm text-muted-foreground md:table-cell">
                           {user.created_at ? formatDate(user.created_at, true) : '—'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -1212,21 +1212,21 @@ export default function UsersPage() {
                             <button
                               type="button"
                               onClick={() => handleEdit(user)}
-                              className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-blue-600 hover:bg-blue-50"
+                              className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-primary hover:bg-accent"
                               title="Edit user"
                               aria-label="Edit user"
                             >
                               <Edit2 className="h-4 w-4 shrink-0" aria-hidden />
                             </button>
                             {currentSessionUserId !== null && user.id === currentSessionUserId ? (
-                              <span className="px-2 text-xs text-gray-400">—</span>
+                              <span className="px-2 text-xs text-muted-foreground/70">—</span>
                             ) : (
                               <>
                                 {user.is_active ? (
                                   <button
                                     type="button"
                                     onClick={() => handleSetUserActive(user, false)}
-                                    className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-amber-700 hover:bg-amber-50"
+                                    className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-warning-foreground hover:bg-warning/10"
                                     title="Deactivate login"
                                     aria-label="Deactivate user"
                                   >
@@ -1236,7 +1236,7 @@ export default function UsersPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleSetUserActive(user, true)}
-                                    className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-green-700 hover:bg-green-50"
+                                    className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-success hover:bg-green-50"
                                     title="Activate login"
                                     aria-label="Activate user"
                                   >
@@ -1246,7 +1246,7 @@ export default function UsersPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleDelete(user)}
-                                  className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-red-600 hover:bg-red-50"
+                                  className="inline-flex items-center justify-center gap-1 rounded p-1.5 text-destructive hover:bg-destructive/5"
                                   title="Permanently delete"
                                   aria-label="Delete user permanently"
                                 >
@@ -1265,14 +1265,14 @@ export default function UsersPage() {
           )}
 
           {users.length === 0 && (
-            <div className="bg-white rounded-lg shadow p-12 text-center">
-              <p className="text-gray-500 mb-4">No users found. Create your first user to get started.</p>
+            <div className="erp-empty-state">
+              <p className="text-muted-foreground mb-4">No users found. Create your first user to get started.</p>
               <button 
                 onClick={() => {
                   resetForm()
                   setShowModal(true)
                 }}
-                className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="erp-btn-cta"
               >
                 <Plus className="h-5 w-5" />
                 <span>Add User</span>
@@ -1283,7 +1283,7 @@ export default function UsersPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-[min(90vh,880px)] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 z-10 space-y-3 border-b border-white/15 bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-3 sm:px-6 sm:py-4">
+            <div className="sticky top-0 z-10 space-y-3 border-b border-white/15 bg-gradient-to-r from-slate-800 to-[hsl(var(--hero-from))] px-5 py-3 sm:px-6 sm:py-4">
               {isCreateWizard && (
                 <nav className="flex items-center justify-between gap-0.5 sm:gap-2" aria-label="Add user steps">
                   {CREATE_STEPS.map((s) => {
@@ -1298,7 +1298,7 @@ export default function UsersPage() {
                         <span
                           className={`mb-0.5 flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold sm:h-8 sm:w-8 sm:text-xs ${
                             on
-                              ? 'bg-white text-slate-900'
+                              ? 'bg-white text-foreground'
                               : done
                                 ? 'bg-emerald-500/25 text-white ring-1 ring-white/40'
                                 : 'bg-white/10 text-white/50'
@@ -1308,7 +1308,7 @@ export default function UsersPage() {
                         </span>
                         <span
                           className={`hidden w-full max-w-[6.5rem] truncate text-[9px] font-semibold sm:block ${
-                            on ? 'text-white' : 'text-slate-400'
+                            on ? 'text-white' : 'text-muted-foreground/70'
                           }`}
                         >
                           {s.title}
@@ -1323,7 +1323,7 @@ export default function UsersPage() {
                   <h2 className="text-lg font-bold text-white sm:text-2xl">
                     {editingId ? 'Edit team member' : 'Add a team member'}
                   </h2>
-                  <p className="mt-0.5 text-[11px] text-slate-300 sm:text-sm">
+                  <p className="mt-0.5 text-[11px] text-muted-foreground/40 sm:text-sm">
                     {isCreateWizard
                       ? 'Use Next to move through account → access → password.'
                       : 'Update identity, what they can open, and their password.'}
@@ -1357,12 +1357,12 @@ export default function UsersPage() {
             >
               <div className="space-y-6">
                 {showModalAccount && (
-                <div className="border-b border-gray-100 pb-5">
-                  <h3 className="mb-3 text-base font-semibold text-gray-900">Account</h3>
+                <div className="border-b border-border/70 pb-5">
+                  <h3 className="mb-3 text-base font-semibold text-foreground">Account</h3>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {!isCompanyOwner && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">
                           Username <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -1371,13 +1371,13 @@ export default function UsersPage() {
                           value={formData.username}
                           onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                           disabled={!!editingId}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring disabled:bg-muted"
                           placeholder="johndoe"
                         />
                       </div>
                     )}
                     <div className={isCompanyOwner ? 'md:col-span-2' : ''}>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Email address (username) <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1385,15 +1385,15 @@ export default function UsersPage() {
                         required
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring disabled:bg-muted"
                         placeholder="staff@company.com"
                       />
                       {isCompanyOwner && (
-                        <p className="text-xs text-gray-500 mt-1">Used to log in.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Used to log in.</p>
                       )}
                     </div>
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Full Name <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1401,13 +1401,13 @@ export default function UsersPage() {
                         required
                         value={formData.full_name}
                         onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         placeholder="John Doe"
                       />
                     </div>
                     {!isCompanyOwner && (
                       <div className="md:col-span-2">
-                        <label className="mb-2 block text-sm font-medium text-gray-700">Company (optional)</label>
+                        <label className="mb-2 block text-sm font-medium text-foreground/85">Company (optional)</label>
                         <select
                           value={formData.company_id === '' || formData.company_id == null ? '' : String(formData.company_id)}
                           onChange={(e) => {
@@ -1417,7 +1417,7 @@ export default function UsersPage() {
                               void loadCompanyRolesList()
                             }
                           }}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                          className="w-full rounded-lg border border-border px-3 py-2 focus:ring-2 focus:ring-ring"
                         >
                           <option value="">— No company —</option>
                           {companies.map((c) => (
@@ -1426,7 +1426,7 @@ export default function UsersPage() {
                             </option>
                           ))}
                         </select>
-                        <p className="mt-1 flex items-start gap-1 text-xs text-gray-500">
+                        <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
                           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                           Assign the tenant company (e.g. Adib Filling Station). Aquaculture and Premium Agro pond work
                           stay under that company—use an access profile on step 2 to limit users to aquaculture only.
@@ -1438,15 +1438,15 @@ export default function UsersPage() {
                 )}
 
                 {showModalAccess && (
-                <div className="border-b border-gray-100 pb-5">
-                  <h3 className="mb-3 text-base font-semibold text-gray-900">What they can do</h3>
-                  <p className="mb-3 text-sm text-gray-600">
+                <div className="border-b border-border/70 pb-5">
+                  <h3 className="mb-3 text-base font-semibold text-foreground">What they can do</h3>
+                  <p className="mb-3 text-sm text-muted-foreground">
                     <span className="font-medium">Job type</span> sets defaults. An optional{' '}
                     <span className="font-medium">access profile</span> overrides with a named template.
                   </p>
                   {hasAccessContext && (
-                    <p className="mb-3 flex items-start gap-2 rounded-lg border border-teal-100 bg-teal-50/90 px-3 py-2.5 text-sm text-teal-950">
-                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" aria-hidden />
+                    <p className="mb-3 flex items-start gap-2 rounded-lg border border-teal-100 bg-accent/90 px-3 py-2.5 text-sm text-teal-950">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
                       <span>
                         <strong>Aquaculture</strong> (including Premium Agro pond operations) is part of this same
                         company—not a separate tenant. For staff who should only work ponds and fish farming, create or
@@ -1457,7 +1457,7 @@ export default function UsersPage() {
                   )}
                   <div className="grid grid-cols-1 gap-4">
                     <div>
-                      <label className="mb-2 block text-sm font-medium text-gray-700">
+                      <label className="mb-2 block text-sm font-medium text-foreground/85">
                         Job type <span className="text-red-500">*</span>
                       </label>
                       <select
@@ -1472,7 +1472,7 @@ export default function UsersPage() {
                               : { pos_sale_scope: 'both' }),
                           }))
                         }}
-                        className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                        className="w-full max-w-md rounded-lg border border-border px-3 py-2 focus:ring-2 focus:ring-ring"
                       >
                         {jobTypeOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -1480,13 +1480,13 @@ export default function UsersPage() {
                           </option>
                         ))}
                       </select>
-                      <p className="mt-1.5 flex items-start gap-1 text-xs text-gray-600">
+                      <p className="mt-1.5 flex items-start gap-1 text-xs text-muted-foreground">
                         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         {jobTypeHint(formData.role) ||
                           'Default app areas apply when no custom profile is selected.'}
                       </p>
                       {ROLES_WITH_POS_SALE_SCOPE.has(formData.role) && (
-                        <div className="mt-4 max-w-4xl rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                        <div className="mt-4 max-w-4xl rounded-xl border border-border bg-muted/40/80 p-4">
                           <PosSaleScopeSelector
                             name="tenant-user-pos-scope"
                             value={formData.pos_sale_scope}
@@ -1499,7 +1499,7 @@ export default function UsersPage() {
                       {hasAccessContext &&
                         isPosStaffRole(formData.role) && (
                           <div className="mt-4 max-w-xl">
-                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
+                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
                               <MapPin className="h-4 w-4 text-amber-600" />
                               Location (POS site)
                               {stationOptions.length > 1 ? (
@@ -1507,7 +1507,7 @@ export default function UsersPage() {
                               ) : null}
                             </label>
                             {stationOptions.length === 0 ? (
-                              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                              <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
                                 No active sites yet. Add a site under Stations, then set this user&apos;s location.
                               </p>
                             ) : (
@@ -1523,7 +1523,7 @@ export default function UsersPage() {
                                     const v = e.target.value
                                     setFormData((fd) => ({ ...fd, home_station_id: v === '' ? '' : v }))
                                   }}
-                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                  className="w-full rounded-lg border border-border px-3 py-2 focus:ring-2 focus:ring-ring"
                                 >
                                   {stationOptions.length > 1 ? (
                                     <option value="">Select location…</option>
@@ -1534,7 +1534,7 @@ export default function UsersPage() {
                                     </option>
                                   ))}
                                 </select>
-                                <p className="mt-1.5 text-xs text-gray-500">
+                                <p className="mt-1.5 text-xs text-muted-foreground">
                                   {stationOptions.length > 1
                                     ? 'This user can sell and use registers only at the selected site.'
                                     : 'Only one site exists; it is assigned automatically.'}
@@ -1547,7 +1547,7 @@ export default function UsersPage() {
                         !isPosStaffRole(formData.role) &&
                         stationOptions.length > 0 && (
                           <div className="mt-4 max-w-xl">
-                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-700">
+                            <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
                               <MapPin className="h-4 w-4 text-amber-600" />
                               Home station / POS site (optional)
                             </label>
@@ -1561,7 +1561,7 @@ export default function UsersPage() {
                                 const v = e.target.value
                                 setFormData((fd) => ({ ...fd, home_station_id: v === '' ? '' : v }))
                               }}
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                              className="w-full rounded-lg border border-border px-3 py-2 focus:ring-2 focus:ring-ring"
                             >
                               <option value="">All sites (not limited to one station)</option>
                               {stationOptions.map((s) => (
@@ -1570,7 +1570,7 @@ export default function UsersPage() {
                                 </option>
                               ))}
                             </select>
-                            <p className="mt-1.5 text-xs text-gray-500">
+                            <p className="mt-1.5 text-xs text-muted-foreground">
                               When set, this user can only use POS, stock, and report data for that site (optional for
                               admins and accountants).
                             </p>
@@ -1578,14 +1578,14 @@ export default function UsersPage() {
                         )}
                     </div>
                     {hasAccessContext && (
-                      <div className="space-y-3 border-t border-gray-100 pt-3">
-                        <h4 className="text-sm font-semibold text-gray-900">Custom access (optional)</h4>
-                        <p className="text-xs text-gray-500">
+                      <div className="space-y-3 border-t border-border/70 pt-3">
+                        <h4 className="text-sm font-semibold text-foreground">Custom access (optional)</h4>
+                        <p className="text-xs text-muted-foreground">
                           If you pick a profile, expand <strong>Advanced</strong> to change which modules that profile
                           includes (saved with the user). Leave empty to use job-type defaults only.
                         </p>
                         {roleSharedUserCount != null && roleSharedUserCount > 1 && rolePermsDirty && formData.custom_role_id ? (
-                          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                          <p className="text-xs text-warning-foreground bg-warning/10 border border-amber-100 rounded-lg px-3 py-2">
                             This access profile is assigned to <strong>{roleSharedUserCount}</strong> active users.
                             Saving will change the menu and apps for <strong>all of them</strong>. To give only this user
                             different access, use <strong>New access profile</strong> first, then select it.
@@ -1593,7 +1593,7 @@ export default function UsersPage() {
                         ) : null}
                         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                           <div className="min-w-0 flex-1">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Access profile (optional)</label>
+                            <label className="mb-2 block text-sm font-medium text-foreground">Access profile (optional)</label>
                             <select
                               value={
                                 formData.custom_role_id === '' || formData.custom_role_id == null
@@ -1606,7 +1606,7 @@ export default function UsersPage() {
                                   custom_role_id: e.target.value === '' ? '' : e.target.value,
                                 })
                               }
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                             >
                               <option value="">
                                 — None: use the job role&apos;s default permissions (above) —
@@ -1622,24 +1622,24 @@ export default function UsersPage() {
                             <button
                               type="button"
                               onClick={openNewAccessProfileModal}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-accent"
                             >
                               <Sparkles className="h-4 w-4" />
                               New access profile
                             </button>
                             <Link
                               href="/roles"
-                              className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                              className="inline-flex items-center justify-center rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted/40"
                             >
                               Full roles list
                             </Link>
                           </div>
                         </div>
                         {formData.custom_role_id !== '' && formData.custom_role_id != null && permCatalog.length > 0 ? (
-                          <div className="overflow-hidden rounded-xl border border-gray-200">
+                          <div className="overflow-hidden rounded-xl border border-border">
                             <button
                               type="button"
-                              className="flex w-full items-center justify-between gap-2 bg-gray-50/90 px-3 py-2.5 text-left text-sm font-medium text-gray-800 hover:bg-gray-100/90"
+                              className="flex w-full items-center justify-between gap-2 bg-muted/40/90 px-3 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted/90"
                               onClick={() => setShowAdvancedPerms((v) => !v)}
                               aria-expanded={showAdvancedPerms}
                             >
@@ -1647,13 +1647,13 @@ export default function UsersPage() {
                                 Advanced: edit modules in this profile ({selectedProfilePerms.length} / {permCatalog.length} allowed)
                               </span>
                               <ChevronRight
-                                className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${
+                                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
                                   showAdvancedPerms ? 'rotate-90' : ''
                                 }`}
                               />
                             </button>
                             {showAdvancedPerms && (
-                              <div className="border-t border-gray-100 bg-white p-3 sm:p-4">
+                              <div className="border-t border-border/70 bg-white p-3 sm:p-4">
                                 <PermissionMatrix
                                   idPrefix="userform-perm"
                                   catalog={localizedPermCatalog as PermItem[]}
@@ -1661,26 +1661,26 @@ export default function UsersPage() {
                                   onChange={onProfileMatrixChange}
                                   listClassName="max-h-56 sm:max-h-64"
                                 />
-                                <p className="mt-2 text-[11px] text-gray-500">{rt('usersUncheckedHint')}</p>
+                                <p className="mt-2 text-[11px] text-muted-foreground">{rt('usersUncheckedHint')}</p>
                               </div>
                             )}
                           </div>
                         ) : hasAccessContext && (formData.custom_role_id === '' || formData.custom_role_id == null) ? (
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-muted-foreground">
                             No custom profile: staff keep the default permissions for the selected job title. Create a
                             profile to fine-tune modules, or go to the{' '}
-                            <Link href="/roles" className="text-indigo-600 hover:underline">
+                            <Link href="/roles" className="text-primary hover:underline">
                               Roles
                             </Link>{' '}
                             page to manage all profiles.
                           </p>
                         ) : formData.custom_role_id && permCatalog.length === 0 ? (
-                          <p className="text-xs text-amber-700">Loading access catalog… if this persists, reload the page.</p>
+                          <p className="text-xs text-warning-foreground">Loading access catalog… if this persists, reload the page.</p>
                         ) : null}
                       </div>
                     )}
                     {!hasAccessContext && (isSuperAdminSession || isCompanyOwner) && (
-                      <p className="text-xs text-gray-600">
+                      <p className="text-xs text-muted-foreground">
                         {isSuperAdminSession
                           ? 'Select a company in the first step to enable company access profiles and role templates.'
                           : 'Access profile options apply to your company’s users.'}
@@ -1692,10 +1692,10 @@ export default function UsersPage() {
 
                 {showModalPassword && (
                 <div className="pb-1">
-                  <h3 className="mb-3 text-base font-semibold text-gray-900">Sign-in password</h3>
+                  <h3 className="mb-3 text-base font-semibold text-foreground">Sign-in password</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         {editingId ? 'New Password (leave blank to keep current)' : 'Password'} <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
@@ -1704,13 +1704,13 @@ export default function UsersPage() {
                           required={!editingId}
                           value={formData.password}
                           onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 pr-10 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder="••••••••"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground/85 focus:outline-none"
                           aria-label={showPassword ? "Hide password" : "Show password"}
                         >
                           {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -1718,7 +1718,7 @@ export default function UsersPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Confirm Password <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
@@ -1727,13 +1727,13 @@ export default function UsersPage() {
                           required={!editingId}
                           value={formData.confirmPassword}
                           onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 pr-10 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                           placeholder="••••••••"
                         />
                         <button
                           type="button"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground/85 focus:outline-none"
                           aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                         >
                           {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -1746,14 +1746,14 @@ export default function UsersPage() {
               </div>
 
               {/* Modal Footer */}
-              <div className="mt-6 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-6 flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"
                   onClick={() => {
                     setShowModal(false)
                     resetForm()
                   }}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-foreground/85 hover:bg-muted"
                 >
                   Cancel
                 </button>
@@ -1762,7 +1762,7 @@ export default function UsersPage() {
                     <button
                       type="button"
                       onClick={goBack}
-                      className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
+                      className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted/40"
                     >
                       Back
                     </button>
@@ -1771,7 +1771,7 @@ export default function UsersPage() {
                     <button
                       type="button"
                       onClick={goNext}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary"
                     >
                       Next
                       <ChevronRight className="h-4 w-4" />
@@ -1780,7 +1780,7 @@ export default function UsersPage() {
                   {(!isCreateWizard || createStep === 3) && (
                     <button
                       type="submit"
-                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+                      className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-foreground/90"
                     >
                       {editingId ? 'Save changes' : 'Create user'}
                     </button>
@@ -1795,32 +1795,32 @@ export default function UsersPage() {
       {showNewRoleModal && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
           <div
-            className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-xl border border-gray-200 bg-white p-5 shadow-2xl"
+            className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-white p-5 shadow-2xl"
             role="dialog"
             aria-modal
             aria-labelledby="new-profile-title"
           >
-            <h3 id="new-profile-title" className="text-lg font-semibold text-gray-900">
+            <h3 id="new-profile-title" className="text-lg font-semibold text-foreground">
               New access profile
             </h3>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               Saved as a company role. It will be selected for the user in this form; you can re-use the same profile
               for other users later.
             </p>
             <div className="mt-4 space-y-3">
               <div>
-                <label className="text-xs font-medium text-gray-600">Name</label>
+                <label className="text-xs font-medium text-muted-foreground">Name</label>
                 <input
-                  className="mt-0.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-0.5 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   value={newRoleName}
                   onChange={(e) => setNewRoleName(e.target.value)}
                   placeholder="e.g. Front desk (limited)"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600">Description (optional)</label>
+                <label className="text-xs font-medium text-muted-foreground">Description (optional)</label>
                 <textarea
-                  className="mt-0.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-0.5 w-full rounded-lg border border-border px-3 py-2 text-sm"
                   value={newRoleDescription}
                   onChange={(e) => setNewRoleDescription(e.target.value)}
                   rows={2}
@@ -1829,12 +1829,12 @@ export default function UsersPage() {
               </div>
               {permCatalog.length > 0 ? (
                 <div>
-                  <label className="text-xs font-medium text-gray-600" htmlFor="new-profile-seed">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="new-profile-seed">
                     Start from a job type (optional)
                   </label>
                   <select
                     id="new-profile-seed"
-                    className="mt-0.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                     value={newProfileStartFrom}
                     onChange={(e) => {
                       const v = e.target.value
@@ -1854,10 +1854,10 @@ export default function UsersPage() {
                       </option>
                     ))}
                   </select>
-                  <p className="mt-1 text-[11px] text-gray-500">
+                  <p className="mt-1 text-[11px] text-muted-foreground">
                     Same defaults as a built-in job type; you can adjust each module below.
                   </p>
-                  <p className="mt-2 text-xs font-medium text-gray-600">Module access</p>
+                  <p className="mt-2 text-xs font-medium text-muted-foreground">Module access</p>
                   <PermissionMatrix
                     idPrefix="newrole"
                     catalog={localizedPermCatalog as PermItem[]}
@@ -1867,10 +1867,10 @@ export default function UsersPage() {
                   />
                 </div>
               ) : (
-                <p className="text-xs text-amber-700">Loading permission list…</p>
+                <p className="text-xs text-warning-foreground">Loading permission list…</p>
               )}
             </div>
-            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
+            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
               <button
                 type="button"
                 onClick={() => {
@@ -1878,7 +1878,7 @@ export default function UsersPage() {
                   setNewRoleName('')
                   setNewRoleDescription('')
                 }}
-                className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
               >
                 Cancel
               </button>
@@ -1886,7 +1886,7 @@ export default function UsersPage() {
                 type="button"
                 disabled={savingNewRole || !newRoleName.trim() || permCatalog.length === 0}
                 onClick={() => void submitNewAccessProfile()}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-accent0 disabled:opacity-50"
               >
                 {savingNewRole ? 'Creating…' : 'Create & select'}
               </button>

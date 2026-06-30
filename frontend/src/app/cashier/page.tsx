@@ -94,7 +94,7 @@ const POS_SCOPE_UI: Record<
   },
   fuel: {
     badgeClass:
-      "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-100 sm:text-xs",
+      "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/35 bg-warning/100/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-warning-foreground dark:text-amber-100 sm:text-xs",
     loadingHint: "Preparing pumps, nozzles, and prices…",
     shell: "w-full max-w-[1600px] mx-auto",
     grid: "grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-12 xl:items-start xl:gap-6 2xl:gap-8",
@@ -1377,13 +1377,13 @@ export default function CashierPOSPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center px-4">
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200/90 bg-white px-10 py-12 text-center shadow-sm">
-            <Loader2 className="h-10 w-10 animate-spin text-teal-600" />
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/80 bg-white px-10 py-12 text-center shadow-sm">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
             <div>
-              <p className="text-sm font-medium text-slate-900">{cashier.t('loadingPos')}</p>
-              <p className="mt-1 text-xs text-slate-500">{cashier.loadingHint(posSaleScope)}</p>
+              <p className="text-sm font-medium text-foreground">{cashier.t('loadingPos')}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{cashier.loadingHint(posSaleScope)}</p>
             </div>
           </div>
         </div>
@@ -1392,7 +1392,7 @@ export default function CashierPOSPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         titleId="pos-title"
@@ -1440,37 +1440,37 @@ export default function CashierPOSPage() {
               {showShortcuts ? (
                 <div
                   id="pos-shortcuts-panel"
-                  className="absolute right-0 z-[70] mt-1.5 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-3 px-3 text-slate-900 shadow-lg"
+                  className="absolute right-0 z-[70] mt-1.5 w-[min(100vw-2rem,20rem)] overflow-hidden rounded-xl border border-border bg-white py-3 px-3 text-foreground shadow-lg"
                   role="region"
                   aria-label={cashier.t('shortcutsAria')}
                 >
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {cashier.t('shortcuts')}
                   </p>
                   <ul className="mt-2 space-y-2 text-sm">
                     <li className="flex items-start justify-between gap-2">
-                      <span className="text-slate-600">{cashier.t('shortcutProductSearch')}</span>
-                      <kbd className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">/</kbd>
+                      <span className="text-muted-foreground">{cashier.t('shortcutProductSearch')}</span>
+                      <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">/</kbd>
                     </li>
                     <li className="flex items-start justify-between gap-2">
-                      <span className="text-slate-600">{cashier.t('shortcutCompleteSale')}</span>
+                      <span className="text-muted-foreground">{cashier.t('shortcutCompleteSale')}</span>
                       <span className="flex max-w-[11rem] shrink-0 flex-wrap items-center justify-end gap-1">
-                        <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">F9</kbd>
-                        <span className="text-xs text-slate-500">{cashier.t('shortcutOr')}</span>
-                        <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">⌘/Ctrl</kbd>
-                        <kbd className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">Enter</kbd>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">F9</kbd>
+                        <span className="text-xs text-muted-foreground">{cashier.t('shortcutOr')}</span>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">⌘/Ctrl</kbd>
+                        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">Enter</kbd>
                       </span>
                     </li>
                     <li className="flex items-start justify-between gap-2">
-                      <span className="text-slate-600">{cashier.t('shortcutCloseDialogs')}</span>
-                      <kbd className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">Esc</kbd>
+                      <span className="text-muted-foreground">{cashier.t('shortcutCloseDialogs')}</span>
+                      <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">Esc</kbd>
                     </li>
                     <li className="flex items-start justify-between gap-2">
-                      <span className="text-slate-600">{cashier.t('shortcutThisPanel')}</span>
-                      <kbd className="shrink-0 rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-xs">?</kbd>
+                      <span className="text-muted-foreground">{cashier.t('shortcutThisPanel')}</span>
+                      <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">?</kbd>
                     </li>
                   </ul>
-                  <p className="mt-3 border-t border-slate-200 pt-2 text-[11px] leading-snug text-slate-500">
+                  <p className="mt-3 border-t border-border pt-2 text-[11px] leading-snug text-muted-foreground">
                     {cashier.t('shortcutEnterHint')}
                   </p>
                 </div>
@@ -1492,32 +1492,32 @@ export default function CashierPOSPage() {
                 <ChevronDown className="h-3.5 w-3.5 opacity-80" aria-hidden />
               </button>
               {printMenuOpen ? (
-                <div className="absolute right-0 z-[60] mt-1.5 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white py-1.5 shadow-lg">
+                <div className="absolute right-0 z-[60] mt-1.5 w-64 overflow-hidden rounded-xl border border-border bg-white py-1.5 shadow-lg">
                   <button
                     type="button"
                     disabled={!canPrintUnifiedDraft}
                     onClick={printDraftFromMenu}
-                    className="block w-full px-3 py-2.5 text-left text-sm text-slate-900 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="block w-full px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <span className="font-medium">{cashier.t('draftInvoice')}</span>
-                    <span className="block text-xs text-slate-500">{cashier.t('draftInvoiceSub')}</span>
+                    <span className="block text-xs text-muted-foreground">{cashier.t('draftInvoiceSub')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => void printPosSummaryReport()}
-                    className="block w-full px-3 py-2.5 text-left text-sm text-slate-900 transition-colors hover:bg-slate-50"
+                    className="block w-full px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/40"
                   >
                     <span className="font-medium">{cashier.t('posSummary')}</span>
-                    <span className="block text-xs text-slate-500">{cashier.t('posSummarySub')}</span>
+                    <span className="block text-xs text-muted-foreground">{cashier.t('posSummarySub')}</span>
                   </button>
                   <button
                     type="button"
                     disabled={!customerId}
                     onClick={() => void printCustomerLedgerStatement()}
-                    className="block w-full px-3 py-2.5 text-left text-sm text-slate-900 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="block w-full px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <span className="font-medium">{cashier.t('customerAr')}</span>
-                    <span className="block text-xs text-slate-500">{cashier.t('customerArSub')}</span>
+                    <span className="block text-xs text-muted-foreground">{cashier.t('customerArSub')}</span>
                   </button>
                 </div>
               ) : null}
@@ -1532,7 +1532,7 @@ export default function CashierPOSPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex min-h-10 items-center gap-2 rounded-full bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-red-500/30"
+              className="inline-flex min-h-10 items-center gap-2 rounded-full bg-destructive/50/20 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-destructive/50/30"
             >
               <LogOut className="h-3.5 w-3.5" aria-hidden />
               {cashier.t('logout')}
@@ -1983,7 +1983,7 @@ export default function CashierPOSPage() {
                                   const approx = displayQty * kgp
                                   if (!Number.isFinite(approx)) return null
                                   return (
-                                    <span className="block text-teal-700/90">
+                                    <span className="block text-primary/90">
                                       ≈ {formatNumber(approx)} kg ({kgp} kg/{item.unit || "unit"})
                                     </span>
                                   )
@@ -2330,7 +2330,7 @@ export default function CashierPOSPage() {
                                   const lineKg = entry.quantity * kgp
                                   if (!Number.isFinite(lineKg)) return null
                                   return (
-                                    <p className="mt-1 text-xs text-teal-700/90">
+                                    <p className="mt-1 text-xs text-primary/90">
                                       ≈ {formatNumber(lineKg)} kg on this line
                                     </p>
                                   )
@@ -2499,7 +2499,7 @@ export default function CashierPOSPage() {
                             }}
                             className={`${selectClassName} ${
                               (isOnAccount || isSplitPayment) && !customerId
-                                ? "border-amber-500/80 bg-amber-50 dark:bg-amber-950/30"
+                                ? "border-amber-500/80 bg-warning/10 dark:bg-amber-950/30"
                                 : ""
                             }`}
                           >
@@ -2532,7 +2532,7 @@ export default function CashierPOSPage() {
                             Payment method
                           </label>
                           {isPondPosCustomer ? (
-                            <p className="rounded-md border border-teal-200/80 bg-teal-50 px-3 py-2 text-xs text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
+                            <p className="rounded-md border border-primary/25/80 bg-accent px-3 py-2 text-xs text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
                               <strong>Aquaculture pond customer:</strong> shop feed and medicine are always{" "}
                               <strong>On account (A/R)</strong> so the pond is charged and costs hit pond P&amp;L.
                               Collect cash later under <strong>Payments → Received</strong>.
@@ -2572,7 +2572,7 @@ export default function CashierPOSPage() {
                             </p>
                           ) : null}
                           {isOnAccount ? (
-                            <p className="rounded-md border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                            <p className="rounded-md border border-warning/30/80 bg-warning/10 px-3 py-2 text-xs text-warning-foreground dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
                               Posts to <strong>Accounts Receivable</strong>. Record cash,
                               card, or transfer receipts under <strong>Payments → Received</strong>{" "}
                               when the customer pays (full or partial).

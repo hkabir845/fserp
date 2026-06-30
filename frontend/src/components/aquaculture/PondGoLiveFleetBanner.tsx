@@ -23,8 +23,8 @@ export function PondGoLiveFleetBanner({ fleet, cutoverDate, loading, onOpenSetup
 
   if (loading && !fleet) {
     return (
-      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="h-12 animate-pulse rounded-lg bg-slate-100" />
+      <div className="mt-4 rounded-xl border border-border bg-white px-4 py-3 shadow-sm">
+        <div className="h-12 animate-pulse rounded-lg bg-muted" />
       </div>
     )
   }
@@ -46,37 +46,37 @@ export function PondGoLiveFleetBanner({ fleet, cutoverDate, loading, onOpenSetup
       className={`mt-4 overflow-hidden rounded-xl border shadow-sm ${
         allReady
           ? 'border-emerald-200 bg-gradient-to-r from-emerald-50 via-white to-teal-50/40'
-          : 'border-teal-200 bg-gradient-to-r from-teal-50 via-white to-amber-50/30'
+          : 'border-primary/25 bg-gradient-to-r from-teal-50 via-white to-amber-50/30'
       }`}
     >
       <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <LayoutGrid className={`h-4 w-4 shrink-0 ${allReady ? 'text-emerald-700' : 'text-teal-800'}`} aria-hidden />
-            <p className="text-sm font-semibold text-slate-900">
+            <LayoutGrid className={`h-4 w-4 shrink-0 ${allReady ? 'text-emerald-700' : 'text-primary'}`} aria-hidden />
+            <p className="text-sm font-semibold text-foreground">
               {allReady ? aquacultureT('goLiveAllPondsReady', lang) : aquacultureT('goLiveSetupInProgress', lang)}
             </p>
             {cutoverDate ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/80">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-border/80">
                 <Calendar className="h-3 w-3" aria-hidden />
                 {aquacultureTFormat('goLiveCutoverBadge', lang, { date: cutoverDate })}
               </span>
             ) : null}
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600">
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {allReady ? statusMessage : aquacultureT('goLiveFleetMessage', lang)}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-3">
-            <p className="text-xs font-medium text-slate-700">
-              <span className="tabular-nums text-base font-bold text-slate-900">{fleet.ready_ponds}</span>
-              <span className="text-slate-500">
+            <p className="text-xs font-medium text-foreground/85">
+              <span className="tabular-nums text-base font-bold text-foreground">{fleet.ready_ponds}</span>
+              <span className="text-muted-foreground">
                 / {fleet.total_ponds}
                 {aquacultureT('goLivePondsReadySuffix', lang)}
               </span>
             </p>
-            <div className="h-2 min-w-[8rem] max-w-xs flex-1 overflow-hidden rounded-full bg-slate-200/80">
+            <div className="h-2 min-w-[8rem] max-w-xs flex-1 overflow-hidden rounded-full bg-muted/80">
               <div
-                className={`h-full rounded-full transition-all ${allReady ? 'bg-emerald-500' : 'bg-teal-600'}`}
+                className={`h-full rounded-full transition-all ${allReady ? 'bg-emerald-500' : 'bg-primary'}`}
                 style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
                 role="progressbar"
                 aria-valuenow={pct}
@@ -85,7 +85,7 @@ export function PondGoLiveFleetBanner({ fleet, cutoverDate, loading, onOpenSetup
                 aria-label={aquacultureT('goLiveFleetReadinessAria', lang)}
               />
             </div>
-            <span className="text-xs font-semibold tabular-nums text-slate-800">{pct}%</span>
+            <span className="text-xs font-semibold tabular-nums text-foreground">{pct}%</span>
           </div>
         </div>
         <button
@@ -94,7 +94,7 @@ export function PondGoLiveFleetBanner({ fleet, cutoverDate, loading, onOpenSetup
           className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-lg px-3.5 py-2 text-sm font-medium shadow-sm ${
             allReady
               ? 'border border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-50'
-              : 'bg-teal-700 text-white hover:bg-teal-800'
+              : 'bg-primary text-white hover:bg-primary/90'
           }`}
         >
           {allReady ? aquacultureT('goLiveReview', lang) : aquacultureT('goLiveContinueSetup', lang)}
@@ -122,7 +122,7 @@ export function PondGoLiveReadinessBadge({
     )
   }
   return (
-    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-amber-950">
+    <span className="inline-flex w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-warning-foreground">
       {aquacultureTFormat('goLivePercentBadge', lang, { percent: readinessPercent })}
     </span>
   )

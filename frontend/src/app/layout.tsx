@@ -21,7 +21,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   /** Allow pinch-zoom for accessibility (avoid locking maximumScale to 1). */
   maximumScale: 5,
-  themeColor: '#1d4ed8',
+  themeColor: '#0d9488',
   /** Notched Android / iOS — pairs with env(safe-area-inset-*) in CSS */
   viewportFit: 'cover',
 }

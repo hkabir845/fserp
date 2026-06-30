@@ -196,7 +196,7 @@ export default function BusinessCardsPage() {
   })
 
   const role = (key: keyof Card, label: string, hint: string) => (
-    <label key={key as string} className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50">
+    <label key={key as string} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/40">
       <input
         type="checkbox"
         className="mt-1"
@@ -204,8 +204,8 @@ export default function BusinessCardsPage() {
         onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))}
       />
       <span>
-        <span className="font-medium text-gray-900">{label}</span>
-        <span className="mt-0.5 block text-xs text-gray-500">{hint}</span>
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{hint}</span>
       </span>
     </label>
   )
@@ -213,8 +213,8 @@ export default function BusinessCardsPage() {
   return (
           <div className="max-w-3xl space-y-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Multi-role NFC & digital profile</h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-foreground">Multi-role NFC & digital profile</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             One tag or QR can open your profile: use it as a <strong>business card</strong>, on-site{' '}
             <strong>employee ID</strong>, <strong>access</strong> context for doors/zones, and (with integrations) a{' '}
             <strong>payment / wallet</strong> enrollment reference. Door readers and POS use separate systems — this
@@ -224,10 +224,10 @@ export default function BusinessCardsPage() {
 
         <section
           ref={employeeSectionRef}
-          className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+          className="rounded-xl border border-border bg-white p-4 shadow-sm"
         >
-          <h2 className="text-sm font-semibold text-gray-900">Fill from payroll roster</h2>
-          <p className="mt-1 text-xs text-gray-600">
+          <h2 className="text-sm font-semibold text-foreground">Fill from payroll roster</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
             Search by name, email, department, or designation, then select an employee to merge roster fields into the
             form.
           </p>
@@ -241,27 +241,27 @@ export default function BusinessCardsPage() {
                 setEmployeeSearchOpen(true)
               }}
               onFocus={() => setEmployeeSearchOpen(true)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-border px-3 py-2 text-sm"
               autoComplete="off"
             />
             {employeeSearchOpen ? (
-              <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 text-sm shadow-lg">
+              <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-md border border-border bg-white py-1 text-sm shadow-lg">
                 {filteredEmployees.length === 0 ? (
-                  <li className="px-3 py-2 text-gray-500">No matches</li>
+                  <li className="px-3 py-2 text-muted-foreground">No matches</li>
                 ) : (
                   filteredEmployees.map((emp) => (
                     <li key={emp.id}>
                       <button
                         type="button"
-                        className="w-full px-3 py-2 text-left hover:bg-indigo-50"
+                        className="w-full px-3 py-2 text-left hover:bg-accent"
                         onClick={() => {
                           setForm((f) => ({ ...f, ...mapEmployeeToCard(emp) }))
                           setEmployeeSearchOpen(false)
                           setEmployeeSearchQuery('')
                         }}
                       >
-                        <span className="font-medium text-gray-900">{emp.name}</span>
-                        <span className="mt-0.5 block text-xs text-gray-500">
+                        <span className="font-medium text-foreground">{emp.name}</span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
                           {[emp.designation, emp.department, emp.email].filter(Boolean).join(' · ')}
                         </span>
                       </button>
@@ -274,17 +274,17 @@ export default function BusinessCardsPage() {
         </section>
 
         {error ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="erp-alert-warning">
             {(error as { response?: { data?: { detail?: string } } })?.response?.data?.detail?.toString() ||
               'Create your profile below (requires tenant mode).'}
           </div>
         ) : null}
 
-        {isLoading ? <div className="text-sm text-gray-500">Loading…</div> : null}
+        {isLoading ? <div className="text-sm text-muted-foreground">Loading…</div> : null}
 
-        <section className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
-          <h2 className="text-sm font-semibold text-indigo-900">Card roles</h2>
-          <p className="mt-1 text-xs text-indigo-800/80">Enable the experiences this NFC tag should expose on the public page.</p>
+        <section className="rounded-xl border border-primary/15 bg-accent/50 p-4">
+          <h2 className="text-sm font-semibold text-foreground/85">Card roles</h2>
+          <p className="mt-1 text-xs text-primary/80">Enable the experiences this NFC tag should expose on the public page.</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {role('role_business_card', 'Business card', 'Contact, bio, company links for customers & partners')}
             {role('role_employee_id', 'Employee ID', 'Badge-style photo, employee #, emergency contact')}
@@ -293,34 +293,34 @@ export default function BusinessCardsPage() {
           </div>
         </section>
 
-        <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Shared contact</h2>
+        <div className="space-y-4 rounded-xl border border-border bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-foreground">Shared contact</h2>
           {['display_name', 'title', 'department', 'phone', 'email', 'website'].map((field) => (
             <div key={field}>
-              <label className="text-xs font-medium text-gray-600">{field.replace('_', ' ')}</label>
+              <label className="text-xs font-medium text-muted-foreground">{field.replace('_', ' ')}</label>
               <input
                 value={(form as Record<string, string>)[field] || ''}
                 onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
           ))}
           <div>
-            <label className="text-xs font-medium text-gray-600">Address</label>
+            <label className="text-xs font-medium text-muted-foreground">Address</label>
             <textarea
               value={form.address || ''}
               onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
               rows={2}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600">Bio</label>
+            <label className="text-xs font-medium text-muted-foreground">Bio</label>
             <textarea
               value={form.bio || ''}
               onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))}
               rows={3}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
           <div className="flex flex-wrap gap-4">
@@ -342,11 +342,11 @@ export default function BusinessCardsPage() {
             </label>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600">Theme (preview)</label>
+            <label className="text-xs font-medium text-muted-foreground">Theme (preview)</label>
             <select
               value={form.theme || 'slate'}
               onChange={(e) => setForm((f) => ({ ...f, theme: e.target.value }))}
-              className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 rounded-md border border-border px-3 py-2 text-sm"
             >
               <option value="slate">Slate</option>
               <option value="emerald">Emerald</option>
@@ -354,37 +354,37 @@ export default function BusinessCardsPage() {
           </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-amber-100 bg-amber-50/30 p-5">
-          <h2 className="text-sm font-semibold text-amber-900">Employee ID profile</h2>
+        <div className="space-y-4 rounded-xl border border-amber-100 bg-warning/10/30 p-5">
+          <h2 className="text-sm font-semibold text-warning-foreground">Employee ID profile</h2>
           {['employee_code', 'photo_url', 'blood_group', 'emergency_contact_name', 'emergency_contact_phone'].map(
             (field) => (
               <div key={field}>
-                <label className="text-xs font-medium text-gray-600">{field.replace(/_/g, ' ')}</label>
+                <label className="text-xs font-medium text-muted-foreground">{field.replace(/_/g, ' ')}</label>
                 <input
                   value={(form as Record<string, string>)[field] || ''}
                   onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
                   placeholder={field === 'photo_url' ? 'https://…' : undefined}
                 />
               </div>
             ),
           )}
           <div>
-            <label className="text-xs font-medium text-gray-600">Join date</label>
+            <label className="text-xs font-medium text-muted-foreground">Join date</label>
             <input
               type="date"
               value={form.join_date ? form.join_date.slice(0, 10) : ''}
               onChange={(e) => setForm((f) => ({ ...f, join_date: e.target.value ? `${e.target.value}T00:00:00` : null }))}
-              className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600">Profile notes (skills, certifications)</label>
+            <label className="text-xs font-medium text-muted-foreground">Profile notes (skills, certifications)</label>
             <textarea
               value={form.profile_notes || ''}
               onChange={(e) => setForm((f) => ({ ...f, profile_notes: e.target.value }))}
               rows={2}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
         </div>
@@ -393,53 +393,53 @@ export default function BusinessCardsPage() {
           <h2 className="text-sm font-semibold text-cyan-900">Access (display)</h2>
           <p className="text-xs text-cyan-800/80">List zones/locations this badge is associated with. Physical access control integrates via your door vendor; NFC UID can be linked for provisioning.</p>
           <div>
-            <label className="text-xs font-medium text-gray-600">NFC tag UID</label>
+            <label className="text-xs font-medium text-muted-foreground">NFC tag UID</label>
             <input
               value={form.nfc_tag_uid || ''}
               onChange={(e) => setForm((f) => ({ ...f, nfc_tag_uid: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600">Zones (one per line)</label>
+            <label className="text-xs font-medium text-muted-foreground">Zones (one per line)</label>
             <textarea
               value={zonesText}
               onChange={(e) => setZonesText(e.target.value)}
               rows={3}
               placeholder="Main gate&#10;Mill floor&#10;Warehouse B"
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm"
+              className="mt-1 w-full rounded-md border border-border px-3 py-2 font-mono text-sm"
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="text-xs font-medium text-gray-600">Valid from</label>
+              <label className="text-xs font-medium text-muted-foreground">Valid from</label>
               <input
                 type="datetime-local"
                 value={form.access_valid_from ? form.access_valid_from.slice(0, 16) : ''}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, access_valid_from: e.target.value ? `${e.target.value}:00` : null }))
                 }
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600">Valid to</label>
+              <label className="text-xs font-medium text-muted-foreground">Valid to</label>
               <input
                 type="datetime-local"
                 value={form.access_valid_to ? form.access_valid_to.slice(0, 16) : ''}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, access_valid_to: e.target.value ? `${e.target.value}:00` : null }))
                 }
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600">Access notes</label>
+            <label className="text-xs font-medium text-muted-foreground">Access notes</label>
             <input
               value={form.access_notes || ''}
               onChange={(e) => setForm((f) => ({ ...f, access_notes: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
         </div>
@@ -459,17 +459,17 @@ export default function BusinessCardsPage() {
           </label>
           {['payment_provider_ref', 'payment_last4_hint', 'payment_notes'].map((field) => (
             <div key={field}>
-              <label className="text-xs font-medium text-gray-600">{field.replace(/_/g, ' ')}</label>
+              <label className="text-xs font-medium text-muted-foreground">{field.replace(/_/g, ' ')}</label>
               <input
                 value={(form as Record<string, string>)[field] || ''}
                 onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
               />
             </div>
           ))}
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-700">
+        <label className="flex items-center gap-2 text-sm text-foreground/85">
           <input
             type="checkbox"
             checked={form.paper_card_ordered ?? false}
@@ -482,7 +482,7 @@ export default function BusinessCardsPage() {
           type="button"
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+          className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
         >
           Save profile
         </button>
@@ -490,7 +490,7 @@ export default function BusinessCardsPage() {
         {card?.digital_card_url ? (
           <Link
             href={card.digital_card_url}
-            className="inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+            className="inline-flex text-sm font-semibold text-primary hover:text-primary"
           >
             Open public preview →
           </Link>

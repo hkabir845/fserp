@@ -16,6 +16,7 @@ export type EntityScopePond = {
   id: number
   name: string
   pond_role?: string
+  operational_display_name?: string
   is_active?: boolean
 }
 
@@ -143,11 +144,12 @@ export function buildStandardEntityScopeGroups(opts: {
       label: 'Ponds',
       options: activePonds.map((p) => {
         const role = pondRoleHint(p.pond_role)
-        const label = `${p.name}${role}`
+        const baseName = (p.operational_display_name || p.name || '').trim() || `Pond #${p.id}`
+        const label = `${baseName}${role}`
         return {
           value: pondValue(p),
           label,
-          searchText: `${p.name} ${p.pond_role || ''} pond grow nursing`,
+          searchText: `${baseName} ${p.name} ${p.pond_role || ''} pond grow nursing`,
         }
       }),
     })

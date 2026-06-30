@@ -489,8 +489,8 @@ export default function FixedAssetsPage() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
-        <div className="flex min-h-[50vh] items-center justify-center text-gray-600">
+      <PageLayout>
+        <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">
           Loading fixed assets…
         </div>
       </PageLayout>
@@ -498,7 +498,7 @@ export default function FixedAssetsPage() {
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -520,7 +520,7 @@ export default function FixedAssetsPage() {
             <button
               type="button"
               onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+              className="erp-btn-cta"
             >
               <Plus className="h-4 w-4" />
               New asset
@@ -530,21 +530,21 @@ export default function FixedAssetsPage() {
       >
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-2 bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-muted/40">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Asset</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entity</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Book value</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Asset</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Entity</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Cost</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Book value</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-border">
                 {assets.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
                       No fixed assets yet. Create one to start tracking depreciation.
                     </td>
                   </tr>
@@ -552,30 +552,30 @@ export default function FixedAssetsPage() {
                   assets.map((a) => (
                     <tr
                       key={a.id}
-                      className={`hover:bg-gray-50 cursor-pointer ${selected?.id === a.id ? 'bg-indigo-50' : ''}`}
+                      className={`hover:bg-muted/40 cursor-pointer ${selected?.id === a.id ? 'bg-accent' : ''}`}
                       onClick={() => loadDetail(a.id)}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{a.asset_number}</div>
-                        <div className="text-sm text-gray-600">{a.name}</div>
+                        <div className="font-medium text-foreground">{a.asset_number}</div>
+                        <div className="text-sm text-muted-foreground">{a.name}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
+                      <td className="px-4 py-3 text-sm text-muted-foreground">
                         {a.cost_center_label || a.station_name || a.pond_name || (a.company_wide ? 'Head office / shared' : '—')}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">{fmt(a.acquisition_cost)}</td>
                       <td className="px-4 py-3 text-sm text-right">{fmt(a.book_value)}</td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                        <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-muted text-foreground">
                           {STATUS_LABELS[a.status] || a.status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         {a.status === 'draft' && (
                           <>
-                            <button type="button" onClick={() => openEdit(a)} className="p-1 text-indigo-600 hover:text-indigo-800" title="Edit">
+                            <button type="button" onClick={() => openEdit(a)} className="p-1 text-primary hover:text-primary" title="Edit">
                               <Edit2 className="h-4 w-4" />
                             </button>
-                            <button type="button" onClick={() => handleDelete(a)} className="p-1 text-red-600 hover:text-red-800 ml-1" title="Delete">
+                            <button type="button" onClick={() => handleDelete(a)} className="p-1 text-destructive hover:text-destructive ml-1" title="Delete">
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </>
@@ -590,34 +590,34 @@ export default function FixedAssetsPage() {
 
           <div className="bg-white rounded-lg shadow p-5">
             {!selected ? (
-              <p className="text-gray-500 text-sm">Select an asset to view details and run depreciation.</p>
+              <p className="text-muted-foreground text-sm">Select an asset to view details and run depreciation.</p>
             ) : (
               <div className="space-y-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">{selected.asset_number}</h2>
-                  <p className="text-gray-700">{selected.name}</p>
-                  <p className="text-sm text-gray-500 mt-1">{STATUS_LABELS[selected.status] || selected.status}</p>
+                  <h2 className="text-lg font-semibold text-foreground">{selected.asset_number}</h2>
+                  <p className="text-foreground/85">{selected.name}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{STATUS_LABELS[selected.status] || selected.status}</p>
                 </div>
                 <dl className="grid grid-cols-2 gap-2 text-sm">
-                  <dt className="text-gray-500">Depreciation to</dt>
+                  <dt className="text-muted-foreground">Depreciation to</dt>
                   <dd className="text-right">{selected.cost_center_label || selected.station_name || selected.pond_name || '—'}</dd>
-                  <dt className="text-gray-500">Acquisition cost</dt>
+                  <dt className="text-muted-foreground">Acquisition cost</dt>
                   <dd className="text-right font-medium">{fmt(selected.acquisition_cost)}</dd>
-                  <dt className="text-gray-500">Salvage value</dt>
+                  <dt className="text-muted-foreground">Salvage value</dt>
                   <dd className="text-right">{fmt(selected.salvage_value)}</dd>
-                  <dt className="text-gray-500">Depreciable base</dt>
+                  <dt className="text-muted-foreground">Depreciable base</dt>
                   <dd className="text-right">{fmt(selected.depreciable_base || '0')}</dd>
-                  <dt className="text-gray-500">Accum. depreciation</dt>
+                  <dt className="text-muted-foreground">Accum. depreciation</dt>
                   <dd className="text-right">{fmt(selected.accumulated_depreciation)}</dd>
-                  <dt className="text-gray-500">Book value</dt>
+                  <dt className="text-muted-foreground">Book value</dt>
                   <dd className="text-right font-medium">{fmt(selected.book_value)}</dd>
-                  <dt className="text-gray-500">Monthly (SL)</dt>
+                  <dt className="text-muted-foreground">Monthly (SL)</dt>
                   <dd className="text-right">{fmt(selected.standard_monthly_depreciation)}</dd>
-                  <dt className="text-gray-500">Next run</dt>
+                  <dt className="text-muted-foreground">Next run</dt>
                   <dd className="text-right">{fmt(selected.next_depreciation_amount)}</dd>
-                  <dt className="text-gray-500">Useful life</dt>
+                  <dt className="text-muted-foreground">Useful life</dt>
                   <dd className="text-right">{selected.useful_life_months} mo</dd>
-                  <dt className="text-gray-500">In service</dt>
+                  <dt className="text-muted-foreground">In service</dt>
                   <dd className="text-right">{selected.in_service_date ? formatDateOnly(selected.in_service_date) : '—'}</dd>
                 </dl>
                 <div className="flex flex-wrap gap-2 pt-2">
@@ -625,7 +625,7 @@ export default function FixedAssetsPage() {
                     <button
                       type="button"
                       onClick={() => handlePlaceInService(selected)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-success text-white rounded-lg hover:bg-success/90"
                     >
                       <PlayCircle className="h-4 w-4" />
                       Place in service
@@ -651,7 +651,7 @@ export default function FixedAssetsPage() {
                         })
                         setShowDisposeModal(true)
                       }}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-destructive text-white rounded-lg hover:bg-destructive/90"
                     >
                       <Trash className="h-4 w-4" />
                       Dispose
@@ -660,7 +660,7 @@ export default function FixedAssetsPage() {
                   <button
                     type="button"
                     onClick={() => loadSchedule(selected.id)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted/40"
                   >
                     <Calendar className="h-4 w-4" />
                     Schedule
@@ -669,7 +669,7 @@ export default function FixedAssetsPage() {
                     <button
                       type="button"
                       onClick={() => openEdit(selected)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted/40"
                     >
                       <Edit2 className="h-4 w-4" />
                       Edit
@@ -681,7 +681,7 @@ export default function FixedAssetsPage() {
                     {selected.acquisition_journal_entry_id ? (
                       <Link
                         href={`/journal-entries?highlight=${selected.acquisition_journal_entry_id}`}
-                        className="text-indigo-600 hover:underline inline-flex items-center gap-1"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
                       >
                         Acquisition JE #{selected.acquisition_journal_entry_id}
                         <ExternalLink className="h-3 w-3" />
@@ -690,7 +690,7 @@ export default function FixedAssetsPage() {
                     {selected.disposal_journal_entry_id ? (
                       <Link
                         href={`/journal-entries?highlight=${selected.disposal_journal_entry_id}`}
-                        className="text-indigo-600 hover:underline inline-flex items-center gap-1 block"
+                        className="text-primary hover:underline inline-flex items-center gap-1 block"
                       >
                         Disposal JE #{selected.disposal_journal_entry_id}
                         <ExternalLink className="h-3 w-3" />
@@ -700,10 +700,10 @@ export default function FixedAssetsPage() {
                 )}
                 {schedule.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-800 mb-2">Projected schedule</h3>
+                    <h3 className="text-sm font-semibold text-foreground mb-2">Projected schedule</h3>
                     <ul className="text-sm space-y-1 max-h-40 overflow-y-auto">
                       {schedule.slice(0, 12).map((row) => (
-                        <li key={row.period_index} className="flex justify-between text-gray-700 border-b border-gray-100 py-1">
+                        <li key={row.period_index} className="flex justify-between text-foreground/85 border-b border-border/70 py-1">
                           <span>{formatDateOnly(row.run_date)}</span>
                           <span>{fmt(row.amount)}</span>
                         </li>
@@ -713,14 +713,14 @@ export default function FixedAssetsPage() {
                 )}
                 {selected.depreciation_runs && selected.depreciation_runs.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1 mb-2">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-1 mb-2">
                       <Calendar className="h-4 w-4" />
                       Depreciation history
                     </h3>
                     <ul className="text-sm space-y-2 max-h-48 overflow-y-auto">
                       {selected.depreciation_runs.map((r) => (
-                        <li key={r.id} className="border-b border-gray-100 pb-2">
-                          <div className="flex justify-between text-gray-700">
+                        <li key={r.id} className="border-b border-border/70 pb-2">
+                          <div className="flex justify-between text-foreground/85">
                             <span>{formatDateOnly(r.run_date)}</span>
                             <span>{fmt(r.amount)}</span>
                           </div>
@@ -728,18 +728,18 @@ export default function FixedAssetsPage() {
                             {r.journal_entry_id ? (
                               <Link
                                 href={`/journal-entries?highlight=${r.journal_entry_id}`}
-                                className="text-xs text-indigo-600 hover:underline"
+                                className="text-xs text-primary hover:underline"
                               >
                                 JE #{r.journal_entry_id}
                               </Link>
                             ) : null}
                             {r.reversed_at ? (
-                              <span className="text-xs text-gray-500">Reversed</span>
+                              <span className="text-xs text-muted-foreground">Reversed</span>
                             ) : (
                               <button
                                 type="button"
                                 onClick={() => handleReverseDepreciation(selected.id, r.id)}
-                                className="text-xs text-amber-700 hover:underline inline-flex items-center gap-0.5"
+                                className="text-xs text-warning-foreground hover:underline inline-flex items-center gap-0.5"
                               >
                                 <RotateCcw className="h-3 w-3" />
                                 Reverse
@@ -761,23 +761,23 @@ export default function FixedAssetsPage() {
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between px-6 py-4 border-b">
                 <h2 className="text-xl font-semibold">{editing ? 'Edit asset' : 'New fixed asset'}</h2>
-                <button type="button" onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
+                <button type="button" onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground/85">
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <div className="px-6 py-4 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Name *</label>
                     <input
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Charge depreciation to (P&L) *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Charge depreciation to (P&L) *</label>
                     <select
                       value={formData.cost_center_type}
                       onChange={(e) => {
@@ -789,23 +789,23 @@ export default function FixedAssetsPage() {
                           aquaculture_pond_id: v === 'pond' ? formData.aquaculture_pond_id : '',
                         })
                       }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     >
                       <option value="station">One station (Adib, Premium Agro, …)</option>
                       <option value="pond">One pond (Nursing, Grow-out, …)</option>
                       <option value="head_office">Head office / shared (all sites — e.g. manager motorcycle)</option>
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       FSERP tags each depreciation line to one place. Shared assets use head office so Adib/Premium Agro/pond P&L are not distorted.
                     </p>
                   </div>
                   {formData.cost_center_type === 'station' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Station</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Station</label>
                     <select
                       value={formData.station_id}
                       onChange={(e) => setFormData({ ...formData, station_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     >
                       <option value="">— None —</option>
                       {stations.map((s) => (
@@ -816,11 +816,11 @@ export default function FixedAssetsPage() {
                   )}
                   {formData.cost_center_type === 'pond' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Pond</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Pond</label>
                     <select
                       value={formData.aquaculture_pond_id}
                       onChange={(e) => setFormData({ ...formData, aquaculture_pond_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                       disabled={!aquacultureEnabled}
                     >
                       <option value="">— None —</option>
@@ -829,71 +829,71 @@ export default function FixedAssetsPage() {
                       ))}
                     </select>
                     {!aquacultureEnabled && (
-                      <p className="text-xs text-gray-500 mt-1">Aquaculture module off — use Station or Head office.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Aquaculture module off — use Station or Head office.</p>
                     )}
                   </div>
                   )}
-                  <div className="md:col-span-2 border-t border-gray-200 pt-4 mt-1">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Acquisition</h3>
+                  <div className="md:col-span-2 border-t border-border pt-4 mt-1">
+                    <h3 className="text-sm font-semibold text-foreground mb-3">Acquisition</h3>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Acquisition cost *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Acquisition cost *</label>
                     <input
                       type="number"
                       step="0.01"
                       value={formData.acquisition_cost}
                       onChange={(e) => setFormData({ ...formData, acquisition_cost: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
                   </div>
-                  <div className="md:col-span-2 border-t border-gray-200 pt-4 mt-1">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Depreciation (straight-line)</h3>
-                    <p className="text-xs text-gray-500 mb-3">
+                  <div className="md:col-span-2 border-t border-border pt-4 mt-1">
+                    <h3 className="text-sm font-semibold text-foreground mb-1">Depreciation (straight-line)</h3>
+                    <p className="text-xs text-muted-foreground mb-3">
                       Monthly amount = (Cost − Salvage) ÷ Useful life months. Depreciation stops at salvage value.
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">In-service date</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">In-service date</label>
                     <input
                       type="date"
                       value={formData.in_service_date}
                       onChange={(e) => setFormData({ ...formData, in_service_date: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
-                    <p className="text-xs text-gray-500 mt-1">When the asset started depreciating (for opening balance estimate).</p>
+                    <p className="text-xs text-muted-foreground mt-1">When the asset started depreciating (for opening balance estimate).</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Acquisition date</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Acquisition date</label>
                     <input
                       type="date"
                       value={formData.acquisition_date}
                       onChange={(e) => setFormData({ ...formData, acquisition_date: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Salvage value (end-of-life scrap/residual) *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Salvage value (end-of-life scrap/residual) *</label>
                     <input
                       type="number"
                       step="0.01"
                       min="0"
                       value={formData.salvage_value}
                       onChange={(e) => setFormData({ ...formData, salvage_value: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Expected value when fully depreciated (e.g. motorcycle scrap/sale at end of life).</p>
+                    <p className="text-xs text-muted-foreground mt-1">Expected value when fully depreciated (e.g. motorcycle scrap/sale at end of life).</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Useful life (months) *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Useful life (months) *</label>
                     <input
                       type="number"
                       value={formData.useful_life_months}
                       onChange={(e) => setFormData({ ...formData, useful_life_months: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Opening accum. depr.</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Opening accum. depr.</label>
                     <input
                       type="number"
                       step="0.01"
@@ -903,10 +903,10 @@ export default function FixedAssetsPage() {
                         setOpeningAccumManual(true)
                         setFormData({ ...formData, opening_accumulated_depreciation: e.target.value })
                       }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                       disabled={Boolean(editing && editing.status !== 'draft')}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {formData.settlement_account_id
                         ? 'Auto: 0 for new purchases (capitalized via settlement). Clear settlement for mid-life adoption.'
                         : `Auto-suggested: ${fmt(suggestedOpeningAccum)} from in-service date to today.`}
@@ -918,7 +918,7 @@ export default function FixedAssetsPage() {
                           <button
                             type="button"
                             onClick={applySuggestedOpeningAccum}
-                            className="text-indigo-600 hover:underline"
+                            className="text-primary hover:underline"
                           >
                             Use suggested ({fmt(suggestedOpeningAccum)})
                           </button>
@@ -927,20 +927,20 @@ export default function FixedAssetsPage() {
                     </p>
                   </div>
                   {formMonthlyDepreciation != null && (
-                    <div className="md:col-span-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">
+                    <div className="md:col-span-2 rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 text-sm text-warning-foreground">
                       Estimated monthly depreciation: <strong>{fmt(formMonthlyDepreciation)}</strong>
                       {' '}(after salvage)
                     </div>
                   )}
-                  <div className="md:col-span-2 border-t border-gray-200 pt-4 mt-1">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">GL accounts</h3>
+                  <div className="md:col-span-2 border-t border-border pt-4 mt-1">
+                    <h3 className="text-sm font-semibold text-foreground mb-3">GL accounts</h3>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Asset account *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Asset account *</label>
                     <select
                       value={formData.asset_account_id}
                       onChange={(e) => setFormData({ ...formData, asset_account_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     >
                       <option value="">{templateCoaOptionLabel(COA_FIXED_EQUIPMENT, coaOptions)}</option>
                       {assetCoa.map((a) => (
@@ -949,11 +949,11 @@ export default function FixedAssetsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Accum. depreciation *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Accum. depreciation *</label>
                     <select
                       value={formData.accumulated_depreciation_account_id}
                       onChange={(e) => setFormData({ ...formData, accumulated_depreciation_account_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     >
                       <option value="">{templateCoaOptionLabel(COA_ACCUM_DEPR, coaOptions)}</option>
                       {accumCoa.map((a) => (
@@ -965,11 +965,11 @@ export default function FixedAssetsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Depreciation expense *</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Depreciation expense *</label>
                     <select
                       value={formData.depreciation_expense_account_id}
                       onChange={(e) => setFormData({ ...formData, depreciation_expense_account_id: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     >
                       <option value="">{templateCoaOptionLabel(COA_DEPR_EXPENSE, coaOptions)}</option>
                       {expenseCoa.map((a) => (
@@ -978,7 +978,7 @@ export default function FixedAssetsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Settlement (optional)</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Settlement (optional)</label>
                     <select
                       value={formData.settlement_account_id}
                       onChange={(e) => {
@@ -993,33 +993,33 @@ export default function FixedAssetsPage() {
                           }),
                         })
                       }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     >
                       <option value="">— No acquisition JE —</option>
                       {settlementCoa.map((a) => (
                         <option key={a.id} value={a.id}>{formatCoaOptionLabel(a)}</option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Bank/cash credited on place-in-service (Dr asset / Cr bank). Pay vendor via Bills first, or pick the bank account used.
                     </p>
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Memo</label>
+                    <label className="block text-sm font-medium text-foreground/85 mb-1">Memo</label>
                     <textarea
                       value={formData.memo}
                       onChange={(e) => setFormData({ ...formData, memo: e.target.value })}
                       rows={2}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      className="w-full border border-border rounded-lg px-3 py-2"
                     />
                   </div>
                 </div>
               </div>
               <div className="px-6 py-4 border-t flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                <button type="button" onClick={() => setShowModal(false)} className="erp-btn-secondary">
                   Cancel
                 </button>
-                <button type="button" onClick={handleSave} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                <button type="button" onClick={handleSave} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
                   Save
                 </button>
               </div>
@@ -1033,24 +1033,24 @@ export default function FixedAssetsPage() {
               <h2 className="text-lg font-semibold mb-4">Dispose {selected.asset_number}</h2>
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Disposal date</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Disposal date</label>
                   <input
                     type="date"
                     value={disposeForm.disposal_date}
                     onChange={(e) => setDisposeForm({ ...disposeForm, disposal_date: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-border rounded-lg px-3 py-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Proceeds amount</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Proceeds amount</label>
                   <input
                     type="number"
                     step="0.01"
                     value={disposeForm.proceeds_amount}
                     onChange={(e) => setDisposeForm({ ...disposeForm, proceeds_amount: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    className="w-full border border-border rounded-lg px-3 py-2"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Book value: {fmt(selected.book_value)} · Salvage: {fmt(selected.salvage_value)}.
                     Gain/loss on disposal = proceeds − book value (posted automatically).
                   </p>
@@ -1060,7 +1060,7 @@ export default function FixedAssetsPage() {
                 <button type="button" onClick={() => setShowDisposeModal(false)} className="px-4 py-2 border rounded-lg">
                   Cancel
                 </button>
-                <button type="button" onClick={handleDispose} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                <button type="button" onClick={handleDispose} className="erp-btn-danger">
                   Post disposal
                 </button>
               </div>

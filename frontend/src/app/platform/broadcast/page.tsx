@@ -93,22 +93,22 @@ export default function BroadcastPage() {
 
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
-      low: 'bg-gray-100 text-gray-800',
-      medium: 'bg-blue-100 text-blue-800',
+      low: 'bg-muted text-foreground',
+      medium: 'bg-blue-100 text-primary',
       high: 'bg-yellow-100 text-yellow-800',
-      urgent: 'bg-red-100 text-red-800',
+      urgent: 'bg-destructive/10 text-destructive',
     }
-    return colors[priority] || 'bg-gray-100 text-gray-800'
+    return colors[priority] || 'bg-muted text-foreground'
   }
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-800',
-      scheduled: 'bg-blue-100 text-blue-800',
-      sent: 'bg-green-100 text-green-800',
-      cancelled: 'bg-red-100 text-red-800',
+      draft: 'bg-muted text-foreground',
+      scheduled: 'bg-blue-100 text-primary',
+      sent: 'bg-success/15 text-success',
+      cancelled: 'bg-destructive/10 text-destructive',
     }
-    return colors[status] || 'bg-gray-100 text-gray-800'
+    return colors[status] || 'bg-muted text-foreground'
   }
 
   return (
@@ -118,15 +118,15 @@ export default function BroadcastPage() {
           {/* Page Header */}
           <div className="mb-8 flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Broadcast Messages</h1>
-              <p className="text-gray-600 mt-2">Send announcements and notifications to tenants</p>
+              <h1 className="text-3xl font-bold text-foreground">Broadcast Messages</h1>
+              <p className="text-muted-foreground mt-2">Send announcements and notifications to tenants</p>
             </div>
             <button
               onClick={() => {
                 setEditingBroadcast(null)
                 setShowCreateModal(true)
               }}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 flex items-center gap-2"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 flex items-center gap-2"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -140,11 +140,11 @@ export default function BroadcastPage() {
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Broadcasts</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{broadcasts.length}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Total Broadcasts</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">{broadcasts.length}</p>
                 </div>
                 <div className="bg-blue-100 rounded-full p-3">
-                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
                 </div>
@@ -154,13 +154,13 @@ export default function BroadcastPage() {
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Sent</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <p className="text-sm font-medium text-muted-foreground">Sent</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">
                     {broadcasts.filter(b => b.status === 'sent').length}
                   </p>
                 </div>
-                <div className="bg-green-100 rounded-full p-3">
-                  <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="bg-success/15 rounded-full p-3">
+                  <svg className="h-6 w-6 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
@@ -170,8 +170,8 @@ export default function BroadcastPage() {
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-yellow-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Scheduled</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <p className="text-sm font-medium text-muted-foreground">Scheduled</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">
                     {broadcasts.filter(b => b.status === 'scheduled').length}
                   </p>
                 </div>
@@ -183,16 +183,16 @@ export default function BroadcastPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-gray-500">
+            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-border/500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Drafts</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                  <p className="text-sm font-medium text-muted-foreground">Drafts</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">
                     {broadcasts.filter(b => b.status === 'draft').length}
                   </p>
                 </div>
-                <div className="bg-gray-100 rounded-full p-3">
-                  <svg className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="bg-muted rounded-full p-3">
+                  <svg className="h-6 w-6 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                 </div>
@@ -204,45 +204,45 @@ export default function BroadcastPage() {
           <div className="bg-white rounded-lg shadow overflow-hidden">
             {isLoading ? (
               <div className="p-12 text-center">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                <p className="mt-4 text-gray-600">Loading broadcasts...</p>
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <p className="mt-4 text-muted-foreground">Loading broadcasts...</p>
               </div>
             ) : broadcasts.length === 0 ? (
               <div className="p-12 text-center">
-                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="mx-auto h-12 w-12 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                <h3 className="mt-4 text-lg font-medium text-gray-900">No broadcasts yet</h3>
-                <p className="mt-2 text-gray-500">Get started by creating a new broadcast message.</p>
+                <h3 className="mt-4 text-lg font-medium text-foreground">No broadcasts yet</h3>
+                <p className="mt-2 text-muted-foreground">Get started by creating a new broadcast message.</p>
                 <button
                   onClick={() => {
                     setEditingBroadcast(null)
                     setShowCreateModal(true)
                   }}
-                  className="mt-6 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                  className="mt-6 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
                 >
                   Create Broadcast
                 </button>
               </div>
             ) : (
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-border">
+                <thead className="bg-muted/40">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scheduled</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Priority</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Target</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Scheduled</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Created</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-border">
                   {broadcasts.map((broadcast) => (
-                    <tr key={broadcast.id} className="hover:bg-gray-50">
+                    <tr key={broadcast.id} className="hover:bg-muted/40">
                       <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900">{broadcast.title}</div>
-                        <div className="text-sm text-gray-500 truncate max-w-md">{broadcast.message}</div>
+                        <div className="text-sm font-medium text-foreground">{broadcast.title}</div>
+                        <div className="text-sm text-muted-foreground truncate max-w-md">{broadcast.message}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityColor(broadcast.priority)}`}>
@@ -254,13 +254,13 @@ export default function BroadcastPage() {
                           {broadcast.status.toUpperCase()}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                         {broadcast.target_tenants === null ? 'All Tenants' : `${broadcast.target_tenants.length} Tenant(s)`}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                         {broadcast.scheduled_at ? formatDateOnly(broadcast.scheduled_at) : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                         {formatDateOnly(broadcast.created_at)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -269,7 +269,7 @@ export default function BroadcastPage() {
                             setEditingBroadcast(broadcast)
                             setShowCreateModal(true)
                           }}
-                          className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          className="text-primary hover:text-foreground/85 mr-4"
                         >
                           Edit
                         </button>
@@ -278,7 +278,7 @@ export default function BroadcastPage() {
                             type="button"
                             disabled={sendBroadcast.isPending}
                             onClick={() => sendBroadcast.mutate(broadcast.id)}
-                            className="text-green-600 hover:text-green-900 disabled:opacity-50"
+                            className="text-success hover:text-green-900 disabled:opacity-50"
                           >
                             Send
                           </button>
@@ -372,40 +372,40 @@ function BroadcastModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="fixed inset-0 bg-muted-foreground bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
         <div className="mt-3">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
+          <h3 className="text-lg font-medium text-foreground mb-4">
             {broadcast?.id ? 'Edit Broadcast' : 'Create Broadcast'}
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Title *</label>
+              <label className="block text-sm font-medium text-foreground/85">Title *</label>
               <input
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                className="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm focus:ring-ring focus:border-ring"
                 placeholder="System Maintenance Notice"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Message *</label>
+              <label className="block text-sm font-medium text-foreground/85">Message *</label>
               <textarea
                 value={formData.message}
                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                 rows={6}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                className="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm focus:ring-ring focus:border-ring"
                 placeholder="Enter your broadcast message..."
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Priority</label>
+                <label className="block text-sm font-medium text-foreground/85">Priority</label>
                 <select
                   value={formData.priority}
                   onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm focus:ring-ring focus:border-ring"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -414,11 +414,11 @@ function BroadcastModal({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Status</label>
+                <label className="block text-sm font-medium text-foreground/85">Status</label>
                 <select
                   value={formData.status}
                   onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm focus:ring-ring focus:border-ring"
                 >
                   <option value="draft">Draft</option>
                   <option value="scheduled">Scheduled</option>
@@ -427,7 +427,7 @@ function BroadcastModal({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Target Tenants</label>
+              <label className="mb-2 block text-sm font-medium text-foreground">Target Tenants</label>
               <div className="space-y-2">
                 <div className="flex items-center gap-4">
                   <label className="flex items-center">
@@ -453,7 +453,7 @@ function BroadcastModal({
                   </label>
                 </div>
                 {targetType === 'selected' && (
-                  <div className="border border-gray-300 rounded-md p-3 max-h-48 overflow-y-auto">
+                  <div className="border border-border rounded-md p-3 max-h-48 overflow-y-auto">
                     {tenants.map((tenant) => (
                       <label key={tenant.id} className="flex items-center py-1">
                         <input
@@ -479,12 +479,12 @@ function BroadcastModal({
             </div>
             {formData.status === 'scheduled' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Scheduled Date & Time</label>
+                <label className="block text-sm font-medium text-foreground/85">Scheduled Date & Time</label>
                 <input
                   type="datetime-local"
                   value={formData.scheduled_at}
                   onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm focus:ring-ring focus:border-ring"
                 />
               </div>
             )}
@@ -492,7 +492,7 @@ function BroadcastModal({
           <div className="mt-6 flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+              className="px-4 py-2 border border-border rounded-md text-sm font-medium text-foreground/85 hover:bg-muted/40"
             >
               Cancel
             </button>
@@ -500,7 +500,7 @@ function BroadcastModal({
               type="button"
               disabled={saving}
               onClick={handleSave}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
             >
               {saving ? 'Saving…' : (broadcast?.id ? 'Update' : 'Create')} Broadcast
             </button>

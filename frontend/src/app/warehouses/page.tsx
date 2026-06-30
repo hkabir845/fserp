@@ -42,8 +42,8 @@ export default function WarehousesPage() {
               <div className="bg-white rounded-lg shadow p-6 flex flex-col items-center justify-center min-h-[400px] gap-4">
           <ReportingHubBreadcrumb current="Warehouses" />
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading warehouses...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading warehouses...</p>
           </div>
         </div>
     )
@@ -58,18 +58,18 @@ export default function WarehousesPage() {
                 <h2 className="text-2xl font-bold">Warehouses</h2>
                 <button
                   onClick={() => setShowCreateForm(!showCreateForm)}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
                 >
                   {showCreateForm ? 'Cancel' : '+ New Warehouse'}
                 </button>
               </div>
 
               {showCreateForm && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="mb-6 p-4 bg-muted/40 rounded-lg">
                   <h3 className="text-lg font-semibold mb-4">Create New Warehouse</h3>
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                      <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                      <label htmlFor="name" className="block text-sm font-medium text-foreground/85">
                         Name *
                       </label>
                       <input
@@ -78,19 +78,19 @@ export default function WarehousesPage() {
                         required
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                        className="mt-1 block w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                         placeholder="Warehouse name"
                       />
                     </div>
                     <div>
-                      <label htmlFor="address" className="block text-sm font-medium text-gray-700">
+                      <label htmlFor="address" className="block text-sm font-medium text-foreground/85">
                         Address
                       </label>
                       <textarea
                         id="address"
                         value={formData.address}
                         onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                        className="mt-1 block w-full rounded-md border-border shadow-sm focus:border-ring focus:ring-ring sm:text-sm px-3 py-2 border"
                         placeholder="Warehouse address"
                         rows={3}
                       />
@@ -98,7 +98,7 @@ export default function WarehousesPage() {
                     <div className="flex gap-2">
                       <button
                         type="submit"
-                        className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                        className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90"
                       >
                         Create Warehouse
                       </button>
@@ -108,7 +108,7 @@ export default function WarehousesPage() {
                           setShowCreateForm(false)
                           setFormData({ name: '', address: '' })
                         }}
-                        className="bg-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-400"
+                        className="bg-muted text-foreground/85 px-4 py-2 rounded-md hover:bg-muted-foreground/50"
                       >
                         Cancel
                       </button>
@@ -118,42 +118,42 @@ export default function WarehousesPage() {
               )}
 
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted/40">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         ID
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Name
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Address
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Status
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-border">
                     {warehouses && warehouses.length > 0 ? (
                       warehouses.map((warehouse) => (
                         <tr key={warehouse.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                             {warehouse.id}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground font-medium">
                             {warehouse.name}
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
+                          <td className="px-6 py-4 text-sm text-muted-foreground">
                             {warehouse.address || '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                 warehouse.is_active
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
+                                  ? 'bg-success/15 text-success'
+                                  : 'bg-destructive/10 text-destructive'
                               }`}
                             >
                               {warehouse.is_active ? 'Active' : 'Inactive'}
@@ -163,7 +163,7 @@ export default function WarehousesPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
+                        <td colSpan={4} className="px-6 py-4 text-center text-sm text-muted-foreground">
                           No warehouses found. Create one to get started.
                         </td>
                       </tr>

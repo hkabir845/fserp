@@ -476,7 +476,7 @@ export default function NozzlesPage() {
   })
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <ErpPageShell
         showBackLink={false}
         title={pageMeta.title}
@@ -492,7 +492,7 @@ export default function NozzlesPage() {
               setCreateCodeNonce((n) => n + 1)
               setShowModal(true)
             }}
-            className="inline-flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300"
+            className="erp-btn-cta"
           >
             <Plus className="h-5 w-5" />
             <span>Add Nozzle</span>
@@ -502,20 +502,20 @@ export default function NozzlesPage() {
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4 flex-1">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <Search className="erp-search-icon" />
               <input
                 type="text"
                 placeholder="Search nozzles..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="erp-field pl-10"
               />
             </div>
             
             <select
               value={selectedMeter}
               onChange={(e) => setSelectedMeter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="erp-field w-auto min-w-[12rem]"
             >
               <option value="">All Meters</option>
               {meters.map((meter) => (
@@ -529,13 +529,13 @@ export default function NozzlesPage() {
 
         {loading ? (
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="erp-loading-spinner h-12 w-12"></div>
           </div>
         ) : filteredNozzles.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <Fuel className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No nozzles found</h3>
-            <p className="text-gray-600 mb-4">Get started by creating your first fuel nozzle</p>
+          <div className="erp-empty-state">
+            <Fuel className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No nozzles found</h3>
+            <p className="text-muted-foreground mb-4">Get started by creating your first fuel nozzle</p>
             <button
               type="button"
               onClick={() => {
@@ -543,7 +543,7 @@ export default function NozzlesPage() {
                 setCreateCodeNonce((n) => n + 1)
                 setShowModal(true)
               }}
-              className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="erp-btn-cta"
             >
               <Plus className="h-5 w-5" />
               <span>Add Nozzle</span>
@@ -557,23 +557,21 @@ export default function NozzlesPage() {
                   <div className="flex items-center space-x-2">
                     <div className={`p-2 rounded-lg ${
                       nozzle.product_name?.toLowerCase().includes('diesel') ? 'bg-yellow-100' :
-                      nozzle.product_name?.toLowerCase().includes('petrol') ? 'bg-red-100' :
+                      nozzle.product_name?.toLowerCase().includes('petrol') ? 'bg-destructive/10' :
                       'bg-blue-100'
                     }`}>
                       <Fuel className={`h-5 w-5 ${
                         nozzle.product_name?.toLowerCase().includes('diesel') ? 'text-yellow-600' :
-                        nozzle.product_name?.toLowerCase().includes('petrol') ? 'text-red-600' :
-                        'text-blue-600'
+                        nozzle.product_name?.toLowerCase().includes('petrol') ? 'text-destructive' :
+                        'text-primary'
                       }`} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-sm text-gray-900">{nozzle.nozzle_name}</h3>
-                      <p className="text-xs text-gray-500">{nozzle.nozzle_number}</p>
+                      <h3 className="font-bold text-sm text-foreground">{nozzle.nozzle_name}</h3>
+                      <p className="text-xs text-muted-foreground">{nozzle.nozzle_number}</p>
                     </div>
                   </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                    nozzleIsOperational(nozzle) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
+                  <span className={`erp-badge ${nozzleIsOperational(nozzle) ? 'erp-badge--success' : 'erp-badge--danger'}`}>
                     {nozzleIsOperational(nozzle) ? 'Active' : 'Off'}
                   </span>
                 </div>
@@ -581,32 +579,32 @@ export default function NozzlesPage() {
                 <div className="space-y-2 mb-3">
                   <div className={`p-2 rounded-lg text-center ${
                     nozzle.product_name?.toLowerCase().includes('diesel') ? 'bg-yellow-50 border border-yellow-200' :
-                    nozzle.product_name?.toLowerCase().includes('petrol') ? 'bg-red-50 border border-red-200' :
-                    'bg-blue-50 border border-blue-200'
+                    nozzle.product_name?.toLowerCase().includes('petrol') ? 'bg-destructive/5 border border-destructive/25' :
+                    'bg-blue-50 border border-primary/25'
                   }`}>
-                    <p className="text-xs text-gray-600">Product</p>
+                    <p className="text-xs text-muted-foreground">Product</p>
                     <p className={`font-bold text-sm ${
                       nozzle.product_name?.toLowerCase().includes('diesel') ? 'text-yellow-800' :
-                      nozzle.product_name?.toLowerCase().includes('petrol') ? 'text-red-800' :
-                      'text-blue-800'
+                      nozzle.product_name?.toLowerCase().includes('petrol') ? 'text-destructive' :
+                      'text-primary'
                     }`}>
                       {nozzle.product_name || 'N/A'}
                     </p>
                     {nozzle.unit_price && (
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         {currencySymbol}{formatNumber(Number(nozzle.unit_price))}/L
                       </p>
                     )}
                   </div>
                   
                   <div className="text-xs space-y-1">
-                    <p className="text-gray-500">
+                    <p className="text-muted-foreground">
                       <span className="font-medium">Meter:</span> {nozzle.meter_name}
                     </p>
-                    <p className="text-gray-500">
+                    <p className="text-muted-foreground">
                       <span className="font-medium">Dispenser:</span> {nozzle.dispenser_name}
                     </p>
-                    <p className="text-gray-500">
+                    <p className="text-muted-foreground">
                       <span className="font-medium">Station:</span> {nozzle.station_name}
                     </p>
                   </div>
@@ -615,14 +613,14 @@ export default function NozzlesPage() {
                 <div className="flex items-center justify-between pt-3 border-t">
                   <button
                     onClick={() => router.push(`/cashier?nozzle=${nozzle.id}`)}
-                    className="flex-1 text-xs text-blue-600 hover:text-blue-800 font-medium mr-2"
+                    className="erp-link mr-2 flex-1 text-xs"
                   >
                     Use in POS →
                   </button>
                   <div className="flex items-center space-x-1">
                     <button 
                       onClick={() => handleEdit(nozzle)}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                      className="erp-icon-btn-primary p-1.5"
                       title="Edit Nozzle"
                     >
                       <Edit className="h-3 w-3" />
@@ -632,7 +630,7 @@ export default function NozzlesPage() {
                         setDeleteId(nozzle.id)
                         setShowDeleteConfirm(true)
                       }}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                      className="p-1.5 text-destructive hover:bg-destructive/5 rounded"
                       title="Delete Nozzle"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -652,7 +650,7 @@ export default function NozzlesPage() {
                 <h2 className="text-2xl font-bold">{editingId ? 'Edit Nozzle' : 'Configure Nozzle'}</h2>
                 <button
                   onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -660,23 +658,23 @@ export default function NozzlesPage() {
               
               <form onSubmit={editingId ? handleUpdate : handleCreate}>
                 {/* Hierarchy Selection Section */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 mb-6 border border-blue-200">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <Building2 className="h-5 w-5 mr-2 text-blue-600" />
+                <div className="erp-callout-primary mb-6 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+                    <Building2 className="h-5 w-5 mr-2 text-primary" />
                     Select Station Hierarchy
                   </h3>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Station */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Station *
                       </label>
                       <select
                         required
                         value={selectedStation || ''}
                         onChange={(e) => handleStationChange(e.target.value ? parseInt(e.target.value) : null)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white"
                       >
                         <option value="">Select Station</option>
                         {fuelForecourtStations.map((station) => (
@@ -689,14 +687,14 @@ export default function NozzlesPage() {
                           </option>
                         ))}
                       </select>
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {fuelForecourtStations.length} fuel forecourt site(s) — shop/aquaculture-only stations are hidden
                       </p>
                     </div>
 
                     {/* Island */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Island *
                       </label>
                       <select
@@ -714,7 +712,7 @@ export default function NozzlesPage() {
                           }
                         }}
                         disabled={!selectedStation}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white disabled:bg-muted disabled:cursor-not-allowed"
                       >
                         <option value="">
                           {!selectedStation ? 'Select Station first' : islands.length === 0 ? 'No islands available' : 'Select Island'}
@@ -726,7 +724,7 @@ export default function NozzlesPage() {
                               key={island.id} 
                               value={island.id}
                               disabled={!selectable}
-                              className={selectable ? 'text-gray-900 bg-white' : 'text-gray-400 bg-gray-100'}
+                              className={selectable ? 'text-foreground bg-white' : 'text-muted-foreground/70 bg-muted'}
                             >
                               {island.island_name} {island.island_code ? `(${island.island_code})` : ''}
                               {!selectable ? ' ❌ [Different Station]' : ' ✓ [Available]'}
@@ -735,11 +733,11 @@ export default function NozzlesPage() {
                         })}
                       </select>
                       {selectedStation && (
-                        <div className="mt-1 space-y-1 text-xs text-gray-500">
+                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
                           <p>
                             {islands.filter(isIslandSelectable).length} island(s) available for this station
                           </p>
-                          <p className="text-gray-400">
+                          <p className="text-muted-foreground/70">
                             {islands.filter(island => !isIslandSelectable(island)).length} island(s) belong to other stations
                           </p>
                         </div>
@@ -748,7 +746,7 @@ export default function NozzlesPage() {
 
                     {/* Dispenser */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Dispenser *
                       </label>
                       <select
@@ -766,7 +764,7 @@ export default function NozzlesPage() {
                           }
                         }}
                         disabled={!selectedIsland}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white disabled:bg-muted disabled:cursor-not-allowed"
                       >
                         <option value="">
                           {!selectedIsland ? 'Select Island first' : dispensers.length === 0 ? 'No dispensers available' : 'Select Dispenser'}
@@ -778,7 +776,7 @@ export default function NozzlesPage() {
                               key={dispenser.id} 
                               value={dispenser.id}
                               disabled={!selectable}
-                              className={selectable ? 'text-gray-900 bg-white' : 'text-gray-400 bg-gray-100'}
+                              className={selectable ? 'text-foreground bg-white' : 'text-muted-foreground/70 bg-muted'}
                             >
                               {dispenser.dispenser_name} {dispenser.dispenser_code ? `(${dispenser.dispenser_code})` : ''}
                               {!selectable ? ' ❌ [Different Island]' : ' ✓ [Available]'}
@@ -787,11 +785,11 @@ export default function NozzlesPage() {
                         })}
                       </select>
                       {selectedIsland && (
-                        <div className="mt-1 space-y-1 text-xs text-gray-500">
+                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
                           <p>
                             {dispensers.filter(isDispenserSelectable).length} dispenser(s) available for this island
                           </p>
-                          <p className="text-gray-400">
+                          <p className="text-muted-foreground/70">
                             {dispensers.filter(dispenser => !isDispenserSelectable(dispenser)).length} dispenser(s) belong to other islands
                           </p>
                         </div>
@@ -800,8 +798,8 @@ export default function NozzlesPage() {
 
                     {/* Meter */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Meter * <span className="text-xs text-gray-500">(1 Meter = 1 Nozzle)</span>
+                      <label className="mb-2 block text-sm font-medium text-foreground">
+                        Meter * <span className="text-xs text-muted-foreground">(1 Meter = 1 Nozzle)</span>
                       </label>
                       <select
                         required
@@ -818,7 +816,7 @@ export default function NozzlesPage() {
                           }
                         }}
                         disabled={!selectedDispenser}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring bg-white disabled:bg-muted disabled:cursor-not-allowed"
                       >
                         <option value="">
                           {!selectedDispenser ? 'Select Dispenser first' : meters.length === 0 ? 'No meters available' : 'Select Meter'}
@@ -833,7 +831,7 @@ export default function NozzlesPage() {
                               key={meter.id} 
                               value={meter.id}
                               disabled={isDisabled}
-                              className={isDisabled ? 'text-gray-400 bg-gray-100' : 'text-gray-900 bg-white'}
+                              className={isDisabled ? 'text-muted-foreground/70 bg-muted' : 'text-foreground bg-white'}
                             >
                               {meter.meter_name} {meter.meter_number ? `(${meter.meter_number})` : ''}
                               {!inSelectedDispenser ? ' ❌ [Different Dispenser]' : ''}
@@ -847,21 +845,21 @@ export default function NozzlesPage() {
                       {selectedDispenser && (
                         <div className="mt-2 space-y-1">
                           {meters.filter(m => isMeterAvailable(m)).length > 0 && (
-                            <p className="text-xs text-green-600">
+                            <p className="text-xs text-success">
                               ✓ {meters.filter(m => isMeterAvailable(m)).length} available meter(s)
                             </p>
                           )}
                           {meters.filter(m => isMeterInSelectedDispenser(m) && !isMeterAvailable(m)).length > 0 && (
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               {meters.filter(m => isMeterInSelectedDispenser(m) && !isMeterAvailable(m)).length} meter(s) already configured for this dispenser
                             </p>
                           )}
                           {meters.filter(m => !isMeterInSelectedDispenser(m)).length > 0 && (
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-muted-foreground/70">
                               {meters.filter(m => !isMeterInSelectedDispenser(m)).length} meter(s) belong to other dispensers
                             </p>
                           )}
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-muted-foreground">
                             Each meter is dedicated to one nozzle (1:1 relationship)
                           </p>
                         </div>
@@ -871,37 +869,37 @@ export default function NozzlesPage() {
 
                   {/* Visual Hierarchy Flow */}
                   {selectedStation && (
-                    <div className="mt-4 bg-white rounded-lg p-3 border border-gray-200">
-                      <div className="flex items-center justify-center space-x-2 text-sm text-gray-600 mb-2">
-                        <Building2 className="h-4 w-4 text-blue-600" />
+                    <div className="mt-4 bg-white rounded-lg p-3 border border-border">
+                      <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground mb-2">
+                        <Building2 className="h-4 w-4 text-primary" />
                         <span className="font-medium">{stations.find(s => s.id === selectedStation)?.station_name}</span>
                         {selectedIsland && (
                           <>
-                            <ArrowRight className="h-4 w-4 text-gray-400" />
-                            <MapPin className="h-4 w-4 text-blue-600" />
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/70" />
+                            <MapPin className="h-4 w-4 text-primary" />
                             <span className="font-medium">{islands.find(i => i.id === selectedIsland)?.island_name}</span>
                           </>
                         )}
                         {selectedDispenser && (
                           <>
-                            <ArrowRight className="h-4 w-4 text-gray-400" />
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/70" />
                             <Zap className="h-4 w-4 text-yellow-600" />
                             <span className="font-medium">{dispensers.find(d => d.id === selectedDispenser)?.dispenser_name}</span>
                           </>
                         )}
                         {selectedMeterId && (
                           <>
-                            <ArrowRight className="h-4 w-4 text-gray-400" />
-                            <Gauge className="h-4 w-4 text-green-600" />
+                            <ArrowRight className="h-4 w-4 text-muted-foreground/70" />
+                            <Gauge className="h-4 w-4 text-success" />
                             <span className="font-medium">{meters.find(m => m.id === selectedMeterId)?.meter_name}</span>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-muted-foreground">
                               ({meters.find(m => m.id === selectedMeterId)?.meter_number})
                             </span>
                           </>
                         )}
                       </div>
                       {selectedMeterId && (
-                        <div className="text-xs text-center text-gray-500 border-t pt-2 mt-2">
+                        <div className="text-xs text-center text-muted-foreground border-t pt-2 mt-2">
                           <p>📌 This meter will be dedicated to one nozzle (1:1 relationship)</p>
                         </div>
                       )}
@@ -910,16 +908,16 @@ export default function NozzlesPage() {
                 </div>
 
                 {/* Tank & Product Selection */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-6 mb-6 border border-green-200">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <Droplet className="h-5 w-5 mr-2 text-green-600" />
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-6 mb-6 border border-success/25">
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+                    <Droplet className="h-5 w-5 mr-2 text-success" />
                     Select Tank & Product
                   </h3>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Tank */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Tank *
                       </label>
                       <select
@@ -927,7 +925,7 @@ export default function NozzlesPage() {
                         value={selectedTank || ''}
                         onChange={(e) => handleTankChange(e.target.value ? parseInt(e.target.value) : null)}
                         disabled={!selectedStation}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-success bg-white disabled:bg-muted disabled:cursor-not-allowed"
                       >
                         <option value="">
                           {!selectedStation ? 'Select Station first' : tanks.length === 0 ? 'No tanks available' : 'Select Tank'}
@@ -939,7 +937,7 @@ export default function NozzlesPage() {
                               key={tank.id} 
                               value={tank.id}
                               disabled={!selectable}
-                              className={selectable ? 'text-gray-900 bg-white' : 'text-gray-400 bg-gray-100'}
+                              className={selectable ? 'text-foreground bg-white' : 'text-muted-foreground/70 bg-muted'}
                             >
                               {tank.tank_name} - {tank.product_name} ({formatNumber(Number(tank.current_stock || 0), 2)}L / {formatNumber(Number(tank.capacity || 0), 2)}L)
                               {selectable ? ' ✓ [Available]' : ' ❌ [Different Station]'}
@@ -948,17 +946,17 @@ export default function NozzlesPage() {
                         })}
                       </select>
                       {selectedStation && (
-                        <div className="mt-1 space-y-1 text-xs text-gray-500">
+                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
                           <p>
                             {tanks.filter(isTankSelectable).length} tank(s) available for this station - Multiple nozzles can share the same tank
                           </p>
-                          <p className="text-gray-400">
+                          <p className="text-muted-foreground/70">
                             {tanks.filter(tank => !isTankSelectable(tank)).length} tank(s) belong to other stations
                           </p>
                         </div>
                       )}
                       {selectedTank && (
-                        <div className="mt-2 text-xs text-gray-600">
+                        <div className="mt-2 text-xs text-muted-foreground">
                           {(() => {
                             const selectedTankData = tanks.find(t => t.id === selectedTank)
                             if (!selectedTankData) return null
@@ -977,8 +975,8 @@ export default function NozzlesPage() {
 
                 {/* Nozzle Details */}
                 <div className="space-y-4 mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                    <Fuel className="h-5 w-5 mr-2 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+                    <Fuel className="h-5 w-5 mr-2 text-primary" />
                     Nozzle Details
                   </h3>
 
@@ -1005,7 +1003,7 @@ export default function NozzlesPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Auto-generated Nozzle Name Preview */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Nozzle Name (Auto-generated) *
                       </label>
                       <div className="relative">
@@ -1014,21 +1012,21 @@ export default function NozzlesPage() {
                           value={generateNozzleName(selectedMeterId, selectedTank) || 'Select meter and tank to generate name'}
                           disabled
                           readOnly
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 cursor-not-allowed"
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-muted/40 text-foreground/85 cursor-not-allowed"
                         />
                         {selectedMeterId && selectedTank && (
                           <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                            <span className="text-green-600 text-xs font-medium">✓ Auto-generated</span>
+                            <span className="text-success text-xs font-medium">✓ Auto-generated</span>
                           </div>
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Name format: [Meter Name] - [Product Name]
                       </p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">
                         Color Code
                       </label>
                       <div className="flex items-center space-x-2">
@@ -1036,13 +1034,13 @@ export default function NozzlesPage() {
                           type="color"
                           value={formData.color_code}
                           onChange={(e) => setFormData({ ...formData, color_code: e.target.value })}
-                          className="h-10 w-20 border border-gray-300 rounded-lg cursor-pointer"
+                          className="h-10 w-20 border border-border rounded-lg cursor-pointer"
                         />
                         <input
                           type="text"
                           value={formData.color_code}
                           onChange={(e) => setFormData({ ...formData, color_code: e.target.value })}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="flex-1 px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring"
                           placeholder="#3B82F6"
                         />
                       </div>
@@ -1054,17 +1052,17 @@ export default function NozzlesPage() {
                           type="checkbox"
                           checked={formData.is_operational}
                           onChange={(e) => setFormData({ ...formData, is_operational: e.target.checked })}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
                         />
-                        <span className="text-sm font-medium text-gray-700">Operational (Active for POS)</span>
+                        <span className="text-sm font-medium text-foreground/85">Operational (Active for POS)</span>
                       </label>
                     </div>
                   </div>
                 </div>
 
                 {/* Info Box */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <div className="space-y-2 text-sm text-blue-800">
+                <div className="bg-blue-50 border border-primary/25 rounded-lg p-4 mb-6">
+                  <div className="space-y-2 text-sm text-primary">
                     <p>
                       <strong>📋 Hierarchy Relationship:</strong>
                     </p>
@@ -1084,13 +1082,13 @@ export default function NozzlesPage() {
                   <button
                     type="button"
                     onClick={handleCloseModal}
-                    className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+                    className="px-6 py-2 border border-border rounded-lg hover:bg-muted/40 font-medium"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                    className="erp-btn-primary px-6 py-2 font-medium"
                   >
                     {editingId ? 'Update Nozzle' : 'Create Nozzle'}
                   </button>
@@ -1102,10 +1100,10 @@ export default function NozzlesPage() {
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg app-modal-pad max-w-md w-full">
-              <h2 className="text-2xl font-bold mb-4 text-red-600">Delete Nozzle</h2>
-              <p className="text-gray-700 mb-6">
+          <div className="erp-modal-backdrop">
+            <div className="erp-modal max-w-md">
+              <h2 className="mb-4 text-2xl font-bold text-destructive">Delete Nozzle</h2>
+              <p className="mb-6 text-foreground/85">
                 Are you sure you want to delete this nozzle? This action cannot be undone.
               </p>
               <div className="flex justify-end space-x-3">
@@ -1114,13 +1112,13 @@ export default function NozzlesPage() {
                     setShowDeleteConfirm(false)
                     setDeleteId(null)
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="erp-btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="erp-btn-danger"
                 >
                   Delete
                 </button>

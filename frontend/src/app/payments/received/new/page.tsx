@@ -650,16 +650,16 @@ function RecordPaymentReceivedInner() {
 
   if (loading) {
     return (
-      <PageLayout className="bg-slate-50">
+      <PageLayout>
         <div className="flex min-h-[50vh] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       </PageLayout>
     )
   }
 
   return (
-    <PageLayout className="bg-slate-50">
+    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -673,9 +673,9 @@ function RecordPaymentReceivedInner() {
           maxWidthClass="max-w-5xl"
           contentClassName="mt-4"
         >
-          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm">
+          <div className="rounded-2xl border border-border/80 bg-white p-6 shadow-sm">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 flex items-center">
+              <div className="bg-destructive/5 border border-destructive/25 text-destructive px-4 py-3 rounded mb-4 flex items-center">
                 <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
                 {error}
               </div>
@@ -684,24 +684,24 @@ function RecordPaymentReceivedInner() {
             <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Customer *</label>
                   <CustomerReferenceCombobox
                     id="payment-received-customer"
                     value={selectedCustomerId ?? 0}
                     onChange={(id) => handleCustomerSelectChange(id > 0 ? String(id) : '')}
                     customers={customers}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-white relative z-10"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success bg-white relative z-10"
                   />
                   {!loading && customers.length === 0 ? (
-                    <p className="mt-2 text-sm text-amber-700">
+                    <p className="mt-2 text-sm text-warning-foreground">
                       No customers returned from the server. Add customers under Customers or check API access.
                     </p>
                   ) : null}
-                  <div className="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50/80 p-3">
+                  <div className="mt-3 rounded-lg border border-dashed border-border bg-muted/40/80 p-3">
                     <button
                       type="button"
                       onClick={() => setShowNewCustomer((s) => !s)}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-green-800 hover:text-green-950"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-success hover:text-green-950"
                     >
                       <UserPlus className="h-4 w-4" />
                       {showNewCustomer ? 'Hide' : 'Add'} new customer and pay
@@ -709,37 +709,37 @@ function RecordPaymentReceivedInner() {
                     {showNewCustomer && (
                       <form
                         onSubmit={handleCreateCustomer}
-                        className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 border-t border-gray-200 pt-3"
+                        className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 border-t border-border pt-3"
                         autoComplete="off"
                       >
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                             Display / business name <span className="text-red-500">*</span>
                           </label>
                           <input
                             value={newDisplayName}
                             onChange={(e) => setNewDisplayName(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            className="w-full px-3 py-2 border border-border rounded-md text-sm"
                             placeholder="e.g. ABC Ltd"
                             maxLength={200}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Phone</label>
+                          <label className="block text-xs font-medium text-foreground/85 mb-0.5">Phone</label>
                           <input
                             value={newPhone}
                             onChange={(e) => setNewPhone(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            className="w-full px-3 py-2 border border-border rounded-md text-sm"
                             placeholder="Optional"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-0.5">Email</label>
+                          <label className="block text-xs font-medium text-foreground/85 mb-0.5">Email</label>
                           <input
                             type="email"
                             value={newEmail}
                             onChange={(e) => setNewEmail(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            className="w-full px-3 py-2 border border-border rounded-md text-sm"
                             placeholder="Optional"
                           />
                         </div>
@@ -747,12 +747,12 @@ function RecordPaymentReceivedInner() {
                           <button
                             type="submit"
                             disabled={creatingCustomer}
-                            className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                            className="px-3 py-1.5 text-sm font-medium bg-success text-white rounded-md hover:bg-success/90 disabled:opacity-50"
                           >
                             {creatingCustomer ? 'Creating…' : 'Create customer & select'}
                           </button>
                         </div>
-                        <p className="text-xs text-gray-500 sm:col-span-2">
+                        <p className="text-xs text-muted-foreground sm:col-span-2">
                           A customer account is always required to record a receipt. This creates a normal
                           customer, then you can post payment including advances on the line below.
                         </p>
@@ -760,14 +760,14 @@ function RecordPaymentReceivedInner() {
                     )}
                   </div>
                   {selectedCustomer && (
-                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                    <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground/85">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                         Customer details
                       </p>
                       <div className="space-y-1">
                         <p>
-                          <span className="text-gray-500">Name:</span>{' '}
-                          <span className="font-medium text-gray-900">
+                          <span className="text-muted-foreground">Name:</span>{' '}
+                          <span className="font-medium text-foreground">
                             {(
                               selectedCustomer.display_name ||
                               selectedCustomer.company_name ||
@@ -777,24 +777,24 @@ function RecordPaymentReceivedInner() {
                           </span>
                         </p>
                         <p>
-                          <span className="text-gray-500">Customer #:</span>{' '}
-                          <span className="font-medium text-gray-900">
+                          <span className="text-muted-foreground">Customer #:</span>{' '}
+                          <span className="font-medium text-foreground">
                             {selectedCustomer.customer_number || '—'}
                           </span>
                         </p>
                         {selectedCustomer.email?.trim() ? (
                           <p>
-                            <span className="text-gray-500">Email:</span> {selectedCustomer.email.trim()}
+                            <span className="text-muted-foreground">Email:</span> {selectedCustomer.email.trim()}
                           </p>
                         ) : null}
                         {selectedCustomer.phone?.trim() ? (
                           <p>
-                            <span className="text-gray-500">Phone:</span> {selectedCustomer.phone.trim()}
+                            <span className="text-muted-foreground">Phone:</span> {selectedCustomer.phone.trim()}
                           </p>
                         ) : null}
                         {selectedCustomer.bank_name || selectedCustomer.bank_account_number ? (
                           <p>
-                            <span className="text-gray-500">Bank:</span>{' '}
+                            <span className="text-muted-foreground">Bank:</span>{' '}
                             {[
                               selectedCustomer.bank_name,
                               selectedCustomer.bank_branch,
@@ -822,26 +822,26 @@ function RecordPaymentReceivedInner() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Payment Date *
                   </label>
                   <input
                     type="date"
                     value={paymentDate}
                     onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Payment Method *
                   </label>
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success"
                     required
                   >
                     <option value="cash">Cash</option>
@@ -857,10 +857,10 @@ function RecordPaymentReceivedInner() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Deposit to{bankRegisters.length > 0 ? ' *' : ''}
                   </label>
-                  <p className="text-xs text-gray-500 mb-1.5">
+                  <p className="text-xs text-muted-foreground mb-1.5">
                     Register where funds are received (debits this account; credits A/R). Matches Pay bills and
                     Record deposits.
                   </p>
@@ -872,7 +872,7 @@ function RecordPaymentReceivedInner() {
                           const n = Number(e.target.value)
                           setDepositRegisterId(Number.isFinite(n) ? n : null)
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                        className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success bg-white"
                         required
                       >
                         <option value="">Select bank or cash register</option>
@@ -899,10 +899,10 @@ function RecordPaymentReceivedInner() {
                       ) : null}
                     </>
                   ) : (
-                    <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    <p className="text-sm text-warning-foreground bg-warning/10 border border-warning/30 rounded-md px-3 py-2">
                       No bank or cash registers found. The receipt will post to undeposited / cash accounts from your
                       chart. Add registers under{' '}
-                      <Link href="/chart-of-accounts" className="font-medium text-amber-900 underline">
+                      <Link href="/chart-of-accounts" className="font-medium text-warning-foreground underline">
                         Chart of accounts
                       </Link>
                       .
@@ -911,7 +911,7 @@ function RecordPaymentReceivedInner() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Reference Number
                   </label>
                   <input
@@ -919,12 +919,12 @@ function RecordPaymentReceivedInner() {
                     value={referenceNumber}
                     onChange={(e) => setReferenceNumber(e.target.value)}
                     placeholder="Check #, Transaction ID, etc."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">
                     Payment Amount *
                   </label>
                   <input
@@ -940,12 +940,12 @@ function RecordPaymentReceivedInner() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Memo</label>
+                  <label className="block text-sm font-medium text-foreground/85 mb-1">Memo</label>
                   <textarea
                     value={memo}
                     onChange={(e) => setMemo(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success text-sm"
                     placeholder="Filled from customer record when you select a customer; you can edit."
                   />
                 </div>
@@ -955,16 +955,16 @@ function RecordPaymentReceivedInner() {
                 <div className="mt-6">
                   <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
                     <aside
-                      className="flex min-h-0 w-full min-w-0 flex-col rounded-lg border border-gray-200 bg-gray-50/80 p-3 sm:p-4"
+                      className="flex min-h-0 w-full min-w-0 flex-col rounded-lg border border-border bg-muted/40/80 p-3 sm:p-4"
                       aria-label="Include lines in this payment"
                     >
-                      <div className="flex shrink-0 items-start justify-between gap-2 border-b border-gray-200 pb-2.5">
-                        <h3 className="text-sm font-semibold text-gray-900 pr-1">
+                      <div className="flex shrink-0 items-start justify-between gap-2 border-b border-border pb-2.5">
+                        <h3 className="text-sm font-semibold text-foreground pr-1">
                           Include in payment
                         </h3>
                         {realInvoices.length > 0 ? (
                           <label
-                            className="flex cursor-pointer items-center gap-1.5 shrink-0 text-xs font-medium text-gray-800"
+                            className="flex cursor-pointer items-center gap-1.5 shrink-0 text-xs font-medium text-foreground"
                             title="Toggles every invoice (not the on-account row)"
                           >
                             <input
@@ -972,7 +972,7 @@ function RecordPaymentReceivedInner() {
                               type="checkbox"
                               checked={allInvoicesTicked}
                               onChange={toggleSelectAllInvoices}
-                              className="h-4 w-4 rounded border-2 border-gray-400 text-green-600 focus:ring-green-500/80"
+                              className="h-4 w-4 rounded border-2 border-border text-success focus:ring-success/80"
                             />
                             <span className="whitespace-nowrap leading-tight sm:text-sm">
                               Select all invoices
@@ -980,14 +980,14 @@ function RecordPaymentReceivedInner() {
                           </label>
                         ) : null}
                       </div>
-                      <p className="mt-2 mb-2.5 shrink-0 text-xs text-gray-500">
+                      <p className="mt-2 mb-2.5 shrink-0 text-xs text-muted-foreground">
                         When you tick a line, its open balance is filled in; you can lower the
                         amount for a partial payment. Use <strong>Allocate</strong> in the table
                         to enter amounts. On-account / prepayment is listed <strong>under</strong>{' '}
                         the invoice numbers.
                       </p>
                       <ul
-                        className="min-h-0 flex-1 list-none space-y-0 overflow-y-auto rounded border border-gray-200 bg-white divide-y divide-gray-200"
+                        className="min-h-0 flex-1 list-none space-y-0 overflow-y-auto rounded border border-border bg-white divide-y divide-border"
                         role="list"
                       >
                         {allocateRowsExcludingOa.map((inv) => {
@@ -999,7 +999,7 @@ function RecordPaymentReceivedInner() {
                               <label
                                 className={[
                                   'grid w-full cursor-pointer grid-cols-[1.25rem_1fr_auto] items-center gap-2.5 px-2.5 py-3 sm:px-3 text-sm',
-                                  sel ? 'bg-white' : 'bg-gray-50/50 opacity-80',
+                                  sel ? 'bg-white' : 'bg-muted/40/50 opacity-80',
                                 ].join(' ')}
                               >
                                 <div className="flex items-center justify-center self-center">
@@ -1009,7 +1009,7 @@ function RecordPaymentReceivedInner() {
                                     onChange={() => {
                                       toggleLine(inv)
                                     }}
-                                    className="h-4 w-4 rounded border-2 border-gray-400 text-green-600 focus:ring-green-500/80"
+                                    className="h-4 w-4 rounded border-2 border-border text-success focus:ring-success/80"
                                     aria-label={
                                       isInv
                                         ? `Include invoice ${inv.invoice_number}`
@@ -1017,10 +1017,10 @@ function RecordPaymentReceivedInner() {
                                     }
                                   />
                                 </div>
-                                <p className="min-w-0 text-left text-sm font-medium text-gray-900">
+                                <p className="min-w-0 text-left text-sm font-medium text-foreground">
                                   {isInv ? inv.invoice_number : 'Open item'}
                                 </p>
-                                <p className="shrink-0 text-right text-xs text-gray-600 tabular-nums sm:text-sm">
+                                <p className="shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:text-sm">
                                   {currencySymbol}
                                   {formatNumber(Number(inv.balance_due) || 0)}
                                 </p>
@@ -1032,14 +1032,14 @@ function RecordPaymentReceivedInner() {
                       {onAccountAdvanceRow ? (
                         <div
                           key="oa-aside"
-                          className="mt-0 shrink-0 border-t-2 border-amber-200/90 bg-amber-50/40"
+                          className="mt-0 shrink-0 border-t-2 border-warning/30/90 bg-warning/10/40"
                         >
                           <label
                             className={[
                               'grid w-full cursor-pointer grid-cols-[1.25rem_1fr_auto] items-center gap-2.5 px-2.5 py-3 sm:px-3 text-sm',
                               isRowSelected(onAccountAdvanceRow)
                                 ? 'bg-white/90'
-                                : 'bg-amber-50/60 opacity-90',
+                                : 'bg-warning/10/60 opacity-90',
                             ].join(' ')}
                           >
                             <div className="flex items-center justify-center self-center">
@@ -1049,14 +1049,14 @@ function RecordPaymentReceivedInner() {
                                 onChange={() => {
                                   toggleLine(onAccountAdvanceRow)
                                 }}
-                                className="h-4 w-4 rounded border-2 border-amber-500 text-green-600 focus:ring-amber-500/50"
+                                className="h-4 w-4 rounded border-2 border-amber-500 text-success focus:ring-amber-500/50"
                                 aria-label="Include on-account and customer advance in this payment"
                               />
                             </div>
-                            <p className="min-w-0 text-left text-sm font-semibold text-amber-950">
+                            <p className="min-w-0 text-left text-sm font-semibold text-warning-foreground">
                               On-account / advance
                             </p>
-                            <p className="shrink-0 text-right text-sm font-medium text-amber-900/90 tabular-nums">
+                            <p className="shrink-0 text-right text-sm font-medium text-warning-foreground/90 tabular-nums">
                               {currencySymbol}
                               {formatNumber(Number(onAccountAdvanceRow.balance_due) || 0)}
                             </p>
@@ -1070,39 +1070,39 @@ function RecordPaymentReceivedInner() {
                     <button
                       type="button"
                       onClick={handleAutoAllocate}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      className="text-sm text-primary hover:text-primary/80"
                     >
                       Auto-allocate (FIFO)
                     </button>
                   </div>
-                  <div className="overflow-x-auto overflow-hidden rounded-lg border border-gray-200">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                  <div className="overflow-x-auto overflow-hidden rounded-lg border border-border">
+                    <table className="min-w-full divide-y divide-border">
+                      <thead className="bg-muted/40">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Invoice #
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Date
                           </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
                             Due Date
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Total
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Paid
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Balance
                           </th>
-                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
                             Allocate
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white divide-y divide-border">
                         {allocateRowsExcludingOa.map((invoice) => {
                           const aid = allocInvoiceId(invoice)
                           const allocation = allocations.find((a) => a.invoice_id === aid)
@@ -1114,35 +1114,35 @@ function RecordPaymentReceivedInner() {
                               className={[
                                 'align-middle',
                                 allocatedAmount > 0 && canEdit ? 'bg-green-50' : '',
-                                !canEdit ? 'bg-gray-50/80 opacity-60' : '',
+                                !canEdit ? 'bg-muted/40/80 opacity-60' : '',
                               ]
                                 .filter(Boolean)
                                 .join(' ')}
                             >
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[16rem]">
+                              <td className="px-4 py-3 text-sm font-medium text-foreground max-w-[16rem]">
                                 {invoice.invoice_number}
                                 {invoice.synthetic && !isOaOrAdvanceRow(invoice) ? (
-                                  <span className="ml-1 text-xs font-normal text-gray-500">
+                                  <span className="ml-1 text-xs font-normal text-muted-foreground">
                                     (A/R not on an invoice)
                                   </span>
                                 ) : null}
                                 {!invoice.synthetic &&
                                 invoice.days_overdue &&
                                 invoice.days_overdue > 0 ? (
-                                  <span className="ml-2 text-xs text-red-600">
+                                  <span className="ml-2 text-xs text-destructive">
                                     ({invoice.days_overdue}d overdue)
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
+                              <td className="px-4 py-3 text-sm text-muted-foreground">
                                 {formatDateOnly(invoice.invoice_date)}
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
+                              <td className="px-4 py-3 text-sm text-muted-foreground">
                                 {invoice.due_date
                                   ? formatDateOnly(invoice.due_date)
                                   : '—'}
                               </td>
-                              <td className="px-4 py-3 text-sm text-right text-gray-900">
+                              <td className="px-4 py-3 text-sm text-right text-foreground">
                                 {invoice.synthetic ? (
                                   '—'
                                 ) : (
@@ -1152,7 +1152,7 @@ function RecordPaymentReceivedInner() {
                                   </>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-sm text-right text-gray-600">
+                              <td className="px-4 py-3 text-sm text-right text-muted-foreground">
                                 {invoice.synthetic ? (
                                   '—'
                                 ) : (
@@ -1162,7 +1162,7 @@ function RecordPaymentReceivedInner() {
                                   </>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-sm text-right font-medium text-gray-900">
+                              <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                                 {currencySymbol}
                                 {formatNumber(Number(invoice.balance_due) || 0)}
                               </td>
@@ -1201,26 +1201,26 @@ function RecordPaymentReceivedInner() {
                                   className={[
                                     'align-middle border-t-2 border-amber-300/80',
                                     !canEdit
-                                      ? 'bg-amber-50/50 opacity-60'
+                                      ? 'bg-warning/10/50 opacity-60'
                                       : allocatedAmount > 0
                                         ? 'bg-green-50'
-                                        : 'bg-amber-50/30',
+                                        : 'bg-warning/10/30',
                                   ].join(' ')}
                                 >
                                   <td
-                                    className="px-4 py-3 text-sm text-gray-400 max-w-[16rem]"
+                                    className="px-4 py-3 text-sm text-muted-foreground/70 max-w-[16rem]"
                                     title="Same line as On-account / advance in the list on the left (not an invoice number)."
                                     aria-label="On-account or prepayment (see left panel)"
                                   >
                                     —
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                  <td className="px-4 py-3 text-sm text-muted-foreground">
                                     {formatDateOnly(invoice.invoice_date)}
                                   </td>
-                                  <td className="px-4 py-3 text-sm text-gray-500">—</td>
-                                  <td className="px-4 py-3 text-right text-sm text-gray-500">—</td>
-                                  <td className="px-4 py-3 text-right text-sm text-gray-500">—</td>
-                                  <td className="px-4 py-3 text-right text-sm font-medium text-amber-950">
+                                  <td className="px-4 py-3 text-sm text-muted-foreground">—</td>
+                                  <td className="px-4 py-3 text-right text-sm text-muted-foreground">—</td>
+                                  <td className="px-4 py-3 text-right text-sm text-muted-foreground">—</td>
+                                  <td className="px-4 py-3 text-right text-sm font-medium text-warning-foreground">
                                     {currencySymbol}
                                     {formatNumber(Number(invoice.balance_due) || 0)}
                                   </td>
@@ -1253,11 +1253,11 @@ function RecordPaymentReceivedInner() {
                     </table>
                   </div>
                     </div>
-                  <div className="col-span-full flex flex-col gap-0 rounded-b-lg border border-gray-200 bg-gray-50 sm:flex-row sm:items-center sm:justify-end sm:gap-4 sm:pl-4 sm:pr-4">
-                    <span className="px-4 py-3 text-sm font-medium text-gray-900 sm:py-2.5 sm:pr-0 sm:pl-0 sm:text-right">
+                  <div className="col-span-full flex flex-col gap-0 rounded-b-lg border border-border bg-muted/40 sm:flex-row sm:items-center sm:justify-end sm:gap-4 sm:pl-4 sm:pr-4">
+                    <span className="px-4 py-3 text-sm font-medium text-foreground sm:py-2.5 sm:pr-0 sm:pl-0 sm:text-right">
                       Total allocated:
                     </span>
-                    <span className="px-4 pb-3 text-sm font-bold text-gray-900 sm:py-2.5 sm:pl-0 sm:pr-0 sm:text-right tabular-nums">
+                    <span className="px-4 pb-3 text-sm font-bold text-foreground sm:py-2.5 sm:pl-0 sm:pr-0 sm:text-right tabular-nums">
                       {currencySymbol}
                       {formatNumber(allocations.reduce((sum, a) => sum + a.allocated_amount, 0))}
                     </span>
@@ -1266,17 +1266,17 @@ function RecordPaymentReceivedInner() {
                 </div>
               )}
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <div className="flex justify-end gap-3 pt-4 border-t border-border/70">
                 <Link
                   href="/payments/received"
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 inline-flex items-center justify-center"
+                  className="px-4 py-2 border border-border rounded-md text-foreground/85 hover:bg-muted/40 inline-flex items-center justify-center"
                 >
                   Cancel
                 </Link>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-success text-white rounded-md hover:bg-success/90 disabled:opacity-50"
                 >
                   {submitting ? 'Processing…' : 'Record Payment'}
                 </button>
@@ -1293,8 +1293,8 @@ export default function NewPaymentReceivedPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[50vh] items-center justify-center bg-slate-50">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+        <div className="flex min-h-[50vh] items-center justify-center bg-muted/40">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       }
     >

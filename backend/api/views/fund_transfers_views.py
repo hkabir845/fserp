@@ -140,18 +140,22 @@ def fund_transfer_detail(request, transfer_id: int):
         body, err = parse_json_body(request)
         if err:
             return err
-        if not t.is_posted:
-            if body.get("transfer_date"):
-                t.transfer_date = _parse_date(body["transfer_date"]) or t.transfer_date
-            if "from_account_id" in body and BankAccount.objects.filter(id=body["from_account_id"], company_id=request.company_id).exists():
-                t.from_bank_id = body["from_account_id"]
-            if "to_account_id" in body and BankAccount.objects.filter(id=body["to_account_id"], company_id=request.company_id).exists():
-                t.to_bank_id = body["to_account_id"]
-            if "amount" in body:
-                t.amount = _decimal(body.get("amount"), t.amount)
-            if "memo" in body or "reference" in body:
-                t.reference = (body.get("memo") or body.get("reference") or "").strip()
-            t.save()
+        if t.is_posted:
+            return JsonResponse(
+                {"detail": "Cannot edit a posted fund transfer. Unpost it first."},
+                status=400,
+            )
+        if body.get("transfer_date"):
+            t.transfer_date = _parse_date(body["transfer_date"]) or t.transfer_date
+        if "from_account_id" in body and BankAccount.objects.filter(id=body["from_account_id"], company_id=request.company_id).exists():
+            t.from_bank_id = body["from_account_id"]
+        if "to_account_id" in body and BankAccount.objects.filter(id=body["to_account_id"], company_id=request.company_id).exists():
+            t.to_bank_id = body["to_account_id"]
+        if "amount" in body:
+            t.amount = _decimal(body.get("amount"), t.amount)
+        if "memo" in body or "reference" in body:
+            t.reference = (body.get("memo") or body.get("reference") or "").strip()
+        t.save()
         t.refresh_from_db()
         return JsonResponse(_transfer_to_json(t))
     if request.method == "DELETE":

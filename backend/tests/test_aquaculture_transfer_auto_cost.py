@@ -18,6 +18,7 @@ from api.models import (
 from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine
 from api.services.aquaculture_transfer_cost import (
     backfill_missing_transfer_line_costs,
+    preview_transfer_line_costs,
     resolve_auto_transfer_line_cost,
 )
 
@@ -250,7 +251,7 @@ def test_two_nursing_transfers_split_fry_cost_by_heads_not_full_bio_each_time(co
         amount=Decimal("350000.00"),
     )
     monkeypatch.setattr(
-        "api.services.aquaculture_transfer_cost._nursing_stocked_heads_basis",
+        "api.services.aquaculture_transfer_cost._live_fingerling_heads_basis",
         lambda **kwargs: 500000,
     )
 
@@ -369,3 +370,64 @@ def test_fish_pond_transfer_preview_cost_api(api_client, company_tenant, auth_ad
     assert body["cost_basis"] == "per_kg"
     assert Decimal(body["lines"][0]["cost_amount"]) == Decimal("800.00")
     assert body["transfer_cost_per_kg"] is not None
+
+
+@pytest.mark.django_db
+def test_nursing_transfer_cost_uses_live_heads_and_all_production_expenses(company_tenant):
+    """
+    (fry + feed + …) ÷ live fingerlings × heads transferred.
+    Example: 1.1M fry + 500K feed on 450K survivors → 120K heads ≈ 426,666.67 BDT.
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Nursing Live", pond_role="nursing", is_active=True
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("1100000.00"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2026, 4, 15),
+        expense_category="feed_purchase",
+        amount=Decimal("500000.00"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2026, 4, 20),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=450000,
+        weight_kg_delta=Decimal("225.0000"),
+        memo="Live count after mortality",
+    )
+
+    cost = resolve_auto_transfer_line_cost(
+        company_id=cid,
+        from_pond_id=src.id,
+        transfer_date=date(2026, 5, 17),
+        from_cycle=None,
+        weight_kg=Decimal("240.0000"),
+        submitted_cost=Decimal("0"),
+        fish_count=120000,
+    )
+    assert cost == Decimal("426666.67")
+
+    preview = preview_transfer_line_costs(
+        company_id=cid,
+        from_pond_id=src.id,
+        transfer_date=date(2026, 5, 17),
+        from_cycle=None,
+        lines=[{"weight_kg": Decimal("240"), "fish_count": 120000}],
+    )
+    assert preview["cost_basis"] == "per_head"
+    assert preview["live_fingerling_count"] == 450000
+    assert Decimal(preview["movable_bio_asset_total"]) == Decimal("1600000.00")
+    assert Decimal(preview["transfer_cost_per_head"]) == Decimal("3.56")
+    assert Decimal(preview["lines"][0]["cost_amount"]) == Decimal("426666.67")

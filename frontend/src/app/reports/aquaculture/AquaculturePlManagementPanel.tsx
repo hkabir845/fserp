@@ -534,22 +534,22 @@ export function AquaculturePlManagementPanel({
   }
 
   const renderIsBlock = (title: string, block: GlIsSection | undefined) => (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-        <span className="text-sm font-semibold tabular-nums text-slate-800">{fmtIsMoney(block?.total)}</span>
+    <div className="rounded-xl border border-border bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-border/70 bg-muted/40 px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <span className="text-sm font-semibold tabular-nums text-foreground">{fmtIsMoney(block?.total)}</span>
       </div>
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-border/70">
         {(block?.accounts ?? []).length === 0 ? (
-          <li className="px-4 py-6 text-center text-sm text-slate-400">No accounts in this section for the period.</li>
+          <li className="px-4 py-6 text-center text-sm text-muted-foreground/70">No accounts in this section for the period.</li>
         ) : (
           (block?.accounts ?? []).map((a) => (
             <li key={`${title}-${a.account_code}`} className="flex justify-between gap-3 px-4 py-2.5 text-sm">
               <span className="min-w-0">
-                <span className="font-medium text-slate-900">{a.account_name}</span>
-                <span className="ml-2 text-xs text-slate-500">{a.account_code}</span>
+                <span className="font-medium text-foreground">{a.account_name}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{a.account_code}</span>
               </span>
-              <span className="shrink-0 tabular-nums font-medium text-slate-900">{fmtIsMoney(a.balance)}</span>
+              <span className="shrink-0 tabular-nums font-medium text-foreground">{fmtIsMoney(a.balance)}</span>
             </li>
           ))
         )}
@@ -566,15 +566,15 @@ export function AquaculturePlManagementPanel({
       }
     >
       {archiveFromUrl ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+        <div className="rounded-xl border border-warning/30 bg-warning/10/90 px-4 py-3 text-sm text-warning-foreground">
           <div className="flex flex-wrap items-start gap-2">
-            <Archive className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" aria-hidden />
+            <Archive className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" aria-hidden />
             <div className="min-w-0 flex-1">
-              <p className="font-semibold text-amber-950">
+              <p className="font-semibold text-warning-foreground">
                 Data Bank archive
                 {archiveFromUrl.label ? `: ${archiveFromUrl.label}` : ''}
               </p>
-              <p className="mt-1 text-amber-900/90">
+              <p className="mt-1 text-warning-foreground/90">
                 Read-only view for {formatDateOnly(archiveFromUrl.start)} –{' '}
                 {formatDateOnly(archiveFromUrl.end)}
                 {archiveFromUrl.pondId ? ' · one pond selected' : ' · all ponds in range'}.
@@ -583,7 +583,7 @@ export function AquaculturePlManagementPanel({
             </div>
             <Link
               href="/aquaculture/data-bank"
-              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-teal-900 hover:bg-amber-50"
+              className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-warning/10"
             >
               Back to Data Bank
             </Link>
@@ -592,16 +592,16 @@ export function AquaculturePlManagementPanel({
       ) : null}
 
       {embedInReports ? (
-        <div className="mb-2 flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-2 flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Aquaculture P&amp;L management</h2>
-            <p className="mt-1 text-sm text-slate-500">Generated on {formatDate(new Date())}</p>
+            <h2 className="text-2xl font-bold text-foreground">Aquaculture P&amp;L management</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Generated on {formatDate(new Date())}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={printPlManagement}
-              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+              className="inline-flex items-center gap-2 rounded-lg bg-success px-4 py-2 text-sm font-medium text-white hover:bg-success/90"
               title="Print report"
             >
               <Printer className="h-4 w-4" />
@@ -610,7 +610,7 @@ export function AquaculturePlManagementPanel({
             <button
               type="button"
               onClick={() => downloadPlManagement('csv')}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary"
               title="Export as CSV"
             >
               <Download className="h-4 w-4" />
@@ -619,7 +619,7 @@ export function AquaculturePlManagementPanel({
             <button
               type="button"
               onClick={() => downloadPlManagement('json')}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              className="inline-flex items-center gap-2 rounded-lg bg-muted-foreground px-4 py-2 text-sm font-medium text-white hover:bg-foreground/90"
               title="Export as JSON"
             >
               <Download className="h-4 w-4" />
@@ -637,8 +637,8 @@ export function AquaculturePlManagementPanel({
           onClick={() => setPlScope('ponds')}
           className={`rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition ${
             plScope === 'ponds'
-              ? 'bg-teal-700 text-white ring-2 ring-teal-600/30'
-              : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'
+              ? 'bg-primary text-white ring-2 ring-teal-600/30'
+              : 'bg-white text-foreground/85 ring-1 ring-border hover:bg-muted/40'
           }`}
         >
           Ponds (management P&amp;L)
@@ -650,22 +650,22 @@ export function AquaculturePlManagementPanel({
           onClick={() => setPlScope('fuel_site')}
           className={`rounded-lg px-4 py-2 text-sm font-semibold shadow-sm transition ${
             plScope === 'fuel_site'
-              ? 'bg-indigo-700 text-white ring-2 ring-indigo-600/30'
-              : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'
+              ? 'bg-primary text-white ring-2 ring-primary/30'
+              : 'bg-white text-foreground/85 ring-1 ring-border hover:bg-muted/40'
           }`}
         >
           Fuel &amp; shop (GL by site)
         </button>
       </div>
 
-      <h1 id="aq-pl-title" className="mt-6 text-xl font-bold tracking-tight text-slate-900">
+      <h1 id="aq-pl-title" className="mt-6 text-xl font-bold tracking-tight text-foreground">
         {plScope === 'ponds' ? 'Ponds — management profit & loss' : 'Fuel station & shop — site P&amp;L (posted GL)'}
       </h1>
-      <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-600">
+      <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
         {plScope === 'ponds' ? (
           <>
             Net per pond is revenue (typed income lines) minus direct operating costs, your share of{' '}
-            <span className="font-medium text-slate-800">explicitly split</span> shared costs, and payroll allocated to
+            <span className="font-medium text-foreground">explicitly split</span> shared costs, and payroll allocated to
             that pond. Optional production cycles tag revenue and direct costs for segment views; shared costs and
             payroll stay full-pond unless you use cycle-only scope (then they show as zero by design).
           </>
@@ -678,10 +678,10 @@ export function AquaculturePlManagementPanel({
       </p>
 
       {plScope === 'fuel_site' && !canViewFuelGlReports && (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
           Your role does not include the <strong>Reports</strong> permission. Ask a company admin to grant{' '}
           <code className="rounded bg-amber-100/90 px-1.5 py-0.5 text-xs">app.reports</code>, or open{' '}
-          <Link href="/reports" className="font-medium text-teal-900 underline underline-offset-2">
+          <Link href="/reports" className="font-medium text-primary underline underline-offset-2">
             Reports
           </Link>{' '}
           with an accountant or admin profile.
@@ -690,22 +690,22 @@ export function AquaculturePlManagementPanel({
 
       {plScope === 'fuel_site' && canViewFuelGlReports && (
         <>
-          <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <label className="text-sm text-slate-700">
-              <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">From</span>
+          <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
+            <label className="text-sm text-foreground/85">
+              <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">From</span>
               <input
                 type="date"
-                className="mt-1 rounded-lg border border-slate-300 px-2 py-1.5"
+                className="mt-1 rounded-lg border border-border px-2 py-1.5"
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
                 aria-label="Fuel P and L start date"
               />
             </label>
-            <label className="text-sm text-slate-700">
-              <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">To</span>
+            <label className="text-sm text-foreground/85">
+              <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">To</span>
               <input
                 type="date"
-                className="mt-1 rounded-lg border border-slate-300 px-2 py-1.5"
+                className="mt-1 rounded-lg border border-border px-2 py-1.5"
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
                 aria-label="Fuel P and L end date"
@@ -715,13 +715,13 @@ export function AquaculturePlManagementPanel({
               type="button"
               onClick={() => void loadFuelIs()}
               disabled={fuelLoading}
-              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${fuelLoading ? 'animate-spin' : ''}`} />
               Run
             </button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             Site filter uses <strong>Site scope</strong> at the top of Reports.
             {fuelStationId ? ` Station #${fuelStationId} selected.` : ' All station-tagged lines in range.'}
           </p>
@@ -729,14 +729,14 @@ export function AquaculturePlManagementPanel({
           {fuelData && (
             <div className="mt-8 space-y-6">
               {fuelData.period_matches_cumulative_change === false && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
                   <span className="font-semibold">Check cumulative P&amp;L: </span>
                   Period net ({fmtIsMoney(fuelData.net_income)}) differs from cumulative change (
                   {fmtIsMoney(fuelData.cumulative_net_income_change)}) by {fmtIsMoney(fuelData.cumulative_vs_period_difference)}.
                 </div>
               )}
               {fuelData.accounting_note && (
-                <p className="text-xs leading-relaxed text-slate-600">{fuelData.accounting_note}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{fuelData.accounting_note}</p>
               )}
               <div className="grid gap-4 lg:grid-cols-3">
                 <div className="lg:col-span-3 grid gap-4 sm:grid-cols-2">
@@ -746,9 +746,9 @@ export function AquaculturePlManagementPanel({
                       {fmtIsMoney(fuelData.gross_profit)}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Net income</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-indigo-950">
+                  <div className="rounded-xl border border-primary/25 bg-accent/80 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net income</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
                       {fmtIsMoney(fuelData.net_income)}
                     </p>
                   </div>
@@ -764,31 +764,31 @@ export function AquaculturePlManagementPanel({
 
       {plScope === 'ponds' && (
         <>
-      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <label className="text-sm text-slate-700">
-          <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">From</span>
+      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
+        <label className="text-sm text-foreground/85">
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">From</span>
           <input
             type="date"
-            className="mt-1 rounded-lg border border-slate-300 px-2 py-1.5"
+            className="mt-1 rounded-lg border border-border px-2 py-1.5"
             value={start}
             onChange={(e) => setStart(e.target.value)}
             aria-label="Report start date"
           />
         </label>
-        <label className="text-sm text-slate-700">
-          <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">To</span>
+        <label className="text-sm text-foreground/85">
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">To</span>
           <input
             type="date"
-            className="mt-1 rounded-lg border border-slate-300 px-2 py-1.5"
+            className="mt-1 rounded-lg border border-border px-2 py-1.5"
             value={end}
             onChange={(e) => setEnd(e.target.value)}
             aria-label="Report end date"
           />
         </label>
-        <label className="text-sm text-slate-700">
-          <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">Pond scope</span>
+        <label className="text-sm text-foreground/85">
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Pond scope</span>
           <select
-            className="mt-1 min-w-[12rem] rounded-lg border border-slate-300 px-2 py-1.5"
+            className="mt-1 min-w-[12rem] rounded-lg border border-border px-2 py-1.5"
             value={pondId}
             onChange={(e) => {
               setPondId(e.target.value)
@@ -805,10 +805,10 @@ export function AquaculturePlManagementPanel({
             ))}
           </select>
         </label>
-        <label className="text-sm text-slate-700">
-          <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">Production cycle</span>
+        <label className="text-sm text-foreground/85">
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Production cycle</span>
           <select
-            className="mt-1 min-w-[11rem] rounded-lg border border-slate-300 px-2 py-1.5 disabled:opacity-50"
+            className="mt-1 min-w-[11rem] rounded-lg border border-border px-2 py-1.5 disabled:opacity-50"
             value={cycleId}
             disabled={!pondId || cycles.length === 0}
             onChange={(e) => setCycleId(e.target.value)}
@@ -822,10 +822,10 @@ export function AquaculturePlManagementPanel({
             ))}
           </select>
         </label>
-        <label className="flex items-end gap-2 pb-0.5 text-sm text-slate-700">
+        <label className="flex items-end gap-2 pb-0.5 text-sm text-foreground/85">
           <input
             type="checkbox"
-            className="rounded border-slate-300"
+            className="rounded border-border"
             checked={includeCycleBreakdown}
             disabled={Boolean(cycleId)}
             onChange={(e) => setIncludeCycleBreakdown(e.target.checked)}
@@ -836,36 +836,36 @@ export function AquaculturePlManagementPanel({
           type="button"
           onClick={() => void load()}
           disabled={loading}
-          className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Run
         </button>
       </div>
-      <p className="mt-2 text-xs text-slate-500">Inactive ponds are excluded from this P&amp;L view.</p>
+      <p className="mt-2 text-xs text-muted-foreground">Inactive ponds are excluded from this P&amp;L view.</p>
 
       {pondsMetaReady && ponds.length === 0 && (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
           No ponds defined yet — add ponds to see meaningful P&L rows.{' '}
-          <Link href="/aquaculture/ponds" className="font-medium text-teal-800 underline">
+          <Link href="/aquaculture/ponds" className="font-medium text-primary underline">
             Ponds
           </Link>
         </div>
       )}
 
       {ponds.length > 0 && activeCoa.length > 0 && (
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Post pond profit to the ledger</h2>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600">
+        <div className="mt-8 rounded-xl border border-border bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-foreground">Post pond profit to the ledger</h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Creates a balanced journal entry for this company: debit the account that should increase (often an asset
             such as bank), credit the account that balances the movement (often equity or retained earnings). The row is
             tagged with the pond for your records; you choose both GL accounts.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-foreground/85">
               Pond
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm"
                 value={xferForm.pond_id}
                 onChange={(e) =>
                   setXferForm((f) => ({ ...f, pond_id: e.target.value, production_cycle_id: '' }))
@@ -880,10 +880,10 @@ export function AquaculturePlManagementPanel({
                 ))}
               </select>
             </label>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-foreground/85">
               Production cycle (optional)
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm disabled:opacity-50"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm disabled:opacity-50"
                 value={xferForm.production_cycle_id}
                 disabled={!xferForm.pond_id || xferCycles.length === 0}
                 onChange={(e) => setXferForm((f) => ({ ...f, production_cycle_id: e.target.value }))}
@@ -896,39 +896,39 @@ export function AquaculturePlManagementPanel({
                 ))}
               </select>
             </label>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-foreground/85">
               Transfer date
               <input
                 type="date"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm"
                 value={xferForm.transfer_date}
                 onChange={(e) => setXferForm((f) => ({ ...f, transfer_date: e.target.value }))}
               />
             </label>
-            <label className="block text-sm font-medium text-slate-700">
+            <label className="block text-sm font-medium text-foreground/85">
               Amount ({sym})
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm tabular-nums"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
                 value={xferForm.amount}
                 onChange={(e) => setXferForm((f) => ({ ...f, amount: e.target.value }))}
               />
             </label>
-            <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
+            <label className="flex items-center gap-2 pt-6 text-sm text-foreground/85">
               <input
                 type="checkbox"
-                className="rounded border-slate-300"
+                className="rounded border-border"
                 checked={xferForm.post}
                 onChange={(e) => setXferForm((f) => ({ ...f, post: e.target.checked }))}
               />
               Post immediately (uncheck to leave the journal as draft)
             </label>
-            <label className="block text-sm font-medium text-slate-700 sm:col-span-1">
+            <label className="block text-sm font-medium text-foreground/85 sm:col-span-1">
               Debit account
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm"
                 value={xferForm.debit_account_id}
                 onChange={(e) => {
                   const v = e.target.value
@@ -945,10 +945,10 @@ export function AquaculturePlManagementPanel({
                 ))}
               </select>
             </label>
-            <label className="block text-sm font-medium text-slate-700 sm:col-span-1">
+            <label className="block text-sm font-medium text-foreground/85 sm:col-span-1">
               Credit account
               <select
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm"
                 value={xferForm.credit_account_id}
                 onChange={(e) => {
                   const v = e.target.value
@@ -965,10 +965,10 @@ export function AquaculturePlManagementPanel({
                 ))}
               </select>
             </label>
-            <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+            <label className="block text-sm font-medium text-foreground/85 sm:col-span-2">
               Memo (optional)
               <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm"
                 value={xferForm.memo}
                 onChange={(e) => setXferForm((f) => ({ ...f, memo: e.target.value }))}
               />
@@ -979,28 +979,28 @@ export function AquaculturePlManagementPanel({
               type="button"
               disabled={xferSubmitting}
               onClick={() => void submitProfitTransfer()}
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
             >
               {xferSubmitting ? 'Saving…' : 'Create transfer'}
             </button>
-            <Link href="/journal-entries" className="text-sm font-medium text-teal-800 underline">
+            <Link href="/journal-entries" className="text-sm font-medium text-primary underline">
               Open journal entries
             </Link>
             <button
               type="button"
               onClick={() => void loadTransfers()}
               disabled={xferLoading}
-              className="text-sm text-slate-600 hover:text-slate-900 disabled:opacity-50"
+              className="text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
               Refresh history
             </button>
           </div>
 
           {transfers.length > 0 && (
-            <div className="mt-6 overflow-x-auto rounded-lg border border-slate-100">
+            <div className="mt-6 overflow-x-auto rounded-lg border border-border/70">
               <table className="min-w-full text-left text-sm">
                 <caption className="sr-only">Recent pond profit transfers</caption>
-                <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+                <thead className="border-b border-border bg-muted/40 text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2">Date</th>
                     <th className="px-3 py-2">Pond</th>
@@ -1013,23 +1013,23 @@ export function AquaculturePlManagementPanel({
                 </thead>
                 <tbody>
                   {transfers.map((t) => (
-                    <tr key={t.id} className="border-b border-slate-100">
+                    <tr key={t.id} className="border-b border-border/70">
                       <td className="px-3 py-2 whitespace-nowrap">{t.transfer_date}</td>
                       <td className="px-3 py-2">{t.pond_name}</td>
-                      <td className="px-3 py-2 text-slate-600">{t.production_cycle_name || '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{t.production_cycle_name || '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-medium">
                         {sym}
                         {formatNumber(Number(t.amount))}
                       </td>
-                      <td className="px-3 py-2 text-slate-700">
+                      <td className="px-3 py-2 text-foreground/85">
                         {(t.debit_account_code || '').trim()} — {t.debit_account_name}
                       </td>
-                      <td className="px-3 py-2 text-slate-700">
+                      <td className="px-3 py-2 text-foreground/85">
                         {(t.credit_account_code || '').trim()} — {t.credit_account_name}
                       </td>
                       <td className="px-3 py-2">
                         {t.journal_entry_id ? (
-                          <span className="text-slate-700">
+                          <span className="text-foreground/85">
                             {t.journal_entry_number || `#${t.journal_entry_id}`}
                             {t.journal_is_posted ? ' · posted' : ' · draft'}
                           </span>
@@ -1049,18 +1049,18 @@ export function AquaculturePlManagementPanel({
       {data && (
         <div className="mt-8 space-y-8">
           {data.cycle_scope_note && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
               {data.cycle_scope_note}
             </div>
           )}
           {data.shared_operating_cost_rule && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
-              <span className="font-semibold text-slate-900">Shared cost rule: </span>
+            <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-foreground">
+              <span className="font-semibold text-foreground">Shared cost rule: </span>
               {data.shared_operating_cost_rule}
             </div>
           )}
           {data.inter_pond_fish_transfer_note && (
-            <div className="rounded-xl border border-teal-200 bg-teal-50/80 px-4 py-3 text-sm text-teal-950">
+            <div className="rounded-xl border border-primary/25 bg-accent/80 px-4 py-3 text-sm text-teal-950">
               <span className="font-semibold text-teal-950">Fish pond transfers: </span>
               {data.inter_pond_fish_transfer_note}
             </div>
@@ -1073,9 +1073,9 @@ export function AquaculturePlManagementPanel({
               ['Total costs', data.totals.total_costs],
               ['Net profit', data.totals.profit],
             ].map(([label, val]) => (
-              <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+              <div key={label} className="rounded-xl border border-border bg-white p-4 shadow-sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
                   {sym}
                   {formatNumber(Number(val))}
                 </p>
@@ -1084,16 +1084,16 @@ export function AquaculturePlManagementPanel({
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">By pond</h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <h2 className="text-lg font-semibold text-foreground">By pond</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
               Revenue includes all income types in scope. Operating expenses are direct pond lines plus your allocated
               share of company-wide shared expenses, adjusted by inter-pond fish transfers (cost in − cost out). Expand
               income mix per pond below the figures.
             </p>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="min-w-full text-left text-sm">
                 <caption className="sr-only">Profit and loss by pond for the selected period</caption>
-                <thead className="border-b border-slate-200 bg-slate-50">
+                <thead className="border-b border-border bg-muted/40">
                   <tr>
                     <th scope="col" className="px-3 py-2">
                       Pond
@@ -1127,25 +1127,25 @@ export function AquaculturePlManagementPanel({
                 <tbody>
                   {data.ponds.map((r) => (
                     <Fragment key={r.pond_id}>
-                      <tr className="border-b border-slate-100">
+                      <tr className="border-b border-border/70">
                         <td className="px-3 py-2 font-medium">{r.pond_name}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {sym}
                           {formatNumber(Number(r.revenue))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
                           {sym}
                           {formatNumber(Number(r.direct_operating_expenses ?? r.operating_expenses))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
                           {sym}
                           {formatNumber(Number(r.shared_operating_expenses ?? 0))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
                           {sym}
                           {formatNumber(Number(r.fish_transfer_cost_in ?? 0))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
                           {sym}
                           {formatNumber(Number(r.fish_transfer_cost_out ?? 0))}
                         </td>
@@ -1157,19 +1157,19 @@ export function AquaculturePlManagementPanel({
                           {sym}
                           {formatNumber(Number(r.payroll_allocated))}
                         </td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums text-teal-800">
+                        <td className="px-3 py-2 text-right font-medium tabular-nums text-primary">
                           {sym}
                           {formatNumber(Number(r.profit))}
                         </td>
                       </tr>
                       {(r.revenue_by_income_type?.length ?? 0) > 0 && (
-                        <tr className="border-b border-slate-100 bg-slate-50/60">
-                          <td colSpan={9} className="px-3 py-2 text-xs text-slate-600">
-                            <span className="font-medium text-slate-700">Income mix: </span>
+                        <tr className="border-b border-border/70 bg-muted/40/60">
+                          <td colSpan={9} className="px-3 py-2 text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground/85">Income mix: </span>
                             {(r.revenue_by_income_type ?? []).map((x) => (
                               <span key={x.income_type} className="mr-3 whitespace-nowrap">
                                 {x.label}{' '}
-                                <span className="font-mono tabular-nums text-slate-900">
+                                <span className="font-mono tabular-nums text-foreground">
                                   {sym}
                                   {formatNumber(Number(x.amount))}
                                 </span>
@@ -1187,14 +1187,14 @@ export function AquaculturePlManagementPanel({
 
           {(data.pond_cycle_segments?.length ?? 0) > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Pond × production cycle (direct only)</h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <h2 className="text-lg font-semibold text-foreground">Pond × production cycle (direct only)</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
                 Segment margin uses direct opex plus fish transfer cost in minus cost out for that cycle (no shared cost
                 or payroll).
               </p>
-              <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 bg-slate-50">
+                  <thead className="border-b border-border bg-muted/40">
                     <tr>
                       <th className="px-3 py-2">Pond</th>
                       <th className="px-3 py-2">Cycle</th>
@@ -1208,7 +1208,7 @@ export function AquaculturePlManagementPanel({
                   </thead>
                   <tbody>
                     {data.pond_cycle_segments!.map((s) => (
-                      <tr key={`${s.pond_id}-${s.production_cycle_id ?? 'none'}`} className="border-b border-slate-100">
+                      <tr key={`${s.pond_id}-${s.production_cycle_id ?? 'none'}`} className="border-b border-border/70">
                         <td className="px-3 py-2">{s.pond_name}</td>
                         <td className="px-3 py-2">{s.production_cycle_name}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
@@ -1219,19 +1219,19 @@ export function AquaculturePlManagementPanel({
                           {sym}
                           {formatNumber(Number(s.direct_operating_expenses))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
                           {sym}
                           {formatNumber(Number(s.fish_transfer_cost_in ?? 0))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
                           {sym}
                           {formatNumber(Number(s.fish_transfer_cost_out ?? 0))}
                         </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-slate-800">
+                        <td className="px-3 py-2 text-right tabular-nums text-foreground">
                           {sym}
                           {formatNumber(Number(s.direct_operating_expenses_with_transfers ?? s.direct_operating_expenses))}
                         </td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums text-teal-800">
+                        <td className="px-3 py-2 text-right font-medium tabular-nums text-primary">
                           {sym}
                           {formatNumber(Number(s.segment_margin))}
                         </td>
@@ -1245,8 +1245,8 @@ export function AquaculturePlManagementPanel({
 
           {expensesByPond.some((g) => g.categories.length > 0) && (
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Operating expenses by pond</h2>
-              <p className="mt-1 text-xs text-slate-500">
+              <h2 className="text-lg font-semibold text-foreground">Operating expenses by pond</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
                 Includes direct expenses for that pond plus the portion of shared expenses attributed to that pond, by
                 category.
               </p>
@@ -1254,11 +1254,11 @@ export function AquaculturePlManagementPanel({
                 {expensesByPond.map(
                   (g) =>
                     g.categories.length > 0 && (
-                      <div key={g.pond_id} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-                        <h3 className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-800">
+                      <div key={g.pond_id} className="rounded-xl border border-border bg-white shadow-sm">
+                        <h3 className="border-b border-border/70 bg-muted/40 px-4 py-2 text-sm font-semibold text-foreground">
                           {g.pond_name}
                         </h3>
-                        <ul className="divide-y divide-slate-100">
+                        <ul className="divide-y divide-border/70">
                           {g.categories.map((c) => (
                             <li key={`${g.pond_id}-${c.category}`} className="flex justify-between px-4 py-2 text-sm">
                               <span>{c.label}</span>
@@ -1278,10 +1278,10 @@ export function AquaculturePlManagementPanel({
 
           {expensesByCategory.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-lg font-semibold text-foreground">
                 {pondId ? 'Expenses by category (selected pond)' : 'Expenses by category (combined for scope)'}
               </h2>
-              <ul className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white shadow-sm">
+              <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-white shadow-sm">
                 {expensesByCategory.map((c) => (
                   <li key={c.category} className="flex justify-between px-4 py-2 text-sm">
                     <span>{c.label}</span>

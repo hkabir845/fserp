@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { vehicleTypeLabel } from '@/lib/vehicle-types'
+import { formatQuantity } from '@/utils/quantity'
 
 type Tank = {
   id: number
@@ -213,8 +214,8 @@ export default function FuelStationPage() {
           <div className="max-w-6xl space-y-8">
         <ReportingHubBreadcrumb current="Fuel station" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Fuel station & refueling</h1>
-          <p className="mt-1 text-sm text-gray-600">
+          <h1 className="text-2xl font-bold text-foreground">Fuel station & refueling</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             <strong>Internal fleet only</strong> — issue fuel from station tanks to company vehicles. Quantities and
             weighted-average cost per tank tie tank stock to the same rates used for GL (receipts: Dr Inventory / Cr
             GRNI; issues: Dr fleet expense / Cr Inventory). Catalog fuel items label diesel vs octane; do not double-book
@@ -223,10 +224,10 @@ export default function FuelStationPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <span className="text-sm text-gray-600">Filter:</span>
+          <span className="text-sm text-muted-foreground">Filter:</span>
           <button
             type="button"
-            className={`rounded px-2 py-1 text-sm ${gradeFilter === '' ? 'bg-indigo-600 text-white' : 'border border-gray-300'}`}
+            className={`rounded px-2 py-1 text-sm ${gradeFilter === '' ? 'bg-primary text-primary-foreground' : 'border border-border'}`}
             onClick={() => setGradeFilter('')}
           >
             All
@@ -235,7 +236,7 @@ export default function FuelStationPage() {
             <button
               key={g}
               type="button"
-              className={`rounded px-2 py-1 text-sm capitalize ${gradeFilter === g ? 'bg-indigo-600 text-white' : 'border border-gray-300'}`}
+              className={`rounded px-2 py-1 text-sm capitalize ${gradeFilter === g ? 'bg-primary text-primary-foreground' : 'border border-border'}`}
               onClick={() => setGradeFilter(g)}
             >
               {g}
@@ -244,14 +245,14 @@ export default function FuelStationPage() {
         </div>
 
         {error ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="erp-alert-warning">
             Could not load fuel data. Ensure a tenant is selected and the backend is running.
           </div>
         ) : null}
 
-        <section className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Cost centers (department / P&amp;L)</h2>
-          <p className="mt-1 text-xs text-gray-600">Tag vehicle refueling for management reporting. Journal lines store this dimension when GL posting is on.</p>
+        <section className="rounded-xl border border-primary/15 bg-accent/60 p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-foreground">Cost centers (department / P&amp;L)</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Tag vehicle refueling for management reporting. Journal lines store this dimension when GL posting is on.</p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <input
               className="rounded-md border px-3 py-2 text-sm"
@@ -273,28 +274,28 @@ export default function FuelStationPage() {
                 setCcCode('')
                 setCcName('')
               }}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="erp-btn-primary rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
             >
               Add center
             </button>
           </div>
           {costCenters.length > 0 ? (
-            <ul className="mt-2 flex flex-wrap gap-2 text-xs text-gray-700">
+            <ul className="mt-2 flex flex-wrap gap-2 text-xs text-foreground/85">
               {costCenters.map((c) => (
-                <li key={c.id} className="rounded border border-indigo-200 bg-white px-2 py-1">
+                <li key={c.id} className="rounded border border-primary/25 bg-white px-2 py-1">
                   <strong>{c.code}</strong> — {c.name}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-xs text-gray-500">No cost centers yet — add at least one to allocate fleet fuel.</p>
+            <p className="mt-2 text-xs text-muted-foreground">No cost centers yet — add at least one to allocate fleet fuel.</p>
           )}
         </section>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">New storage tank</h2>
-            <p className="mt-1 text-xs text-gray-500">{gradeHint[grade]}</p>
+          <section className="erp-panel">
+            <h2 className="text-sm font-semibold text-foreground">New storage tank</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{gradeHint[grade]}</p>
             <div className="mt-3 grid gap-2">
               <input
                 className="rounded-md border px-3 py-2 text-sm"
@@ -333,15 +334,15 @@ export default function FuelStationPage() {
                 type="button"
                 disabled={createTank.isPending || !tankName.trim() || itemId === ''}
                 onClick={() => createTank.mutate()}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="erp-btn-primary rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
               >
                 Create tank
               </button>
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">Bulk receipt (purchase into tank)</h2>
+          <section className="erp-panel">
+            <h2 className="text-sm font-semibold text-foreground">Bulk receipt (purchase into tank)</h2>
             <div className="mt-3 grid gap-2">
               <select
                 className="rounded-md border px-3 py-2 text-sm"
@@ -351,7 +352,7 @@ export default function FuelStationPage() {
                 <option value="">Tank</option>
                 {tanks.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} ({t.fuel_grade}) — {t.current_stock_liters.toFixed(0)} L
+                    {t.name} ({t.fuel_grade}) — {formatQuantity(t.current_stock_liters)} L
                   </option>
                 ))}
               </select>
@@ -367,7 +368,7 @@ export default function FuelStationPage() {
                 value={recvCost}
                 onChange={(e) => setRecvCost(e.target.value)}
               />
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <input type="checkbox" checked={recvPostGl} onChange={(e) => setRecvPostGl(e.target.checked)} />
                 Post GL accrual (Inventory / GRNI)
               </label>
@@ -383,8 +384,8 @@ export default function FuelStationPage() {
           </section>
 
           <section className="rounded-xl border border-emerald-100 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">Receive from purchase order (into tank)</h2>
-            <p className="mt-1 text-xs text-gray-500">
+            <h2 className="text-sm font-semibold text-foreground">Receive from purchase order (into tank)</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
               Uses the PO line price, updates qty received on the PO, and links the fuel transaction. For fuel SKUs only.
             </p>
             <div className="mt-3 grid gap-2">
@@ -412,7 +413,7 @@ export default function FuelStationPage() {
                 <option value="">{openPoLines.length ? 'PO line' : poItemId ? 'No open PO lines for this item' : 'Select tank first'}</option>
                 {openPoLines.map((l) => (
                   <option key={l.po_line_id} value={l.po_line_id}>
-                    {l.po_number} — out {l.outstanding_liters.toFixed(0)} L @ {l.unit_price}
+                    {l.po_number} — out {formatQuantity(l.outstanding_liters)} L @ {l.unit_price}
                   </option>
                 ))}
               </select>
@@ -422,7 +423,7 @@ export default function FuelStationPage() {
                 value={poQty}
                 onChange={(e) => setPoQty(e.target.value)}
               />
-              <label className="flex items-center gap-2 text-sm text-gray-700">
+              <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <input type="checkbox" checked={poPostGl} onChange={(e) => setPoPostGl(e.target.checked)} />
                 Post GL accrual (Inventory / GRNI)
               </label>
@@ -437,8 +438,8 @@ export default function FuelStationPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
-            <h2 className="text-sm font-semibold text-gray-900">Fleet refueling (internal issue)</h2>
+          <section className="erp-panel lg:col-span-2">
+            <h2 className="text-sm font-semibold text-foreground">Fleet refueling (internal issue)</h2>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select
                 className="rounded-md border px-3 py-2 text-sm"
@@ -490,7 +491,7 @@ export default function FuelStationPage() {
                 ))}
               </select>
             </div>
-            <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+            <label className="mt-2 flex items-center gap-2 text-sm text-foreground/85">
               <input type="checkbox" checked={issPostGl} onChange={(e) => setIssPostGl(e.target.checked)} />
               Post GL (Dr fleet fuel / Cr Inventory; cost center on expense line)
             </label>
@@ -498,22 +499,22 @@ export default function FuelStationPage() {
               type="button"
               disabled={issue.isPending || issTank === '' || issVeh === ''}
               onClick={() => issue.mutate()}
-              className="mt-3 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              className="erp-btn-primary mt-3 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
             >
               Record refueling
             </button>
           </section>
         </div>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Tanks</h2>
+        <section className="erp-panel">
+          <h2 className="text-sm font-semibold text-foreground">Tanks</h2>
           {isLoading ? (
-            <p className="mt-2 text-sm text-gray-500">Loading…</p>
+            <p className="mt-2 text-sm text-muted-foreground">Loading…</p>
           ) : (
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-50">
+                  <tr className="border-b bg-muted/40">
                     <th className="p-2">Name</th>
                     <th className="p-2">Grade</th>
                     <th className="p-2">Item</th>
@@ -524,15 +525,15 @@ export default function FuelStationPage() {
                 </thead>
                 <tbody>
                   {tanks.map((t) => (
-                    <tr key={t.id} className="border-b border-gray-100">
+                    <tr key={t.id} className="border-b border-border/70">
                       <td className="p-2 font-medium">{t.name}</td>
                       <td className="p-2 capitalize">{t.fuel_grade}</td>
                       <td className="p-2">{t.fuel_item_name ?? t.fuel_item_id}</td>
-                      <td className="p-2">{t.current_stock_liters.toFixed(2)}</td>
-                      <td className="p-2 text-gray-700">
+                      <td className="p-2">{formatQuantity(t.current_stock_liters)}</td>
+                      <td className="p-2 text-foreground/85">
                         {t.moving_avg_unit_cost != null ? t.moving_avg_unit_cost.toFixed(2) : '—'}
                       </td>
-                      <td className="p-2">{t.capacity_liters.toFixed(0)}</td>
+                      <td className="p-2">{formatQuantity(t.capacity_liters)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -541,12 +542,12 @@ export default function FuelStationPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-900">Recent fuel transactions</h2>
+        <section className="erp-panel">
+          <h2 className="text-sm font-semibold text-foreground">Recent fuel transactions</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="border-b bg-gray-50">
+                <tr className="border-b bg-muted/40">
                   <th className="p-2">Type</th>
                   <th className="p-2">Qty (L)</th>
                   <th className="p-2">When</th>
@@ -554,10 +555,10 @@ export default function FuelStationPage() {
               </thead>
               <tbody>
                 {txns.slice(0, 25).map((x) => (
-                  <tr key={x.id} className="border-b border-gray-100">
+                  <tr key={x.id} className="border-b border-border/70">
                     <td className="p-2">{x.txn_type}</td>
-                    <td className="p-2">{Number(x.qty_liters).toFixed(2)}</td>
-                    <td className="p-2 text-gray-600">{String(x.date)}</td>
+                    <td className="p-2">{formatQuantity(x.qty_liters)}</td>
+                    <td className="p-2 text-muted-foreground">{String(x.date)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -255,21 +255,21 @@ export default function AquacultureSalesPage() {
 
       {loading ? (
         <div className="mt-10 flex justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
         </div>
       ) : ponds.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-950">
+        <div className="mt-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-5 text-sm text-warning-foreground">
           <p className="font-medium">{aquacultureT('addAtLeastOnePond', lang)}</p>
-          <p className="mt-1 text-amber-900/90">{aquacultureT('salesNeedPond', lang)}</p>
+          <p className="mt-1 text-warning-foreground/90">{aquacultureT('salesNeedPond', lang)}</p>
           <Link
             href="/aquaculture/ponds"
-            className="mt-3 inline-block font-medium text-teal-800 underline decoration-teal-600/50 hover:decoration-teal-800"
+            className="mt-3 inline-block font-medium text-primary underline decoration-teal-600/50 hover:decoration-teal-800"
           >
             {aquacultureT('goToPonds', lang)}
           </Link>
         </div>
       ) : (
-        <div className="mt-6 w-full min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-6 w-full min-w-0 rounded-xl border border-border bg-white shadow-sm">
           <table className="w-full table-fixed border-collapse text-left text-sm" aria-labelledby="aq-sales-title">
             <caption className="sr-only">{aquacultureT('pondFishSales', lang)}</caption>
             <colgroup>
@@ -286,7 +286,7 @@ export default function AquacultureSalesPage() {
               <col className="w-[10%]" />
               <col className="w-[10%]" />
             </colgroup>
-            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
                 <th scope="col" className="px-2 py-2 align-bottom">
                   {t('date')}
@@ -331,19 +331,19 @@ export default function AquacultureSalesPage() {
                 const rowFishPerKg =
                   r.income_type === 'fish_harvest_sale' ? fishPerKg(Number(r.weight_kg), r.fish_count) : null
                 return (
-                <tr key={r.id} className="border-b border-slate-100">
+                <tr key={r.id} className="border-b border-border/70">
                   <td className="px-2 py-2 whitespace-nowrap align-top">{formatDateOnly(r.sale_date)}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-800">{r.pond_name}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-600">{r.production_cycle_name || '—'}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">{r.income_type_label || r.income_type || '—'}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-slate-700">
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-foreground">{r.pond_name}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-muted-foreground">{r.production_cycle_name || '—'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-foreground/85">{r.income_type_label || r.income_type || '—'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-foreground/85">
                     {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : r.fish_species_label || '—'}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">{formatNumber(Number(r.weight_kg))}</td>
                   <td className="px-2 py-2 text-right tabular-nums align-top">
                     {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : (r.fish_count ?? '—')}
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums align-top text-slate-600">
+                  <td className="px-2 py-2 text-right tabular-nums align-top text-muted-foreground">
                     {rowFishPerKg != null ? formatNumber(rowFishPerKg) : '—'}
                   </td>
                   <td className="px-2 py-2 text-right font-medium tabular-nums align-top">
@@ -360,14 +360,14 @@ export default function AquacultureSalesPage() {
                         </span>
                         <Link
                           href="/invoices"
-                          className="break-all text-teal-700 underline decoration-teal-600/40 hover:decoration-teal-800"
+                          className="break-all text-primary underline decoration-teal-600/40 hover:decoration-teal-800"
                         >
                           {r.invoice_number}
                         </Link>
                       </span>
                     ) : (
                       <span
-                        className="inline-block rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 ring-1 ring-slate-200"
+                        className="inline-block rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground ring-1 ring-border"
                         title={aquacultureT('recordToBooksTitle', lang)}
                       >
                         {aquacultureT('notPosted', lang)}
@@ -379,7 +379,7 @@ export default function AquacultureSalesPage() {
                       {!r.accounting_posted ? (
                         <button
                           type="button"
-                          className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-800"
+                          className="rounded-md bg-foreground px-2 py-1 text-xs font-medium text-white hover:bg-foreground/90"
                           title={aquacultureT('recordToBooks', lang)}
                           onClick={() => openFinalize(r)}
                         >
@@ -388,7 +388,7 @@ export default function AquacultureSalesPage() {
                       ) : null}
                       <button
                         type="button"
-                        className={`text-sm ${r.accounting_posted ? 'cursor-not-allowed text-slate-400' : 'text-blue-600 hover:underline'}`}
+                        className={`text-sm ${r.accounting_posted ? 'cursor-not-allowed text-muted-foreground/70' : 'text-primary hover:underline'}`}
                         onClick={() => openEdit(r)}
                         disabled={!!r.accounting_posted}
                       >
@@ -396,7 +396,7 @@ export default function AquacultureSalesPage() {
                       </button>
                       <button
                         type="button"
-                        className={r.accounting_posted ? 'cursor-not-allowed text-slate-300' : 'text-red-600'}
+                        className={r.accounting_posted ? 'cursor-not-allowed text-muted-foreground/40' : 'text-destructive'}
                         onClick={() => void remove(r)}
                         disabled={!!r.accounting_posted}
                         title={r.accounting_posted ? aquacultureT('deleteLinkedInvoiceFirst', lang) : t('delete')}
@@ -410,7 +410,7 @@ export default function AquacultureSalesPage() {
               })}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-2 py-8 text-center text-slate-500">
+                  <td colSpan={12} className="px-2 py-8 text-center text-muted-foreground">
                     {aquacultureT('noSalesYet', lang)}
                   </td>
                 </tr>
@@ -441,19 +441,19 @@ export default function AquacultureSalesPage() {
             aria-labelledby="finalize-sale-title"
             aria-modal="true"
           >
-            <h2 id="finalize-sale-title" className="text-lg font-semibold text-slate-900">
+            <h2 id="finalize-sale-title" className="text-lg font-semibold text-foreground">
               {aquacultureT('recordToBooks', lang)}
             </h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               {aquacultureTFormat('finalizeIntro', lang, { invRef: `INV-AQ-${finalizeRow.id}` })}
             </p>
-            <div className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-700">
+            <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/50 p-3 text-sm text-foreground/85">
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">{t('pond')}</span>
+                <span className="text-muted-foreground">{t('pond')}</span>
                 <span className="text-right font-medium">{finalizeRow.pond_name}</span>
               </div>
               <div className="flex justify-between gap-2">
-                <span className="text-slate-500">{pick('Amount', 'পরিমাণ')}</span>
+                <span className="text-muted-foreground">{pick('Amount', 'পরিমাণ')}</span>
                 <span className="font-medium tabular-nums">
                   {sym}
                   {formatNumber(Number(finalizeRow.total_amount))}
@@ -461,7 +461,7 @@ export default function AquacultureSalesPage() {
               </div>
             </div>
             <fieldset className="mt-4 space-y-2">
-              <legend className="text-sm font-medium text-slate-700">{aquacultureT('howSettled', lang)}</legend>
+              <legend className="text-sm font-medium text-foreground/85">{aquacultureT('howSettled', lang)}</legend>
               <label className="flex cursor-pointer items-start gap-2 text-sm">
                 <input
                   type="radio"
@@ -471,8 +471,8 @@ export default function AquacultureSalesPage() {
                   className="mt-1"
                 />
                 <span>
-                  <span className="font-medium text-slate-800">{aquacultureT('cashImmediate', lang)}</span>
-                  <span className="block text-slate-500">{aquacultureT('cashImmediateHint', lang)}</span>
+                  <span className="font-medium text-foreground">{aquacultureT('cashImmediate', lang)}</span>
+                  <span className="block text-muted-foreground">{aquacultureT('cashImmediateHint', lang)}</span>
                 </span>
               </label>
               <label className="flex cursor-pointer items-start gap-2 text-sm">
@@ -484,16 +484,16 @@ export default function AquacultureSalesPage() {
                   className="mt-1"
                 />
                 <span>
-                  <span className="font-medium text-slate-800">{aquacultureT('onAccountAr', lang)}</span>
-                  <span className="block text-slate-500">{aquacultureT('onAccountArHint', lang)}</span>
+                  <span className="font-medium text-foreground">{aquacultureT('onAccountAr', lang)}</span>
+                  <span className="block text-muted-foreground">{aquacultureT('onAccountArHint', lang)}</span>
                 </span>
               </label>
             </fieldset>
             {finalizeRecordAs === 'cash_paid' ? (
-              <label className="mt-3 block text-sm font-medium text-slate-700">
+              <label className="mt-3 block text-sm font-medium text-foreground/85">
                 {aquacultureT('paymentMethod', lang)}
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={finalizePaymentMethod}
                   onChange={(e) => setFinalizePaymentMethod(e.target.value)}
                 >
@@ -504,10 +504,10 @@ export default function AquacultureSalesPage() {
               </label>
             ) : (
               <>
-                <label className="mt-3 block text-sm font-medium text-slate-700">
-                  {aquacultureT('billToCustomer', lang)} <span className="text-red-600">*</span>
+                <label className="mt-3 block text-sm font-medium text-foreground/85">
+                  {aquacultureT('billToCustomer', lang)} <span className="text-destructive">*</span>
                   <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                     value={finalizeCustomerId}
                     onChange={(e) => setFinalizeCustomerId(e.target.value)}
                     required
@@ -519,15 +519,15 @@ export default function AquacultureSalesPage() {
                       </option>
                     ))}
                   </select>
-                  <span className="mt-1 block text-xs text-slate-500">
+                  <span className="mt-1 block text-xs text-muted-foreground">
                     {aquacultureT('pondCustomerHint', lang)}
                   </span>
                 </label>
-                <label className="mt-3 block text-sm font-medium text-slate-700">
+                <label className="mt-3 block text-sm font-medium text-foreground/85">
                   {aquacultureT('dueDate', lang)}
                   <input
                     type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                     value={finalizeDueDate}
                     onChange={(e) => setFinalizeDueDate(e.target.value)}
                   />
@@ -535,10 +535,10 @@ export default function AquacultureSalesPage() {
               </>
             )}
             {finalizeRecordAs === 'cash_paid' ? (
-              <label className="mt-3 block text-sm font-medium text-slate-700">
+              <label className="mt-3 block text-sm font-medium text-foreground/85">
                 {aquacultureT('invoiceCustomerOptional', lang)}
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
                   value={finalizeCustomerId}
                   onChange={(e) => setFinalizeCustomerId(e.target.value)}
                 >
@@ -556,7 +556,7 @@ export default function AquacultureSalesPage() {
                 type="button"
                 disabled={finalizeSubmitting}
                 onClick={() => setFinalizeRow(null)}
-                className="rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
               >
                 {t('cancel')}
               </button>
@@ -564,7 +564,7 @@ export default function AquacultureSalesPage() {
                 type="button"
                 disabled={finalizeSubmitting}
                 onClick={() => void submitFinalize()}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-white hover:bg-foreground/90 disabled:opacity-60"
               >
                 {finalizeSubmitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
                 {pick('Confirm', 'নিশ্চিত করুন')}

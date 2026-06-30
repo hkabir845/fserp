@@ -49,6 +49,7 @@ from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_d
 from api.services.aquaculture_transfer_cost import (
     backfill_missing_transfer_line_costs,
     preview_transfer_line_costs,
+    resync_nursing_pond_transfer_costs,
     resolve_auto_transfer_line_cost,
 )
 from api.services.aquaculture_fish_transfer_gl_service import (
@@ -4996,6 +4997,7 @@ def _parse_fish_transfer_payload(
         parsed_rows.append({"index": i, "row": row, "to_pond": to_pond, "wk": wk, "fcount_i": fcount_i})
 
     total_transfer_weight = _money_q(total_transfer_weight)
+    total_transfer_fish = sum(pr["fcount_i"] for pr in parsed_rows)
     line_models: list[AquacultureFishPondTransferLine] = []
     for pr in parsed_rows:
         i = pr["index"]
@@ -5015,6 +5017,8 @@ def _parse_fish_transfer_payload(
             submitted_cost=cost_amt,
             transfer_total_weight_kg=total_transfer_weight,
             fish_count=fcount_i,
+            transfer_total_fish_count=total_transfer_fish if total_transfer_fish > 0 else None,
+            exclude_transfer_id=exclude_transfer_id,
         )
         fc_raw = row.get("to_production_cycle_id")
         to_cycle = None
@@ -5228,6 +5232,11 @@ def aquaculture_fish_pond_transfers(request):
         for ln in data["line_models"]:
             ln.transfer = xfer
             ln.save()
+        resync_nursing_pond_transfer_costs(
+            company_id=cid,
+            from_pond_id=xfer.from_pond_id,
+            from_production_cycle_id=xfer.from_production_cycle_id,
+        )
         gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, xfer)
 
     xfer = (
@@ -5294,6 +5303,11 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
             for ln in data["line_models"]:
                 ln.transfer = t
                 ln.save()
+            resync_nursing_pond_transfer_costs(
+                company_id=cid,
+                from_pond_id=t.from_pond_id,
+                from_production_cycle_id=t.from_production_cycle_id,
+            )
             gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, t)
         t = (
             AquacultureFishPondTransfer.objects.filter(pk=t.pk)

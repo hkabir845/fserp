@@ -192,7 +192,7 @@ def test_fish_pond_transfer_api_auto_fills_zero_cost(api_client, company_tenant,
     )
     assert r.status_code == 201, r.content.decode()
     line = json.loads(r.content)["transfer"]["lines"][0]
-    assert Decimal(line["cost_amount"]) == Decimal("800.00")  # 2000/50 × 20
+    assert Decimal(line["cost_amount"]) == Decimal("1333.33")  # per-head: 2000 × 400 ÷ live survivors
 
 
 @pytest.mark.django_db
@@ -281,6 +281,75 @@ def test_two_nursing_transfers_split_fry_cost_by_heads_not_full_bio_each_time(co
 
 
 @pytest.mark.django_db
+def test_two_nursing_transfers_share_total_bio_by_survivor_fish_count(company_tenant):
+    """
+    Real-world: ~660k fry+expenses on nursing pond; 87,780 + 27,100 survivors moved out.
+    Cost per fish = total bio ÷ 114,880; each line = fish_count × cost/fish (not ~660k each).
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Ashari Nursing", pond_role="nursing", is_active=True
+    )
+    dst1 = AquaculturePond.objects.create(company_id=cid, name="Ashari Grow 1", is_active=True)
+    dst2 = AquaculturePond.objects.create(company_id=cid, name="Mynuddin Grow", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=src,
+        expense_date=date(2025, 10, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("660000.00"),
+    )
+
+    tr1 = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 11, 8),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr1,
+        to_pond=dst1,
+        weight_kg=Decimal("418"),
+        fish_count=87780,
+        cost_amount=Decimal("0"),
+    )
+    tr2 = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2025, 12, 6),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr2,
+        to_pond=dst2,
+        weight_kg=Decimal("666.34"),
+        fish_count=27100,
+        cost_amount=Decimal("0"),
+    )
+
+    from api.services.aquaculture_pl_service import _money_q
+    from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_costs
+
+    resync_nursing_pond_transfer_costs(
+        company_id=cid,
+        from_pond_id=src.id,
+        from_production_cycle_id=None,
+    )
+    tr1.lines.first().refresh_from_db()
+    tr2.lines.first().refresh_from_db()
+    c1 = tr1.lines.first().cost_amount
+    c2 = tr2.lines.first().cost_amount
+    total_fish = 87780 + 27100
+    per_fish = Decimal("660000.00") / Decimal(total_fish)
+    assert c1 == _money_q(per_fish * 87780)
+    assert c2 == _money_q(per_fish * 27100)
+    assert c1 + c2 == Decimal("660000.00")
+    assert c1 > c2
+    assert c1 < Decimal("660000.00")
+
+
+@pytest.mark.django_db
 def test_backfill_missing_transfer_line_costs(api_client, company_tenant, auth_admin_headers):
     _enable(company_tenant)
     cid = company_tenant.id
@@ -342,6 +411,16 @@ def test_fish_pond_transfer_preview_cost_api(api_client, company_tenant, auth_ad
         amount=Decimal("2000.00"),
         memo="fry",
     )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=src,
+        entry_date=date(2026, 4, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=3500,
+        weight_kg_delta=Decimal("70"),
+        memo="Opening fry for preview cost test",
+    )
     AquacultureFishSale.objects.create(
         company_id=cid,
         pond=src,
@@ -367,9 +446,9 @@ def test_fish_pond_transfer_preview_cost_api(api_client, company_tenant, auth_ad
     )
     assert r.status_code == 200, r.content.decode()
     body = json.loads(r.content)
-    assert body["cost_basis"] == "per_kg"
+    assert body["cost_basis"] == "per_head"
     assert Decimal(body["lines"][0]["cost_amount"]) == Decimal("800.00")
-    assert body["transfer_cost_per_kg"] is not None
+    assert body["transfer_cost_per_head"] is not None
 
 
 @pytest.mark.django_db

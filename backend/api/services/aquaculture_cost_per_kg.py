@@ -229,7 +229,7 @@ def pond_fry_stocking_capitalized_journal_total(
             Q(aquaculture_production_cycle_id=cycle_filter_id)
             | Q(aquaculture_production_cycle_id__isnull=True)
         )
-    t1581 = q1581.aggregate(s=Sum("debit"))["s"]
+    s1581 = q1581.aggregate(s=Sum("debit"))["s"]
 
     # Legacy expense-mode fry bills posted to 6715 before unified 1581 routing.
     q6715 = JournalEntryLine.objects.filter(
@@ -248,9 +248,9 @@ def pond_fry_stocking_capitalized_journal_total(
             Q(aquaculture_production_cycle_id=cycle_filter_id)
             | Q(aquaculture_production_cycle_id__isnull=True)
         )
-    t6715 = q6715.aggregate(s=Sum("debit"))["s"]
+    s6715 = q6715.aggregate(s=Sum("debit"))["s"]
 
-    total = Decimal(str(t1581["s"] or 0)) + Decimal(str(t6715["s"] or 0))
+    total = Decimal(str(s1581 or 0)) + Decimal(str(s6715 or 0))
     return _money_q(total)
 
 

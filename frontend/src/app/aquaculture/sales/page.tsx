@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { FileCheck, Loader2, Plus, RefreshCw, ShoppingBag, Trash2 } from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
-import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, AQ_HERO_SELECT_BLOCK, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
@@ -206,7 +206,7 @@ export default function AquacultureSalesPage() {
           <label className="text-xs font-medium text-teal-100">
             {t('pond')}
             <select
-              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+              className={AQ_HERO_SELECT_BLOCK}
               value={filterPond}
               onChange={(e) => setFilterPond(e.target.value)}
             >
@@ -493,7 +493,7 @@ export default function AquacultureSalesPage() {
               <label className="mt-3 block text-sm font-medium text-foreground/85">
                 {aquacultureT('paymentMethod', lang)}
                 <select
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                  className="erp-select mt-1 w-full"
                   value={finalizePaymentMethod}
                   onChange={(e) => setFinalizePaymentMethod(e.target.value)}
                 >
@@ -507,7 +507,7 @@ export default function AquacultureSalesPage() {
                 <label className="mt-3 block text-sm font-medium text-foreground/85">
                   {aquacultureT('billToCustomer', lang)} <span className="text-destructive">*</span>
                   <select
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                    className="erp-select mt-1 w-full"
                     value={finalizeCustomerId}
                     onChange={(e) => setFinalizeCustomerId(e.target.value)}
                     required
@@ -538,7 +538,7 @@ export default function AquacultureSalesPage() {
               <label className="mt-3 block text-sm font-medium text-foreground/85">
                 {aquacultureT('invoiceCustomerOptional', lang)}
                 <select
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                  className="erp-select mt-1 w-full"
                   value={finalizeCustomerId}
                   onChange={(e) => setFinalizeCustomerId(e.target.value)}
                 >

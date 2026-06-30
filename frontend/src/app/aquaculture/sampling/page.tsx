@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Gauge, Info, Pen, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
-import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, AQ_HERO_SELECT_BLOCK } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -713,7 +713,7 @@ export default function AquacultureSamplingPage() {
           <label className="text-xs font-medium text-teal-100">
             {aquacultureT('pondFilter', lang)}
             <select
-              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+              className={AQ_HERO_SELECT_BLOCK}
               value={filterPond}
               onChange={(e) => setFilterPond(e.target.value)}
             >

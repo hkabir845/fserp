@@ -245,3 +245,24 @@ def test_api_allows_harvest_sale_within_stock(api_client, company_tenant, auth_a
     )
     assert r.status_code == 201, r.content.decode()
     assert AquacultureFishSale.objects.filter(pond_id=pond.id).count() == 1
+
+
+@pytest.mark.django_db
+def test_pond_fry_stocking_capitalized_journal_total_with_no_journals(company_tenant):
+    """Regression: aggregate scalar must not be subscripted again ( broke fish sale POST )."""
+    from api.services.aquaculture_cost_per_kg import pond_fry_stocking_capitalized_journal_total
+
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="Fry Cap Pond",
+        pond_role="grow_out",
+        is_active=True,
+    )
+    total = pond_fry_stocking_capitalized_journal_total(
+        company_id=company_tenant.id,
+        pond_id=pond.id,
+        start=date(2026, 1, 1),
+        end=date(2026, 12, 31),
+        cycle_filter_id=None,
+    )
+    assert total == Decimal("0")

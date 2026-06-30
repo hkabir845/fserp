@@ -9,6 +9,14 @@ export const AQ_HERO_BTN_PRIMARY = 'erp-hero-btn-primary'
 
 export const AQ_HERO_BTN_GHOST = 'erp-hero-btn-ghost'
 
+/** Teal page-header filter dropdowns (pond, period, etc.). */
+export const AQ_HERO_SELECT = 'erp-hero-select'
+export const AQ_HERO_SELECT_BLOCK = 'erp-hero-select--block'
+export const AQ_HERO_SELECT_SM = 'erp-hero-select erp-hero-select--sm'
+
+/** Standard form selects on cards/modals. */
+export const AQ_SELECT = 'erp-select'
+
 export function PipelineStatCard(props: {
   title: string
   value: string | number

@@ -490,7 +490,7 @@ export default function AquacultureFeedingPage() {
     <label className="block text-xs font-medium text-foreground/85">
       Sack size (kg)
       <select
-        className="mt-1 w-full max-w-xs rounded-lg border border-border bg-white px-3 py-2 text-sm"
+        className="erp-select mt-1 w-full max-w-xs"
         value={editSackSize}
         onChange={(e) => onSackSizeSelectChange(e.target.value)}
       >

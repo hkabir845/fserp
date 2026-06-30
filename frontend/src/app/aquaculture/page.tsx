@@ -36,7 +36,7 @@ import {
 } from 'recharts'
 import { useToast } from '@/components/Toast'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
-import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, AQ_HERO_SELECT_SM, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { aquacultureT, aquacultureTFormat, nursingWorkflowSteps } from '@/lib/aquacultureI18n'
 import { useT } from '@/lib/i18n'
 import api from '@/lib/api'
@@ -507,7 +507,7 @@ export default function AquacultureOverviewPage() {
                   setCustomStart(e.target.value)
                   setPreset('custom')
                 }}
-                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-primary/35 focus:ring-2 focus:ring-teal-400/30"
+                className={AQ_HERO_SELECT_SM}
               />
             </label>
             <label className="flex items-center gap-2 text-xs font-medium text-teal-100">
@@ -519,7 +519,7 @@ export default function AquacultureOverviewPage() {
                   setCustomEnd(e.target.value)
                   setPreset('custom')
                 }}
-                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-xs text-white outline-none focus:border-primary/35 focus:ring-2 focus:ring-teal-400/30"
+                className={AQ_HERO_SELECT_SM}
               />
             </label>
           </div>

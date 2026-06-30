@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BookOpen, Edit2, Eye, FileText, Package, RefreshCw, Store, Trash2 } from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
-import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, AQ_HERO_SELECT_BLOCK } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
@@ -613,7 +613,7 @@ export default function AquacultureExpensesPage() {
           <label className="text-xs font-medium text-teal-100">
             {aquacultureT('filterPondLabel', lang)}
             <select
-              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+              className={AQ_HERO_SELECT_BLOCK}
               value={filterPond}
               onChange={(e) => {
                 const v = e.target.value
@@ -633,7 +633,7 @@ export default function AquacultureExpensesPage() {
             {aquacultureT('fromDate', lang)}
             <input
               type="date"
-              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+              className={AQ_HERO_SELECT_BLOCK}
               value={filterDateFrom}
               onChange={(e) => {
                 const v = e.target.value
@@ -646,7 +646,7 @@ export default function AquacultureExpensesPage() {
             {aquacultureT('toDate', lang)}
             <input
               type="date"
-              className="mt-1 block rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+              className={AQ_HERO_SELECT_BLOCK}
               value={filterDateTo}
               onChange={(e) => {
                 const v = e.target.value

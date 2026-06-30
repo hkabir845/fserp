@@ -15,7 +15,7 @@ import {
   Wallet,
 } from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
-import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, AQ_HERO_SELECT } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
@@ -207,7 +207,7 @@ export default function AquacultureLandlordsPage() {
             <select
               value={pondId}
               onChange={(e) => setPondId(e.target.value)}
-              className="mt-1 block max-w-[200px] rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+              className={`${AQ_HERO_SELECT} mt-1 block max-w-[200px]`}
             >
               <option value="">All ponds</option>
               {ponds.map((p) => (
@@ -226,7 +226,7 @@ export default function AquacultureLandlordsPage() {
               <select
                 value={periodMode}
                 onChange={(e) => setPeriodMode(e.target.value as PeriodMode)}
-                className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+                className={AQ_HERO_SELECT}
               >
                 <option value="all">All</option>
                 <option value="year">Year</option>
@@ -235,7 +235,7 @@ export default function AquacultureLandlordsPage() {
                 <select
                   value={year}
                   onChange={(e) => setYear(Number(e.target.value))}
-                  className="rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white"
+                  className={AQ_HERO_SELECT}
                 >
                   {yearOptions.map((y) => (
                     <option key={y} value={y}>

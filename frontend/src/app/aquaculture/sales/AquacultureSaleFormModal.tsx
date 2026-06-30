@@ -505,7 +505,7 @@ export function AquacultureSaleFormModal({
   if (!open) return null
 
   const inputCls =
-    'w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-primary/20'
+    'erp-field py-2.5 shadow-sm focus:border-teal-500 focus:ring-primary/20'
   const labelCls = 'block text-xs font-semibold uppercase tracking-wide text-muted-foreground'
   const thCls =
     'px-2 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground'

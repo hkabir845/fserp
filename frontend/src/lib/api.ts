@@ -360,27 +360,14 @@ api.interceptors.request.use(
         // Ignore tenant errors
       }
       
-      // Selected company: super admin (any tenant) or tenant admin (same organization only; server validates)
+      // Selected company: backend validates who may use X-Selected-Company-Id (super admin / tenant admin).
       try {
         const selectedCompanyStr = localStorage.getItem('superadmin_selected_company')
         if (selectedCompanyStr && selectedCompanyStr !== 'undefined' && selectedCompanyStr !== 'null') {
           try {
             const selectedCompany = JSON.parse(selectedCompanyStr)
             if (selectedCompany && selectedCompany.id) {
-              const userStr = localStorage.getItem('user')
-              if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-                try {
-                  const user = JSON.parse(userStr) as { role?: string }
-                  if (
-                    user &&
-                    (isSuperAdminRole(user.role) || isTenantAdminRole(user.role))
-                  ) {
-                    config.headers['X-Selected-Company-Id'] = String(selectedCompany.id)
-                  }
-                } catch (e) {
-                  // Ignore parse errors
-                }
-              }
+              config.headers['X-Selected-Company-Id'] = String(selectedCompany.id)
             }
           } catch (e) {
             // Ignore parse errors

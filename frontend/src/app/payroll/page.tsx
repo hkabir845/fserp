@@ -307,9 +307,10 @@ export default function PayrollPage() {
   const router = useRouter()
   const toast = useToast()
   const pageMeta = usePageMeta()
-  const { selectedCompany } = useCompany()
+  const { selectedCompany, isClientReady } = useCompany()
   const [payrolls, setPayrolls] = useState<PayrollRun[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -557,16 +558,18 @@ export default function PayrollPage() {
   }, [aquaculturePonds])
 
   useEffect(() => {
+    if (!isClientReady) return
     if (typeof window === 'undefined' || !localStorage.getItem('access_token')?.trim()) {
       router.push('/login')
       return
     }
+    setLoading(true)
     fetchCompanyCurrency()
     fetchPayrolls()
     fetchBankAccounts()
     fetchGlPayAccounts()
     fetchStations()
-  }, [router, selectedCompany?.id])
+  }, [router, isClientReady, selectedCompany?.id])
 
   const fetchStations = async () => {
     try {
@@ -681,9 +684,11 @@ export default function PayrollPage() {
   }
 
   const fetchPayrolls = async () => {
+    setLoadError(null)
     try {
       const { data } = await api.get<PayrollRun[]>('/payroll/')
-      setPayrolls(data)
+      const rows = Array.isArray(data) ? data : []
+      setPayrolls(rows)
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         localStorage.removeItem('access_token')
@@ -691,8 +696,11 @@ export default function PayrollPage() {
         toast.error('Session expired. Please login again.')
         return
       }
+      const detail = readApiErrorDetail(error) || 'Error loading payroll runs'
       console.error('Error fetching payroll:', error)
-      toast.error('Error loading payroll runs')
+      setLoadError(detail)
+      setPayrolls([])
+      toast.error(detail)
     } finally {
       setLoading(false)
     }
@@ -1287,6 +1295,14 @@ export default function PayrollPage() {
               if you use a specific account.
             </p>
           </div>
+
+          {loadError ? (
+            <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              Could not load payroll runs: {loadError}. Check the company switcher shows{' '}
+              <strong>Adib Filling Station</strong>, then refresh. If it persists, open DevTools → Network
+              and inspect the <code className="rounded bg-destructive/10 px-1">/api/payroll/</code> response.
+            </div>
+          ) : null}
 
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

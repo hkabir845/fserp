@@ -162,6 +162,84 @@ def test_bill_list_filter_by_station(api_client, company_tenant, auth_admin_head
 
 
 @pytest.mark.django_db
+def test_bill_list_filtered_amount_and_allocations(api_client, company_tenant, auth_admin_headers):
+    Company = company_tenant.__class__
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    pond_a = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Digonta", is_active=True
+    )
+    pond_b = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Ashari-1", is_active=True
+    )
+    vendor = Vendor.objects.filter(company_id=company_tenant.id).first()
+    if vendor is None:
+        vendor = Vendor.objects.create(
+            company_id=company_tenant.id,
+            company_name="V",
+            display_name="V",
+            vendor_number="V-MIX",
+            is_active=True,
+        )
+
+    r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-06-10",
+                "status": "draft",
+                "bill_purpose": "mixed",
+                "lines": [
+                    {
+                        "description": "Feed Digonta",
+                        "quantity": 1,
+                        "unit_cost": "300.00",
+                        "amount": "300.00",
+                        "aquaculture_pond_id": pond_a.id,
+                        "aquaculture_expense_category": "other",
+                    },
+                    {
+                        "description": "Feed Ashari",
+                        "quantity": 1,
+                        "unit_cost": "200.00",
+                        "amount": "200.00",
+                        "aquaculture_pond_id": pond_b.id,
+                        "aquaculture_expense_category": "other",
+                    },
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content
+    bill_id = r.json()["id"]
+
+    scoped = api_client.get(
+        "/api/bills/",
+        {"pond_id": str(pond_a.id), "skip": "0", "limit": "50"},
+        **auth_admin_headers,
+    )
+    assert scoped.status_code == 200
+    body = scoped.json()
+    rows = body["results"] if isinstance(body, dict) and "results" in body else body
+    row = next(b for b in rows if b["id"] == bill_id)
+    assert row["filtered_amount"] == "300.00"
+    assert row["total_amount"] == "500.00" or row["total"] == "500.00"
+    assert row["has_multiple_entities"] is True
+    alloc = row["entity_allocations"]
+    assert len(alloc) == 2
+    match_a = next(a for a in alloc if a["entity_scope_key"] == f"p:{pond_a.id}")
+    assert match_a["amount"] == "300.00"
+    assert match_a["matches_list_filter"] is True
+    match_b = next(a for a in alloc if a["entity_scope_key"] == f"p:{pond_b.id}")
+    assert match_b["amount"] == "200.00"
+    assert match_b["matches_list_filter"] is False
+
+
+@pytest.mark.django_db
 def test_bill_list_filter_head_office(api_client, company_tenant, auth_admin_headers):
     vendor = Vendor.objects.filter(company_id=company_tenant.id).first()
     if vendor is None:

@@ -66,6 +66,38 @@ function roundTwo(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
+function isOnAccountRow(inv: OutstandingInvoice) {
+  return Boolean(inv.synthetic && inv.on_account)
+}
+
+/** Distribute `amount` across open items oldest-first; remainder becomes on-account advance. */
+function distributeFifo(amount: number, rows: OutstandingInvoice[]): Record<number, number> {
+  let remaining = roundTwo(Math.max(0, amount))
+  const sorted = [...rows].sort((a, b) => {
+    if (isOnAccountRow(a) && !isOnAccountRow(b)) return 1
+    if (!isOnAccountRow(a) && isOnAccountRow(b)) return -1
+    return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+  })
+  const next: Record<number, number> = {}
+  for (const inv of rows) {
+    next[inv.synthetic ? 0 : inv.id] = 0
+  }
+  for (const inv of sorted) {
+    if (remaining <= 0) break
+    const aid = inv.synthetic ? 0 : inv.id
+    if (isOnAccountRow(inv)) {
+      next[aid] = remaining
+      remaining = 0
+      break
+    }
+    const bal = Number(inv.balance_due) || 0
+    const take = roundTwo(Math.min(remaining, bal))
+    next[aid] = take
+    remaining = roundTwo(remaining - take)
+  }
+  return next
+}
+
 function formatAxiosDetail(error: unknown): string {
   const err = error as { response?: { data?: Record<string, unknown> } }
   const data = err.response?.data
@@ -94,6 +126,7 @@ export function CashierCollectPayment({
   const toast = useToast()
   const [customerId, setCustomerId] = useState<number | null>(null)
   const [outstanding, setOutstanding] = useState<OutstandingInvoice[]>([])
+  const [paymentAmount, setPaymentAmount] = useState(0)
   const [allocations, setAllocations] = useState<Record<number, number>>({})
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split("T")[0])
   const [paymentMethod, setPaymentMethod] = useState("cash")
@@ -129,6 +162,7 @@ export function CashierCollectPayment({
   useEffect(() => {
     if (!customerId) {
       setOutstanding([])
+      setPaymentAmount(0)
       setAllocations({})
       setMemo("")
       setReference("")
@@ -138,6 +172,7 @@ export function CashierCollectPayment({
     if (c) {
       setMemo(`POS payment — ${c.display_name}`)
     }
+    setPaymentAmount(0)
     setLoadingInvoices(true)
     api
       .get("/payments/received/outstanding/", { params: { customer_id: customerId } })
@@ -154,6 +189,7 @@ export function CashierCollectPayment({
       .catch(() => {
         const rows = mergeCollectOutstanding([], customerId)
         setOutstanding(rows)
+        setPaymentAmount(0)
         const next: Record<number, number> = {}
         for (const inv of rows) {
           next[inv.synthetic ? 0 : inv.id] = 0
@@ -164,47 +200,18 @@ export function CashierCollectPayment({
       .finally(() => setLoadingInvoices(false))
   }, [customerId, customers, toast])
 
-  const totalAllocated = roundTwo(
-    Object.values(allocations).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0)
+  const totalDue = roundTwo(
+    outstanding
+      .filter(i => !isOnAccountRow(i))
+      .reduce((s, i) => s + (Number(i.balance_due) || 0), 0)
   )
 
   const rowKey = (inv: OutstandingInvoice) => (inv.synthetic ? `oa-${inv.customer_id}` : String(inv.id))
 
-  const setAlloc = (invoiceId: number, raw: number) => {
-    const inv = outstanding.find(
-      i => (i.synthetic && invoiceId === 0 && i.id === 0) || i.id === invoiceId
-    )
-    if (!inv) return
-    const open = Number(inv.balance_due) || 0
-    const maxAmt = inv.synthetic && inv.on_account ? 1e12 : open
-    const v = roundTwo(Math.min(Math.max(0, raw), maxAmt))
-    setAllocations(prev => ({ ...prev, [invoiceId]: v }))
-  }
-
-  const payAllOldestFirst = () => {
-    const totalBal = roundTwo(
-      outstanding.reduce((s, i) => s + (Number(i.balance_due) || 0), 0)
-    )
-    let remaining = totalBal
-    const sorted = [...outstanding].sort((a, b) => {
-      if (a.synthetic && !b.synthetic) return 1
-      if (!a.synthetic && b.synthetic) return -1
-      return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
-    })
-    const next: Record<number, number> = { ...allocations }
-    for (const k of Object.keys(next)) {
-      next[Number(k)] = 0
-    }
-    let left = remaining
-    for (const inv of sorted) {
-      if (left <= 0) break
-      const bal = Number(inv.balance_due) || 0
-      const take = inv.synthetic && inv.on_account ? left : roundTwo(Math.min(left, bal))
-      const aid = inv.synthetic ? 0 : inv.id
-      next[aid] = take
-      left = roundTwo(left - take)
-    }
-    setAllocations(next)
+  const handlePaymentAmountChange = (raw: number) => {
+    const amt = roundTwo(Math.max(0, Number.isFinite(raw) ? raw : 0))
+    setPaymentAmount(amt)
+    setAllocations(distributeFifo(amt, outstanding))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -213,8 +220,8 @@ export function CashierCollectPayment({
       toast.error("Select a customer.")
       return
     }
-    if (totalAllocated <= 0) {
-      toast.error("Enter an amount to collect (allocate to at least one invoice).")
+    if (paymentAmount <= 0) {
+      toast.error("Enter the amount received from the customer.")
       return
     }
     const valid = Object.entries(allocations)
@@ -234,7 +241,7 @@ export function CashierCollectPayment({
         customer_id: customerId,
         payment_date: paymentDate,
         payment_method: paymentMethod,
-        amount: totalAllocated,
+        amount: paymentAmount,
         reference_number: reference.trim() || null,
         memo: memo.trim() || null,
         allocations: valid,
@@ -250,6 +257,7 @@ export function CashierCollectPayment({
       toast.success("Payment recorded.")
       setCustomerId(null)
       setOutstanding([])
+      setPaymentAmount(0)
       setAllocations({})
       setReference("")
       setMemo("")
@@ -272,7 +280,7 @@ export function CashierCollectPayment({
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">Collect due (A/R)</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Invoices, on-account A/R, and customer advance (prepayment) on the on-account line. Full profile:{" "}
+              Enter the amount received; it is applied to open invoices oldest-first. Full profile:{" "}
               <Link href="/payments/received/new" className="font-medium text-primary underline underline-offset-2">
                 Record payment
               </Link>{" "}
@@ -418,19 +426,46 @@ export function CashierCollectPayment({
           </label>
         ) : null}
 
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="text-sm font-medium text-foreground">Open items & on-account / advance</label>
-            {customerId && outstanding.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => payAllOldestFirst()}
-                className="text-sm font-medium text-primary underline underline-offset-2"
-              >
-                Allocate total due (oldest first)
-              </button>
-            ) : null}
+        {customerId ? (
+          <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
+            <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-amount">
+              Amount received <span className="text-destructive">*</span>
+            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="relative min-w-[10rem] flex-1 sm:max-w-xs">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+                  {currencySymbol}
+                </span>
+                <input
+                  id="pos-collect-amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={paymentAmount || ""}
+                  placeholder="0.00"
+                  onChange={e => handlePaymentAmountChange(parseFloat(e.target.value) || 0)}
+                  className={`${inputClassName} pl-8 text-lg font-semibold tabular-nums`}
+                />
+              </div>
+              {totalDue > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => handlePaymentAmountChange(totalDue)}
+                  className="text-sm font-medium text-primary underline underline-offset-2"
+                >
+                  Pay full due ({currencySymbol}
+                  {formatNumber(totalDue)})
+                </button>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Applied to oldest open invoices first. Any extra becomes customer advance on the on-account line.
+            </p>
           </div>
+        ) : null}
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">Allocation preview</label>
           {loadingInvoices ? (
             <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -448,40 +483,74 @@ export function CashierCollectPayment({
                     <th className="px-3 py-2">Invoice</th>
                     <th className="px-3 py-2">Date</th>
                     <th className="px-3 py-2 text-right">Balance due</th>
-                    <th className="px-3 py-2 text-right">Pay now</th>
+                    <th className="px-3 py-2 text-right">Applied</th>
+                    <th className="px-3 py-2 text-right">Remaining</th>
                   </tr>
                 </thead>
                 <tbody>
                   {outstanding.map(inv => {
                     const allocId = inv.synthetic ? 0 : inv.id
+                    const applied = allocations[allocId] ?? 0
+                    const balanceDue = Number(inv.balance_due) || 0
+                    const remaining =
+                      isOnAccountRow(inv) || balanceDue <= 0
+                        ? 0
+                        : roundTwo(Math.max(0, balanceDue - applied))
+                    const isPartial =
+                      !isOnAccountRow(inv) && applied > 0 && remaining > 0 && applied < balanceDue
+                    const isFullyPaid = !isOnAccountRow(inv) && applied > 0 && remaining <= 0
                     return (
-                    <tr key={rowKey(inv)} className="border-b border-border/60 last:border-0">
-                      <td className="px-3 py-2 font-medium">
-                        {inv.invoice_number}
-                        {inv.synthetic ? (
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">
-                            {inv.on_account
-                              ? "(on-account; prepayment as customer credit)"
-                              : "(A/R not on an invoice)"}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">{inv.invoice_date}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {currencySymbol}
-                        {formatNumber(Number(inv.balance_due) || 0)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={allocations[allocId] ?? 0}
-                          onChange={e => setAlloc(allocId, parseFloat(e.target.value) || 0)}
-                          className={`${inputClassName} max-w-[7rem] text-right tabular-nums`}
-                        />
-                      </td>
-                    </tr>
+                      <tr
+                        key={rowKey(inv)}
+                        className={[
+                          "border-b border-border/60 last:border-0",
+                          isPartial ? "bg-amber-50/80 dark:bg-amber-950/20" : "",
+                          isFullyPaid ? "bg-emerald-50/60 dark:bg-emerald-950/20" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <td className="px-3 py-2 font-medium">
+                          {inv.invoice_number}
+                          {inv.synthetic ? (
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              {inv.on_account
+                                ? "(on-account; prepayment as customer credit)"
+                                : "(A/R not on an invoice)"}
+                            </span>
+                          ) : null}
+                          {isPartial ? (
+                            <span className="ml-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                              (partial)
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{inv.invoice_date}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {currencySymbol}
+                          {formatNumber(balanceDue)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-300">
+                          {applied > 0 ? (
+                            <>
+                              {currencySymbol}
+                              {formatNumber(applied)}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                          {!isOnAccountRow(inv) && balanceDue > 0 ? (
+                            <>
+                              {currencySymbol}
+                              {formatNumber(remaining)}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
                     )
                   })}
                 </tbody>
@@ -495,12 +564,12 @@ export function CashierCollectPayment({
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total to collect</p>
             <p className="text-2xl font-bold tabular-nums text-foreground">
               {currencySymbol}
-              {formatNumber(totalAllocated)}
+              {formatNumber(paymentAmount)}
             </p>
           </div>
           <button
             type="submit"
-            disabled={submitting || totalAllocated <= 0 || !customerId}
+            disabled={submitting || paymentAmount <= 0 || !customerId}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

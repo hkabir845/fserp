@@ -57,6 +57,11 @@ from api.services.aquaculture_bill_defaults import (
     expense_category_from_cost_bucket,
     validate_and_apply_shared_pond_bill_line_category,
 )
+from api.services.bill_list_allocations import (
+    bill_filtered_line_amount,
+    list_scope_matches_allocation,
+    summarize_bill_entity_allocations,
+)
 from api.services.bill_list_filters import apply_bill_list_entity_scope
 from api.services.bill_purpose_validation import (
     infer_bill_purpose_from_parsed_lines,
@@ -553,7 +558,14 @@ def _bill_receipt_pond_summary(b) -> tuple[int | None, str]:
     return None, ""
 
 
-def _bill_to_json(b, *, include_lines: bool = True):
+def _bill_to_json(
+    b,
+    *,
+    include_lines: bool = True,
+    list_station_id: int | None = None,
+    list_pond_id: int | None = None,
+    list_head_office: bool = False,
+):
     total = b.total or Decimal("0")
     tax = b.tax_total or Decimal("0")
     sub = b.subtotal or Decimal("0")
@@ -592,6 +604,24 @@ def _bill_to_json(b, *, include_lines: bool = True):
         receipt_pond_id, receipt_pond_display_name = _bill_receipt_pond_summary(b)
         payload["receipt_pond_id"] = receipt_pond_id
         payload["receipt_pond_display_name"] = receipt_pond_display_name
+        allocations = summarize_bill_entity_allocations(b)
+        payload["has_multiple_entities"] = len(allocations) > 1
+        payload["entity_allocations"] = allocations
+        for row in allocations:
+            row["matches_list_filter"] = list_scope_matches_allocation(
+                row["entity_scope_key"],
+                station_id=list_station_id,
+                pond_id=list_pond_id,
+                head_office=list_head_office,
+            )
+        filtered = bill_filtered_line_amount(
+            b,
+            station_id=list_station_id,
+            pond_id=list_pond_id,
+            head_office=list_head_office,
+        )
+        if filtered is not None:
+            payload["filtered_amount"] = str(filtered)
         payload["lines"] = []
         return payload
     lines = list(
@@ -605,6 +635,24 @@ def _bill_to_json(b, *, include_lines: bool = True):
         )
     )
     payload["lines"] = [_bill_line_to_json(b, l) for l in lines]
+    allocations = summarize_bill_entity_allocations(b)
+    payload["has_multiple_entities"] = len(allocations) > 1
+    payload["entity_allocations"] = allocations
+    for row in allocations:
+        row["matches_list_filter"] = list_scope_matches_allocation(
+            row["entity_scope_key"],
+            station_id=list_station_id,
+            pond_id=list_pond_id,
+            head_office=list_head_office,
+        )
+    filtered = bill_filtered_line_amount(
+        b,
+        station_id=list_station_id,
+        pond_id=list_pond_id,
+        head_office=list_head_office,
+    )
+    if filtered is not None:
+        payload["filtered_amount"] = str(filtered)
     return payload
 
 
@@ -706,14 +754,18 @@ def bills_list_or_create(request):
 
 
 def _bills_list(request):
-    pond_line_qs = BillLine.objects.filter(aquaculture_pond_id__isnull=False).select_related(
-        "aquaculture_pond", "item"
+    line_qs = BillLine.objects.select_related(
+        "aquaculture_pond",
+        "tank",
+        "tank__station",
+        "receipt_station",
+        "item",
     )
     qs = (
         Bill.objects.filter(company_id=request.company_id)
         .select_related("vendor", "receipt_station")
         .prefetch_related(
-            Prefetch("lines", queryset=pond_line_qs),
+            Prefetch("lines", queryset=line_qs),
             "payment_allocations",
         )
         .order_by("-bill_date", "-id")
@@ -745,12 +797,33 @@ def _bills_list(request):
         total = qs.count()
         page = qs[skip : skip + limit]
         return json_paged(
-            [_bill_to_json(b, include_lines=False) for b in page],
+            [
+                _bill_to_json(
+                    b,
+                    include_lines=False,
+                    list_station_id=station_id,
+                    list_pond_id=pond_id,
+                    list_head_office=head_office,
+                )
+                for b in page
+            ],
             total=total,
             skip=skip,
             limit=limit,
         )
-    return JsonResponse([_bill_to_json(b, include_lines=False) for b in qs], safe=False)
+    return JsonResponse(
+        [
+            _bill_to_json(
+                b,
+                include_lines=False,
+                list_station_id=station_id,
+                list_pond_id=pond_id,
+                list_head_office=head_office,
+            )
+            for b in qs
+        ],
+        safe=False,
+    )
 
 
 @csrf_exempt
@@ -916,6 +989,8 @@ def bill_detail(request, bill_id: int):
         .prefetch_related(
             "lines__item",
             "lines__tank",
+            "lines__tank__station",
+            "lines__receipt_station",
             "lines__aquaculture_pond",
             "lines__aquaculture_production_cycle",
             "lines__expense_account",
@@ -927,7 +1002,17 @@ def bill_detail(request, bill_id: int):
     if not b:
         return JsonResponse({"detail": "Bill not found"}, status=404)
     if request.method == "GET":
-        return JsonResponse(_bill_to_json(b))
+        station_id, pond_id, head_office, scope_err = _parse_entity_scope_params(request)
+        if scope_err:
+            return JsonResponse({"detail": scope_err}, status=400)
+        return JsonResponse(
+            _bill_to_json(
+                b,
+                list_station_id=station_id,
+                list_pond_id=pond_id,
+                list_head_office=head_office,
+            )
+        )
     if request.method == "PUT":
         body, err = parse_json_body(request)
         if err:

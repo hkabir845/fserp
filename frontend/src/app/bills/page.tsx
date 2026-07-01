@@ -71,6 +71,7 @@ import {
   billLineEntityKey,
   inferBillHeaderReceiptStationId,
 } from '@/lib/billLineEntity'
+import { BillEntityAllocationDrilldown, type BillEntityAllocationRow } from '@/components/bills/BillEntityAllocationDrilldown'
 import { BillLineChargeToCell } from '@/components/bills/BillLineChargeToCell'
 import { BillLinesEntitySummary } from '@/components/bills/BillLinesEntitySummary'
 import { BillLineEntitySelect } from '@/components/bills/BillLineEntitySelect'
@@ -206,6 +207,9 @@ interface Bill {
   created_at?: string
   updated_at?: string
   lines: BillLineItem[]
+  filtered_amount?: number | string
+  has_multiple_entities?: boolean
+  entity_allocations?: BillEntityAllocationRow[]
 }
 
 type BillAmountSource = Pick<
@@ -236,6 +240,29 @@ function billBalance(b: BillAmountSource): number {
     return parseMoney(b.balance_due)
   }
   return Math.max(0, billTotal(b) - billPaid(b))
+}
+
+function billFilteredAmount(b: BillAmountSource & { filtered_amount?: number | string }): number | null {
+  const raw = b.filtered_amount
+  if (raw === undefined || raw === null || raw === '') return null
+  return parseMoney(raw)
+}
+
+function billListDisplayTotal(
+  b: BillAmountSource & { filtered_amount?: number | string },
+  siteFilterActive: boolean
+): number {
+  if (siteFilterActive) {
+    const scoped = billFilteredAmount(b)
+    if (scoped != null) return scoped
+  }
+  return billTotal(b)
+}
+
+function billShowAllocationDrilldown(b: Pick<Bill, 'has_multiple_entities' | 'entity_allocations'>, siteFilterActive: boolean): boolean {
+  if (siteFilterActive) return true
+  if (b.has_multiple_entities) return true
+  return (b.entity_allocations?.length ?? 0) > 1
 }
 
 function billSubtotal(b: BillAmountSource): number {
@@ -1048,6 +1075,7 @@ export default function BillsPage() {
   const [maxAmount, setMaxAmount] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [siteFilterKey, setSiteFilterKey] = useState<string>('')
+  const [allocationDrilldown, setAllocationDrilldown] = useState<Bill | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
@@ -1332,7 +1360,29 @@ export default function BillsPage() {
     setListPage(1)
   }, [debouncedSearch, pageSize, statusFilter, siteFilterKey, startDate, endDate, minAmount, maxAmount])
 
+  const siteFilterActive = Boolean(siteFilterKey.trim())
+  const siteFilterLabel = siteFilterActive
+    ? scopeDisplayLabel(siteFilterKey, stations, aquaculturePonds, selectedCompany?.name)
+    : ''
+
   const hasTextSearch = hasTransactionTextSearch({ q: debouncedSearch })
+
+  const openAllocationDrilldown = useCallback(
+    async (bill: Bill) => {
+      if (bill.entity_allocations && bill.entity_allocations.length > 0) {
+        setAllocationDrilldown(bill)
+        return
+      }
+      try {
+        const params = siteFilterActive ? reportScopeQueryParams(siteFilterKey) : {}
+        const res = await api.get(`/bills/${bill.id}`, { params })
+        setAllocationDrilldown(res.data as Bill)
+      } catch {
+        toast.error('Could not load bill split details')
+      }
+    },
+    [siteFilterActive, siteFilterKey, toast]
+  )
 
   const hasActiveFilters = hasActiveTransactionFilters({
     search: searchTerm,
@@ -2766,7 +2816,7 @@ export default function BillsPage() {
                     {tr('dueDate')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    {t('total')}
+                    {siteFilterActive ? 'Site amount' : t('total')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {tr('balance')}
@@ -2800,7 +2850,32 @@ export default function BillsPage() {
                       {bill.due_date ? formatDateOnly(bill.due_date) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
-                      {currencySymbol}{formatNumber(billTotal(bill))}
+                      {billShowAllocationDrilldown(bill, siteFilterActive) ? (
+                        <button
+                          type="button"
+                          onClick={() => void openAllocationDrilldown(bill)}
+                          className="text-left hover:underline focus:outline-none focus:ring-2 focus:ring-ring rounded"
+                          title="View amount split by site"
+                        >
+                          <span className="font-medium tabular-nums">
+                            {currencySymbol}
+                            {formatNumber(billListDisplayTotal(bill, siteFilterActive))}
+                          </span>
+                          {siteFilterActive && billTotal(bill) > billListDisplayTotal(bill, siteFilterActive) + 0.005 ? (
+                            <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
+                              of {currencySymbol}
+                              {formatNumber(billTotal(bill))} bill total
+                            </span>
+                          ) : bill.has_multiple_entities && !siteFilterActive ? (
+                            <span className="mt-0.5 block text-xs text-primary">Split · view</span>
+                          ) : null}
+                        </button>
+                      ) : (
+                        <span className="tabular-nums">
+                          {currencySymbol}
+                          {formatNumber(billListDisplayTotal(bill, siteFilterActive))}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {currencySymbol}{formatNumber(billBalance(bill))}
@@ -4105,6 +4180,18 @@ export default function BillsPage() {
             </div>
           </div>
         )}
+        {allocationDrilldown ? (
+          <BillEntityAllocationDrilldown
+            open
+            onClose={() => setAllocationDrilldown(null)}
+            billNumber={allocationDrilldown.bill_number}
+            billTotal={billTotal(allocationDrilldown)}
+            filteredAmount={billFilteredAmount(allocationDrilldown)}
+            filterLabel={siteFilterActive ? siteFilterLabel : undefined}
+            allocations={allocationDrilldown.entity_allocations ?? []}
+            currencySymbol={currencySymbol}
+          />
+        ) : null}
       </ErpPageShell>
     </PageLayout>
   )

@@ -1,4 +1,5 @@
 """HR: employees, employee subledger, payroll run (totals + optional salary GL post)."""
+import logging
 from datetime import date
 from decimal import Decimal
 
@@ -26,6 +27,8 @@ from api.services.reference_code import (
     format_code,
 )
 from api.utils.auth import auth_required
+
+logger = logging.getLogger(__name__)
 from api.views.common import parse_json_body, require_company_id
 from api.services.contact_ledgers import build_employee_ledger, ledger_dates_and_search
 from api.utils.transaction_filters import filter_json_transactions
@@ -582,14 +585,19 @@ def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> 
     else:
         out["subledger_employee_number"] = ""
         out["subledger_employee_name"] = ""
-    emp_rows, emp_source, emp_warnings = employee_allocations_for_payroll(p.company_id, p)
-    out["employee_allocations"] = emp_rows
-    out["employee_allocations_total"] = float(
-        sum(Decimal(str(r.get("amount") or "0")) for r in emp_rows)
-    )
-    out["employee_allocations_source"] = emp_source
-    if emp_warnings:
-        out["employee_allocation_warnings"] = emp_warnings
+    if include_allocations:
+        emp_rows, emp_source, emp_warnings = employee_allocations_for_payroll(p.company_id, p)
+        out["employee_allocations"] = emp_rows
+        out["employee_allocations_total"] = float(
+            sum(Decimal(str(r.get("amount") or "0")) for r in emp_rows)
+        )
+        out["employee_allocations_source"] = emp_source
+        if emp_warnings:
+            out["employee_allocation_warnings"] = emp_warnings
+    else:
+        out["employee_allocations"] = []
+        out["employee_allocations_total"] = 0.0
+        out["employee_allocations_source"] = ""
     allocs = _pond_allocations_for_payroll(p.id) if include_allocations else []
     out["pond_allocations"] = allocs
     if include_allocations:
@@ -747,14 +755,21 @@ def payroll_list_or_create(request):
     if request.method == "GET":
         from api.services.gl_posting import reconcile_company_payroll_gl_states
 
-        reconcile_company_payroll_gl_states(cid)
-        qs = PayrollRun.objects.filter(company_id=cid).select_related(
-            "salary_journal", "station", "salary_expense_account"
-        )
-        return JsonResponse(
-            [_payroll_run_to_json(p, include_allocations=False) for p in qs],
-            safe=False,
-        )
+        try:
+            reconcile_company_payroll_gl_states(cid)
+            qs = PayrollRun.objects.filter(company_id=cid).select_related(
+                "salary_journal", "station", "salary_expense_account"
+            )
+            return JsonResponse(
+                [_payroll_run_to_json(p, include_allocations=False) for p in qs],
+                safe=False,
+            )
+        except Exception:
+            logger.exception("payroll list failed for company_id=%s", cid)
+            return JsonResponse(
+                {"detail": "Failed to load payroll runs. Check server logs or retry."},
+                status=500,
+            )
 
     body, err = parse_json_body(request)
     if err:

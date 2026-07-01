@@ -686,7 +686,7 @@ export default function PayrollPage() {
   const fetchPayrolls = async () => {
     setLoadError(null)
     try {
-      const { data } = await api.get<PayrollRun[]>('/payroll/')
+      const { data } = await api.get<PayrollRun[]>('/payroll/', { timeout: 120000 })
       const rows = Array.isArray(data) ? data : []
       setPayrolls(rows)
     } catch (error) {

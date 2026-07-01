@@ -497,10 +497,29 @@ export function backendUrl(path: string): string {
 
 /** Human-readable `detail` from a failed axios response (DRF-style). */
 export function readApiErrorDetail(error: unknown): string | undefined {
-  if (!axios.isAxiosError(error)) return undefined
-  const d = error.response?.data
-  if (d && typeof d === 'object' && 'detail' in d && typeof (d as { detail: unknown }).detail === 'string') {
-    return (d as { detail: string }).detail
+  if (axios.isAxiosError(error)) {
+    if (!error.response) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        return 'Request timed out. The server may be busy — try again or ask support to check API logs.'
+      }
+      if (
+        error.code === 'ERR_NETWORK' ||
+        error.message?.includes('Network Error') ||
+        error.message?.includes('Failed to fetch')
+      ) {
+        return 'Could not reach the API server. Check your connection and that api.mahasoftcorporation.com is up.'
+      }
+    }
+    const d = error.response?.data
+    if (d && typeof d === 'object' && 'detail' in d && typeof (d as { detail: unknown }).detail === 'string') {
+      return (d as { detail: string }).detail
+    }
+    if (typeof d === 'string' && d.trim()) {
+      return d.trim().slice(0, 300)
+    }
+    if (error.response?.status) {
+      return `Server returned HTTP ${error.response.status}`
+    }
   }
   return undefined
 }

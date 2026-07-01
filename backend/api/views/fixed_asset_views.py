@@ -141,8 +141,8 @@ def _asset_json(asset: FixedAsset, *, include_runs: bool = False) -> dict:
         "cost_center_label": (
             "Head office / shared"
             if getattr(asset, "company_wide", False)
-            else (asset.station.station_name if asset.station_id and asset.station else None)
-            or (asset.aquaculture_pond.name if asset.aquaculture_pond_id and asset.aquaculture_pond else None)
+            else (asset.aquaculture_pond.name if asset.aquaculture_pond_id and asset.aquaculture_pond else None)
+            or (asset.station.station_name if asset.station_id and asset.station else None)
             or "—"
         ),
         "asset_account_id": asset.asset_account_id,

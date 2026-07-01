@@ -560,7 +560,7 @@ export default function FixedAssetsPage() {
                         <div className="text-sm text-muted-foreground">{a.name}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {a.cost_center_label || a.station_name || a.pond_name || (a.company_wide ? 'Head office / shared' : '—')}
+                        {a.cost_center_label || a.pond_name || a.station_name || (a.company_wide ? 'Head office / shared' : '—')}
                       </td>
                       <td className="px-4 py-3 text-sm text-right">{fmt(a.acquisition_cost)}</td>
                       <td className="px-4 py-3 text-sm text-right">{fmt(a.book_value)}</td>
@@ -600,7 +600,7 @@ export default function FixedAssetsPage() {
                 </div>
                 <dl className="grid grid-cols-2 gap-2 text-sm">
                   <dt className="text-muted-foreground">Depreciation to</dt>
-                  <dd className="text-right">{selected.cost_center_label || selected.station_name || selected.pond_name || '—'}</dd>
+                  <dd className="text-right">{selected.cost_center_label || selected.pond_name || selected.station_name || '—'}</dd>
                   <dt className="text-muted-foreground">Acquisition cost</dt>
                   <dd className="text-right font-medium">{fmt(selected.acquisition_cost)}</dd>
                   <dt className="text-muted-foreground">Salvage value</dt>

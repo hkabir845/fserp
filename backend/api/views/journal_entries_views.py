@@ -21,6 +21,7 @@ from django.utils import timezone as django_timezone
 
 from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount, Station
 from api.services.aquaculture_pond_display import pond_operational_display_name
+from api.services.journal_entity_display import journal_entry_site_label, journal_line_site_label
 from api.services.entity_gl_scoping import (
     manual_je_entity_scoping_warnings,
     validate_manual_je_entity_scoping_for_post,
@@ -39,49 +40,6 @@ def _serialize_datetime(dt):
     if dt is None:
         return None
     return dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
-
-
-def _pond_site_label(pond_name: str) -> str:
-    """Human-readable site label for pond-tagged journal lines (Site column in JE UI)."""
-    name = (pond_name or "").strip()
-    if not name:
-        return ""
-    if name.lower().endswith("pond"):
-        return name
-    return f"{name} Pond"
-
-
-def _line_site_label(line) -> str:
-    lst = getattr(line, "station", None)
-    if lst and (lst.station_name or "").strip():
-        return (lst.station_name or "").strip()
-    pond = getattr(line, "aquaculture_pond", None)
-    if pond:
-        return _pond_site_label(pond.name or "")
-    return ""
-
-
-def _entry_site_label(entry, lines) -> str:
-    st = getattr(entry, "station", None)
-    if st and (st.station_name or "").strip():
-        return (st.station_name or "").strip()
-    pond_labels: list[str] = []
-    seen: set[str] = set()
-    for line in lines:
-        pond = getattr(line, "aquaculture_pond", None)
-        if not pond:
-            continue
-        label = _pond_site_label(pond.name or "")
-        if label and label not in seen:
-            seen.add(label)
-            pond_labels.append(label)
-    if not pond_labels:
-        return ""
-    if len(pond_labels) == 1:
-        return pond_labels[0]
-    if len(pond_labels) == 2:
-        return f"{pond_labels[0]}, {pond_labels[1]}"
-    return f"{pond_labels[0]} (+{len(pond_labels) - 1} more ponds)"
 
 
 def _line_to_json(line):
@@ -103,7 +61,7 @@ def _line_to_json(line):
         "credit": str(line.credit or 0),
         "description": line.description or "",
         "station_id": getattr(line, "station_id", None),
-        "station_name": _line_site_label(line),
+        "station_name": journal_line_site_label(line),
         "aquaculture_pond_id": getattr(line, "aquaculture_pond_id", None),
         "pond_name": (pond.name or "").strip() if pond else "",
         "tenant_reporting_category_id": getattr(line, "tenant_reporting_category_id", None),
@@ -185,7 +143,7 @@ def _entry_to_json(e):
         "reference": "",
         "description": e.description or "",
         "station_id": getattr(e, "station_id", None),
-        "station_name": _entry_site_label(e, lines),
+        "station_name": journal_entry_site_label(e, lines),
         "total_debit": str(total_debit),
         "total_credit": str(total_credit),
         "is_posted": e.is_posted,

@@ -1010,9 +1010,9 @@ function JournalEntryPanel({
                   ) : (
                     '—'
                   )}
-                  {line.station_name || line.aquaculture_pond_name ? (
+                  {(line.aquaculture_pond_name || line.pond_name || line.station_name) ? (
                     <div className="mt-0.5 text-xs text-muted-foreground">
-                      {[line.station_name, line.aquaculture_pond_name].filter(Boolean).join(' · ')}
+                      {line.aquaculture_pond_name || line.pond_name || line.station_name}
                     </div>
                   ) : null}
                 </td>

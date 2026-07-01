@@ -19,6 +19,7 @@ from api.models import (
     PaymentInvoiceAllocation,
     PayrollRun,
 )
+from api.services.journal_entity_display import journal_line_site_label
 
 _PAY_RCV = re.compile(r"^AUTO-PAY-(\d+)-RCV$")
 _PAY_MADE = re.compile(r"^AUTO-PAY-(\d+)-MADE$")
@@ -115,7 +116,7 @@ def build_statement_transactions(
             opening_for_range = ob
 
     lines_qs = JournalEntryLine.objects.filter(account_id=account_id).select_related(
-        "journal_entry", "station"
+        "journal_entry", "station", "aquaculture_pond"
     )
     if station_id is not None:
         lines_qs = lines_qs.filter(station_id=station_id)
@@ -156,7 +157,6 @@ def build_statement_transactions(
 
         je_desc = (je.description or "").strip()
         line_desc = (line.description or "").strip()
-        st = getattr(line, "station", None)
         transactions.append(
             {
                 "id": line.id,
@@ -172,7 +172,7 @@ def build_statement_transactions(
                 "other_account_name": other_account_name,
                 "other_account_code": other_account_code,
                 "station_id": line.station_id,
-                "station_name": (st.station_name if st else "") or "",
+                "station_name": journal_line_site_label(line),
             }
         )
 

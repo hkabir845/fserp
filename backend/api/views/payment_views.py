@@ -108,7 +108,9 @@ def _payment_to_json(p):
         out.update(_payment_mutation_flags(p))
     st = getattr(p, "station", None)
     out["station_id"] = int(p.station_id) if getattr(p, "station_id", None) else None
-    out["station_name"] = (st.station_name or "").strip() if st else ""
+    from api.services.payment_station import payment_site_display_label
+
+    out["station_name"] = payment_site_display_label(p.company_id, p)
     return out
 
 

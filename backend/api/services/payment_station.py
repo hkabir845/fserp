@@ -126,3 +126,60 @@ def resolve_payment_station_id(company_id: int, p: Payment) -> int | None:
 def apply_payment_register_station(company_id: int, p: Payment) -> None:
     sid = resolve_payment_station_id(company_id, p)
     Payment.objects.filter(pk=p.pk, company_id=company_id).update(station_id=sid)
+
+
+def payment_site_display_label(company_id: int, p: Payment) -> str:
+    """
+    Human-readable site for payment list UI.
+
+    When a vendor payment applies to bill(s) tagged to a single pond, show the pond name
+    instead of the shop receipt station (matches journal entry Site column rules).
+    """
+    from api.models import AquaculturePond
+    from api.services.journal_entity_display import pond_site_label
+
+    if p.payment_type == Payment.PAYMENT_TYPE_MADE:
+        b_ids = list(
+            PaymentBillAllocation.objects.filter(payment_id=p.id, bill_id__isnull=False)
+            .exclude(bill_id=0)
+            .values_list("bill_id", flat=True)
+        )
+        if b_ids:
+            pond_ids = set(
+                BillLine.objects.filter(
+                    bill_id__in=b_ids,
+                    bill__company_id=company_id,
+                )
+                .exclude(aquaculture_pond_id__isnull=True)
+                .values_list("aquaculture_pond_id", flat=True)
+            )
+            if len(pond_ids) == 1:
+                pond = AquaculturePond.objects.filter(
+                    pk=pond_ids.pop(), company_id=company_id
+                ).first()
+                label = pond_site_label(pond)
+                if label:
+                    return label
+
+    if p.payment_type == Payment.PAYMENT_TYPE_RECEIVED:
+        inv_ids = list(
+            PaymentInvoiceAllocation.objects.filter(payment_id=p.id, invoice_id__isnull=False)
+            .exclude(invoice_id=0)
+            .values_list("invoice_id", flat=True)
+        )
+        if inv_ids:
+            pond_ids = set(
+                Invoice.objects.filter(pk__in=inv_ids, company_id=company_id)
+                .exclude(aquaculture_pond_id__isnull=True)
+                .values_list("aquaculture_pond_id", flat=True)
+            )
+            if len(pond_ids) == 1:
+                pond = AquaculturePond.objects.filter(
+                    pk=pond_ids.pop(), company_id=company_id
+                ).first()
+                label = pond_site_label(pond)
+                if label:
+                    return label
+
+    st = getattr(p, "station", None)
+    return (st.station_name or "").strip() if st else ""

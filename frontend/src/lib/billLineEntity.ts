@@ -6,6 +6,12 @@ import {
   reportScopeQueryParams,
 } from '@/app/reports/reportSiteScope'
 import type { BillPurpose } from '@/lib/billAllocation'
+import {
+  resolveBillReceiptLocation,
+  resolveShopStationIdForPond,
+  type BillReceiptLocationPond,
+  type BillReceiptLocationStation,
+} from '@/lib/billReceiptLocation'
 import { isShopHubStationId, stationIsShopHub } from '@/utils/stationCapabilities'
 
 export type BillLineEntityFields = {
@@ -214,6 +220,57 @@ export function countBusinessEntities(stations: { operates_fuel_retail?: boolean
     ponds: pondCount,
     total: 1 + stations.length + pondCount,
   }
+}
+
+/** Apply the form's default entity key to one line (new lines or explicit "apply to all"). */
+export function applyDefaultEntityKeyToLine<T extends BillLineEntityFields>(
+  line: T,
+  defaultKey: string,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
+): T {
+  const key = (defaultKey || '').trim()
+  if (!key) return line
+  return applyBillLineEntityKey(line, key, stations)
+}
+
+export function applyDefaultEntityKeyToAllLines<T extends BillLineEntityFields>(
+  lines: T[],
+  defaultKey: string,
+  stations: { id: number; operates_fuel_retail?: boolean }[] = []
+): T[] {
+  const key = (defaultKey || '').trim()
+  if (!key) return lines
+  return lines.map((line) => applyBillLineEntityKey(line, key, stations))
+}
+
+/** Bill header receipt_station_id: inventory fallback when a line has no per-line station. */
+export function inferBillHeaderReceiptStationId(
+  lines: BillLineEntityFields[],
+  defaultEntityKey: string,
+  stations: BillReceiptLocationStation[],
+  ponds: BillReceiptLocationPond[] = []
+): number | null {
+  const stationIds = new Set<number>()
+  for (const line of lines) {
+    const stRaw = line.line_receipt_station_id
+    if (stRaw !== '' && stRaw != null && Number.isFinite(Number(stRaw)) && Number(stRaw) > 0) {
+      stationIds.add(Number(stRaw))
+      continue
+    }
+    const pondRaw = line.aquaculture_pond_id
+    if (pondRaw !== '' && pondRaw != null && Number.isFinite(Number(pondRaw)) && Number(pondRaw) > 0) {
+      const shopId = resolveShopStationIdForPond(Number(pondRaw), stations)
+      if (shopId) stationIds.add(shopId)
+    }
+  }
+  if (stationIds.size === 1) return [...stationIds][0]
+  if (stationIds.size > 1) return null
+
+  const resolved = resolveBillReceiptLocation(defaultEntityKey, stations, ponds)
+  if (resolved.receiptStationId != null && resolved.receiptStationId > 0) {
+    return resolved.receiptStationId
+  }
+  return null
 }
 
 export function formatEntityCountSummary(

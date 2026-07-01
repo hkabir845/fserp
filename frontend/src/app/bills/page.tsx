@@ -62,16 +62,18 @@ import {
   vendorUsualReceivingSummary,
 } from '@/lib/vendorReceivingDefaults'
 import {
-  syncBillLinesToReceiptHeader,
-  formatPondScopeKey,
   headerPondIdFromLocationKey,
-  inferReceiptLocationKeyFromBill,
   receiptLocationDisplayLabel,
-  resolveBillReceiptLocation,
 } from '@/lib/billReceiptLocation'
-import { BillReceiptLocationSelect } from '@/components/bills/BillReceiptLocationSelect'
+import { formatHeadOfficeScopeKey, reportScopeQueryParams } from '@/app/reports/reportSiteScope'
+import {
+  applyDefaultEntityKeyToLine,
+  billLineEntityKey,
+  inferBillHeaderReceiptStationId,
+} from '@/lib/billLineEntity'
+import { BillLineChargeToCell } from '@/components/bills/BillLineChargeToCell'
+import { BillLinesEntitySummary } from '@/components/bills/BillLinesEntitySummary'
 import { BillLineEntitySelect } from '@/components/bills/BillLineEntitySelect'
-import { reportScopeQueryParams } from '@/app/reports/reportSiteScope'
 import { scopeDisplayLabel } from '@/app/reporting-categories/reportingCategoriesScope'
 import { useCompany } from '@/contexts/CompanyContext'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
@@ -81,16 +83,13 @@ import {
   parseStationsFromApi,
 } from '@/lib/entityScopeDirectory'
 import {
-  type BillPurpose,
   billLinePondCostMode,
-  inferBillPurposeFromLines,
   inferBillPurposeIncludingMixed,
   pondSharePayload,
   stationSharePayload,
   validateBillLinePondAllocation,
   validateBillLineStationAllocation,
 } from '@/lib/billAllocation'
-import { BillPurposeSection } from '@/components/bills/BillPurposeSection'
 import { BillLineEntityTagging } from '@/components/bills/BillLineEntityTagging'
 import { BillPondSupplementFields } from '@/components/bills/BillPondSupplementFields'
 import { BillLineTypePicker, type BillLineKind } from '@/components/bills/BillLineItemSelect'
@@ -1100,11 +1099,18 @@ export default function BillsPage() {
       due_date: due.toISOString().split('T')[0],
       vendor_reference: '',
       memo: '',
-      receipt_location_key: '' as string,
-      bill_purpose: 'station' as BillPurpose,
       lines: [] as BillLineItem[],
     }
   })
+
+  const vendorDefaultEntityKey = useCallback(
+    (vendorId: number) => {
+      if (!vendorId) return ''
+      const vendor = vendors.find((v) => v.id === vendorId)
+      return resolveReceiptLocationKeyForVendor(vendor, stations, aquaculturePonds)
+    },
+    [vendors, stations, aquaculturePonds]
+  )
 
   const resolvedVendorDefaultExpenseId = useMemo(() => {
     const vid = formData.vendor_id
@@ -1121,6 +1127,7 @@ export default function BillsPage() {
   }, [resolvedVendorDefaultExpenseId, billExpenseCoaOptions])
 
   const billLineExpenseTouchedRef = useRef(new Set<number>())
+  const showBillEntityColumn = stations.length > 0 || aquaculturePonds.length > 0
 
   const selectedVendorReceivingHint = useMemo(() => {
     if (!formData.vendor_id) return null
@@ -1214,80 +1221,47 @@ export default function BillsPage() {
   const handleFormVendorChange = (rawVendorId: string) => {
     const vendor_id = parseInt(rawVendorId, 10) || 0
     if (!vendor_id) {
-      setFormData((prev) => ({ ...prev, vendor_id: 0, receipt_location_key: '' }))
+      setFormData((prev) => ({ ...prev, vendor_id: 0 }))
       return
     }
     const vendor = vendors.find((v) => v.id === vendor_id)
-    const receipt_location_key = resolveReceiptLocationKeyForVendor(vendor, stations, aquaculturePonds)
-    const resolved = resolveBillReceiptLocation(receipt_location_key, stations, aquaculturePonds)
     const coaOpts = billExpenseCoaOptions
     const vendorExpense = suggestedBillLineExpenseAccountId({
       vendorDefaultExpenseId: vendor?.default_expense_account_id,
       options: coaOpts,
     })
     setFormData((prev) => {
-      const isFishLine = (line: BillLineItem) => {
-        if (!line.item_id) return false
-        return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
-      }
-      let lines = prev.lines.map((line) => {
+      const lines = prev.lines.map((line) => {
         if (billLineExpenseTouchedRef.current.has(line.line_number)) return line
         if (line.expense_account_id || line.item_id || billLineKind(line) === 'item') return line
         if (!vendorExpense) return line
         return { ...line, expense_account_id: vendorExpense }
       })
-      if (receipt_location_key) {
-        lines = syncBillLinesToReceiptHeader(lines, receipt_location_key, stations, aquaculturePonds, isFishLine)
-      }
-      return {
-        ...prev,
-        vendor_id,
-        receipt_location_key,
-        bill_purpose: receipt_location_key ? resolved.billPurpose : prev.bill_purpose,
-        lines,
-      }
+      return { ...prev, vendor_id, lines }
     })
   }
 
-  const handleReceiptLocationChange = (key: string) => {
-    const resolved = resolveBillReceiptLocation(key, stations, aquaculturePonds)
-    setFormData((prev) => {
-      const isFishLine = (line: BillLineItem) => {
-        if (!line.item_id) return false
-        return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
-      }
-      const lines = syncBillLinesToReceiptHeader(prev.lines, key, stations, aquaculturePonds, isFishLine)
-      return {
-        ...prev,
-        receipt_location_key: key,
-        bill_purpose: key ? resolved.billPurpose : prev.bill_purpose,
-        lines,
-      }
-    })
-  }
-
-  const handleBillPurposeChange = (bill_purpose: BillPurpose) => {
-    setFormData((prev) => ({
-      ...prev,
-      bill_purpose,
-      receipt_location_key: bill_purpose === 'office' ? '' : prev.receipt_location_key,
-    }))
-  }
+  const detectedBillPurpose = useMemo(
+    () =>
+      inferBillPurposeIncludingMixed(
+        formData.lines,
+        inferBillHeaderReceiptStationId(formData.lines, '', stations, aquaculturePonds),
+        aquaculturePonds.length > 0,
+        stations
+      ),
+    [formData.lines, stations, aquaculturePonds]
+  )
 
   const resolveFormReceiptPayload = () => {
-    if (formData.bill_purpose === 'office') {
-      return { receiptStationId: null as number | null, billPurpose: 'office' as BillPurpose }
-    }
-    const resolved = resolveBillReceiptLocation(formData.receipt_location_key, stations, aquaculturePonds)
-    const billPurpose = inferBillPurposeIncludingMixed(
+    const receiptStationId = inferBillHeaderReceiptStationId(
       formData.lines,
-      resolved.receiptStationId,
-      aquaculturePonds.length > 0,
-      stations
+      '',
+      stations,
+      aquaculturePonds
     )
     return {
-      receiptStationId: resolved.receiptStationId,
-      billPurpose,
+      receiptStationId,
+      billPurpose: detectedBillPurpose,
     }
   }
 
@@ -1657,8 +1631,6 @@ export default function BillsPage() {
         due_date: due.toISOString().split('T')[0],
         vendor_reference: '',
         memo: pondId !== '' ? 'Pond operating expense' : '',
-        receipt_location_key: pondId !== '' ? formatPondScopeKey(pondId) : '',
-        bill_purpose: pondId !== '' ? ('pond' as BillPurpose) : ('station' as BillPurpose),
         lines:
           pondId !== '' && catId
             ? [{ ...newAquacultureBillLine(pondId, catId, billExpenseCategories, billExpenseCoaOptions), line_number: 1 }]
@@ -1679,19 +1651,20 @@ export default function BillsPage() {
   const addBillLine = (kind: BillLineKind) => {
     setFormData((prev) => {
       const lineNumber = prev.lines.length + 1
+      const lastLine = prev.lines[prev.lines.length - 1]
+      const lastEntityKey = lastLine ? billLineEntityKey(lastLine) : ''
+      const entityKey =
+        lastLine && lastEntityKey !== formatHeadOfficeScopeKey()
+          ? lastEntityKey
+          : vendorDefaultEntityKey(prev.vendor_id)
       let newLine: BillLineItem
       if (kind === 'expense') {
-        const headerPond = headerPondIdFromLocationKey(prev.receipt_location_key)
         const rawPond = searchParams.get('pond_id')
         const rawCat = searchParams.get('expense_category') || 'other'
         const pondPrefill: number | '' =
-          headerPond != null && headerPond > 0
-            ? headerPond
-            : rawPond && /^\d+$/.test(rawPond.trim())
-              ? parseInt(rawPond.trim(), 10)
-              : ''
+          rawPond && /^\d+$/.test(rawPond.trim()) ? parseInt(rawPond.trim(), 10) : ''
         const catPrefill = findBillCategory(billExpenseCategories, rawCat)?.id || ''
-        if (pondPrefill !== '' && catPrefill) {
+        if (pondPrefill !== '' && catPrefill && !entityKey) {
           newLine = {
             ...newAquacultureBillLine(pondPrefill, catPrefill, billExpenseCategories, billExpenseCoaOptions),
             line_number: lineNumber,
@@ -1717,7 +1690,6 @@ export default function BillsPage() {
           }
         }
       } else {
-        const headerPond = headerPondIdFromLocationKey(prev.receipt_location_key)
         newLine = {
           line_number: lineNumber,
           line_kind: 'item',
@@ -1731,9 +1703,12 @@ export default function BillsPage() {
           tax_amount: 0,
           aquaculture_fish_weight_kg: undefined,
           aquaculture_fish_count: undefined,
-          aquaculture_pond_id: headerPond ?? '',
+          aquaculture_pond_id: '',
           aquaculture_production_cycle_id: '',
         }
+      }
+      if (entityKey) {
+        newLine = applyDefaultEntityKeyToLine(newLine, entityKey, stations)
       }
       return { ...prev, lines: [...prev.lines, newLine] }
     })
@@ -1753,7 +1728,7 @@ export default function BillsPage() {
       const newLines = [...prev.lines]
       if (pick.kind === 'item') {
         const headerNursingPond =
-          headerPondIdFromLocationKey(prev.receipt_location_key) ?? firstNursingPondId
+          headerPondIdFromLocationKey(vendorDefaultEntityKey(prev.vendor_id)) ?? firstNursingPondId
         newLines[index] = {
           ...applyItemSelectionToBillLine(
             newLines[index],
@@ -2029,17 +2004,7 @@ export default function BillsPage() {
   }
 
   const performCreate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
-    const isFishLine = (line: BillLineItem) => {
-      if (!line.item_id) return false
-      return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
-    }
-    const linesToSave = syncBillLinesToReceiptHeader(
-      finalizeBillLinesForSave(formData.lines, items),
-      formData.receipt_location_key,
-      stations,
-      aquaculturePonds,
-      isFishLine
-    )
+    const linesToSave = finalizeBillLinesForSave(formData.lines, items)
     const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
 
     const over = buildTankOverfillReview(linesToSave, items, tanks)
@@ -2122,7 +2087,7 @@ export default function BillsPage() {
         toast.error(pondErr)
         return
       }
-      const stErr = validateBillLineStationAllocation(line, i, formData.bill_purpose)
+      const stErr = validateBillLineStationAllocation(line, i, detectedBillPurpose)
       if (stErr) {
         toast.error(stErr)
         return
@@ -2156,28 +2121,12 @@ export default function BillsPage() {
           const exp = line.expense_account_id != null ? Number(line.expense_account_id) : 0
           if (ln > 0 && exp > 0) billLineExpenseTouchedRef.current.add(ln)
         }
-        const inferredPurpose = inferBillPurposeFromLines(
-            fullBill.lines?.map((line: BillLineItem) => ({
-              ...line,
-              amount: Number(line.amount),
-            })) || [],
-            fullBill.receipt_station_id,
-            aquaculturePonds.length > 0,
-            stations
-          )
         setFormData({
           vendor_id: fullBill.vendor_id,
           bill_date: fullBill.bill_date.split('T')[0],
           due_date: fullBill.due_date ? fullBill.due_date.split('T')[0] : '',
           vendor_reference: fullBill.vendor_reference || '',
           memo: fullBill.memo || '',
-          receipt_location_key: inferReceiptLocationKeyFromBill({
-            billPurpose: inferredPurpose,
-            receiptStationId: fullBill.receipt_station_id,
-            lines: fullBill.lines || [],
-            stations,
-            ponds: aquaculturePonds,
-          }),
           lines: fullBill.lines?.map((line: BillLineItem) => ({
             id: line.id,
             line_number: line.line_number,
@@ -2224,7 +2173,6 @@ export default function BillsPage() {
                 : '',
             station_cost_mode: 'direct',
           })) || [],
-          bill_purpose: inferredPurpose,
         })
         setShowEditModal(true)
       } else {
@@ -2239,17 +2187,7 @@ export default function BillsPage() {
   const performUpdate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
     if (!editingBill) return
 
-    const isFishLine = (line: BillLineItem) => {
-      if (!line.item_id) return false
-      return (items.find((i) => i.id === line.item_id)?.pos_category || '').toLowerCase() === 'fish'
-    }
-    const linesToSave = syncBillLinesToReceiptHeader(
-      finalizeBillLinesForSave(formData.lines, items),
-      formData.receipt_location_key,
-      stations,
-      aquaculturePonds,
-      isFishLine
-    )
+    const linesToSave = finalizeBillLinesForSave(formData.lines, items)
     const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
     const nextStatus =
       editingBill.status === 'draft' && postDraftBillOnUpdate ? 'open' : editingBill.status
@@ -2334,7 +2272,7 @@ export default function BillsPage() {
         toast.error(pondErr)
         return
       }
-      const stErr = validateBillLineStationAllocation(line, i, formData.bill_purpose)
+      const stErr = validateBillLineStationAllocation(line, i, detectedBillPurpose)
       if (stErr) {
         toast.error(stErr)
         return
@@ -2618,8 +2556,6 @@ export default function BillsPage() {
       due_date: due.toISOString().split('T')[0],
       vendor_reference: '',
       memo: '',
-      receipt_location_key: '',
-      bill_purpose: 'station' as BillPurpose,
       lines: [],
     })
     setEditingBill(null)
@@ -3293,35 +3229,6 @@ export default function BillsPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="mb-2 block text-sm font-medium text-foreground">
-                      Receiving location (station or pond)
-                    </label>
-                    <BillReceiptLocationSelect
-                      value={formData.receipt_location_key}
-                      onChange={handleReceiptLocationChange}
-                      stations={stations}
-                      ponds={aquaculturePonds}
-                      className="erp-field"
-                    />
-                    {stations.length === 0 && aquaculturePonds.length === 0 ? (
-                      <p className="mt-1 text-xs text-warning-foreground">
-                        No stations or ponds loaded. Add sites under Stations or enable aquaculture ponds, then refresh.
-                      </p>
-                    ) : null}
-                    {formData.receipt_location_key.startsWith('p:') ? (
-                      <p className="mt-1 text-xs text-primary">
-                        Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
-                        automatically for payments and non-pond inventory.
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Pre-filled from the vendor&apos;s usual pond or site when set. Pick a{' '}
-                      <strong className="font-medium">fuel/shop station</strong> for site costs and tank/shop stock, or
-                      a <strong className="font-medium">pond</strong> for lease, feed, electricity, and other pond
-                      expenses. Head office bills: choose &quot;Head office / general&quot; below and leave this not set.
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Memo/Notes
                     </label>
                     <textarea
@@ -3334,33 +3241,39 @@ export default function BillsPage() {
                   </div>
                 </div>
 
-                <BillPurposeSection
-                  value={formData.bill_purpose}
-                  onChange={handleBillPurposeChange}
-                  showPondOption={aquaculturePonds.length > 0}
-                />
-
                 {/* Line Items */}
                 <div className="mb-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold">Line Items</h3>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          addBillLine(
-                            formData.lines.length
-                              ? billLineKind(formData.lines[formData.lines.length - 1])
-                              : 'item'
-                          )
-                        }
-                        title="Adds a new line of the same type (Item or Expense) as the last line. Switch a line's type any time with its Item/Expense toggle."
-                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-primary text-white rounded-lg hover:bg-primary"
-                      >
-                        <PlusCircle className="h-4 w-4" />
-                        <span>Add line</span>
-                      </button>
+                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">Line Items</h3>
+                      {showBillEntityColumn ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Set <strong className="font-medium">Charge to</strong> on each line — one bill can
+                          mix ponds and stations (e.g. Digonta on line 1, Ashari-1 on line 2).
+                        </p>
+                      ) : null}
+                      <BillLinesEntitySummary
+                        lines={formData.lines}
+                        stations={stations}
+                        ponds={aquaculturePonds}
+                        companyName={selectedCompany?.name}
+                      />
                     </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        addBillLine(
+                          formData.lines.length
+                            ? billLineKind(formData.lines[formData.lines.length - 1])
+                            : 'item'
+                        )
+                      }
+                      title="Adds a new line of the same type (Item or Expense) as the last line. New lines copy Charge to from the line above, or the vendor default on the first line."
+                      className="flex shrink-0 items-center space-x-1 self-start rounded-lg bg-primary px-3 py-2 text-sm text-white hover:bg-primary"
+                    >
+                      <PlusCircle className="h-4 w-4" />
+                      <span>Add line</span>
+                    </button>
                   </div>
 
                   <div className="space-y-2">
@@ -3431,8 +3344,32 @@ export default function BillsPage() {
                                 </select>
                               </div>
                             )}
+                            {showBillEntityColumn ? (
+                              <div className="col-span-12 lg:col-span-2 min-w-0">
+                                <label className="block text-xs font-medium text-foreground/85 mb-0.5">
+                                  Charge to
+                                </label>
+                                <BillLineChargeToCell
+                                  line={line}
+                                  index={index}
+                                  stations={stations}
+                                  ponds={aquaculturePonds}
+                                  companyName={selectedCompany?.name}
+                                  className={BILL_LINE_CTL}
+                                  onFieldChange={handleLineChange}
+                                />
+                              </div>
+                            ) : null}
                             <div
-                              className={`col-span-12 min-w-0 ${availableTanks.length > 0 ? 'lg:col-span-4' : 'lg:col-span-6'}`}
+                              className={`col-span-12 min-w-0 ${
+                                availableTanks.length > 0
+                                  ? showBillEntityColumn
+                                    ? 'lg:col-span-2'
+                                    : 'lg:col-span-4'
+                                  : showBillEntityColumn
+                                    ? 'lg:col-span-4'
+                                    : 'lg:col-span-6'
+                              }`}
                             >
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">Description</label>
                               <input
@@ -3553,7 +3490,7 @@ export default function BillsPage() {
                             billFuelCategories={billFuelCategories}
                             billExpenseCoaOptions={billExpenseCoaOptions}
                             onFieldChange={handleLineChange}
-                            billPurpose={formData.bill_purpose}
+                            billPurpose={detectedBillPurpose}
                           />
                           {aquaculturePonds.length > 0 ? (
                             <BillPondSupplementFields
@@ -3806,35 +3743,6 @@ export default function BillsPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="mb-2 block text-sm font-medium text-foreground">
-                      Receiving location (station or pond)
-                    </label>
-                    <BillReceiptLocationSelect
-                      value={formData.receipt_location_key}
-                      onChange={handleReceiptLocationChange}
-                      stations={stations}
-                      ponds={aquaculturePonds}
-                      className="erp-field"
-                    />
-                    {stations.length === 0 && aquaculturePonds.length === 0 ? (
-                      <p className="mt-1 text-xs text-warning-foreground">
-                        No stations or ponds loaded. Add sites under Stations or enable aquaculture ponds, then refresh.
-                      </p>
-                    ) : null}
-                    {formData.receipt_location_key.startsWith('p:') ? (
-                      <p className="mt-1 text-xs text-primary">
-                        Pond bill — lines tag this pond for aquaculture P&amp;L (671x). Shop hub for stock is set
-                        automatically for payments and non-pond inventory.
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Pre-filled from the vendor&apos;s usual pond or site when set. Pick a{' '}
-                      <strong className="font-medium">fuel/shop station</strong> for site costs and tank/shop stock, or
-                      a <strong className="font-medium">pond</strong> for lease, feed, electricity, and other pond
-                      expenses. Head office bills: choose &quot;Head office / general&quot; below and leave this not set.
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="mb-2 block text-sm font-medium text-foreground">
                       Memo/Notes
                     </label>
                     <textarea
@@ -3846,33 +3754,39 @@ export default function BillsPage() {
                   </div>
                 </div>
 
-                <BillPurposeSection
-                  value={formData.bill_purpose}
-                  onChange={handleBillPurposeChange}
-                  showPondOption={aquaculturePonds.length > 0}
-                />
-
                 {/* Line Items */}
                 <div className="mb-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold">Line Items</h3>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          addBillLine(
-                            formData.lines.length
-                              ? billLineKind(formData.lines[formData.lines.length - 1])
-                              : 'item'
-                          )
-                        }
-                        title="Adds a new line of the same type (Item or Expense) as the last line. Switch a line's type any time with its Item/Expense toggle."
-                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-primary text-white rounded-lg hover:bg-primary"
-                      >
-                        <PlusCircle className="h-4 w-4" />
-                        <span>Add line</span>
-                      </button>
+                  <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">Line Items</h3>
+                      {showBillEntityColumn ? (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Set <strong className="font-medium">Charge to</strong> on each line — one bill can
+                          mix ponds and stations (e.g. Digonta on line 1, Ashari-1 on line 2).
+                        </p>
+                      ) : null}
+                      <BillLinesEntitySummary
+                        lines={formData.lines}
+                        stations={stations}
+                        ponds={aquaculturePonds}
+                        companyName={selectedCompany?.name}
+                      />
                     </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        addBillLine(
+                          formData.lines.length
+                            ? billLineKind(formData.lines[formData.lines.length - 1])
+                            : 'item'
+                        )
+                      }
+                      title="Adds a new line of the same type (Item or Expense) as the last line. New lines copy Charge to from the line above, or the vendor default on the first line."
+                      className="flex shrink-0 items-center space-x-1 self-start rounded-lg bg-primary px-3 py-2 text-sm text-white hover:bg-primary"
+                    >
+                      <PlusCircle className="h-4 w-4" />
+                      <span>Add line</span>
+                    </button>
                   </div>
 
                   <div className="space-y-2">
@@ -3959,8 +3873,33 @@ export default function BillsPage() {
                               </div>
                             )}
 
+                            {showBillEntityColumn ? (
+                              <div className="col-span-12 lg:col-span-2 min-w-0">
+                                <label className="block text-xs font-medium text-foreground/85 mb-0.5">
+                                  Charge to
+                                </label>
+                                <BillLineChargeToCell
+                                  line={line}
+                                  index={index}
+                                  stations={stations}
+                                  ponds={aquaculturePonds}
+                                  companyName={selectedCompany?.name}
+                                  className={BILL_LINE_CTL}
+                                  onFieldChange={handleLineChange}
+                                />
+                              </div>
+                            ) : null}
+
                             <div
-                              className={`col-span-12 min-w-0 ${isFuelItem ? 'lg:col-span-3' : 'lg:col-span-5'}`}
+                              className={`col-span-12 min-w-0 ${
+                                isFuelItem
+                                  ? showBillEntityColumn
+                                    ? 'lg:col-span-2'
+                                    : 'lg:col-span-3'
+                                  : showBillEntityColumn
+                                    ? 'lg:col-span-4'
+                                    : 'lg:col-span-5'
+                              }`}
                             >
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">Description</label>
                               <input
@@ -4088,7 +4027,7 @@ export default function BillsPage() {
                             billFuelCategories={billFuelCategories}
                             billExpenseCoaOptions={billExpenseCoaOptions}
                             onFieldChange={handleLineChange}
-                            billPurpose={formData.bill_purpose}
+                            billPurpose={detectedBillPurpose}
                           />
                           {aquaculturePonds.length > 0 ? (
                             <BillPondSupplementFields

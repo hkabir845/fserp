@@ -48,6 +48,7 @@ export function BillLineEntityTagging({
   showHeadOffice = true,
   companyName,
   billPurpose,
+  showChargeTo = false,
 }: {
   line: BillLineEntityTagShape
   index: number
@@ -60,14 +61,15 @@ export function BillLineEntityTagging({
   selectClassName?: string
   showHeadOffice?: boolean
   companyName?: string
-  /** Header bill purpose — used for contextual hints on entity vs category fields. */
   billPurpose?: BillPurpose
+  showChargeTo?: boolean
 }) {
   const entityKey = billLineEntityKey(line)
   const entityKind = billLineEntityKind(entityKey)
   const expenseReportingKind = billLineExpenseReportingKind(entityKey, stations)
   const showCategory = expenseReportingKind === 'aquaculture' || expenseReportingKind === 'fuel_station'
   const isShopHubEntity = expenseReportingKind === 'aquaculture' && entityKind === 'station'
+  const showPondMismatchHint = billPurpose === 'pond' && entityKind === 'station' && !isShopHubEntity
 
   const { categories: scopedPondCategories, loading: pondCategoriesLoading } =
     useEntityScopedBillExpenseCategories(entityKey, expenseReportingKind)
@@ -106,36 +108,36 @@ export function BillLineEntityTagging({
   }
 
   if (!showHeadOffice && stations.length === 0 && ponds.length === 0) return null
+  if (!showChargeTo && !showCategory && !isShopHubEntity && !showPondMismatchHint) return null
 
   return (
     <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-border pt-2">
-      <div className="min-w-[12rem] flex-1">
-        <label className="block text-xs font-medium text-foreground/85 mb-1">
-          {line.item_id ? 'Entity (P&L / cost tag)' : 'Entity (who this expense is for)'}
-        </label>
-        <BillLineEntitySelect
-          value={entityKey}
-          onChange={handleEntityChange}
-          stations={stations}
-          ponds={ponds}
-          className={selectClassName}
-          showHeadOffice={showHeadOffice}
-          companyName={companyName}
-        />
-        {isShopHubEntity ? (
-          <p className="mt-1 text-xs text-primary leading-snug">
-            <strong>Shop / aquaculture hub</strong> — use aquaculture expense categories (feed, medicine,
-            pond care, equipment). Stock is received here for your ponds and walk-in sales; this site does
-            not sell fuel.
-          </p>
-        ) : billPurpose === 'pond' && entityKind === 'station' ? (
-          <p className="mt-1 text-xs text-warning-foreground leading-snug">
-            This line tags a <strong>fuel station</strong> for site P&amp;L. For feed and pond costs, pick a{' '}
-            <strong>pond</strong> under Entity, or tag a <strong>shop hub</strong> (e.g. Premium Agro) when
-            buying inventory for the aquaculture shop.
-          </p>
-        ) : null}
-      </div>
+      {showChargeTo ? (
+        <div className="min-w-[12rem] flex-1">
+          <label className="block text-xs font-medium text-foreground/85 mb-1">Charge to</label>
+          <BillLineEntitySelect
+            value={entityKey}
+            onChange={handleEntityChange}
+            stations={stations}
+            ponds={ponds}
+            className={selectClassName}
+            showHeadOffice={showHeadOffice}
+            companyName={companyName}
+            placeholder="Pond, station, shop hub, or head office…"
+          />
+        </div>
+      ) : null}
+      {isShopHubEntity ? (
+        <p className="w-full text-xs text-primary leading-snug">
+          <strong>Shop / aquaculture hub</strong> — pick an aquaculture expense category below.
+        </p>
+      ) : null}
+      {showPondMismatchHint ? (
+        <p className="w-full text-xs text-warning-foreground leading-snug">
+          Fuel station on a pond bill — use a <strong>pond</strong> or <strong>shop hub</strong> in Charge to
+          for feed and pond costs.
+        </p>
+      ) : null}
       {showCategory && expenseReportingKind === 'aquaculture' ? (
         <div className="min-w-[12rem] flex-1">
           <label className="block text-xs font-medium text-foreground/85 mb-1">

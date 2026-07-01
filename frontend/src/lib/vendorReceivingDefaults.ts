@@ -56,7 +56,7 @@ export function vendorUsualReceivingSummary(vendor: VendorReceivingFields): stri
   const label = vendorUsualReceivingLabel(vendor)
   if (!label) return null
   if (vendor.default_aquaculture_pond_id != null && vendor.default_aquaculture_pond_id > 0) {
-    return `Usual delivery: pond “${label}” (change on each bill if needed).`
+    return `Vendor usual site: pond “${label}” — pre-fills Charge to on your first line only.`
   }
-  return `Usual delivery: site “${label}” (change on each bill if needed).`
+  return `Vendor usual site: “${label}” — pre-fills Charge to on your first line only.`
 }

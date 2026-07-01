@@ -926,6 +926,7 @@ type JournalEntryPayload = {
     credit?: string
     description?: string
     station_name?: string
+    pond_name?: string
     aquaculture_pond_name?: string
   }[]
 }

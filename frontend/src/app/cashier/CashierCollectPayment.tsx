@@ -119,7 +119,10 @@ function makeIdempotencyKey(): string {
 const COLLECT_PAYMENT_TIMEOUT_MS = 180_000
 const COLLECT_PAYMENT_VERIFY_TIMEOUT_MS = 45_000
 const COLLECT_PAYMENT_POLL_MS = 2_000
-const COLLECT_PAYMENT_POLL_ATTEMPTS = 20
+// Short status poll per round, then a safe idempotent replay. Repeated over several
+// rounds so a single "Record payment" click always resolves to success on its own.
+const COLLECT_PAYMENT_POLL_ATTEMPTS = 5
+const COLLECT_PAYMENT_VERIFY_ROUNDS = 10
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -137,34 +140,41 @@ async function postCollectPayment(
 }
 
 /**
- * After a client timeout, confirm whether the server already committed this payment.
- * Poll the cheap status endpoint first (a slow-but-successful create usually finishes
- * within the poll window); only replay the create as a last resort. Replaying first
- * would add a second heavy write that competes with the still-running original.
+ * After a client timeout, drive the payment to a confirmed success automatically so
+ * the user only ever clicks "Record payment" once.
+ *
+ * Each round: poll the cheap status endpoint a few times (a slow-but-successful create
+ * usually lands here), then do one safe replay with the same Idempotency-Key. The replay
+ * returns the existing payment immediately if the original committed (no duplicate),
+ * otherwise it records it now. We repeat over several rounds so transient slowness or a
+ * dropped connection still resolves to success without any further user action.
+ * Throws on a real server-side rejection; returns false only if the server stays
+ * unreachable across every round.
  */
 async function verifyCollectPaymentRecorded(
   idempotencyKey: string,
   payload: Record<string, unknown>
 ): Promise<boolean> {
-  for (let i = 0; i < COLLECT_PAYMENT_POLL_ATTEMPTS; i++) {
-    await sleep(COLLECT_PAYMENT_POLL_MS)
-    try {
-      const res = await api.get<{ recorded?: boolean }>("/payments/received/idempotency-status/", {
-        params: { key: idempotencyKey },
-        timeout: 15_000,
-      })
-      if (res.data?.recorded === true) return true
-    } catch {
-      /* server may still be finishing the original request */
+  for (let round = 0; round < COLLECT_PAYMENT_VERIFY_ROUNDS; round++) {
+    for (let i = 0; i < COLLECT_PAYMENT_POLL_ATTEMPTS; i++) {
+      await sleep(COLLECT_PAYMENT_POLL_MS)
+      try {
+        const res = await api.get<{ recorded?: boolean }>(
+          "/payments/received/idempotency-status/",
+          { params: { key: idempotencyKey }, timeout: 15_000 }
+        )
+        if (res.data?.recorded === true) return true
+      } catch {
+        /* server may still be finishing the original request */
+      }
     }
-  }
-  // Last resort: replay with the same key. If the original committed, this returns the
-  // existing payment immediately (no duplicate); otherwise it records it now.
-  try {
-    await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_VERIFY_TIMEOUT_MS)
-    return true
-  } catch (err) {
-    if (!isNetworkOrTimeoutError(err)) throw err
+    try {
+      await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_VERIFY_TIMEOUT_MS)
+      return true
+    } catch (err) {
+      if (!isNetworkOrTimeoutError(err)) throw err
+      /* still unreachable — try another round */
+    }
   }
   return false
 }
@@ -264,6 +274,10 @@ export function CashierCollectPayment({
     [toast]
   )
 
+  // Reset/load only when the selected customer actually changes. Do NOT depend on
+  // `customers`: a background refresh (onRecorded -> loadInitialData) rebuilds that
+  // array reference and must not wipe an in-progress form (e.g. after a timeout,
+  // when the user needs to click "Record payment" again).
   useEffect(() => {
     if (!customerId) {
       setOutstanding([])
@@ -273,13 +287,9 @@ export function CashierCollectPayment({
       setReference("")
       return
     }
-    const c = customers.find(x => x.id === customerId)
-    if (c) {
-      setMemo(`POS payment — ${c.display_name}`)
-    }
     setPaymentAmount(0)
     void loadOutstanding(customerId)
-  }, [customerId, customers, toast, loadOutstanding])
+  }, [customerId, loadOutstanding])
 
   // Refresh side totals (shift + parent) without touching this form's fields.
   // Guarded so a refresh failure never looks like a payment failure.
@@ -365,17 +375,17 @@ export function CashierCollectPayment({
 
     try {
       await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_TIMEOUT_MS)
-      toast.success("Payment recorded.")
-      clearAfterSuccessfulRecord()
+      toast.success("Payment recorded — customer A/R updated.")
       await refreshSideTotals()
+      clearAfterSuccessfulRecord()
     } catch (err) {
       if (isNetworkOrTimeoutError(err)) {
         try {
           const recorded = await verifyCollectPaymentRecorded(idempotencyKey, payload)
           if (recorded) {
-            toast.success("Payment recorded.")
-            clearAfterSuccessfulRecord()
+            toast.success("Payment recorded — customer A/R updated.")
             await refreshSideTotals()
+            clearAfterSuccessfulRecord()
             return
           }
         } catch (verifyErr) {
@@ -406,7 +416,7 @@ export function CashierCollectPayment({
             <Wallet className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">Collect due (A/R)</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">Due collection (A/R)</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Enter the amount received; it is applied to open invoices oldest-first. Full profile:{" "}
               <Link href="/payments/received/new" className="font-medium text-primary underline underline-offset-2">
@@ -441,7 +451,10 @@ export function CashierCollectPayment({
               value={customerId ?? ""}
               onChange={e => {
                 const v = e.target.value
-                setCustomerId(v ? Number(v) : null)
+                const nextId = v ? Number(v) : null
+                setCustomerId(nextId)
+                const c = nextId ? customers.find(x => x.id === nextId) : null
+                setMemo(c ? `POS payment — ${c.display_name}` : "")
               }}
               className={selectClassName}
               required

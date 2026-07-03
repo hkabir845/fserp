@@ -1616,7 +1616,7 @@ export default function CashierPOSPage() {
                     }`}
                   >
                     <Wallet className="h-4 w-4 shrink-0" />
-                    <span className="whitespace-nowrap">Collect due</span>
+                    <span className="whitespace-nowrap">Due collection</span>
                   </button>
                   <button
                     type="button"

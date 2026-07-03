@@ -22,6 +22,6 @@ fi
 exec python -m gunicorn fsms.wsgi:application \
   --bind 127.0.0.1:8001 \
   --workers "${WORKERS}" \
-  --timeout 120 \
+  --timeout 180 \
   --access-logfile - \
   --error-logfile -

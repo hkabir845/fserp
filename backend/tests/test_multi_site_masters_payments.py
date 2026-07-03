@@ -225,3 +225,37 @@ def test_apply_payment_register_station_min_id_when_no_matching_default(company_
     apply_payment_register_station(company_tenant.id, p)
     p.refresh_from_db()
     assert p.station_id == lo.id
+
+
+def test_payments_received_idempotency_status(api_client, auth_admin_headers, company_tenant):
+    from api.models import Customer, Payment
+
+    cust = Customer.objects.create(
+        company_id=company_tenant.id, display_name="Idem Cust", current_balance=Decimal("0")
+    )
+    Payment.objects.create(
+        company_id=company_tenant.id,
+        payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+        customer_id=cust.id,
+        amount=Decimal("50"),
+        payment_date=date.today(),
+        idempotency_key="idem-status-test-key",
+    )
+
+    miss = api_client.get(
+        "/api/payments/received/idempotency-status/",
+        {"key": "not-recorded"},
+        **auth_admin_headers,
+    )
+    assert miss.status_code == 200
+    assert json.loads(miss.content)["recorded"] is False
+
+    hit = api_client.get(
+        "/api/payments/received/idempotency-status/",
+        {"key": "idem-status-test-key"},
+        **auth_admin_headers,
+    )
+    assert hit.status_code == 200
+    body = json.loads(hit.content)
+    assert body["recorded"] is True
+    assert body["payment"]["amount"] == "50.00"

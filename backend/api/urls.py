@@ -426,6 +426,10 @@ urlpatterns = [
     path("payments/received/", payment_views.payments_received_list),
     path("payments/received", payment_views.payments_received_list),
     path("payments/received/outstanding/", payment_views.payments_received_outstanding),
+    path(
+        "payments/received/idempotency-status/",
+        payment_views.payments_received_idempotency_status,
+    ),
     path("payments/made/", payment_views.payments_made_list),
     path("payments/made", payment_views.payments_made_list),
     path("payments/made/outstanding/", payment_views.payments_made_outstanding),

@@ -116,6 +116,52 @@ function makeIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+const COLLECT_PAYMENT_TIMEOUT_MS = 180_000
+const COLLECT_PAYMENT_VERIFY_TIMEOUT_MS = 45_000
+const COLLECT_PAYMENT_POLL_MS = 2_000
+const COLLECT_PAYMENT_POLL_ATTEMPTS = 6
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+async function postCollectPayment(
+  payload: Record<string, unknown>,
+  idempotencyKey: string,
+  timeoutMs: number
+) {
+  return api.post("/payments/received/", payload, {
+    timeout: timeoutMs,
+    headers: { "Idempotency-Key": idempotencyKey },
+  })
+}
+
+/** After a client timeout, confirm whether the server already committed this payment. */
+async function verifyCollectPaymentRecorded(
+  idempotencyKey: string,
+  payload: Record<string, unknown>
+): Promise<boolean> {
+  try {
+    await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_VERIFY_TIMEOUT_MS)
+    return true
+  } catch (err) {
+    if (!isNetworkOrTimeoutError(err)) throw err
+  }
+  for (let i = 0; i < COLLECT_PAYMENT_POLL_ATTEMPTS; i++) {
+    await sleep(COLLECT_PAYMENT_POLL_MS)
+    try {
+      const res = await api.get<{ recorded?: boolean }>("/payments/received/idempotency-status/", {
+        params: { key: idempotencyKey },
+        timeout: 15_000,
+      })
+      if (res.data?.recorded === true) return true
+    } catch {
+      /* server may still be finishing the original request */
+    }
+  }
+  return false
+}
+
 function formatAxiosDetail(error: unknown): string {
   const err = error as { response?: { data?: Record<string, unknown> } }
   const data = err.response?.data
@@ -243,6 +289,16 @@ export function CashierCollectPayment({
     }
   }, [loadShift, onRecorded])
 
+  const clearAfterSuccessfulRecord = useCallback(() => {
+    idempotencyKeyRef.current = null
+    setCustomerId(null)
+    setOutstanding([])
+    setPaymentAmount(0)
+    setAllocations({})
+    setReference("")
+    setMemo("")
+  }, [])
+
   const totalDue = roundTwo(
     outstanding
       .filter(i => !isOnAccountRow(i))
@@ -283,51 +339,47 @@ export function CashierCollectPayment({
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = makeIdempotencyKey()
     }
-    try {
-      const payload: Record<string, unknown> = {
-        customer_id: customerId,
-        payment_date: paymentDate,
-        payment_method: paymentMethod,
-        amount: paymentAmount,
-        reference_number: reference.trim() || null,
-        memo: memo.trim() || null,
-        allocations: valid,
-      }
-      if (depositBankId !== "" && typeof depositBankId === "number") {
-        payload.bank_account_id = depositBankId
-      }
-      if (linkToShift && activeShift?.id) {
-        payload.shift_session_id = activeShift.id
-      }
+    const idempotencyKey = idempotencyKeyRef.current
+    const payload: Record<string, unknown> = {
+      customer_id: customerId,
+      payment_date: paymentDate,
+      payment_method: paymentMethod,
+      amount: paymentAmount,
+      reference_number: reference.trim() || null,
+      memo: memo.trim() || null,
+      allocations: valid,
+    }
+    if (depositBankId !== "" && typeof depositBankId === "number") {
+      payload.bank_account_id = depositBankId
+    }
+    if (linkToShift && activeShift?.id) {
+      payload.shift_session_id = activeShift.id
+    }
 
-      await api.post("/payments/received/", payload, {
-        timeout: 120000,
-        headers: { "Idempotency-Key": idempotencyKeyRef.current },
-      })
+    try {
+      await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_TIMEOUT_MS)
       toast.success("Payment recorded.")
-      idempotencyKeyRef.current = null
-      setCustomerId(null)
-      setOutstanding([])
-      setPaymentAmount(0)
-      setAllocations({})
-      setReference("")
-      setMemo("")
-      // Customer is cleared above, so its outstanding list resets via effect; just
-      // refresh the shift + parent totals.
+      clearAfterSuccessfulRecord()
       await refreshSideTotals()
     } catch (err) {
       if (isNetworkOrTimeoutError(err)) {
-        // No server response: the payment may have committed but the reply was lost.
-        // Keep the form intact and keep the idempotency key so clicking again is a
-        // safe, no-duplicate retry (server returns the original if it already exists).
+        try {
+          const recorded = await verifyCollectPaymentRecorded(idempotencyKey, payload)
+          if (recorded) {
+            toast.success("Payment recorded.")
+            clearAfterSuccessfulRecord()
+            await refreshSideTotals()
+            return
+          }
+        } catch (verifyErr) {
+          toast.error(formatAxiosDetail(verifyErr))
+          return
+        }
         toast.error(
-          "The request timed out. Click Record payment again — this is safe and will not create a duplicate."
+          "Payment is taking longer than usual. Wait a few seconds, then click Record payment again — safe, no duplicate."
         )
         await refreshSideTotals()
       } else {
-        // Server error (validation, GL, etc.). Keep the same key: a failed request never
-        // persisted it (retry creates fresh), and if it somehow did commit, the retry
-        // returns the original instead of duplicating.
         toast.error(formatAxiosDetail(err))
       }
     } finally {

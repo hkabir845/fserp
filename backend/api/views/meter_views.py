@@ -7,7 +7,13 @@ from django.utils import timezone
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, _serialize_datetime
 from api.models import Meter, Dispenser
+from api.services.permission_service import has_permission, resolve_user_permissions
 from api.services.station_capabilities import require_island_on_fuel_forecourt
+
+
+def _user_can_manage_station_meters(user) -> bool:
+    """Forecourt master-data writes (e.g. meter reset) require ``app.station``."""
+    return has_permission(resolve_user_permissions(user), "app.station")
 
 
 def _meter_to_json(m):
@@ -131,6 +137,11 @@ def meter_detail(request, meter_id: int):
 def meter_reset(request, meter_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
+    if not _user_can_manage_station_meters(request.api_user):
+        return JsonResponse(
+            {"detail": "Station management permission required to reset meters."},
+            status=403,
+        )
     m = Meter.objects.filter(id=meter_id, company_id=request.company_id).first()
     if not m:
         return JsonResponse({"detail": "Meter not found"}, status=404)

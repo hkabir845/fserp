@@ -10,6 +10,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
+import { hasPermission } from '@/utils/rbac'
 
 interface Meter {
   id: number
@@ -59,6 +60,7 @@ export default function MetersPage() {
   const [resetData, setResetData] = useState({
     reason: ''
   })
+  const canManageMeters = hasPermission('app.station')
 
   const fuelForecourtDispensers = useMemo(
     () => dispensers.filter((d) => d.station_operates_fuel_retail !== false),
@@ -214,7 +216,10 @@ export default function MetersPage() {
 
   const handleResetMeter = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (!canManageMeters) {
+      toast.error('You do not have permission to reset meters.')
+      return
+    }
     if (!selectedMeter) return
     
     try {
@@ -432,16 +437,18 @@ export default function MetersPage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-4 border-t space-x-2">
-                      <button
-                        onClick={() => {
-                          setSelectedMeter(meter)
-                          setShowResetModal(true)
-                        }}
-                        className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 ${fontSize.label}`}
-                      >
-                        <RotateCcw className={`${fontSize.icon}`} />
-                        <span>Reset</span>
-                      </button>
+                      {canManageMeters && (
+                        <button
+                          onClick={() => {
+                            setSelectedMeter(meter)
+                            setShowResetModal(true)
+                          }}
+                          className={`flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 ${fontSize.label}`}
+                        >
+                          <RotateCcw className={`${fontSize.icon}`} />
+                          <span>Reset</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => router.push(`/nozzles?meter=${meter.id}`)}
                         className={`erp-btn-primary flex-1 ${fontSize.label}`}

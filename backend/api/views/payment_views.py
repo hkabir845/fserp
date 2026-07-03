@@ -654,6 +654,34 @@ def payments_received_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+def payments_received_idempotency_status(request):
+    """
+    GET /api/payments/received/idempotency-status/?key=<uuid>
+    Lightweight poll after a client timeout: was this Idempotency-Key already committed?
+    """
+    if request.method != "GET":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    key = (request.GET.get("key") or request.headers.get("Idempotency-Key") or "").strip()[:64]
+    if not key:
+        return JsonResponse({"detail": "key query parameter required"}, status=400)
+    existing = (
+        Payment.objects.filter(
+            company_id=request.company_id,
+            payment_type="received",
+            idempotency_key=key,
+        )
+        .select_related("station")
+        .prefetch_related("invoice_allocations")
+        .first()
+    )
+    if existing is None:
+        return JsonResponse({"recorded": False})
+    return JsonResponse({"recorded": True, "payment": _payment_to_json(existing)})
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
 def payments_made_list(request):
     if request.method == "POST":
         return payments_made_create(request)

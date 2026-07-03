@@ -294,6 +294,7 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-selected-station-id",
     "x-tenant-subdomain",
     "x-request-id",
+    "idempotency-key",
 ]
 
 _env_csrf = _csv("FSERP_CSRF_TRUSTED_ORIGINS")

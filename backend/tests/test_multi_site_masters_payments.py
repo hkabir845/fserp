@@ -227,6 +227,69 @@ def test_apply_payment_register_station_min_id_when_no_matching_default(company_
     assert p.station_id == lo.id
 
 
+def test_received_payment_with_invoice_allocation_serializes(
+    api_client: Client, auth_admin_headers, company_tenant, user_admin
+):
+    """
+    Regression: payment_site_display_label queried Invoice.aquaculture_pond_id (a field that
+    only exists on InvoiceLine), so serializing any received payment allocated to a real invoice
+    raised FieldError -> HTTP 500 (payment saved but list/create response failed). The pond tag
+    lives on invoice lines, so the label must resolve without error.
+    """
+    from api.models import (
+        Customer,
+        Invoice,
+        InvoiceLine,
+        Payment,
+        PaymentInvoiceAllocation,
+        Station,
+    )
+    from api.services.payment_station import payment_site_display_label
+
+    st = Station.objects.create(
+        company_id=company_tenant.id, station_name="RCV-SER", is_active=True
+    )
+    cust = Customer.objects.create(
+        company_id=company_tenant.id, display_name="SerTest", current_balance=Decimal("0")
+    )
+    inv = Invoice(
+        company_id=company_tenant.id,
+        customer_id=cust.id,
+        station_id=st.id,
+        invoice_number="INV-SER-1",
+        invoice_date=date.today(),
+        status="sent",
+        subtotal=Decimal("10"),
+        tax_total=Decimal("0"),
+        total=Decimal("10"),
+    )
+    inv.save()
+    InvoiceLine.objects.create(
+        invoice_id=inv.id, description="line", quantity=Decimal("1"),
+        unit_price=Decimal("10"), amount=Decimal("10"),
+    )
+    p = Payment.objects.create(
+        company_id=company_tenant.id,
+        payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+        customer_id=cust.id,
+        station_id=st.id,
+        amount=Decimal("10"),
+        payment_date=date.today(),
+    )
+    PaymentInvoiceAllocation.objects.create(
+        payment_id=p.id, invoice_id=inv.id, amount=Decimal("10")
+    )
+
+    # Direct: previously raised FieldError.
+    assert payment_site_display_label(company_tenant.id, p) == "RCV-SER"
+
+    # End-to-end: the list endpoint serializes every payment (was HTTP 500).
+    r = api_client.get(
+        "/api/payments/received/?paged=1&skip=0&limit=50", **auth_admin_headers
+    )
+    assert r.status_code == 200, r.content
+
+
 def test_payments_received_idempotency_status(api_client, auth_admin_headers, company_tenant):
     from api.models import Customer, Payment
 

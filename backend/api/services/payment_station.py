@@ -12,6 +12,7 @@ from api.models import (
     BillLine,
     Customer,
     Invoice,
+    InvoiceLine,
     Payment,
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
@@ -168,8 +169,13 @@ def payment_site_display_label(company_id: int, p: Payment) -> str:
             .values_list("invoice_id", flat=True)
         )
         if inv_ids:
+            # Invoice has no pond field; the pond tag lives on invoice lines
+            # (mirrors the BillLine path used for vendor payments above).
             pond_ids = set(
-                Invoice.objects.filter(pk__in=inv_ids, company_id=company_id)
+                InvoiceLine.objects.filter(
+                    invoice_id__in=inv_ids,
+                    invoice__company_id=company_id,
+                )
                 .exclude(aquaculture_pond_id__isnull=True)
                 .values_list("aquaculture_pond_id", flat=True)
             )

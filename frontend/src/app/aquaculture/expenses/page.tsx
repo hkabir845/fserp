@@ -19,6 +19,7 @@ import {
   aquacultureExpenseEditBlockedReason,
 } from '@/lib/aquacultureExpensePolicy'
 import { MODAL_FORM_SCROLL } from '@/lib/modalLayout'
+import { aquacultureT } from '@/lib/aquacultureI18n'
 import { useT } from '@/lib/i18n'
 import {
   aquacultureExpenseRegisterRowKey,

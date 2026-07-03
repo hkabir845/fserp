@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -49,6 +49,15 @@ from api.services.payment_allocation import (
 )
 from api.services.gl_posting import _is_walkin_customer
 from api.services.shift_sales import record_ar_collection_on_shift
+
+
+def _read_idempotency_key(request, body: dict) -> str:
+    """Client-supplied key from the Idempotency-Key header (or body fallback).
+
+    Truncated to the model's max_length so an oversized value can't error the save.
+    """
+    key = request.headers.get("Idempotency-Key") or (body.get("idempotency_key") if isinstance(body, dict) else "")
+    return (str(key).strip() if key else "")[:64]
 
 
 def _serialize_date(d):
@@ -523,6 +532,24 @@ def payments_received_create(request):
     body, err = parse_json_body(request)
     if err:
         return err
+
+    # Idempotency: a repeat of the same request (e.g. after a client timeout on a
+    # slow-but-successful call) returns the original payment instead of duplicating it.
+    idempotency_key = _read_idempotency_key(request, body)
+    if idempotency_key:
+        existing = (
+            Payment.objects.filter(
+                company_id=request.company_id,
+                payment_type="received",
+                idempotency_key=idempotency_key,
+            )
+            .select_related("station")
+            .prefetch_related("invoice_allocations")
+            .first()
+        )
+        if existing is not None:
+            return JsonResponse(_payment_to_json(existing), status=200)
+
     customer_id = body.get("customer_id")
     amount = _decimal(body.get("amount"))
     if not customer_id or not amount or amount <= 0:
@@ -581,6 +608,7 @@ def payments_received_create(request):
                 payment_method=pm_norm,
                 reference=body.get("reference_number") or body.get("reference") or "",
                 memo=body.get("memo") or "",
+                idempotency_key=idempotency_key,
             )
             p.save()
             PaymentInvoiceAllocation.objects.filter(payment_id=p.id).delete()
@@ -597,6 +625,22 @@ def payments_received_create(request):
                 )
     except GlPostingError as e:
         return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
+    except IntegrityError:
+        # Concurrent duplicate with the same Idempotency-Key: return the winner.
+        if idempotency_key:
+            existing = (
+                Payment.objects.filter(
+                    company_id=request.company_id,
+                    payment_type="received",
+                    idempotency_key=idempotency_key,
+                )
+                .select_related("station")
+                .prefetch_related("invoice_allocations")
+                .first()
+            )
+            if existing is not None:
+                return JsonResponse(_payment_to_json(existing), status=200)
+        raise
 
     p = (
         Payment.objects.filter(id=p.id)

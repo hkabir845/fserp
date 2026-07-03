@@ -1614,6 +1614,15 @@ class Payment(models.Model):
     )
     reference = models.CharField(max_length=200, blank=True)
     memo = models.TextField(blank=True)
+    idempotency_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "Client-supplied key (Idempotency-Key header) to make create-payment retries safe: "
+            "a repeat with the same key returns the original payment instead of duplicating it."
+        ),
+    )
     vendor_ap_decremented = models.BooleanField(
         default=False,
         help_text="For payments made: True once amount was subtracted from vendor.current_balance.",
@@ -1631,6 +1640,13 @@ class Payment(models.Model):
 
     class Meta:
         db_table = "payment"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "idempotency_key"],
+                condition=models.Q(idempotency_key__gt=""),
+                name="payment_company_idempotency_key_uniq",
+            ),
+        ]
 
 
 class PaymentInvoiceAllocation(models.Model):

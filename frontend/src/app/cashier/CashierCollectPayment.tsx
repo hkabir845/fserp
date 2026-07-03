@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import api from "@/lib/api"
 import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useToast } from "@/components/Toast"
@@ -98,6 +98,24 @@ function distributeFifo(amount: number, rows: OutstandingInvoice[]): Record<numb
   return next
 }
 
+function isNetworkOrTimeoutError(error: unknown): boolean {
+  const err = error as { code?: string; response?: unknown }
+  // No HTTP response means the request never completed (timeout, dropped connection);
+  // the server may still have committed the payment.
+  return err?.code === "ECONNABORTED" || !err?.response
+}
+
+function makeIdempotencyKey(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID()
+    }
+  } catch {
+    /* fall through to fallback */
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 function formatAxiosDetail(error: unknown): string {
   const err = error as { response?: { data?: Record<string, unknown> } }
   const data = err.response?.data
@@ -137,6 +155,9 @@ export function CashierCollectPayment({
   const [submitting, setSubmitting] = useState(false)
   const [activeShift, setActiveShift] = useState<ActiveShift | null>(null)
   const [linkToShift, setLinkToShift] = useState(true)
+  // Stable key for the current payment attempt: kept across retries so a repeat of a
+  // slow-but-successful call is deduplicated server-side; reset only after a confirmed success.
+  const idempotencyKeyRef = useRef<string | null>(null)
 
   const loadShift = useCallback(async () => {
     try {
@@ -159,6 +180,37 @@ export function CashierCollectPayment({
     void loadShift()
   }, [loadShift])
 
+  const loadOutstanding = useCallback(
+    async (cid: number) => {
+      setLoadingInvoices(true)
+      try {
+        const res = await api.get("/payments/received/outstanding/", {
+          params: { customer_id: cid },
+        })
+        const raw = Array.isArray(res.data) ? res.data : []
+        const rows = mergeCollectOutstanding(raw as OutstandingInvoice[], cid)
+        setOutstanding(rows)
+        const next: Record<number, number> = {}
+        for (const inv of rows) {
+          next[inv.synthetic ? 0 : inv.id] = 0
+        }
+        setAllocations(next)
+      } catch {
+        const rows = mergeCollectOutstanding([], cid)
+        setOutstanding(rows)
+        const next: Record<number, number> = {}
+        for (const inv of rows) {
+          next[inv.synthetic ? 0 : inv.id] = 0
+        }
+        setAllocations(next)
+        toast.error("Could not load open invoices; you can still record on-account or advance below.")
+      } finally {
+        setLoadingInvoices(false)
+      }
+    },
+    [toast]
+  )
+
   useEffect(() => {
     if (!customerId) {
       setOutstanding([])
@@ -173,32 +225,23 @@ export function CashierCollectPayment({
       setMemo(`POS payment — ${c.display_name}`)
     }
     setPaymentAmount(0)
-    setLoadingInvoices(true)
-    api
-      .get("/payments/received/outstanding/", { params: { customer_id: customerId } })
-      .then(res => {
-        const raw = Array.isArray(res.data) ? res.data : []
-        const rows = mergeCollectOutstanding(raw as OutstandingInvoice[], customerId)
-        setOutstanding(rows)
-        const next: Record<number, number> = {}
-        for (const inv of rows) {
-          next[inv.synthetic ? 0 : inv.id] = 0
-        }
-        setAllocations(next)
-      })
-      .catch(() => {
-        const rows = mergeCollectOutstanding([], customerId)
-        setOutstanding(rows)
-        setPaymentAmount(0)
-        const next: Record<number, number> = {}
-        for (const inv of rows) {
-          next[inv.synthetic ? 0 : inv.id] = 0
-        }
-        setAllocations(next)
-        toast.error("Could not load open invoices; you can still record on-account or advance below.")
-      })
-      .finally(() => setLoadingInvoices(false))
-  }, [customerId, customers, toast])
+    void loadOutstanding(customerId)
+  }, [customerId, customers, toast, loadOutstanding])
+
+  // Refresh side totals (shift + parent) without touching this form's fields.
+  // Guarded so a refresh failure never looks like a payment failure.
+  const refreshSideTotals = useCallback(async () => {
+    try {
+      await loadShift()
+    } catch {
+      /* ignore */
+    }
+    try {
+      await onRecorded()
+    } catch {
+      /* ignore */
+    }
+  }, [loadShift, onRecorded])
 
   const totalDue = roundTwo(
     outstanding
@@ -236,6 +279,10 @@ export function CashierCollectPayment({
     }
 
     setSubmitting(true)
+    // Reuse the same key on retry so a slow-but-successful call is not duplicated.
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = makeIdempotencyKey()
+    }
     try {
       const payload: Record<string, unknown> = {
         customer_id: customerId,
@@ -253,18 +300,36 @@ export function CashierCollectPayment({
         payload.shift_session_id = activeShift.id
       }
 
-      await api.post("/payments/received/", payload)
+      await api.post("/payments/received/", payload, {
+        timeout: 120000,
+        headers: { "Idempotency-Key": idempotencyKeyRef.current },
+      })
       toast.success("Payment recorded.")
+      idempotencyKeyRef.current = null
       setCustomerId(null)
       setOutstanding([])
       setPaymentAmount(0)
       setAllocations({})
       setReference("")
       setMemo("")
-      await loadShift()
-      await onRecorded()
+      // Customer is cleared above, so its outstanding list resets via effect; just
+      // refresh the shift + parent totals.
+      await refreshSideTotals()
     } catch (err) {
-      toast.error(formatAxiosDetail(err))
+      if (isNetworkOrTimeoutError(err)) {
+        // No server response: the payment may have committed but the reply was lost.
+        // Keep the form intact and keep the idempotency key so clicking again is a
+        // safe, no-duplicate retry (server returns the original if it already exists).
+        toast.error(
+          "The request timed out. Click Record payment again — this is safe and will not create a duplicate."
+        )
+        await refreshSideTotals()
+      } else {
+        // Server error (validation, GL, etc.). Keep the same key: a failed request never
+        // persisted it (retry creates fresh), and if it somehow did commit, the retry
+        // returns the original instead of duplicating.
+        toast.error(formatAxiosDetail(err))
+      }
     } finally {
       setSubmitting(false)
     }

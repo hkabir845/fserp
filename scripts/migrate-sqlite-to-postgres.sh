@@ -65,13 +65,17 @@ cd "$BACKEND"
 # shellcheck disable=SC1091
 source venv/bin/activate
 
+count_companies() {
+  python manage.py shell -c "from api.models import Company; print(Company.objects.count())" 2>/dev/null | tail -n 1 | tr -d '[:space:]'
+}
+
 echo "==> Testing PostgreSQL connection (DATABASE_URL)"
 python manage.py migrate --noinput
 
-pg_companies="$(python manage.py shell -c "from api.models import Company; print(Company.objects.count())")"
-echo "PostgreSQL companies before import: $pg_companies"
+pg_companies="$(count_companies)"
+echo "PostgreSQL companies before import: ${pg_companies:-0}"
 
-if [[ "$pg_companies" -gt 1 ]] && [[ "$AUTO_YES" -ne 1 ]]; then
+if [[ "${pg_companies:-0}" =~ ^[0-9]+$ ]] && [[ "$pg_companies" -gt 1 ]] && [[ "$AUTO_YES" -ne 1 ]]; then
   echo "WARNING: PostgreSQL already has $pg_companies companies."
   echo "Import may duplicate data. Use --yes only if you intend to merge/overwrite."
   read -r -p "Continue anyway? [y/N] " ans
@@ -103,10 +107,10 @@ remove_sqlite_flag
 python manage.py migrate --noinput
 python manage.py loaddata "$EXPORT_FILE"
 
-pg_companies_after="$(python manage.py shell -c "from api.models import Company; print(Company.objects.count())")"
-echo "PostgreSQL companies after import: $pg_companies_after"
+pg_companies_after="$(count_companies)"
+echo "PostgreSQL companies after import: ${pg_companies_after:-0}"
 
-if [[ "$pg_companies_after" -lt 1 ]]; then
+if [[ ! "${pg_companies_after:-0}" =~ ^[0-9]+$ ]] || [[ "$pg_companies_after" -lt 1 ]]; then
   echo "ERROR: Import may have failed — no companies in PostgreSQL." >&2
   echo "Restore SQLite backup: cp $BACKUP_FILE $SQLITE_FILE" >&2
   exit 1

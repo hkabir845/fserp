@@ -1681,7 +1681,12 @@ export default function CashierPOSPage() {
 
           {posMode === "collect" ? (
             <div className={`mx-auto w-full max-w-5xl ${scopeUi.shell}`}>
-              <CashierDueCollection onRecorded={() => loadInitialData({ silent: true })} />
+              <CashierDueCollection
+                customers={customers}
+                currencySymbol={currencySymbol}
+                bankAccounts={bankRegisters}
+                onRecorded={() => loadInitialData({ silent: true })}
+              />
             </div>
           ) : null}
 

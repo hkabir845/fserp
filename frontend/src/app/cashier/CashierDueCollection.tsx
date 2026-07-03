@@ -2,17 +2,41 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
-import { CheckCircle2, Loader2 } from "lucide-react"
 import api from "@/lib/api"
-import { isOffsetPagedPayload, REFERENCE_FETCH_LIMIT } from "@/lib/pagination"
-import { getCurrencySymbol, formatNumber } from "@/utils/currency"
+import { isOffsetPagedPayload } from "@/lib/pagination"
+import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
+import { useToast } from "@/components/Toast"
+import { formatNumber } from "@/utils/currency"
 import { formatDateOnly } from "@/utils/date"
-import {
-  PaymentReceivedForm,
-  type PaymentRecordedResult,
-} from "@/components/payments/PaymentReceivedForm"
+import { HandCoins, Loader2, CheckCircle2 } from "lucide-react"
+
+const inputClassName =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+const selectClassName =
+  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
 
 type CustomerRow = { id: number; display_name: string }
+
+type BankLine = {
+  id: number
+  account_name: string
+  bank_name?: string
+  chart_account_code?: string | null
+  chart_account_id?: number | null
+  is_active?: boolean
+  is_equity_register?: boolean
+  current_balance?: string | number | null
+}
+
+type OutstandingInvoice = {
+  id: number
+  invoice_number: string
+  invoice_date: string
+  balance_due: string | number
+  synthetic?: boolean
+  on_account?: boolean
+  customer_id: number
+}
 
 type PaymentRow = {
   id: number
@@ -27,38 +51,102 @@ type PaymentRow = {
   deposit_status?: string
 }
 
-function normalizeCustomers(data: unknown): CustomerRow[] {
-  const rows = Array.isArray(data) ? data : []
-  return rows
-    .filter((r): r is Record<string, unknown> => r != null && typeof r === "object")
-    .flatMap(r => {
-      const id = typeof r.id === "number" ? r.id : Number(r.id)
-      if (!Number.isFinite(id)) return []
-      return [{ id, display_name: String(r.display_name ?? "") }]
-    })
+function roundTwo(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function formatAxiosDetail(error: unknown): string {
+  const err = error as { response?: { data?: Record<string, unknown> } }
+  const data = err.response?.data
+  if (!data) return error instanceof Error ? error.message : "Request failed."
+  const d = data.detail
+  if (typeof d === "string") return d
+  if (Array.isArray(d)) return d.map(x => (typeof x === "string" ? x : JSON.stringify(x))).join(" ")
+  if (d && typeof d === "object") return JSON.stringify(d)
+  if (typeof data.error === "string") return data.error
+  return "Request failed."
+}
+
+function makeIdempotencyKey(): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID()
+  } catch {
+    /* fallback below */
+  }
+  return `rcv-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function allocInvoiceId(inv: OutstandingInvoice) {
+  return inv.synthetic ? 0 : inv.id
 }
 
 function normalizePayments(data: unknown): PaymentRow[] {
   if (isOffsetPagedPayload(data)) {
     return (data.results as PaymentRow[]) ?? []
   }
-  if (Array.isArray(data)) {
-    return data as PaymentRow[]
-  }
+  if (Array.isArray(data)) return data as PaymentRow[]
   return []
 }
 
 export type CashierDueCollectionProps = {
+  customers: CustomerRow[]
+  currencySymbol: string
+  /** Active bank / cash registers used as the deposit target. */
+  bankAccounts: BankLine[]
   onRecorded?: () => void | Promise<void>
 }
 
-export function CashierDueCollection({ onRecorded }: CashierDueCollectionProps) {
-  const [customers, setCustomers] = useState<CustomerRow[]>([])
+/**
+ * Collect customer A/R: Dr Bank/Cash (or undeposited), Cr Accounts Receivable.
+ * Lightweight POS form modeled on Pay bills — reuses parent customers/banks,
+ * links cash to the open shift drawer, and lists recent receipts for confirmation.
+ */
+export function CashierDueCollection({
+  customers,
+  currencySymbol,
+  bankAccounts,
+  onRecorded,
+}: CashierDueCollectionProps) {
+  const toast = useToast()
+  const [customerId, setCustomerId] = useState<number | null>(null)
+  const [outstanding, setOutstanding] = useState<OutstandingInvoice[]>([])
+  const [allocations, setAllocations] = useState<Record<number, number>>({})
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split("T")[0])
+  const [paymentMethod, setPaymentMethod] = useState("cash")
+  const [reference, setReference] = useState("")
+  const [memo, setMemo] = useState("")
+  const [bankId, setBankId] = useState<number | "">("")
+  const [loadingInvoices, setLoadingInvoices] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
   const [payments, setPayments] = useState<PaymentRow[]>([])
-  const [currencySymbol, setCurrencySymbol] = useState("৳")
   const [listLoading, setListLoading] = useState(true)
-  const [lastRecorded, setLastRecorded] = useState<PaymentRecordedResult | null>(null)
-  const [formKey, setFormKey] = useState(0)
+  const [lastRecorded, setLastRecorded] = useState<PaymentRow | null>(null)
+
+  const depositBanks = bankAccounts.filter(
+    b => b.is_active !== false && b.is_equity_register !== true
+  )
+
+  // Resolve the open shift once so cash receipts add to the drawer without tracking shift state.
+  const [autoShiftId, setAutoShiftId] = useState<number | null>(null)
+  const [linkToShift, setLinkToShift] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const r = await api.get("/shifts/sessions/active/")
+        const d = r.data
+        if (!cancelled && d && typeof d.id !== "undefined" && d.id !== null) {
+          setAutoShiftId(Number(d.id))
+        }
+      } catch {
+        /* no open shift — receipt still records without drawer tracking */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const loadList = useCallback(async () => {
     setListLoading(true)
@@ -75,40 +163,142 @@ export function CashierDueCollection({ onRecorded }: CashierDueCollectionProps) 
   }, [])
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const [companyRes, custRes] = await Promise.allSettled([
-          api.get("/companies/current"),
-          api.get("/customers/", { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
-        ])
-        if (companyRes.status === "fulfilled" && companyRes.value.data?.currency) {
-          setCurrencySymbol(getCurrencySymbol(companyRes.value.data.currency))
-        }
-        if (custRes.status === "fulfilled") {
-          setCustomers(normalizeCustomers(custRes.value.data))
-        }
-      } catch {
-        /* optional */
-      }
-      await loadList()
-    })()
+    void loadList()
   }, [loadList])
 
-  const customerName = (customerId: number) => {
+  useEffect(() => {
+    if (!customerId) {
+      setOutstanding([])
+      setAllocations({})
+      setMemo("")
+      setReference("")
+      return
+    }
     const c = customers.find(x => x.id === customerId)
-    return c?.display_name?.trim() || `Customer #${customerId}`
+    if (c) setMemo(`POS collection — ${c.display_name}`)
+    setLoadingInvoices(true)
+    api
+      .get("/payments/received/outstanding/", { params: { customer_id: customerId } })
+      .then(res => {
+        const rows = Array.isArray(res.data) ? (res.data as OutstandingInvoice[]) : []
+        setOutstanding(rows)
+        const next: Record<number, number> = {}
+        for (const inv of rows) next[allocInvoiceId(inv)] = 0
+        setAllocations(next)
+      })
+      .catch(() => {
+        setOutstanding([])
+        setAllocations({})
+        toast.error("Could not load open invoices for this customer.")
+      })
+      .finally(() => setLoadingInvoices(false))
+  }, [customerId, customers, toast])
+
+  const totalAllocated = roundTwo(
+    Object.values(allocations).reduce((s, x) => s + (Number.isFinite(x) ? x : 0), 0)
+  )
+
+  const rowKey = (inv: OutstandingInvoice) =>
+    inv.synthetic ? `oa-c-${inv.customer_id}` : String(inv.id)
+
+  const setAlloc = (invIdKey: number, raw: number) => {
+    const row = outstanding.find(
+      inv => (inv.synthetic && invIdKey === 0) || (!inv.synthetic && inv.id === invIdKey)
+    )
+    if (!row) return
+    const maxAmt = Number(row.balance_due) || 0
+    const v = roundTwo(Math.min(Math.max(0, raw), maxAmt))
+    setAllocations(prev => ({ ...prev, [invIdKey]: v }))
   }
 
-  const handleSuccess = async (payment?: PaymentRecordedResult) => {
-    if (payment?.id) {
-      setLastRecorded(payment)
+  const collectOldestFirst = () => {
+    const totalBal = roundTwo(
+      outstanding.reduce((s, inv) => s + (Number(inv.balance_due) || 0), 0)
+    )
+    let left = totalBal
+    const sorted = [...outstanding].sort((a, b) => {
+      if (a.synthetic && !b.synthetic) return 1
+      if (!a.synthetic && b.synthetic) return -1
+      return new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime()
+    })
+    const next: Record<number, number> = { ...allocations }
+    for (const k of Object.keys(next)) next[Number(k)] = 0
+    for (const inv of sorted) {
+      if (left <= 0) break
+      const bal = Number(inv.balance_due) || 0
+      const take = roundTwo(Math.min(left, bal))
+      next[allocInvoiceId(inv)] = take
+      left = roundTwo(left - take)
     }
-    setFormKey(k => k + 1)
-    await loadList()
+    setAllocations(next)
+  }
+
+  const customerName = (cid: number) => {
+    const c = customers.find(x => x.id === cid)
+    return c?.display_name?.trim() || `Customer #${cid}`
+  }
+
+  const resetForm = () => {
+    setCustomerId(null)
+    setOutstanding([])
+    setAllocations({})
+    setReference("")
+    setMemo("")
+    setBankId("")
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!customerId) {
+      toast.error("Select a customer.")
+      return
+    }
+    if (totalAllocated <= 0) {
+      toast.error("Enter an amount to collect (allocate to at least one line).")
+      return
+    }
+    const valid = Object.entries(allocations)
+      .map(([k, amt]) => ({ invoice_id: Number(k), allocated_amount: amt }))
+      .filter(a => a.allocated_amount > 0)
+    if (valid.length === 0) {
+      toast.error("Allocate to at least one invoice or on-account line.")
+      return
+    }
+
+    setSubmitting(true)
     try {
-      await onRecorded?.()
-    } catch {
-      /* parent refresh is best-effort */
+      const payload: Record<string, unknown> = {
+        customer_id: customerId,
+        payment_date: paymentDate,
+        payment_method: paymentMethod,
+        amount: totalAllocated,
+        reference_number: reference.trim() || null,
+        memo: memo.trim() || null,
+        allocations: valid,
+      }
+      if (bankId !== "" && typeof bankId === "number") {
+        payload.bank_account_id = bankId
+      }
+      if (linkToShift && autoShiftId != null) {
+        payload.shift_session_id = autoShiftId
+      }
+      const res = await api.post("/payments/received/", payload, {
+        headers: { "Idempotency-Key": makeIdempotencyKey() },
+      })
+      toast.success("Payment recorded: A/R reduced and bank/cash debited per GL rules.")
+      const saved = res.data as PaymentRow | undefined
+      if (saved?.id) setLastRecorded(saved)
+      resetForm()
+      await loadList()
+      try {
+        await onRecorded?.()
+      } catch {
+        /* parent refresh is best-effort */
+      }
+    } catch (err) {
+      toast.error(formatAxiosDetail(err))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -117,13 +307,239 @@ export function CashierDueCollection({ onRecorded }: CashierDueCollectionProps) 
 
   return (
     <div className="space-y-6">
-      <PaymentReceivedForm
-        key={formKey}
-        embedded
-        showShiftLink
-        cancelHref={null}
-        onSuccess={payment => void handleSuccess(payment)}
-      />
+      <section className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-sm sm:p-6">
+        <div className="mb-6 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <HandCoins className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">Due collection (A/R)</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Collect customer balances into a <strong>bank or cash</strong> register. The system posts:{" "}
+                <span className="whitespace-nowrap">Debit bank/cash, Credit A/R</span> — same as{" "}
+                <Link
+                  href="/payments/received/new"
+                  className="font-medium text-primary underline underline-offset-2"
+                >
+                  Payments → Receive payment
+                </Link>
+                .
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={e => void handleSubmit(e)} className="space-y-5" autoComplete="off">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-customer">
+                Customer <span className="text-destructive">*</span>
+              </label>
+              <select
+                id="pos-collect-customer"
+                value={customerId ?? ""}
+                onChange={e => setCustomerId(e.target.value ? Number(e.target.value) : null)}
+                className={selectClassName}
+                required
+              >
+                <option value="">Select customer</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-date">
+                Payment date
+              </label>
+              <input
+                id="pos-collect-date"
+                type="date"
+                value={paymentDate}
+                onChange={e => setPaymentDate(e.target.value)}
+                className={inputClassName}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-bank">
+              Deposit to (bank or cash)
+            </label>
+            <select
+              id="pos-collect-bank"
+              value={bankId === "" ? "" : String(bankId)}
+              onChange={e => setBankId(e.target.value === "" ? "" : Number(e.target.value))}
+              className={selectClassName}
+            >
+              <option value="">Default — undeposited / cash (GL 1010 / 1020)</option>
+              {depositBanks.map(b => (
+                <option key={b.id} value={b.id}>
+                  {formatBankRegisterLabel(b)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-method">
+                Method
+              </label>
+              <select
+                id="pos-collect-method"
+                value={paymentMethod}
+                onChange={e => setPaymentMethod(e.target.value)}
+                className={selectClassName}
+              >
+                <option value="cash">Cash</option>
+                <option value="bank_transfer">Bank transfer</option>
+                <option value="mobile_banking">Mobile banking</option>
+                <option value="check">Check</option>
+                <option value="card">Card</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-ref">
+                Reference (optional)
+              </label>
+              <input
+                id="pos-collect-ref"
+                type="text"
+                value={reference}
+                onChange={e => setReference(e.target.value)}
+                className={inputClassName}
+                placeholder="Txn #, ref…"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-memo">
+              Memo (optional)
+            </label>
+            <textarea
+              id="pos-collect-memo"
+              rows={2}
+              value={memo}
+              onChange={e => setMemo(e.target.value)}
+              className={inputClassName}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-sm font-medium text-foreground">Open invoices &amp; A/R</label>
+              {customerId && outstanding.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => collectOldestFirst()}
+                  className="text-sm font-medium text-primary underline underline-offset-2"
+                >
+                  Collect oldest first (invoices, then on-account)
+                </button>
+              ) : null}
+            </div>
+            {loadingInvoices ? (
+              <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading open amounts…
+              </div>
+            ) : !customerId ? (
+              <p className="rounded-lg border border-dashed border-border bg-muted/20 py-8 text-center text-sm text-muted-foreground">
+                Choose a customer to see unpaid invoices and on-account A/R.
+              </p>
+            ) : outstanding.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border bg-muted/20 py-8 text-center text-sm text-muted-foreground">
+                No open amount for this customer.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead className="border-b border-border bg-muted/50 text-left text-xs font-medium uppercase text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2">Invoice / line</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2 text-right">Balance due</th>
+                      <th className="px-3 py-2 text-right">Collect now</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {outstanding.map(inv => {
+                      const aid = allocInvoiceId(inv)
+                      return (
+                        <tr key={rowKey(inv)} className="border-b border-border/60 last:border-0">
+                          <td className="px-3 py-2 font-medium">
+                            {inv.invoice_number}
+                            {inv.synthetic ? (
+                              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                (A/R not on an invoice)
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">{inv.invoice_date}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {currencySymbol}
+                            {formatNumber(Number(inv.balance_due) || 0)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={allocations[aid] ?? 0}
+                              onChange={e => setAlloc(aid, parseFloat(e.target.value) || 0)}
+                              className={`${inputClassName} max-w-[7rem] text-right tabular-nums`}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {autoShiftId != null ? (
+            <label className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={linkToShift}
+                onChange={e => setLinkToShift(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-medium text-foreground">Link to open shift #{autoShiftId}</span>
+                <span className="ml-1 text-muted-foreground">
+                  When method is <strong>cash</strong>, adds to the shift&apos;s expected drawer.
+                </span>
+              </span>
+            </label>
+          ) : null}
+
+          <div className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total to collect</p>
+              <p className="text-2xl font-bold tabular-nums text-foreground">
+                {currencySymbol}
+                {formatNumber(totalAllocated)}
+              </p>
+            </div>
+            <button
+              type="submit"
+              disabled={submitting || totalAllocated <= 0 || !customerId}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Record payment
+            </button>
+          </div>
+        </form>
+      </section>
 
       {lastRecorded ? (
         <div

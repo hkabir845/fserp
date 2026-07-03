@@ -195,11 +195,24 @@ function makeIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+export type PaymentRecordedResult = {
+  id: number
+  payment_number?: string
+  payment_date?: string
+  payment_method?: string
+  amount?: string | number
+  customer_id?: number
+  reference_number?: string | null
+  reference?: string | null
+  memo?: string | null
+  deposit_status?: string
+}
+
 export interface PaymentReceivedFormProps {
   /** Compact styling for embedding inside the cashier card (no outer page chrome). */
   embedded?: boolean
-  /** Called after a payment is recorded (page: redirect; cashier: silent refresh). */
-  onSuccess?: () => void
+  /** Called after a payment is recorded (page: redirect; cashier: refresh list). */
+  onSuccess?: (payment?: PaymentRecordedResult) => void
   /** Prefill a customer on mount (e.g. from ?customer_id= on the full page). */
   initialCustomerId?: number | null
   /** Link a cash collection to the open shift drawer (cashier only). */
@@ -688,7 +701,7 @@ export function PaymentReceivedForm({
         if (embedded) {
           resetForm()
         }
-        onSuccess?.()
+        onSuccess?.(response.data as PaymentRecordedResult)
       }
     } catch (err: unknown) {
       const any = err as { response?: { data?: { detail?: string } }; message?: string }

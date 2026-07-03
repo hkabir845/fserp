@@ -48,7 +48,7 @@ import {
   X,
   XCircle,
 } from "lucide-react"
-import { PaymentReceivedForm } from "@/components/payments/PaymentReceivedForm"
+import { CashierDueCollection } from "./CashierDueCollection"
 import { CashierDonation } from "./CashierDonation"
 import { CashierPayBills } from "./CashierPayBills"
 
@@ -1680,13 +1680,8 @@ export default function CashierPOSPage() {
           </div>
 
           {posMode === "collect" ? (
-            <div className={`mx-auto w-full max-w-3xl ${scopeUi.shell}`}>
-              <PaymentReceivedForm
-                embedded
-                showShiftLink
-                cancelHref={null}
-                onSuccess={() => loadInitialData({ silent: true })}
-              />
+            <div className={`mx-auto w-full max-w-5xl ${scopeUi.shell}`}>
+              <CashierDueCollection onRecorded={() => loadInitialData({ silent: true })} />
             </div>
           ) : null}
 

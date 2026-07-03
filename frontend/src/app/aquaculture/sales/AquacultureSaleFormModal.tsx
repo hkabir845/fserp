@@ -523,7 +523,7 @@ export function AquacultureSaleFormModal({
         aria-modal="true"
         aria-labelledby="aq-sale-form-title"
       >
-      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+      <div className="flex max-h-[96vh] w-full max-w-[1440px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 to-card px-5 py-4 sm:px-6">
           <div>
             <h2 id="aq-sale-form-title" className="text-xl font-bold tracking-tight text-foreground">

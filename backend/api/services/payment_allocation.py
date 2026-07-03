@@ -96,16 +96,34 @@ def customer_uninvoiced_receivable(
     """
     if _is_walkin_customer(customer):
         return Decimal("0")
+
+    exclude_payment_id = exclude_payment.id if exclude_payment is not None else None
+    invoices = list(
+        Invoice.objects.filter(company_id=company_id, customer_id=customer.id)
+        .exclude(status="draft")
+        .only("id", "total", "status")
+    )
+    invoice_ids = [inv.id for inv in invoices]
+
+    paid_by_invoice: dict[int, Decimal] = {}
+    if invoice_ids:
+        alloc_qs = PaymentInvoiceAllocation.objects.filter(
+            invoice_id__in=invoice_ids,
+            payment__company_id=company_id,
+        )
+        if exclude_payment_id is not None:
+            alloc_qs = alloc_qs.exclude(payment_id=exclude_payment_id)
+        for row in alloc_qs.values("invoice_id").annotate(total=Sum("amount")):
+            paid_by_invoice[int(row["invoice_id"])] = row["total"] or Decimal("0")
+
     a = Decimal("0")
-    for inv in Invoice.objects.filter(
-        company_id=company_id, customer_id=customer.id
-    ).exclude(status="draft"):
-        if exclude_payment is not None:
-            a += invoice_balance_due_excluding_payment(
-                inv, company_id, exclude_payment.id
-            )
-        else:
-            a += invoice_balance_due(inv, company_id)
+    for inv in invoices:
+        if inv.status == "paid":
+            continue
+        total = inv.total or Decimal("0")
+        paid = paid_by_invoice.get(inv.id, Decimal("0"))
+        a += max(Decimal("0"), total - paid)
+
     cb = customer.current_balance or Decimal("0")
     if exclude_payment is not None and (exclude_payment.amount or 0) > 0:
         cb = cb + (exclude_payment.amount or Decimal("0"))

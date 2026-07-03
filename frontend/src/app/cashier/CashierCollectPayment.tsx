@@ -6,7 +6,7 @@ import api from "@/lib/api"
 import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
 import { useToast } from "@/components/Toast"
 import { formatNumber } from "@/utils/currency"
-import { Loader2, Wallet } from "lucide-react"
+import { Loader2, Wallet, CheckCircle } from "lucide-react"
 
 const inputClassName =
   "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -117,14 +117,13 @@ function makeIdempotencyKey(): string {
 }
 
 const COLLECT_PAYMENT_TIMEOUT_MS = 180_000
-const COLLECT_PAYMENT_VERIFY_TIMEOUT_MS = 45_000
-const COLLECT_PAYMENT_POLL_MS = 2_000
-// Short status poll per round, then a safe idempotent replay. Repeated over a few
-// rounds so a single "Record payment" click resolves to success on its own. This runs
-// in the background (see confirmInBackground), so the user already has feedback and the
-// bound is kept modest to avoid the button spinning for many minutes.
-const COLLECT_PAYMENT_POLL_ATTEMPTS = 3
-const COLLECT_PAYMENT_VERIFY_ROUNDS = 4
+const COLLECT_PAYMENT_VERIFY_TIMEOUT_MS = 30_000
+const COLLECT_PAYMENT_POLL_MS = 1_000
+// Poll immediately each round, then replay once if still not recorded.
+const COLLECT_PAYMENT_POLL_ATTEMPTS = 8
+const COLLECT_PAYMENT_VERIFY_ROUNDS = 3
+const PAYMENT_SUCCESS_TOAST_MS = 12_000
+const PAYMENT_SUCCESS_BANNER_MS = 5_000
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -159,7 +158,6 @@ async function verifyCollectPaymentRecorded(
 ): Promise<boolean> {
   for (let round = 0; round < COLLECT_PAYMENT_VERIFY_ROUNDS; round++) {
     for (let i = 0; i < COLLECT_PAYMENT_POLL_ATTEMPTS; i++) {
-      await sleep(COLLECT_PAYMENT_POLL_MS)
       try {
         const res = await api.get<{ recorded?: boolean }>(
           "/payments/received/idempotency-status/",
@@ -168,6 +166,9 @@ async function verifyCollectPaymentRecorded(
         if (res.data?.recorded === true) return true
       } catch {
         /* server may still be finishing the original request */
+      }
+      if (i < COLLECT_PAYMENT_POLL_ATTEMPTS - 1) {
+        await sleep(COLLECT_PAYMENT_POLL_MS)
       }
     }
     try {
@@ -221,6 +222,11 @@ export function CashierCollectPayment({
   // Set after a slow/dropped submit while we confirm the payment in the background,
   // without blocking the UI. Keeps the button disabled so the entry is not re-typed.
   const [confirming, setConfirming] = useState(false)
+  const [recordedSuccess, setRecordedSuccess] = useState<{
+    customerName: string
+    amount: number
+  } | null>(null)
+  const successClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [activeShift, setActiveShift] = useState<ActiveShift | null>(null)
   const [linkToShift, setLinkToShift] = useState(true)
   // Stable key for the current payment attempt: kept across retries so a repeat of a
@@ -321,19 +327,54 @@ export function CashierCollectPayment({
     setMemo("")
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (successClearTimerRef.current) {
+        clearTimeout(successClearTimerRef.current)
+      }
+    }
+  }, [])
+
+  const finishPaymentRecorded = useCallback(
+    async (opts: { customerName: string; amount: number; afterBackgroundConfirm?: boolean }) => {
+      const { customerName, amount, afterBackgroundConfirm } = opts
+      const detail =
+        customerName.trim().length > 0
+          ? `${currencySymbol}${formatNumber(amount)} received from ${customerName}`
+          : `${currencySymbol}${formatNumber(amount)} received`
+      const toastMsg = afterBackgroundConfirm
+        ? `Payment confirmed — ${detail}. Customer A/R updated.`
+        : `Payment recorded — ${detail}. Customer A/R updated.`
+      toast.success(toastMsg, PAYMENT_SUCCESS_TOAST_MS)
+      setRecordedSuccess({ customerName, amount })
+      await refreshSideTotals()
+      if (successClearTimerRef.current) {
+        clearTimeout(successClearTimerRef.current)
+      }
+      successClearTimerRef.current = setTimeout(() => {
+        clearAfterSuccessfulRecord()
+        setRecordedSuccess(null)
+        successClearTimerRef.current = null
+      }, PAYMENT_SUCCESS_BANNER_MS)
+    },
+    [toast, currencySymbol, refreshSideTotals, clearAfterSuccessfulRecord]
+  )
+
   // Confirm a slow/dropped payment without blocking the form. The user has already been
   // told to wait; here we quietly poll + safely replay (same Idempotency-Key, so no
   // double-charge). Only a confirmed success clears the form — otherwise the entry stays
   // so the user can retry. Runs to completion even if unmounted (fire-and-forget).
   const confirmInBackground = useCallback(
-    async (idempotencyKey: string, payload: Record<string, unknown>) => {
+    async (idempotencyKey: string, payload: Record<string, unknown>, customerName: string, amount: number) => {
       setConfirming(true)
       try {
         const recorded = await verifyCollectPaymentRecorded(idempotencyKey, payload)
         if (recorded) {
-          toast.success("Payment recorded — customer A/R updated.")
-          await refreshSideTotals()
-          clearAfterSuccessfulRecord()
+          await finishPaymentRecorded({
+            customerName,
+            amount,
+            afterBackgroundConfirm: true,
+          })
         } else {
           toast.error(
             "Could not confirm the payment automatically. Open the Payments list to check — if it is not there, record it again (safe to retry).",
@@ -341,12 +382,12 @@ export function CashierCollectPayment({
           )
         }
       } catch (err) {
-        toast.error(formatAxiosDetail(err))
+        toast.error(formatAxiosDetail(err), 10000)
       } finally {
         setConfirming(false)
       }
     },
-    [toast, refreshSideTotals, clearAfterSuccessfulRecord]
+    [toast, finishPaymentRecorded]
   )
 
   const totalDue = roundTwo(
@@ -406,22 +447,21 @@ export function CashierCollectPayment({
       payload.shift_session_id = activeShift.id
     }
 
+    const customerName =
+      customers.find(c => c.id === customerId)?.display_name?.trim() || "Customer"
+
     try {
       await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_TIMEOUT_MS)
-      toast.success("Payment recorded — customer A/R updated.")
-      await refreshSideTotals()
-      clearAfterSuccessfulRecord()
+      await finishPaymentRecorded({ customerName, amount: paymentAmount })
     } catch (err) {
       if (isNetworkOrTimeoutError(err)) {
-        // Immediate feedback, then confirm in the background so the UI never freezes and
-        // the entry is preserved. The same Idempotency-Key guarantees no double-charge.
         toast.warning(
           "Payment sent — confirming with the server. Please wait; do not re-enter it. This finishes on its own.",
-          6000
+          8000
         )
-        void confirmInBackground(idempotencyKey, payload)
+        void confirmInBackground(idempotencyKey, payload, customerName, paymentAmount)
       } else {
-        toast.error(formatAxiosDetail(err))
+        toast.error(formatAxiosDetail(err), 10000)
       }
     } finally {
       setSubmitting(false)
@@ -459,6 +499,34 @@ export function CashierCollectPayment({
           </div>
         )}
       </div>
+
+      {recordedSuccess ? (
+        <div
+          role="status"
+          className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100"
+        >
+          <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <div>
+            <p className="font-semibold">Payment recorded successfully</p>
+            <p className="mt-0.5 text-sm">
+              {currencySymbol}
+              {formatNumber(recordedSuccess.amount)}
+              {recordedSuccess.customerName ? ` from ${recordedSuccess.customerName}` : ""} — customer A/R
+              updated.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {confirming && !recordedSuccess ? (
+        <div
+          role="status"
+          className="mb-5 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          Confirming payment with the server… please wait; do not record again.
+        </div>
+      ) : null}
 
       <form onSubmit={e => void handleSubmit(e)} className="space-y-5" autoComplete="off">
         <div className="grid gap-4 sm:grid-cols-2">

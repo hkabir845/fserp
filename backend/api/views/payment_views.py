@@ -393,12 +393,22 @@ def _align_stored_receivable_before_receipt(company_id: int, customer_id: int) -
     c = (
         Customer.objects.filter(company_id=company_id, id=customer_id)
         .select_for_update()
+        .only("id", "current_balance", "opening_balance", "display_name")
         .first()
     )
     if not c or _is_walkin_customer(c):
         return
-    u = customer_uninvoiced_receivable(company_id, c)
     cb0 = c.current_balance or Decimal("0")
+    ob = c.opening_balance or Decimal("0")
+    # Pure prepayment (no opening A/R, no open invoice lines): align is a no-op.
+    if ob <= Decimal("0") and cb0 <= Decimal("0.01"):
+        has_open_invoices = Invoice.objects.filter(
+            company_id=company_id,
+            customer_id=customer_id,
+        ).exclude(status__in=("draft", "paid")).exists()
+        if not has_open_invoices:
+            return
+    u = customer_uninvoiced_receivable(company_id, c)
     if u > cb0 + Decimal("0.01"):
         Customer.objects.filter(pk=c.id).update(current_balance=u)
 

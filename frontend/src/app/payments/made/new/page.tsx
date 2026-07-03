@@ -634,7 +634,7 @@ function RecordPaymentMadeInner() {
           titleIcon={Banknote}
           eyebrow={pageMeta.eyebrow}
           description={pageMeta.description}
-          maxWidthClass="max-w-5xl"
+          maxWidthClass="max-w-[1600px]"
           contentClassName="mt-4"
         >
           <div className="rounded-2xl border border-border/80 bg-white p-6 shadow-sm">

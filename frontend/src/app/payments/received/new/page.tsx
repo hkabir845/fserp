@@ -30,7 +30,7 @@ function RecordPaymentReceivedInner() {
           titleIcon={Wallet}
           eyebrow={pageMeta.eyebrow}
           description={pageMeta.description}
-          maxWidthClass="max-w-5xl"
+          maxWidthClass="max-w-[1600px]"
           contentClassName="mt-4"
         >
           <PaymentReceivedForm

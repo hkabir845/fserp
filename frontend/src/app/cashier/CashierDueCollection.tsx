@@ -238,19 +238,13 @@ export function CashierDueCollection({
     setAllocations(next)
   }
 
-  const applyCashEntry = () => {
-    const amt = roundTwo(parseFloat(cashEntry) || 0)
-    if (amt <= 0) {
-      toast.error("Enter a cash amount to auto-fill.")
-      return
-    }
-    applyFifo(amt)
-    if (amt > totalOutstanding + 0.005) {
-      toast.error(
-        `Cash entered (${currencySymbol}${formatNumber(amt)}) exceeds open dues (${currencySymbol}${formatNumber(totalOutstanding)}). Filled up to the open balance.`
-      )
-    }
+  const handleCashEntryChange = (raw: string) => {
+    setCashEntry(raw)
+    applyFifo(roundTwo(parseFloat(raw) || 0))
   }
+
+  const cashEntryNum = roundTwo(parseFloat(cashEntry) || 0)
+  const cashEntryExceeds = cashEntryNum > totalOutstanding + 0.005
 
   const customerName = (cid: number) => {
     const c = customers.find(x => x.id === cid)
@@ -453,42 +447,27 @@ export function CashierDueCollection({
           {customerId && outstanding.length > 0 ? (
             <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
               <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-cash">
-                Cash entry — auto-fill dues (FIFO)
+                Cash entry — auto-fills dues (FIFO)
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    {currencySymbol}
-                  </span>
-                  <input
-                    id="pos-collect-cash"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={cashEntry}
-                    onChange={e => setCashEntry(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        applyCashEntry()
-                      }
-                    }}
-                    className={`${inputClassName} pl-7 tabular-nums`}
-                    placeholder="Enter amount received"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => applyCashEntry()}
-                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-primary/90 px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary"
-                >
-                  Auto-fill FIFO
-                </button>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  {currencySymbol}
+                </span>
+                <input
+                  id="pos-collect-cash"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={cashEntry}
+                  onChange={e => handleCashEntryChange(e.target.value)}
+                  className={`${inputClassName} pl-7 tabular-nums`}
+                  placeholder="Enter amount received"
+                />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Distributes the amount across oldest invoices first, then on-account A/R. Open dues:{" "}
-                {currencySymbol}
-                {formatNumber(totalOutstanding)}.
+              <p className={`text-xs ${cashEntryExceeds ? "text-destructive" : "text-muted-foreground"}`}>
+                {cashEntryExceeds
+                  ? `Amount exceeds open dues (${currencySymbol}${formatNumber(totalOutstanding)}) — filled up to the open balance.`
+                  : `As you type, the amount fills oldest invoices first, then on-account A/R. Open dues: ${currencySymbol}${formatNumber(totalOutstanding)}.`}
               </p>
             </div>
           ) : null}

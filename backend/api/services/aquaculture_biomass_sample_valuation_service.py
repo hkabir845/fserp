@@ -6,6 +6,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from api.models import AquacultureBiomassSample, AquacultureProductionCycle
+from api.utils.decimal_fields import fit_decimal
 from api.services.aquaculture_bio_asset_cost_service import lookup_bio_cost_per_kg
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_transfer_cost import pl_window_for_transfer_date
@@ -146,6 +147,21 @@ def apply_biomass_sample_valuation(sample: AquacultureBiomassSample) -> None:
         )
         _clear_valuation(sample)
         return
+    _field_limits = {
+        "market_value": (14, 2),
+        "book_bioasset_value": (14, 2),
+        "book_cost_per_kg": (14, 4),
+        "bioasset_margin": (14, 2),
+        "bioasset_margin_per_kg": (14, 4),
+        "biological_production_cost": (14, 2),
+        "full_cost_base": (14, 2),
+        "full_cycle_margin": (14, 2),
+        "full_cycle_margin_per_kg": (14, 4),
+    }
     for field in _VALUATION_FIELDS:
         raw = vals.get(field)
-        setattr(sample, field, Decimal(raw) if raw is not None else None)
+        if raw is None:
+            setattr(sample, field, None)
+            continue
+        max_digits, decimal_places = _field_limits[field]
+        setattr(sample, field, fit_decimal(Decimal(raw), max_digits, decimal_places))

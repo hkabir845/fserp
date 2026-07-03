@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from api.utils.decimal_fields import fit_decimal
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 
 
@@ -66,6 +67,14 @@ def apply_aquaculture_biomass_sample_extrapolation(sample) -> None:
     if tc <= 0:
         return
 
-    sample.extrapolated_biomass_kg = (sample_avg * Decimal(tc)).quantize(Decimal("0.0001"))
+    sample.extrapolated_biomass_kg = fit_decimal(
+        (sample_avg * Decimal(tc)).quantize(Decimal("0.0001")),
+        max_digits=14,
+        decimal_places=4,
+    )
     if ref_avg is not None:
-        sample.biomass_gain_kg = ((sample_avg - ref_avg) * Decimal(tc)).quantize(Decimal("0.0001"))
+        sample.biomass_gain_kg = fit_decimal(
+            ((sample_avg - ref_avg) * Decimal(tc)).quantize(Decimal("0.0001")),
+            max_digits=14,
+            decimal_places=4,
+        )

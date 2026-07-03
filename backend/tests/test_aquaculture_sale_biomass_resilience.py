@@ -83,3 +83,71 @@ def test_harvest_sale_saves_when_valuation_raises(
     sample = AquacultureBiomassSample.objects.get(source_fish_sale_id=sale.id)
     assert sample.market_value is None
     assert sample.estimated_fish_count == 5000
+
+
+@pytest.mark.django_db
+def test_harvest_sale_saves_when_biomass_sample_save_raises(
+    api_client, company_tenant, auth_admin_headers, monkeypatch
+):
+    """obj.save() after enrichment must not roll back the parent sale transaction."""
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    pond, cy = _seed_stocked_pond(company_tenant.id)
+
+    import api.models as models_mod
+
+    original_save = models_mod.AquacultureBiomassSample.save
+
+    def boom_save(self, *args, **kwargs):
+        if getattr(self, "extrapolated_biomass_kg", None) is not None:
+            raise RuntimeError("simulated DB persist failure on enriched sample")
+        return original_save(self, *args, **kwargs)
+
+    monkeypatch.setattr(models_mod.AquacultureBiomassSample, "save", boom_save)
+
+    payload = {
+        "pond_id": pond.id, "sale_date": "2026-04-02", "weight_kg": 50,
+        "total_amount": 25000, "income_type": "fish_harvest_sale",
+        "fish_species": "tilapia", "buyer_name": "Buyer", "memo": "x",
+        "production_cycle_id": cy.id, "fish_count": 5000,
+    }
+    r = api_client.post(
+        "/api/aquaculture/sales/", data=json.dumps(payload),
+        content_type="application/json", HTTP_X_COMPANY_ID=str(company_tenant.id),
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()[:1000]
+    assert AquacultureFishSale.objects.filter(pond_id=pond.id).count() == 1
+
+
+@pytest.mark.django_db
+def test_harvest_sale_saves_when_biomass_sync_entirely_raises(
+    api_client, company_tenant, auth_admin_headers, monkeypatch
+):
+    """Even update_or_create failures in biomass sync must not break the sale POST."""
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    pond, cy = _seed_stocked_pond(company_tenant.id)
+
+    def boom(*a, **k):
+        raise RuntimeError("simulated biomass sync catastrophe")
+
+    import api.models as models_mod
+
+    monkeypatch.setattr(models_mod.AquacultureBiomassSample.objects, "update_or_create", boom)
+
+    payload = {
+        "pond_id": pond.id, "sale_date": "2026-04-03", "weight_kg": 50,
+        "total_amount": 25000, "income_type": "fish_harvest_sale",
+        "fish_species": "tilapia", "buyer_name": "Buyer", "memo": "x",
+        "production_cycle_id": cy.id, "fish_count": 5000,
+    }
+    r = api_client.post(
+        "/api/aquaculture/sales/", data=json.dumps(payload),
+        content_type="application/json", HTTP_X_COMPANY_ID=str(company_tenant.id),
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()[:1000]
+    assert AquacultureFishSale.objects.filter(pond_id=pond.id).count() == 1

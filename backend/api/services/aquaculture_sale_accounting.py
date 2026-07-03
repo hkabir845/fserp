@@ -85,7 +85,9 @@ def finalize_aquaculture_fish_sale_to_invoice(
 
     with transaction.atomic():
         sale = (
-            AquacultureFishSale.objects.select_for_update()
+            # Lock only the sale row: production_cycle is a nullable FK, so select_related
+            # produces a LEFT OUTER JOIN and Postgres rejects FOR UPDATE on its nullable side.
+            AquacultureFishSale.objects.select_for_update(of=("self",))
             .select_related("pond", "production_cycle")
             .filter(pk=sale_id, company_id=company_id)
             .first()

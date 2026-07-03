@@ -1,12 +1,15 @@
 """Create/update/delete biomass sampling rows from fish harvest sales (kg + head count)."""
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
 from api.services.aquaculture_biomass_sample_valuation_service import apply_biomass_sample_valuation
 from api.services.tenant_reporting_categories import resolve_aquaculture_income_to_builtin
+
+logger = logging.getLogger(__name__)
 
 
 def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
@@ -55,6 +58,15 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
             "market_price_per_kg": market_price,
         },
     )
-    apply_aquaculture_biomass_sample_extrapolation(obj)
-    apply_biomass_sample_valuation(obj)
+    # Stock-reference extrapolation and market valuation are derived analytics snapshots
+    # (deep stock/P&L/bio-cost lookups). They must never break the underlying sale save —
+    # the base sample above is already persisted, so failures here are logged, not raised.
+    try:
+        apply_aquaculture_biomass_sample_extrapolation(obj)
+        apply_biomass_sample_valuation(obj)
+    except Exception:
+        logger.exception(
+            "Biomass enrichment failed for fish sale #%s; sample saved without full snapshot.",
+            sale.id,
+        )
     obj.save()

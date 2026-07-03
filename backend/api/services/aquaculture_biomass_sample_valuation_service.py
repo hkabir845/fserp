@@ -1,6 +1,7 @@
 """Market valuation and margin snapshots for biomass sampling rows."""
 from __future__ import annotations
 
+import logging
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -8,6 +9,8 @@ from api.models import AquacultureBiomassSample, AquacultureProductionCycle
 from api.services.aquaculture_bio_asset_cost_service import lookup_bio_cost_per_kg
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_transfer_cost import pl_window_for_transfer_date
+
+logger = logging.getLogger(__name__)
 
 _VALUATION_FIELDS = (
     "market_value",
@@ -52,6 +55,9 @@ def compute_biomass_sample_valuation_dict(
         return empty
 
     biomass_kg = _kg_price_q(Decimal(str(extrapolated_biomass_kg)))
+    # Guard: a tiny positive input can round to 0 at 4 dp and would divide-by-zero below.
+    if biomass_kg <= 0:
+        return empty
     market_price = _money_q(Decimal(str(market_price_per_kg)))
     market_value = _money_q(biomass_kg * market_price)
 
@@ -121,14 +127,25 @@ def apply_biomass_sample_valuation(sample: AquacultureBiomassSample) -> None:
         _clear_valuation(sample)
         return
 
-    vals = compute_biomass_sample_valuation_dict(
-        company_id=sample.company_id,
-        pond_id=sample.pond_id,
-        sample_date=sample.sample_date,
-        extrapolated_biomass_kg=sample.extrapolated_biomass_kg,
-        market_price_per_kg=sample.market_price_per_kg,
-        production_cycle=sample.production_cycle,
-    )
+    # Derived analytics snapshot: it must never break the caller (e.g. saving a fish sale).
+    # On any computation error, clear the snapshot and continue rather than raising.
+    try:
+        vals = compute_biomass_sample_valuation_dict(
+            company_id=sample.company_id,
+            pond_id=sample.pond_id,
+            sample_date=sample.sample_date,
+            extrapolated_biomass_kg=sample.extrapolated_biomass_kg,
+            market_price_per_kg=sample.market_price_per_kg,
+            production_cycle=sample.production_cycle,
+        )
+    except Exception:
+        logger.exception(
+            "Biomass valuation computation failed for sample #%s (pond %s); clearing snapshot.",
+            getattr(sample, "id", None),
+            getattr(sample, "pond_id", None),
+        )
+        _clear_valuation(sample)
+        return
     for field in _VALUATION_FIELDS:
         raw = vals.get(field)
         setattr(sample, field, Decimal(raw) if raw is not None else None)

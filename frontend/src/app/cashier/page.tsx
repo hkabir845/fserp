@@ -644,8 +644,11 @@ export default function CashierPOSPage() {
     return () => window.removeEventListener("keydown", onKey)
   }, [posMode, showInvoicePreview, printMenuOpen, showShortcuts, showCatalog])
 
-  const loadInitialData = async () => {
-    setLoading(true)
+  const loadInitialData = async (opts?: { silent?: boolean }) => {
+    // Background refreshes (e.g. after recording a payment) must NOT blank the whole POS
+    // with the loading spinner — that unmounts and wipes any in-progress form.
+    const silent = opts?.silent === true
+    if (!silent) setLoading(true)
     try {
       const token = localStorage.getItem("access_token")
       if (!token) {
@@ -812,7 +815,7 @@ export default function CashierPOSPage() {
       console.error("Error loading cashier data", error)
       toast.error("Unable to load POS data. Please try again.")
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -1682,7 +1685,7 @@ export default function CashierPOSPage() {
                 customers={customers}
                 currencySymbol={currencySymbol}
                 bankRegisters={bankRegisters}
-                onRecorded={() => loadInitialData()}
+                onRecorded={() => loadInitialData({ silent: true })}
               />
             </div>
           ) : null}
@@ -1693,7 +1696,7 @@ export default function CashierPOSPage() {
                 vendors={vendors}
                 currencySymbol={currencySymbol}
                 bankAccounts={bankRegisters}
-                onRecorded={() => loadInitialData()}
+                onRecorded={() => loadInitialData({ silent: true })}
               />
             </div>
           ) : null}
@@ -1703,7 +1706,7 @@ export default function CashierPOSPage() {
               <CashierDonation
                 currencySymbol={currencySymbol}
                 bankAccounts={bankRegisters}
-                onRecorded={() => loadInitialData()}
+                onRecorded={() => loadInitialData({ silent: true })}
               />
             </div>
           ) : null}

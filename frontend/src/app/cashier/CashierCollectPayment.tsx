@@ -119,10 +119,12 @@ function makeIdempotencyKey(): string {
 const COLLECT_PAYMENT_TIMEOUT_MS = 180_000
 const COLLECT_PAYMENT_VERIFY_TIMEOUT_MS = 45_000
 const COLLECT_PAYMENT_POLL_MS = 2_000
-// Short status poll per round, then a safe idempotent replay. Repeated over several
-// rounds so a single "Record payment" click always resolves to success on its own.
-const COLLECT_PAYMENT_POLL_ATTEMPTS = 5
-const COLLECT_PAYMENT_VERIFY_ROUNDS = 10
+// Short status poll per round, then a safe idempotent replay. Repeated over a few
+// rounds so a single "Record payment" click resolves to success on its own. This runs
+// in the background (see confirmInBackground), so the user already has feedback and the
+// bound is kept modest to avoid the button spinning for many minutes.
+const COLLECT_PAYMENT_POLL_ATTEMPTS = 3
+const COLLECT_PAYMENT_VERIFY_ROUNDS = 4
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -216,6 +218,9 @@ export function CashierCollectPayment({
   const [depositBankId, setDepositBankId] = useState<number | "">("")
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // Set after a slow/dropped submit while we confirm the payment in the background,
+  // without blocking the UI. Keeps the button disabled so the entry is not re-typed.
+  const [confirming, setConfirming] = useState(false)
   const [activeShift, setActiveShift] = useState<ActiveShift | null>(null)
   const [linkToShift, setLinkToShift] = useState(true)
   // Stable key for the current payment attempt: kept across retries so a repeat of a
@@ -316,6 +321,34 @@ export function CashierCollectPayment({
     setMemo("")
   }, [])
 
+  // Confirm a slow/dropped payment without blocking the form. The user has already been
+  // told to wait; here we quietly poll + safely replay (same Idempotency-Key, so no
+  // double-charge). Only a confirmed success clears the form — otherwise the entry stays
+  // so the user can retry. Runs to completion even if unmounted (fire-and-forget).
+  const confirmInBackground = useCallback(
+    async (idempotencyKey: string, payload: Record<string, unknown>) => {
+      setConfirming(true)
+      try {
+        const recorded = await verifyCollectPaymentRecorded(idempotencyKey, payload)
+        if (recorded) {
+          toast.success("Payment recorded — customer A/R updated.")
+          await refreshSideTotals()
+          clearAfterSuccessfulRecord()
+        } else {
+          toast.error(
+            "Could not confirm the payment automatically. Open the Payments list to check — if it is not there, record it again (safe to retry).",
+            10000
+          )
+        }
+      } catch (err) {
+        toast.error(formatAxiosDetail(err))
+      } finally {
+        setConfirming(false)
+      }
+    },
+    [toast, refreshSideTotals, clearAfterSuccessfulRecord]
+  )
+
   const totalDue = roundTwo(
     outstanding
       .filter(i => !isOnAccountRow(i))
@@ -380,26 +413,13 @@ export function CashierCollectPayment({
       clearAfterSuccessfulRecord()
     } catch (err) {
       if (isNetworkOrTimeoutError(err)) {
-        try {
-          const recorded = await verifyCollectPaymentRecorded(idempotencyKey, payload)
-          if (recorded) {
-            toast.success("Payment recorded — customer A/R updated.")
-            await refreshSideTotals()
-            clearAfterSuccessfulRecord()
-            return
-          }
-        } catch (verifyErr) {
-          await refreshSideTotals()
-          toast.error(formatAxiosDetail(verifyErr))
-          return
-        }
-        // Not confirmed yet. Refresh A/R so the row reflects reality, and let the user
-        // retry safely — the same idempotency key prevents any duplicate.
-        await refreshSideTotals()
+        // Immediate feedback, then confirm in the background so the UI never freezes and
+        // the entry is preserved. The same Idempotency-Key guarantees no double-charge.
         toast.warning(
-          "Still confirming this payment. Give it a few seconds, then click Record payment again — it will not double-charge.",
-          8000
+          "Payment sent — confirming with the server. Please wait; do not re-enter it. This finishes on its own.",
+          6000
         )
+        void confirmInBackground(idempotencyKey, payload)
       } else {
         toast.error(formatAxiosDetail(err))
       }
@@ -710,11 +730,11 @@ export function CashierCollectPayment({
           </div>
           <button
             type="submit"
-            disabled={submitting || paymentAmount <= 0 || !customerId}
+            disabled={submitting || confirming || paymentAmount <= 0 || !customerId}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-md transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Record payment
+            {submitting || confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {confirming ? "Confirming payment…" : "Record payment"}
           </button>
         </div>
       </form>

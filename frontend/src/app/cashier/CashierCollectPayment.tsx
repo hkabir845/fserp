@@ -119,7 +119,7 @@ function makeIdempotencyKey(): string {
 const COLLECT_PAYMENT_TIMEOUT_MS = 180_000
 const COLLECT_PAYMENT_VERIFY_TIMEOUT_MS = 45_000
 const COLLECT_PAYMENT_POLL_MS = 2_000
-const COLLECT_PAYMENT_POLL_ATTEMPTS = 6
+const COLLECT_PAYMENT_POLL_ATTEMPTS = 20
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -136,17 +136,16 @@ async function postCollectPayment(
   })
 }
 
-/** After a client timeout, confirm whether the server already committed this payment. */
+/**
+ * After a client timeout, confirm whether the server already committed this payment.
+ * Poll the cheap status endpoint first (a slow-but-successful create usually finishes
+ * within the poll window); only replay the create as a last resort. Replaying first
+ * would add a second heavy write that competes with the still-running original.
+ */
 async function verifyCollectPaymentRecorded(
   idempotencyKey: string,
   payload: Record<string, unknown>
 ): Promise<boolean> {
-  try {
-    await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_VERIFY_TIMEOUT_MS)
-    return true
-  } catch (err) {
-    if (!isNetworkOrTimeoutError(err)) throw err
-  }
   for (let i = 0; i < COLLECT_PAYMENT_POLL_ATTEMPTS; i++) {
     await sleep(COLLECT_PAYMENT_POLL_MS)
     try {
@@ -158,6 +157,14 @@ async function verifyCollectPaymentRecorded(
     } catch {
       /* server may still be finishing the original request */
     }
+  }
+  // Last resort: replay with the same key. If the original committed, this returns the
+  // existing payment immediately (no duplicate); otherwise it records it now.
+  try {
+    await postCollectPayment(payload, idempotencyKey, COLLECT_PAYMENT_VERIFY_TIMEOUT_MS)
+    return true
+  } catch (err) {
+    if (!isNetworkOrTimeoutError(err)) throw err
   }
   return false
 }
@@ -372,13 +379,17 @@ export function CashierCollectPayment({
             return
           }
         } catch (verifyErr) {
+          await refreshSideTotals()
           toast.error(formatAxiosDetail(verifyErr))
           return
         }
-        toast.error(
-          "Payment is taking longer than usual. Wait a few seconds, then click Record payment again — safe, no duplicate."
-        )
+        // Not confirmed yet. Refresh A/R so the row reflects reality, and let the user
+        // retry safely — the same idempotency key prevents any duplicate.
         await refreshSideTotals()
+        toast.warning(
+          "Still confirming this payment. Give it a few seconds, then click Record payment again — it will not double-charge.",
+          8000
+        )
       } else {
         toast.error(formatAxiosDetail(err))
       }

@@ -228,7 +228,7 @@ export function PondWarehouseInterPondModal(props: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4" role="dialog" aria-modal>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+      <div className="max-h-[96vh] w-full max-w-[1440px] overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-base font-semibold text-foreground">
             {editingTransfer ? `Edit ${editingTransfer.id ? `PWIP-${editingTransfer.id}` : 'transfer'}` : 'Move between pond warehouses'}

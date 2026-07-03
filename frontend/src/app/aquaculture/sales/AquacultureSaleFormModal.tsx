@@ -27,6 +27,10 @@ import {
 } from './aquacultureSaleShared'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
 import type { StockMetricsRow } from '@/app/aquaculture/aquacultureFishMetrics'
+import {
+  MODAL_BACKDROP,
+  MODAL_FORM_PANEL,
+} from '@/lib/modalLayout'
 import { ReportingCategorySelectOptions } from '@/lib/reportingCategorySelect'
 
 type Props = {
@@ -518,12 +522,12 @@ export function AquacultureSaleFormModal({
         ))}
       </datalist>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-3 sm:p-6"
+        className={MODAL_BACKDROP}
         role="dialog"
         aria-modal="true"
         aria-labelledby="aq-sale-form-title"
       >
-      <div className="flex max-h-[96vh] w-full max-w-[1440px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+      <div className={MODAL_FORM_PANEL}>
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 to-card px-5 py-4 sm:px-6">
           <div>
             <h2 id="aq-sale-form-title" className="text-xl font-bold tracking-tight text-foreground">

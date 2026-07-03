@@ -18,7 +18,7 @@ import {
   aquacultureExpenseEditAllowed,
   aquacultureExpenseEditBlockedReason,
 } from '@/lib/aquacultureExpensePolicy'
-import { aquacultureT } from '@/lib/aquacultureI18n'
+import { MODAL_FORM_SCROLL } from '@/lib/modalLayout'
 import { useT } from '@/lib/i18n'
 import {
   aquacultureExpenseRegisterRowKey,
@@ -1125,7 +1125,7 @@ export default function AquacultureExpensesPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+          <div className={MODAL_FORM_SCROLL}>
             <h2 className="text-lg font-semibold">{editing ? 'Edit expense' : 'New expense'}</h2>
             <div className="mt-4 space-y-3">
               <fieldset className="space-y-2 rounded-lg border border-border p-3">

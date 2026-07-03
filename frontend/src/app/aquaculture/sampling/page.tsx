@@ -16,6 +16,7 @@ import { loadLevelBadgeClass, type StockMetricsRow } from '../aquacultureFishMet
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { aquacultureT, type AdviceLanguage } from '@/lib/aquacultureI18n'
+import { MODAL_FORM_SCROLL } from '@/lib/modalLayout'
 import { useT } from '@/lib/i18n'
 
 interface Pond {
@@ -1045,7 +1046,7 @@ export default function AquacultureSamplingPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+          <div className={MODAL_FORM_SCROLL}>
             <h2 className="text-lg font-semibold text-foreground">
               {editing ? aquacultureT('editNetSample', lang) : aquacultureT('logSample', lang)}
             </h2>

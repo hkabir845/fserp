@@ -1080,7 +1080,7 @@ export default function CustomersPage() {
             {/* Create/Edit Modal */}
             {showModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-                <div className="bg-white rounded-lg app-modal-pad max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-xl my-8">
+                <div className="bg-white rounded-lg app-modal-pad max-w-[1440px] w-full max-h-[96vh] overflow-y-auto shadow-xl my-8">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-bold text-foreground">
                       {editingCustomer ? tr('editEntity', { entity: ct('Customer') }) : tr('addNewEntity', { entity: ct('Customer') })}

@@ -18,7 +18,7 @@ import api from '@/lib/api'
 import { useT, type I18nKey } from '@/lib/i18n'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { MODAL_BACKDROP, MODAL_FORM_PANEL } from '@/lib/modalLayout'
 
 interface Pond {
   id: number
@@ -779,12 +779,12 @@ export function AquacultureStockLedgerFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-3 sm:p-6"
+      className={MODAL_BACKDROP}
       role="dialog"
       aria-modal="true"
       aria-labelledby="aq-stock-ledger-form-title"
     >
-      <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+      <div className={MODAL_FORM_PANEL}>
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 to-card px-5 py-4 sm:px-6">
           <div className="min-w-0">
             <h2 id="aq-stock-ledger-form-title" className="text-xl font-bold tracking-tight text-foreground">

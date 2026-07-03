@@ -758,7 +758,7 @@ export default function FixedAssetsPage() {
 
         {showModal && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-xl max-w-[1440px] w-full max-h-[96vh] overflow-y-auto">
               <div className="flex items-center justify-between px-6 py-4 border-b">
                 <h2 className="text-xl font-semibold">{editing ? 'Edit asset' : 'New fixed asset'}</h2>
                 <button type="button" onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground/85">

@@ -1282,7 +1282,7 @@ export default function UsersPage() {
       {/* User Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[min(90vh,880px)] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[min(96vh,880px)] w-full max-w-[1440px] overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="sticky top-0 z-10 space-y-3 border-b border-white/15 bg-gradient-to-r from-slate-800 to-[hsl(var(--hero-from))] px-5 py-3 sm:px-6 sm:py-4">
               {isCreateWizard && (
                 <nav className="flex items-center justify-between gap-0.5 sm:gap-2" aria-label="Add user steps">

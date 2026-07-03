@@ -5,6 +5,7 @@ import { Loader2, Package, Plus, Trash2, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { MODAL_BACKDROP, MODAL_FORM_PANEL } from '@/lib/modalLayout'
 import {
   type AvailabilityResponse,
   type ItemAvailState,
@@ -357,7 +358,7 @@ export function PondWarehouseAddStockModal(props: {
       }}
     >
       <div
-        className="flex max-h-[min(92vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-white shadow-xl sm:rounded-2xl"
+        className={MODAL_FORM_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">

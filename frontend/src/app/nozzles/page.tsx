@@ -645,7 +645,7 @@ export default function NozzlesPage() {
         {/* Create/Edit Modal with Cascading Dropdowns */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-lg app-modal-pad max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg app-modal-pad max-w-[1440px] w-full my-8 max-h-[96vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold">{editingId ? 'Edit Nozzle' : 'Configure Nozzle'}</h2>
                 <button

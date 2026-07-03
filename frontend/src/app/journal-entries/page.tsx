@@ -1405,7 +1405,7 @@ export default function JournalEntriesPage() {
       {/* View Modal */}
       {showViewModal && viewingEntry && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-card rounded-lg app-modal-pad max-w-4xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-card rounded-lg app-modal-pad max-w-[1440px] w-full max-h-[96vh] overflow-y-auto my-8">
             <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
               <h2 className="text-2xl font-bold text-foreground">Journal Entry: {viewingEntry.entry_number}</h2>
               <div className="flex flex-wrap items-center gap-2">
@@ -1525,7 +1525,7 @@ export default function JournalEntriesPage() {
           {/* Create/Edit Modal */}
           {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-card rounded-lg app-modal-pad max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
+          <div className="bg-card rounded-lg app-modal-pad max-w-[1440px] w-full max-h-[96vh] overflow-y-auto my-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-foreground">
                 {editingEntry ? 'Edit Journal Entry' : 'New Journal Entry'}

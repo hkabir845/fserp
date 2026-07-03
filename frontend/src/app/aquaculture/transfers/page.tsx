@@ -13,7 +13,7 @@ import { formatNumber, getCurrencySymbol, roundToDecimals } from '@/utils/curren
 import { roundCountInputString, roundDecimalInputString } from '@/utils/inputDecimals'
 import { growOutPondsForTransfers, sameSiteGrowOutPond } from '@/lib/aquaculturePondSite'
 import { aquacultureT, aquacultureTFormat, nursingWorkflowSteps } from '@/lib/aquacultureI18n'
-import { useT } from '@/lib/i18n'
+import { MODAL_FORM_SCROLL } from '@/lib/modalLayout'
 import { usePageMeta } from '@/hooks/usePageMeta'
 
 const SAMPLE_STALE_DAYS = 30
@@ -1259,7 +1259,7 @@ export default function AquacultureFishTransfersPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+          <div className={MODAL_FORM_SCROLL}>
             <h2 className="text-lg font-semibold text-foreground">
               {editingId != null ? aquacultureT('editFishTransfer', lang) : aquacultureT('recordFishTransfer', lang)}
             </h2>

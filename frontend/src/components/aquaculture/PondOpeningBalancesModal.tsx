@@ -25,6 +25,7 @@ import { PondGoLiveOverview } from './PondGoLiveOverview'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { MODAL_BACKDROP, MODAL_FORM_PANEL } from '@/lib/modalLayout'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import {
@@ -453,12 +454,12 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-2 sm:p-4"
+      className={MODAL_BACKDROP}
       role="dialog"
       aria-modal="true"
       aria-labelledby="pond-opening-balances-title"
     >
-      <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border">
+      <div className={MODAL_FORM_PANEL}>
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border bg-gradient-to-r from-teal-50 via-white to-slate-50 px-4 py-4 sm:px-6">
           <div className="min-w-0">
             <h2 id="pond-opening-balances-title" className="text-xl font-bold tracking-tight text-foreground">

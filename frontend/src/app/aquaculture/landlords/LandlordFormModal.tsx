@@ -5,6 +5,7 @@ import { Droplets, Landmark, Plus, User, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { MODAL_BACKDROP, MODAL_FORM_PANEL } from '@/lib/modalLayout'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import {
   buildLandlordPayload,
@@ -119,12 +120,12 @@ export function LandlordFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      className={MODAL_BACKDROP}
       role="dialog"
       aria-modal="true"
       aria-labelledby="landlord-form-title"
     >
-      <div className="flex max-h-[min(92vh,880px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-white shadow-2xl sm:rounded-2xl">
+      <div className={MODAL_FORM_PANEL}>
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div>
             <h2 id="landlord-form-title" className="text-lg font-semibold text-foreground">

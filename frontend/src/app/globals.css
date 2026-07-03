@@ -462,11 +462,29 @@
   }
 
   .erp-modal-backdrop {
-    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4;
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-3 sm:p-6;
   }
 
+  /** Default modal panel — prefer size modifiers below for new code. */
   .erp-modal {
     @apply erp-surface app-modal-pad w-full max-h-[90vh] overflow-y-auto;
+  }
+
+  /** Large create/edit forms — same viewport as aquaculture sales listing (1440px). */
+  .erp-modal--form {
+    @apply flex max-h-[96vh] w-full max-w-[1440px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-border;
+  }
+
+  .erp-modal--form-scroll {
+    @apply erp-surface app-modal-pad w-full max-w-[1440px] max-h-[96vh] overflow-y-auto rounded-2xl shadow-2xl ring-1 ring-border;
+  }
+
+  .erp-modal--compact {
+    @apply erp-surface app-modal-pad w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl shadow-xl ring-1 ring-border;
+  }
+
+  .erp-modal--confirm {
+    @apply erp-surface app-modal-pad w-full max-w-md rounded-xl shadow-xl ring-1 ring-border;
   }
 
   .erp-btn-secondary {

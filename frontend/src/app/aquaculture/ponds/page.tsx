@@ -36,6 +36,7 @@ import { NURSING_WORKFLOW_STEPS } from '@/lib/aquaculturePondSite'
 import api from '@/lib/api'
 import { REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { MODAL_FORM_SCROLL } from '@/lib/modalLayout'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber } from '@/utils/currency'
 
@@ -1444,7 +1445,7 @@ export default function AquaculturePondsPage() {
       />
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+          <div className={MODAL_FORM_SCROLL}>
             <h2 className="text-lg font-semibold text-foreground">{editing ? 'Edit pond' : 'New pond'}</h2>
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-medium text-foreground/85">

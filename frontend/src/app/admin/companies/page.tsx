@@ -1646,7 +1646,7 @@ function CompaniesPageContent() {
           {/* Company View Modal - Simplified version */}
           {showCompanyViewModal && viewingCompany && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="bg-white rounded-xl shadow-2xl max-w-[1440px] w-full max-h-[96vh] overflow-y-auto">
                 <div className="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4 sticky top-0 z-10 flex items-center justify-between rounded-t-xl">
                   <h2 className="text-2xl font-bold text-white flex items-center space-x-2">
                     <Eye className="h-6 w-6" />

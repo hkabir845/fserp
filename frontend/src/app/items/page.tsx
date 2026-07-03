@@ -2355,7 +2355,7 @@ export default function ItemsPage() {
         {/* Create/Edit Modal */}
         {showModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
-            <div className="bg-white rounded-lg app-modal-pad max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg app-modal-pad max-w-[1440px] w-full max-h-[96vh] overflow-y-auto">
               <h2 className="mb-6 text-2xl font-bold text-foreground">
                 {editingId ? 'Edit Item' : 'Add New Item'}
               </h2>

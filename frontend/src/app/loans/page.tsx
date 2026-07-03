@@ -3157,7 +3157,7 @@ export default function LoansPage() {
             role="presentation"
           >
             <div
-              className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[min(90vh,44rem)] flex flex-col"
+              className="bg-white rounded-2xl shadow-xl max-w-[1440px] w-full max-h-[min(96vh,44rem)] flex flex-col"
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-modal="true"
@@ -3299,7 +3299,7 @@ export default function LoansPage() {
 
         {loanModalOpen && (
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center sm:p-6">
-            <div className="my-auto flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border/80 bg-white shadow-xl max-h-[min(92vh,56rem)]">
+            <div className="my-auto flex w-full max-w-[1440px] flex-col overflow-hidden rounded-2xl border border-border/80 bg-white shadow-xl max-h-[min(96vh,56rem)]">
               <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 bg-muted/50 px-5 py-4 sm:px-6">
                 <div className="min-w-0 pr-2">
                   <h2 className="text-lg font-semibold text-foreground">
@@ -3964,7 +3964,7 @@ export default function LoansPage() {
 
         {actionLoan && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-6 max-h-[92vh] overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-xl max-w-[1440px] w-full p-6 max-h-[96vh] overflow-y-auto">
               <div className="flex justify-between items-center mb-4">
                 <div>
                   <h2 className="text-lg font-semibold">{actionLoan.loan_no}</h2>
@@ -4626,7 +4626,7 @@ export default function LoansPage() {
 
         {statementLoan && (
           <div className="loan-statement-modal-backdrop fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4 print:p-6 print:bg-white print:items-start print:justify-start">
-            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col print:shadow-none print:max-h-none print:max-w-none print:w-full">
+            <div className="bg-white rounded-lg shadow-xl max-w-[1440px] w-full max-h-[96vh] flex flex-col print:shadow-none print:max-h-none print:max-w-none print:w-full">
               <div className="flex justify-between items-start gap-4 p-4 border-b border-border/70 print:hidden">
                 <div>
                   <h2 className="text-lg font-semibold flex items-center gap-2">

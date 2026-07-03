@@ -614,7 +614,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
         aria-label="Close dialog"
         onClick={onClose}
       />
-      <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
+      <div className="relative max-h-[96vh] w-full max-w-[1440px] overflow-y-auto rounded-xl border border-border bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-border/70 px-5 py-4">
           <h2 className="text-lg font-semibold text-foreground">Edit payment</h2>
           <div className="flex items-center gap-2">

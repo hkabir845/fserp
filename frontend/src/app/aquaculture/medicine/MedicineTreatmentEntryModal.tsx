@@ -6,6 +6,7 @@ import { Loader2, MapPin, Package, Stethoscope, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { formatStockUnit } from '@/lib/aquacultureMedicineUnits'
 import { formatNumber } from '@/utils/currency'
+import { MODAL_BACKDROP, MODAL_FORM_PANEL } from '@/lib/modalLayout'
 import {
   formatTreatmentWaterVolume,
   pondHasCalculableVolume,
@@ -127,14 +128,14 @@ export function MedicineTreatmentEntryModal(props: {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/45 p-0 sm:items-center sm:p-4"
+      className={MODAL_BACKDROP}
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-treatment-title"
       onClick={() => !medSaving && onClose()}
     >
       <div
-        className="flex max-h-[min(92vh,900px)] w-full max-w-3xl flex-col rounded-t-2xl border border-border bg-white shadow-2xl sm:rounded-2xl"
+        className={MODAL_FORM_PANEL}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 px-4 py-3 sm:px-5">

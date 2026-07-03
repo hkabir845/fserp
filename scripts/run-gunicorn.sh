@@ -17,15 +17,17 @@ fi
 # slow/queued calls (dashboards, lists, side-total refreshes) starve everything —
 # a payment POST then waits past the client timeout and users must click twice.
 # PostgreSQL + Django are thread-safe, so threads overlap I/O waits safely.
-WORKERS="${GUNICORN_WORKERS:-3}"
-THREADS="${GUNICORN_THREADS:-4}"
+# Keep --timeout well above any client request timeout so a slow request can still
+# finish and commit instead of being SIGKILLed mid-transaction.
+WORKERS="${GUNICORN_WORKERS:-4}"
+THREADS="${GUNICORN_THREADS:-8}"
 
 exec python -m gunicorn fsms.wsgi:application \
   --bind 127.0.0.1:8001 \
   --worker-class gthread \
   --workers "${WORKERS}" \
   --threads "${THREADS}" \
-  --timeout 180 \
-  --graceful-timeout 30 \
+  --timeout 300 \
+  --graceful-timeout 60 \
   --access-logfile - \
   --error-logfile -

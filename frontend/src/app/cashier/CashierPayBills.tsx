@@ -78,6 +78,7 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
   const [reference, setReference] = useState("")
   const [memo, setMemo] = useState("")
   const [bankId, setBankId] = useState<number | "">("")
+  const [cashEntry, setCashEntry] = useState("")
   const [loadingBills, setLoadingBills] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -91,8 +92,10 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
       setAllocations({})
       setMemo("")
       setReference("")
+      setCashEntry("")
       return
     }
+    setCashEntry("")
     const v = vendors.find(x => x.id === vendorId)
     if (v) {
       setMemo(`POS vendor payment — ${v.display_name}`)
@@ -133,11 +136,13 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
     setAllocations(prev => ({ ...prev, [billIdKey]: v }))
   }
 
-  const payAllOldestFirst = () => {
-    const totalBal = roundTwo(
-      outstanding.reduce((s, b) => s + (Number(b.balance_due) || 0), 0)
-    )
-    let left = totalBal
+  const totalOutstanding = roundTwo(
+    outstanding.reduce((s, b) => s + (Number(b.balance_due) || 0), 0)
+  )
+
+  /** Distribute a cash amount across open bills oldest-first (on-account line last). */
+  const applyFifo = (target: number) => {
+    let left = roundTwo(Math.max(0, target))
     const sorted = [...outstanding].sort((a, b) => {
       if (a.synthetic && !b.synthetic) return 1
       if (!a.synthetic && b.synthetic) return -1
@@ -151,11 +156,24 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
       if (left <= 0) break
       const bal = Number(bill.balance_due) || 0
       const take = roundTwo(Math.min(left, bal))
-      const aid = allocBillId(bill)
-      next[aid] = take
+      next[allocBillId(bill)] = take
       left = roundTwo(left - take)
     }
     setAllocations(next)
+  }
+
+  const applyCashEntry = () => {
+    const amt = roundTwo(parseFloat(cashEntry) || 0)
+    if (amt <= 0) {
+      toast.error("Enter a cash amount to auto-fill.")
+      return
+    }
+    applyFifo(amt)
+    if (amt > totalOutstanding + 0.005) {
+      toast.error(
+        `Cash entered (${currencySymbol}${formatNumber(amt)}) exceeds open bills (${currencySymbol}${formatNumber(totalOutstanding)}). Filled up to the open balance.`
+      )
+    }
   }
 
   const runAfterRecord = useCallback(async () => {
@@ -216,6 +234,7 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
       setReference("")
       setMemo("")
       setBankId("")
+      setCashEntry("")
       await runAfterRecord()
     } catch (err) {
       toast.error(formatAxiosDetail(err))
@@ -363,16 +382,59 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
           />
         </div>
 
+        {vendorId && outstanding.length > 0 ? (
+          <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
+            <label className="text-sm font-medium text-foreground" htmlFor="pos-pay-cash">
+              Cash entry — auto-fill bills (FIFO)
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  {currencySymbol}
+                </span>
+                <input
+                  id="pos-pay-cash"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={cashEntry}
+                  onChange={e => setCashEntry(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      applyCashEntry()
+                    }
+                  }}
+                  className={`${inputClassName} pl-7 tabular-nums`}
+                  placeholder="Enter amount to pay"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => applyCashEntry()}
+                className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-primary/90 px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary"
+              >
+                Auto-fill FIFO
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Distributes the amount across oldest bills first, then on-account A/P. Open bills:{" "}
+              {currencySymbol}
+              {formatNumber(totalOutstanding)}.
+            </p>
+          </div>
+        ) : null}
+
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-sm font-medium text-foreground">Open bills &amp; A/P</label>
             {vendorId && outstanding.length > 0 ? (
               <button
                 type="button"
-                onClick={() => payAllOldestFirst()}
+                onClick={() => applyFifo(totalOutstanding)}
                 className="text-sm font-medium text-primary underline underline-offset-2"
               >
-                Pay oldest first (bills, then on-account)
+                Pay all (oldest first)
               </button>
             ) : null}
           </div>

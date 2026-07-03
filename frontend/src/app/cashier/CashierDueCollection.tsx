@@ -116,6 +116,7 @@ export function CashierDueCollection({
   const [reference, setReference] = useState("")
   const [memo, setMemo] = useState("")
   const [bankId, setBankId] = useState<number | "">("")
+  const [cashEntry, setCashEntry] = useState("")
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -172,8 +173,10 @@ export function CashierDueCollection({
       setAllocations({})
       setMemo("")
       setReference("")
+      setCashEntry("")
       return
     }
+    setCashEntry("")
     const c = customers.find(x => x.id === customerId)
     if (c) setMemo(`POS collection — ${c.display_name}`)
     setLoadingInvoices(true)
@@ -211,11 +214,13 @@ export function CashierDueCollection({
     setAllocations(prev => ({ ...prev, [invIdKey]: v }))
   }
 
-  const collectOldestFirst = () => {
-    const totalBal = roundTwo(
-      outstanding.reduce((s, inv) => s + (Number(inv.balance_due) || 0), 0)
-    )
-    let left = totalBal
+  const totalOutstanding = roundTwo(
+    outstanding.reduce((s, inv) => s + (Number(inv.balance_due) || 0), 0)
+  )
+
+  /** Distribute a cash amount across open invoices oldest-first (on-account line last). */
+  const applyFifo = (target: number) => {
+    let left = roundTwo(Math.max(0, target))
     const sorted = [...outstanding].sort((a, b) => {
       if (a.synthetic && !b.synthetic) return 1
       if (!a.synthetic && b.synthetic) return -1
@@ -233,6 +238,20 @@ export function CashierDueCollection({
     setAllocations(next)
   }
 
+  const applyCashEntry = () => {
+    const amt = roundTwo(parseFloat(cashEntry) || 0)
+    if (amt <= 0) {
+      toast.error("Enter a cash amount to auto-fill.")
+      return
+    }
+    applyFifo(amt)
+    if (amt > totalOutstanding + 0.005) {
+      toast.error(
+        `Cash entered (${currencySymbol}${formatNumber(amt)}) exceeds open dues (${currencySymbol}${formatNumber(totalOutstanding)}). Filled up to the open balance.`
+      )
+    }
+  }
+
   const customerName = (cid: number) => {
     const c = customers.find(x => x.id === cid)
     return c?.display_name?.trim() || `Customer #${cid}`
@@ -245,6 +264,7 @@ export function CashierDueCollection({
     setReference("")
     setMemo("")
     setBankId("")
+    setCashEntry("")
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -314,7 +334,7 @@ export function CashierDueCollection({
               <HandCoins className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold tracking-tight text-foreground">Due collection (A/R)</h2>
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">Collect dues (A/R)</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Collect customer balances into a <strong>bank or cash</strong> register. The system posts:{" "}
                 <span className="whitespace-nowrap">Debit bank/cash, Credit A/R</span> — same as{" "}
@@ -430,16 +450,59 @@ export function CashierDueCollection({
             />
           </div>
 
+          {customerId && outstanding.length > 0 ? (
+            <div className="space-y-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-cash">
+                Cash entry — auto-fill dues (FIFO)
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    id="pos-collect-cash"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={cashEntry}
+                    onChange={e => setCashEntry(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        applyCashEntry()
+                      }
+                    }}
+                    className={`${inputClassName} pl-7 tabular-nums`}
+                    placeholder="Enter amount received"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => applyCashEntry()}
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-primary/90 px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary"
+                >
+                  Auto-fill FIFO
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Distributes the amount across oldest invoices first, then on-account A/R. Open dues:{" "}
+                {currencySymbol}
+                {formatNumber(totalOutstanding)}.
+              </p>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-sm font-medium text-foreground">Open invoices &amp; A/R</label>
               {customerId && outstanding.length > 0 ? (
                 <button
                   type="button"
-                  onClick={() => collectOldestFirst()}
+                  onClick={() => applyFifo(totalOutstanding)}
                   className="text-sm font-medium text-primary underline underline-offset-2"
                 >
-                  Collect oldest first (invoices, then on-account)
+                  Collect all (oldest first)
                 </button>
               ) : null}
             </div>

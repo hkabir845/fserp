@@ -1,6 +1,7 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
 
 type ToastType = 'success' | 'error' | 'warning' | 'info'
@@ -24,6 +25,10 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined)
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  // Toasts render into a body-level portal so no ancestor stacking context
+  // (transform/filter/sticky headers, modals) can paint over them.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id))
@@ -89,14 +94,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [showToast, success, error, warning, info]
   )
 
+  const toastLayer = (
+    <div className="pointer-events-none fixed left-0 right-0 top-0 z-[2147483647] space-y-2 p-3 pt-[max(1rem,env(safe-area-inset-top,0.75rem))] sm:left-auto sm:right-4 sm:max-w-md sm:pl-0 sm:pt-4">
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
+      ))}
+    </div>
+  )
+
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      <div className="pointer-events-none fixed left-0 right-0 top-0 z-[2147483647] space-y-2 p-3 pt-[max(1rem,env(safe-area-inset-top,0.75rem))] sm:left-auto sm:right-4 sm:max-w-md sm:pl-0 sm:pt-4">
-        {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
-        ))}
-      </div>
+      {mounted ? createPortal(toastLayer, document.body) : null}
     </ToastContext.Provider>
   )
 }

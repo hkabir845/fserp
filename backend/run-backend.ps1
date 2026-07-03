@@ -16,10 +16,8 @@ if (-not (Test-Path ".env") -and (Test-Path "env.example")) {
     Write-Host "Created backend/.env from env.example" -ForegroundColor Green
 }
 
-$env:FSERP_USE_SQLITE = "1"
-$env:DATABASE_URL = ""
-$env:DJANGO_CACHE_URL = ""
-$env:REDIS_URL = ""
+# Use DATABASE_URL from backend/.env (PostgreSQL). Do not force SQLite.
+Remove-Item Env:FSERP_USE_SQLITE -ErrorAction SilentlyContinue
 
 Write-Host "Starting Django on http://127.0.0.1:8000 ..." -ForegroundColor Green
 Write-Host "API docs: http://127.0.0.1:8000/api/docs/" -ForegroundColor Cyan

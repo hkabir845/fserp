@@ -104,8 +104,61 @@ def filter_json_transactions(transactions: list[dict[str, Any]], q: str) -> list
                 "other_account_name",
                 "other_account_code",
                 "station_name",
+                "source_label",
             )
         ).lower()
         if needle in hay:
             out.append(row)
     return out
+
+
+_STATEMENT_COLUMN_FIELDS: dict[str, tuple[str, ...]] = {
+    "date": ("date",),
+    "type": ("type", "debit", "credit"),
+    "reference": ("reference", "entry_number", "journal_entry_number"),
+    "description": ("description", "journal_description"),
+    "debit": ("debit", "debit_amount"),
+    "credit": ("credit", "credit_amount"),
+    "source": ("source_label", "source_type", "entry_number"),
+    "other_account": ("other_account_name", "other_account_code"),
+}
+
+
+def filter_json_transactions_by_column(
+    transactions: list[dict[str, Any]],
+    column: str,
+    value: str,
+) -> list[dict[str, Any]]:
+    """Filter statement rows where ``column`` contains ``value`` (case-insensitive)."""
+    col = (column or "").strip().lower()
+    needle = (value or "").strip().lower()
+    if not col or col == "all" or not needle:
+        return transactions
+    fields = _STATEMENT_COLUMN_FIELDS.get(col)
+    if not fields:
+        return transactions
+    out: list[dict[str, Any]] = []
+    for row in transactions:
+        hay = " ".join(str(row.get(k) or "") for k in fields).lower()
+        if needle in hay:
+            out.append(row)
+    return out
+
+
+def apply_json_transaction_filters(
+    transactions: list[dict[str, Any]],
+    request,
+    *,
+    q_param: str = "q",
+    filter_column_param: str = "filter_column",
+    filter_value_param: str = "filter_value",
+) -> list[dict[str, Any]]:
+    """Apply free-text ``q`` or column/value filters to in-memory statement rows."""
+    q = (request.GET.get(q_param) or "").strip()
+    if q:
+        return filter_json_transactions(transactions, q)
+    column = (request.GET.get(filter_column_param) or "").strip().lower()
+    value = (request.GET.get(filter_value_param) or "").strip()
+    if column and column != "all" and value:
+        return filter_json_transactions_by_column(transactions, column, value)
+    return transactions

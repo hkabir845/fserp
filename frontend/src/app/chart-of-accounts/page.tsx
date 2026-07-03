@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
@@ -110,6 +110,29 @@ interface StatementTransaction {
   contact_type?: 'customer' | 'vendor'
   contact_id?: number
   allocations?: StatementAllocation[]
+  /** Running balance from API (chronological order). */
+  balance?: number
+}
+
+const STATEMENT_FILTER_COLUMNS = [
+  { value: 'all', label: 'All columns' },
+  { value: 'date', label: 'Date' },
+  { value: 'type', label: 'Type' },
+  { value: 'reference', label: 'Entry / reference' },
+  { value: 'description', label: 'Description' },
+  { value: 'debit', label: 'Debit' },
+  { value: 'credit', label: 'Credit' },
+  { value: 'source', label: 'Source' },
+  { value: 'other_account', label: 'Offset account' },
+] as const
+
+function sortStatementTransactionsNewestFirst(transactions: StatementTransaction[]): StatementTransaction[] {
+  return [...transactions].sort((a, b) => {
+    const dateA = new Date(a.date).getTime()
+    const dateB = new Date(b.date).getTime()
+    if (dateB !== dateA) return dateB - dateA
+    return b.id - a.id
+  })
 }
 
 interface AccountStatement {
@@ -312,6 +335,7 @@ function mapStatementApiToView(
             contact_id: a.contact_id != null ? Number(a.contact_id) : undefined,
           }))
         : undefined,
+      balance: t.balance != null ? Number(t.balance) : undefined,
     }
   })
 
@@ -436,6 +460,9 @@ export default function ChartOfAccountsPage() {
   const [statementEndDate, setStatementEndDate] = useState<string>('')
   const [statementSearch, setStatementSearch] = useState<string>('')
   const [debouncedStatementSearch, setDebouncedStatementSearch] = useState<string>('')
+  const [statementFilterColumn, setStatementFilterColumn] = useState<string>('all')
+  const [statementFilterValue, setStatementFilterValue] = useState<string>('')
+  const [debouncedStatementFilterValue, setDebouncedStatementFilterValue] = useState<string>('')
   const [statementPeriodMode, setStatementPeriodMode] = useState<StatementPeriodMode>('range')
   const [statementPaymentDeletingId, setStatementPaymentDeletingId] = useState<number | null>(null)
   const [statementPayrollRemovingId, setStatementPayrollRemovingId] = useState<number | null>(null)
@@ -827,7 +854,21 @@ export default function ChartOfAccountsPage() {
     return () => clearTimeout(t)
   }, [statementSearch])
 
-  const hasStatementTextSearch = hasTransactionTextSearch({ q: debouncedStatementSearch })
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedStatementFilterValue(statementFilterValue.trim()), 350)
+    return () => clearTimeout(t)
+  }, [statementFilterValue])
+
+  const hasStatementTextSearch = hasTransactionTextSearch({
+    q: debouncedStatementSearch,
+    filterColumn: statementFilterColumn,
+    filterValue: debouncedStatementFilterValue,
+  })
+
+  const statementTransactionsNewestFirst = useMemo(
+    () => (statement ? sortStatementTransactionsNewestFirst(statement.transactions) : []),
+    [statement],
+  )
   
   const fetchStatement = async (accountId: number, periodMode = statementPeriodMode) => {
     try {
@@ -852,6 +893,14 @@ export default function ChartOfAccountsPage() {
         if (dates.end_date) params.append('end_date', dates.end_date)
       }
       if (debouncedStatementSearch) params.append('q', debouncedStatementSearch)
+      else if (
+        statementFilterColumn &&
+        statementFilterColumn !== 'all' &&
+        debouncedStatementFilterValue
+      ) {
+        params.append('filter_column', statementFilterColumn)
+        params.append('filter_value', debouncedStatementFilterValue)
+      }
       const reportStation =
         typeof window !== 'undefined'
           ? localStorage.getItem('fserp_report_station_id')?.trim()
@@ -959,7 +1008,7 @@ export default function ChartOfAccountsPage() {
   useEffect(() => {
     if (!showStatement || !statementAccountId) return
     void fetchStatementRef.current(statementAccountId)
-  }, [debouncedStatementSearch, showStatement, statementAccountId])
+  }, [debouncedStatementSearch, debouncedStatementFilterValue, statementFilterColumn, showStatement, statementAccountId])
   
   const handleStatementDateChange = async () => {
     if (statementAccountId) {
@@ -1961,20 +2010,46 @@ export default function ChartOfAccountsPage() {
                   </p>
                 )}
                 <div className="w-full min-w-[16rem] flex-1">
-                  <label className="mb-2 block text-sm font-medium text-foreground">Search</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
-                    <input
-                      type="search"
-                      value={statementSearch}
-                      onChange={(e) => setStatementSearch(e.target.value)}
-                      placeholder="Entry #, description, source…"
+                  <label className="mb-2 block text-sm font-medium text-foreground">Filter</label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={statementFilterColumn}
+                      onChange={(e) => setStatementFilterColumn(e.target.value)}
                       disabled={statementLoading}
-                      className="w-full rounded-lg border border-border py-2 pl-9 pr-3 focus:ring-2 focus:ring-ring"
-                    />
+                      className="min-w-[10rem] rounded-lg border border-border bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-ring"
+                    >
+                      {STATEMENT_FILTER_COLUMNS.map((col) => (
+                        <option key={col.value} value={col.value}>
+                          {col.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="relative min-w-[12rem] flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+                      <input
+                        type="search"
+                        value={
+                          statementFilterColumn === 'all' ? statementSearch : statementFilterValue
+                        }
+                        onChange={(e) => {
+                          if (statementFilterColumn === 'all') {
+                            setStatementSearch(e.target.value)
+                          } else {
+                            setStatementFilterValue(e.target.value)
+                          }
+                        }}
+                        placeholder={
+                          statementFilterColumn === 'all'
+                            ? 'Search all columns…'
+                            : `Filter ${STATEMENT_FILTER_COLUMNS.find((c) => c.value === statementFilterColumn)?.label ?? 'column'}…`
+                        }
+                        disabled={statementLoading}
+                        className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Search spans all dates — date range paused while searching
+                    Filter spans all dates — date range paused while a filter is active
                   </p>
                 </div>
               </div>
@@ -1983,7 +2058,9 @@ export default function ChartOfAccountsPage() {
                   <span className="text-muted-foreground">Period:</span>
                   <p className="font-semibold">
                     {hasStatementTextSearch
-                      ? `All dates (search: ${debouncedStatementSearch})`
+                      ? statementFilterColumn !== 'all' && debouncedStatementFilterValue
+                        ? `All dates (filter: ${STATEMENT_FILTER_COLUMNS.find((c) => c.value === statementFilterColumn)?.label ?? statementFilterColumn} = "${debouncedStatementFilterValue}")`
+                        : `All dates (search: ${debouncedStatementSearch})`
                       : formatStatementPeriodLabel(statement.period)}
                   </p>
                 </div>
@@ -2035,53 +2112,14 @@ export default function ChartOfAccountsPage() {
                   </tr>
 
                   {/* Transactions */}
-                  {statement.transactions.length === 0 ? (
+                  {statementTransactionsNewestFirst.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">
                         No transactions found for this period
                       </td>
                     </tr>
                   ) : (
-                    // Sort transactions by date ascending (oldest first) for statement display
-                    [...statement.transactions].sort((a, b) => {
-                      const dateA = new Date(a.date).getTime()
-                      const dateB = new Date(b.date).getTime()
-                      return dateA - dateB
-                    }).map((transaction, index) => {
-                      // Calculate running balance (from opening balance)
-                      let runningBalance = statement.opening_balance
-                      
-                      // Sort all transactions by date for balance calculation
-                      const sortedTransactions = [...statement.transactions].sort((a, b) => {
-                        const dateA = new Date(a.date).getTime()
-                        const dateB = new Date(b.date).getTime()
-                        return dateA - dateB
-                      })
-                      
-                      // Calculate balance up to current transaction
-                      for (let i = 0; i <= index; i++) {
-                        const txn = sortedTransactions[i]
-                        // Determine if this is an asset/expense account or liability/equity/income account
-                        const isAssetOrExpense = ['asset', 'expense', 'bank_account'].includes(
-                          statement.account.account_type.toLowerCase()
-                        )
-                        
-                        if (txn.type === 'Debit') {
-                          if (isAssetOrExpense) {
-                            runningBalance += txn.amount
-                          } else {
-                            runningBalance -= txn.amount
-                          }
-                        } else { // Credit
-                          if (isAssetOrExpense) {
-                            runningBalance -= txn.amount
-                          } else {
-                            runningBalance += txn.amount
-                          }
-                        }
-                      }
-                      
-                      return (
+                    statementTransactionsNewestFirst.map((transaction) => (
                         <tr key={transaction.id} className="hover:bg-muted/40">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                             {formatDateOnly(transaction.date)}
@@ -2218,7 +2256,9 @@ export default function ChartOfAccountsPage() {
                             }
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-foreground">
-                            {statement.account.currency} {formatNumber(Number(runningBalance))}
+                            {transaction.balance != null
+                              ? `${statement.account.currency} ${formatNumber(Number(transaction.balance))}`
+                              : '—'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                             {transaction.source_type === 'payment_received' ||
@@ -2281,8 +2321,7 @@ export default function ChartOfAccountsPage() {
                             )}
                           </td>
                         </tr>
-                      )
-                    })
+                    ))
                   )}
 
                   {/* Closing Balance Row */}

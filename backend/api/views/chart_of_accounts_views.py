@@ -11,7 +11,7 @@ from api.services.coa_constants import CHART_ACCOUNT_TYPES, normalize_chart_acco
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
 from api.models import BankAccount, ChartOfAccount, FundTransfer, JournalEntryLine, Payment
-from api.utils.transaction_filters import filter_json_transactions
+from api.utils.transaction_filters import apply_json_transaction_filters, request_has_text_search
 from api.services.journal_statement import (
     build_statement_transactions,
     enrich_statement_transaction_sources,
@@ -471,8 +471,9 @@ def chart_of_account_statement(request, account_id: int):
     if not a:
         return JsonResponse({"detail": "Account not found"}, status=404)
     q = (request.GET.get("q") or "").strip()
-    start_date = _parse_date(request.GET.get("start_date")) if not q else None
-    end_date = _parse_date(request.GET.get("end_date")) if not q else None
+    has_text_search = request_has_text_search(request)
+    start_date = _parse_date(request.GET.get("start_date")) if not has_text_search else None
+    end_date = _parse_date(request.GET.get("end_date")) if not has_text_search else None
     st_sid, st_err = parse_optional_company_station_id(request.GET, request.company_id)
     if st_err:
         return st_err
@@ -480,18 +481,23 @@ def chart_of_account_statement(request, account_id: int):
         a, start_date=start_date, end_date=end_date, station_id=st_sid
     )
     enrich_statement_transaction_sources(transactions, company_id=request.company_id)
-    if q:
-        transactions = filter_json_transactions(transactions, q)
+    transactions = apply_json_transaction_filters(transactions, request)
+    filter_column = (request.GET.get("filter_column") or "").strip().lower()
+    filter_value = (request.GET.get("filter_value") or "").strip()
     payload = {
         "account": _account_to_json(a, linked_banks=_linked_banks_payload(a)),
         "start_date": start_date.isoformat() if start_date else None,
         "end_date": end_date.isoformat() if end_date else None,
         "opening_balance": str(opening),
         "transactions": transactions,
-        "ending_balance": str(running if not q else (transactions[-1]["balance"] if transactions else opening)),
+        "ending_balance": str(running if not has_text_search else (transactions[-1]["balance"] if transactions else opening)),
     }
     if q:
         payload["search_q"] = q
+        payload["date_range_ignored"] = True
+    elif filter_column and filter_column != "all" and filter_value:
+        payload["filter_column"] = filter_column
+        payload["filter_value"] = filter_value
         payload["date_range_ignored"] = True
     if st_sid is not None:
         payload["filter_station_id"] = st_sid

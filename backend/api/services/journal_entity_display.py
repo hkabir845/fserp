@@ -101,7 +101,7 @@ def _payment_pond_labels_from_allocations(company_id: int, entry: JournalEntry) 
 
     m = _PAY_RCV.match(en)
     if m:
-        from api.models import Invoice, PaymentInvoiceAllocation
+        from api.models import InvoiceLine, PaymentInvoiceAllocation
 
         pay_id = int(m.group(1))
         inv_ids = list(
@@ -115,10 +115,12 @@ def _payment_pond_labels_from_allocations(company_id: int, entry: JournalEntry) 
         )
         if not inv_ids:
             return []
+        # Invoice has no pond field; the pond tag lives on invoice lines
+        # (mirrors the BillLine path used for vendor payments above).
         pond_ids = set(
-            Invoice.objects.filter(
-                pk__in=inv_ids,
-                company_id=company_id,
+            InvoiceLine.objects.filter(
+                invoice_id__in=inv_ids,
+                invoice__company_id=company_id,
             )
             .exclude(aquaculture_pond_id__isnull=True)
             .values_list("aquaculture_pond_id", flat=True)

@@ -159,3 +159,96 @@ def test_payment_made_journal_site_shows_pond_from_bill_allocation(
     assert r.status_code == 200
     body = json.loads(r.content.decode())
     assert body["station_name"] == "Ashari - 1"
+
+
+@pytest.mark.django_db
+def test_payment_received_journal_site_shows_pond_from_invoice_allocation(
+    api_client, company_tenant, auth_admin_headers
+):
+    """
+    Regression: the received-payment (AUTO-PAY-*-RCV) branch inferred the pond from
+    Invoice.aquaculture_pond_id, a field that only exists on InvoiceLine. Viewing the
+    journal entry for such a payment raised FieldError -> HTTP 500. The pond tag lives on
+    invoice lines, so the Site label must resolve without error.
+    """
+    from api.models import (
+        AquaculturePond,
+        ChartOfAccount,
+        Customer,
+        Invoice,
+        InvoiceLine,
+        JournalEntry,
+        JournalEntryLine,
+        Payment,
+        PaymentInvoiceAllocation,
+        Station,
+    )
+
+    cid = company_tenant.id
+    shop = Station.objects.create(
+        company_id=cid, station_name="Premium Agro", operates_fuel_retail=False, is_active=True
+    )
+    pond = AquaculturePond.objects.create(company_id=cid, name="Boro - 2", is_active=True)
+    cust = Customer.objects.create(
+        company_id=cid, display_name="Fish Buyer", current_balance=Decimal("0")
+    )
+    inv = Invoice.objects.create(
+        company_id=cid,
+        customer_id=cust.id,
+        station_id=shop.id,
+        invoice_number="INV-RCV-1",
+        invoice_date="2025-06-03",
+        status="sent",
+        subtotal=Decimal("5000.00"),
+        tax_total=Decimal("0"),
+        total=Decimal("5000.00"),
+    )
+    InvoiceLine.objects.create(
+        invoice_id=inv.id,
+        description="Fish sale",
+        quantity=Decimal("1"),
+        unit_price=Decimal("5000.00"),
+        amount=Decimal("5000.00"),
+        aquaculture_pond_id=pond.id,
+    )
+    payment = Payment.objects.create(
+        company_id=cid,
+        customer_id=cust.id,
+        payment_type="received",
+        payment_date="2025-06-03",
+        amount=Decimal("5000.00"),
+        station_id=shop.id,
+    )
+    PaymentInvoiceAllocation.objects.create(
+        payment_id=payment.id, invoice_id=inv.id, amount=Decimal("5000.00")
+    )
+
+    ar = ChartOfAccount.objects.create(
+        company_id=cid, account_code="1100", account_name="AR",
+        account_type="asset", is_active=True,
+    )
+    cash = ChartOfAccount.objects.create(
+        company_id=cid, account_code="1010", account_name="Cash",
+        account_type="asset", is_active=True,
+    )
+    je = JournalEntry.objects.create(
+        company_id=cid,
+        entry_number=f"AUTO-PAY-{payment.id}-RCV",
+        entry_date="2025-06-03",
+        description=f"Payment received #{payment.id}",
+        station_id=shop.id,
+        is_posted=True,
+    )
+    # No pond tag on the JE lines, so the Site label must be inferred from the
+    # invoice allocation (the previously-broken path).
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=cash, debit=Decimal("5000.00"), credit=Decimal("0"), station_id=shop.id
+    )
+    JournalEntryLine.objects.create(
+        journal_entry=je, account=ar, debit=Decimal("0"), credit=Decimal("5000.00"), station_id=shop.id
+    )
+
+    r = api_client.get(f"/api/journal-entries/{je.id}/", **auth_admin_headers)
+    assert r.status_code == 200
+    body = json.loads(r.content.decode())
+    assert body["station_name"] == "Boro - 2"

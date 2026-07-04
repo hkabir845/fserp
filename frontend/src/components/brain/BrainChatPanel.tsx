@@ -10,6 +10,7 @@ import { hasStoredSession } from '@/lib/authSession'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Mic, MicOff, Send } from 'lucide-react'
 import { useSpeechRecognition, type SpeechVoiceLang } from '@/hooks/useSpeechRecognition'
+import { BrainMarkdown } from '@/components/brain/BrainMarkdown'
 
 export type BrainSource = {
   kind?: string
@@ -168,8 +169,8 @@ function AssistantBubble({
   const suggestedActions = structured.suggested_actions || []
 
   return (
-    <div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-border bg-white px-4 py-3 shadow-sm">
-      <p className="whitespace-pre-wrap text-sm text-foreground leading-relaxed">{message.content}</p>
+    <div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-border bg-white px-4 py-3.5 shadow-sm">
+      <BrainMarkdown content={message.content} />
       {structured.confidence && (
         <p className="mt-2 text-xs text-muted-foreground">
           {labels.confidence}: {structured.confidence}

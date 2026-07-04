@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
-import api from '@/lib/api'
+import api, { fetchCurrentCompany } from '@/lib/api'
 import { aquacultureT } from '@/lib/aquacultureI18n'
 import { isAquacultureNavUnlocked } from '@/navigation/erpAppMenu'
 import { ShieldAlert } from 'lucide-react'
@@ -46,7 +46,7 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
     const { role, permissions } = readSessionRoleAndPermissions()
     const isSuperAdmin = role === 'super_admin'
     try {
-      const { data } = await api.get<Record<string, unknown>>('/companies/current/')
+      const data = await fetchCurrentCompany()
       const aq = Boolean(data?.aquaculture_enabled)
       setEnabled(aq)
       setNavUnlocked(isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, aq))

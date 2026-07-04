@@ -3,6 +3,7 @@
  * SSR-safe: All browser API access is guarded
  */
 import axios from 'axios'
+import { isAccessTokenExpired, readStoredAccessToken } from '@/lib/authSession'
 
 /**
  * Canonical API base (.../api). Set `NEXT_PUBLIC_API_BASE_URL` in `frontend/.env` (production) or
@@ -170,6 +171,7 @@ export function clearAuthStorage(): void {
     localStorage.removeItem('superadmin_selected_company')
     localStorage.removeItem('fserp_report_station_id')
     localStorage.removeItem(FSERP_AUTH_API_ORIGIN_KEY)
+    invalidateCurrentCompanyCache()
   } catch {
     /* ignore */
   }
@@ -232,6 +234,87 @@ function appendDjangoTrailingSlash(url: string | undefined): string | undefined 
 
 /** One shared refresh so parallel 401s (dashboard + broadcasts) do not race each other. */
 let refreshInFlight: Promise<string | null> | null = null
+let loginRedirectStarted = false
+
+function redirectToLoginIfNeeded(): void {
+  if (typeof window === 'undefined') return
+  if (loginRedirectStarted) return
+  const path = window.location?.pathname || ''
+  if (path.startsWith('/login')) return
+  loginRedirectStarted = true
+  const next = path && path !== '/' ? `?next=${encodeURIComponent(path)}` : ''
+  window.location.assign(`/login${next}`)
+}
+
+/** True for expired session / auth errors — UI should not toast; interceptor redirects. */
+export function isApiSessionError(error: unknown): boolean {
+  if (axios.isCancel(error)) return true
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status
+    return status === 401 || status === 403
+  }
+  return false
+}
+
+function isPublicAuthUrl(url: string | undefined): boolean {
+  const u = (url || '').toLowerCase()
+  return u.includes('/auth/login') || u.includes('/auth/refresh')
+}
+
+/** Refresh access token if expired; returns usable token or null (session cleared). */
+export async function ensureAccessTokenFresh(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+  let token = readStoredAccessToken()
+  if (!token) return null
+  if (!isAccessTokenExpired(token)) return token
+  const refreshed = await fetchNewAccessToken()
+  if (refreshed) return refreshed
+  try {
+    clearAuthStorage()
+  } catch {
+    /* ignore */
+  }
+  redirectToLoginIfNeeded()
+  return null
+}
+
+export type CurrentCompanyPayload = Record<string, unknown>
+
+let currentCompanyInflight: Promise<CurrentCompanyPayload> | null = null
+let currentCompanyCache: { data: CurrentCompanyPayload; at: number } | null = null
+const CURRENT_COMPANY_CACHE_MS = 45_000
+
+export function invalidateCurrentCompanyCache(): void {
+  currentCompanyCache = null
+  currentCompanyInflight = null
+}
+
+/** Deduped + short-lived cache for GET /companies/current/. */
+export async function fetchCurrentCompany(options?: { force?: boolean }): Promise<CurrentCompanyPayload> {
+  const force = options?.force === true
+  const now = Date.now()
+  if (!force && currentCompanyCache && now - currentCompanyCache.at < CURRENT_COMPANY_CACHE_MS) {
+    return currentCompanyCache.data
+  }
+  if (currentCompanyInflight) return currentCompanyInflight
+
+  currentCompanyInflight = (async () => {
+    const token = await ensureAccessTokenFresh()
+    if (!token) throw new axios.Cancel('Not authenticated')
+    const res = await api.get<CurrentCompanyPayload>('/companies/current/')
+    currentCompanyCache = { data: res.data, at: Date.now() }
+    return res.data
+  })()
+
+  try {
+    return await currentCompanyInflight
+  } catch (e) {
+    currentCompanyCache = null
+    throw e
+  } finally {
+    currentCompanyInflight = null
+  }
+}
 
 function fetchNewAccessToken(): Promise<string | null> {
   if (typeof window === 'undefined') return Promise.resolve(null)
@@ -250,6 +333,7 @@ function fetchNewAccessToken(): Promise<string | null> {
       if (!access) return null
       const trimmed = String(access).trim()
       localStorage.setItem('access_token', trimmed)
+      setAuthApiOriginStamp()
       return trimmed
     } catch {
       try {
@@ -329,7 +413,7 @@ export function isTenantAdminRole(role: unknown): boolean {
 
 // Request interceptor to add auth token, tenant subdomain, and ensure trailing slashes for list endpoints
 api.interceptors.request.use(
-  (config) => {
+  async (config) => {
     // CRITICAL: Return immediately if on server-side
     if (typeof window === 'undefined') {
       return config
@@ -340,13 +424,28 @@ api.interceptors.request.use(
       // Resolve API host on each request so it always matches current window + env (important after deploy).
       config.baseURL = getApiBaseUrl()
 
-      // Add auth token
+      // Proactive refresh — avoids 401 spam when access token just expired
       try {
-        const token = localStorage.getItem('access_token')?.trim()
-        if (token) {
+        const reqUrl = String(config.url || '')
+        if (!isPublicAuthUrl(reqUrl)) {
+          let token = readStoredAccessToken()
+          if (!token) {
+            return Promise.reject(new axios.Cancel('Not authenticated'))
+          }
+          if (isAccessTokenExpired(token)) {
+            token = (await fetchNewAccessToken()) || ''
+            if (!token) {
+              clearAuthStorage()
+              redirectToLoginIfNeeded()
+              return Promise.reject(new axios.Cancel('Session expired'))
+            }
+          }
           config.headers.Authorization = `Bearer ${token}`
         }
       } catch (e) {
+        if (axios.isCancel(e)) {
+          return Promise.reject(e)
+        }
         // localStorage not available
       }
       
@@ -471,11 +570,13 @@ api.interceptors.response.use(
         } catch {
           /* ignore */
         }
-        const path = window.location?.pathname || ''
-        if (!path.startsWith('/login')) {
-          window.location.assign('/login')
-        }
+        redirectToLoginIfNeeded()
       }
+    }
+
+    // Suppress noisy Cancel from proactive session expiry
+    if (axios.isCancel(error)) {
+      return Promise.reject(error)
     }
 
     // Log 403 errors for debugging

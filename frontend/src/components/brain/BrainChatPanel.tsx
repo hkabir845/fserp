@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { useToast } from '@/components/Toast'
-import api from '@/lib/api'
+import api, { fetchCurrentCompany, isApiSessionError } from '@/lib/api'
+import { hasStoredSession } from '@/lib/authSession'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Mic, MicOff, Send } from 'lucide-react'
 import { useSpeechRecognition, type SpeechVoiceLang } from '@/hooks/useSpeechRecognition'
@@ -290,7 +291,9 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
         try {
           cid = await startConversation()
         } catch (e) {
-          toast.error(extractErrorMessage(e))
+          if (!isApiSessionError(e)) {
+            toast.error(extractErrorMessage(e))
+          }
           return
         }
       }
@@ -318,7 +321,9 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
         setUsage(res.data.usage)
       } catch (e) {
         setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
-        toast.error(extractErrorMessage(e))
+        if (!isApiSessionError(e)) {
+          toast.error(extractErrorMessage(e))
+        }
       } finally {
         setLoading(false)
       }
@@ -327,12 +332,18 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
   )
 
   useEffect(() => {
+    if (!hasStoredSession()) {
+      setBootstrapping(false)
+      return
+    }
     ;(async () => {
       try {
         await loadStatus()
         await startConversation()
       } catch (e) {
-        toast.error(extractErrorMessage(e))
+        if (!isApiSessionError(e)) {
+          toast.error(extractErrorMessage(e))
+        }
       } finally {
         setBootstrapping(false)
       }

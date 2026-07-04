@@ -367,6 +367,9 @@ export function initConsoleErrorFilter(): void {
 
     // Check string arguments
     if (typeof arg === 'string') {
+      if (/401 \(Unauthorized\)|status of 401|companies\/current.*401/i.test(arg)) {
+        return true
+      }
       if (CHROME_ASYNC_MESSAGE_CHANNEL_NOISE.test(arg)) return true
       // Filter connection errors (including browser network error messages)
       if (/Cannot connect to server|ERR_CONNECTION_REFUSED|ERR_NETWORK|Failed to load resource|Failed to fetch.*(?:localhost:8000|api\.mahasoftcorporation\.com)|Network Error|Backend server connection error|Please ensure.*server.*running|GET.*(?:localhost:8000|api\.mahasoftcorporation\.com).*ERR_CONNECTION_REFUSED|POST.*(?:localhost:8000|api\.mahasoftcorporation\.com).*ERR_CONNECTION_REFUSED|PUT.*(?:localhost:8000|api\.mahasoftcorporation\.com).*ERR_CONNECTION_REFUSED|DELETE.*(?:localhost:8000|api\.mahasoftcorporation\.com).*ERR_CONNECTION_REFUSED|PATCH.*(?:localhost:8000|api\.mahasoftcorporation\.com).*ERR_CONNECTION_REFUSED|net::ERR_CONNECTION_REFUSED|GET http:\/\/(?:localhost:8000|api\.mahasoftcorporation\.com)|POST http:\/\/(?:localhost:8000|api\.mahasoftcorporation\.com)|PUT http:\/\/(?:localhost:8000|api\.mahasoftcorporation\.com)|DELETE http:\/\/(?:localhost:8000|api\.mahasoftcorporation\.com)|PATCH http:\/\/(?:localhost:8000|api\.mahasoftcorporation\.com)|https:\/\/api\.mahasoftcorporation\.com\/api\/.*ERR_CONNECTION_REFUSED|https:\/\/api\.mahasoftcorporation\.com\/api\/.*Failed to load|:\d+\/api\/.*ERR_CONNECTION_REFUSED|:\d+\/api\/.*Failed to load/i.test(arg)) {

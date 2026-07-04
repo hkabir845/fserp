@@ -8,7 +8,7 @@ import { performLogout } from '@/components/LogoutButton'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useSidebarNav } from '@/contexts/SidebarNavContext'
 import CompanySwitcher from '@/components/CompanySwitcher'
-import api from '@/lib/api'
+import api, { fetchCurrentCompany } from '@/lib/api'
 import { safeLogError } from '@/utils/connectionError'
 import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
 import { useCenterActiveListItem } from '@/hooks/useCenterActiveListItem'
@@ -219,14 +219,13 @@ export default function Sidebar() {
       return
     }
     let cancelled = false
-    api
-      .get('/companies/current/')
-      .then((res) => {
-        if (cancelled || !res.data?.name) return
+    fetchCurrentCompany()
+      .then((data) => {
+        if (cancelled || !data?.name) return
         setScopeCompanyLabel({
-          name: res.data.name,
-          isMaster: res.data.is_master === 'true',
-          id: typeof res.data.id === 'number' ? res.data.id : null,
+          name: String(data.name),
+          isMaster: data.is_master === 'true',
+          id: typeof data.id === 'number' ? data.id : null,
         })
       })
       .catch(() => {

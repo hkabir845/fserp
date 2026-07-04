@@ -167,18 +167,8 @@ def brain_conversation_message(request, conversation_id: int):
     if not ok:
         return JsonResponse({"detail": limit_msg, "usage": brain_plans.usage_status(company)}, status=429)
 
-    try:
-        with transaction.atomic():
-            assistant = brain_chat.append_user_and_assistant(conv, text, company=company)
-    except Exception as exc:
-        logger.exception("Brain message failed company=%s conv=%s", company.id, conv.id)
-        return JsonResponse(
-            {
-                "detail": "Brain could not answer right now. Please try again in a moment.",
-                "error": str(exc)[:500],
-            },
-            status=500,
-        )
+    with transaction.atomic():
+        assistant = brain_chat.append_user_and_assistant_resilient(conv, text, company=company)
 
     user_msg = (
         BrainMessage.objects.filter(conversation=conv, role=BrainMessage.ROLE_USER)

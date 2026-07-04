@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Building2, Crown, Shield } from 'lucide-react'
 import { useCompany } from '@/contexts/CompanyContext'
-import api, { isSuperAdminRole, isTenantAdminRole } from '@/lib/api'
+import api, { fetchCurrentCompany, isSuperAdminRole, isTenantAdminRole } from '@/lib/api'
 import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { safeLogError } from '@/utils/connectionError'
 
@@ -147,7 +147,7 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
     setLoading(true)
     const role = readUserRole()
     try {
-      const { data } = await api.get<CurrentCompanyResponse>('/companies/current/')
+      const data = await fetchCurrentCompany()
       const cid = data?.id
       if (cid == null || typeof cid !== 'number') {
         setFetchError('Could not load company context.')

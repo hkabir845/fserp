@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import api from '@/lib/api'
+import api, { fetchCurrentCompany } from '@/lib/api'
 import { useCompany } from '@/contexts/CompanyContext'
 import { isConnectionError, safeLogError } from '@/utils/connectionError'
 import { resolveActiveNavHref } from '@/utils/navPath'
@@ -119,7 +119,7 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
         return
       }
       try {
-        const { data } = await api.get<Record<string, unknown>>('/companies/current/')
+        const data = await fetchCurrentCompany()
         setAquacultureEnabled(Boolean(data?.aquaculture_enabled))
       } catch {
         setAquacultureEnabled(false)

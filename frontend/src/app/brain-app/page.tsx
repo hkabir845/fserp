@@ -6,12 +6,14 @@ import Link from 'next/link'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { BrainChatPanel, brainUiLabels } from '@/components/brain/BrainChatPanel'
+import { fetchCurrentCompany } from '@/lib/api'
+import { hasStoredSession, readStoredAccessToken } from '@/lib/authSession'
 import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
 import { Brain, LayoutGrid, LogOut } from 'lucide-react'
 
 function BrainAppHeader() {
   const router = useRouter()
-  const { selectedCompany } = useCompany()
+  const { selectedCompany, setSelectedCompany } = useCompany()
   const companyName = selectedCompany?.name || 'Company Brain'
 
   const handleLogout = () => {
@@ -57,17 +59,37 @@ function BrainAppContent() {
   const router = useRouter()
   const [ready, setReady] = useState(false)
   const { language } = useCompanyLocale()
+  const { setSelectedCompany } = useCompany()
   const labels = brainUiLabels(language === 'bn' ? 'bn' : 'en')
 
   useEffect(() => {
     registerPwaServiceWorker()
-    const token = localStorage.getItem('access_token')?.trim()
-    if (!token || token === 'undefined' || token === 'null') {
+    const token = readStoredAccessToken()
+    if (!token || !hasStoredSession()) {
       router.replace('/login?next=/brain-app')
       return
     }
-    setReady(true)
-  }, [router])
+    ;(async () => {
+      try {
+        const data = await fetchCurrentCompany()
+        const id = data?.id
+        const name = String(data?.name || '').trim()
+        if (typeof id === 'number' && name) {
+          setSelectedCompany({
+            id,
+            name,
+            is_master:
+              data.is_master === true || String(data.is_master || '').toLowerCase() === 'true'
+                ? 'true'
+                : 'false',
+          })
+        }
+        setReady(true)
+      } catch {
+        router.replace('/login?next=/brain-app')
+      }
+    })()
+  }, [router, setSelectedCompany])
 
   if (!ready) {
     return (

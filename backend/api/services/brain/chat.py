@@ -425,3 +425,44 @@ def append_user_and_assistant(
     else:
         conversation.save(update_fields=["updated_at"])
     return assistant
+
+
+def append_user_and_assistant_resilient(
+    conversation: BrainConversation,
+    user_text: str,
+    *,
+    company: Company,
+) -> BrainMessage:
+    """Never raise — always returns an assistant message row."""
+    try:
+        return append_user_and_assistant(conversation, user_text, company=company)
+    except Exception:
+        logger.exception("Brain append failed company=%s conv=%s", company.id, conversation.id)
+        structured, model_id = _emergency_response(company, user_text)
+        try:
+            if not BrainMessage.objects.filter(
+                conversation=conversation,
+                role=BrainMessage.ROLE_USER,
+                content=user_text.strip(),
+            ).exists():
+                BrainMessage.objects.create(
+                    conversation=conversation,
+                    role=BrainMessage.ROLE_USER,
+                    content=user_text.strip(),
+                    structured={},
+                )
+        except Exception:
+            pass
+        assistant = BrainMessage.objects.create(
+            conversation=conversation,
+            role=BrainMessage.ROLE_ASSISTANT,
+            content=(structured.get("answer_bn") or "").strip(),
+            structured=structured,
+            model_used=model_id,
+        )
+        if not conversation.title:
+            conversation.title = user_text.strip()[:120]
+            conversation.save(update_fields=["title", "updated_at"])
+        else:
+            conversation.save(update_fields=["updated_at"])
+        return assistant

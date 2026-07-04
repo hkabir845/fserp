@@ -1,6 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { invalidateCurrentCompanyCache } from '@/lib/api'
 
 interface Company {
   id: number | null
@@ -77,6 +78,7 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
       const nextId = company?.id ?? null
       if (mounted && typeof window !== 'undefined' && prevId !== nextId) {
         try {
+          invalidateCurrentCompanyCache()
           localStorage.removeItem('fserp_report_station_id')
           localStorage.removeItem('fserp_preferred_print_station_id')
         } catch (error) {

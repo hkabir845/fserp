@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-import api from '@/lib/api'
+import { fetchCurrentCompany, invalidateCurrentCompanyCache } from '@/lib/api'
+import { hasStoredSession } from '@/lib/authSession'
 import { useCompany } from '@/contexts/CompanyContext'
 import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 import {
@@ -38,19 +39,13 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
         return
       }
       const token = localStorage.getItem('access_token')?.trim()
-      if (!token) {
+      if (!token || !hasStoredSession()) {
         setTenantLocaleConfig(null)
         if (!cancelled) setCtx(initialCtx)
         return
       }
       try {
-        const { data } = await api.get<{
-          date_format?: string
-          time_format?: string
-          time_zone?: string
-          station_mode?: string
-          language?: string
-        }>('/companies/current/')
+        const data = await fetchCurrentCompany()
         if (cancelled) return
         const sm = String(data?.station_mode ?? 'single').toLowerCase()
         const langRaw = String(data?.language ?? 'en').toLowerCase()
@@ -80,7 +75,23 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
     }
     /** Same-tab refresh after /company saves date/time/currency (no full reload). */
     const onCompanySettingsSaved = () => {
-      load()
+      invalidateCurrentCompanyCache()
+      void fetchCurrentCompany({ force: true }).then((data) => {
+        if (cancelled) return
+        const sm = String(data?.station_mode ?? 'single').toLowerCase()
+        const langRaw = String(data?.language ?? 'en').toLowerCase()
+        const next: TenantLocaleConfig = {
+          dateFormat: String(data?.date_format || '').trim() || DEFAULT_COMPANY_DATE_FORMAT,
+          timeFormat: String(data?.time_format || '').trim() || DEFAULT_COMPANY_TIME_FORMAT,
+          timeZone: (String(data?.time_zone || DEFAULT_COMPANY_TIME_ZONE).trim()) || DEFAULT_COMPANY_TIME_ZONE,
+          stationMode: sm === 'single' ? 'single' : 'multi',
+          language: langRaw === 'bn' ? 'bn' : 'en',
+        }
+        setTenantLocaleConfig(next)
+        setCtx(next)
+      }).catch(() => {
+        if (!cancelled) load()
+      })
     }
     window.addEventListener('storage', onStorage)
     window.addEventListener('fserp-company-settings-saved', onCompanySettingsSaved)

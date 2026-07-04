@@ -498,6 +498,21 @@ def build_company_knowledge_snapshot(company_id: int, *, lang: str = "bn") -> di
     Whole-application business snapshot — loaded on every Brain question so the owner
     can ask anything without us guessing intents first.
     """
+    try:
+        return _build_company_knowledge_snapshot_body(company_id, lang=lang)
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Brain build_company_knowledge_snapshot failed company=%s: %s", company_id, exc
+        )
+        return {
+            "partial": True,
+            "error_note": "Full snapshot unavailable; using overview only.",
+        }
+
+
+def _build_company_knowledge_snapshot_body(company_id: int, *, lang: str = "bn") -> dict[str, Any]:
     today = timezone.localdate()
     month_start = today.replace(day=1)
     fin = entity_financials(company_id, start=month_start, end=today)

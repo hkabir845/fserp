@@ -2,16 +2,29 @@
 
 export type SpeechVoiceLang = 'bn' | 'en'
 
+/** Minimal Web Speech API shape — DOM lib does not ship SpeechRecognition in all TS configs. */
+type BrowserSpeechRecognition = {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  maxAlternatives: number
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+type SpeechRecognitionCtor = new () => BrowserSpeechRecognition
+
 export function isSecureVoiceContext(): boolean {
   if (typeof window === 'undefined') return false
   return window.isSecureContext === true
 }
 
-export function getSpeechRecognitionCtor(): (new () => SpeechRecognition) | null {
+export function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === 'undefined') return null
   const w = window as Window & {
-    SpeechRecognition?: new () => SpeechRecognition
-    webkitSpeechRecognition?: new () => SpeechRecognition
+    SpeechRecognition?: SpeechRecognitionCtor
+    webkitSpeechRecognition?: SpeechRecognitionCtor
   }
   return w.SpeechRecognition || w.webkitSpeechRecognition || null
 }

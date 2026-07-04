@@ -165,7 +165,7 @@ export function useSpeechRecognition({
     langIndexRef.current = 0
     finalBufferRef.current = ''
 
-    const recognition = new Ctor()
+    const recognition = new Ctor() as SpeechRecognitionInstance
     recognition.lang = candidates[0]
     recognition.continuous = isTouchDevice()
     recognition.interimResults = true

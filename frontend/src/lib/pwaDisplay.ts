@@ -86,6 +86,14 @@ export function applyBrainPwaDocumentHead(): void {
   ensureLink('manifest', BRAIN_MANIFEST_URL)
   ensureLink('apple-touch-icon', '/brain-app/icon-192.png')
 
+  // Root layout adds FS ERP manifest — remove so Brain PWA is installable on this page.
+  document.querySelectorAll('link[rel="manifest"]').forEach((node) => {
+    const link = node as HTMLLinkElement
+    if (!link.hasAttribute('data-brain-pwa')) {
+      link.remove()
+    }
+  })
+
   const ensureMeta = (name: string, content: string) => {
     const selector = `meta[name="${name}"][data-brain-pwa="1"]`
     let el = document.querySelector<HTMLMetaElement>(selector)

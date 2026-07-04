@@ -21,7 +21,7 @@ function BrainAppHeader() {
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
-    router.replace('/login?next=/brain-app')
+    router.replace('/brain-app/login')
   }
 
   return (
@@ -67,7 +67,7 @@ function BrainAppContent() {
     registerPwaServiceWorker()
     const token = readStoredAccessToken()
     if (!token || !hasStoredSession()) {
-      router.replace('/login?next=/brain-app')
+      router.replace('/brain-app/login')
       return
     }
     ;(async () => {
@@ -87,7 +87,7 @@ function BrainAppContent() {
         }
         setReady(true)
       } catch {
-        router.replace('/login?next=/brain-app')
+        router.replace('/brain-app/login')
       }
     })()
   }, [router, setSelectedCompany])

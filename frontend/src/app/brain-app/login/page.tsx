@@ -3,10 +3,10 @@
 import { Suspense } from 'react'
 import { LoginPageInner } from '@/components/auth/LoginPageInner'
 
-export default function LoginPage() {
+export default function BrainAppLoginPage() {
   return (
     <Suspense fallback={null}>
-      <LoginPageInner />
+      <LoginPageInner variant="brain" />
     </Suspense>
   )
 }

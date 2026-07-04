@@ -56,8 +56,10 @@ const COPY = {
 
 type Props = {
   language?: 'en' | 'bn'
-  /** Login flow — install button appears after login on /brain-app. */
+  /** @deprecated use /brain-app/login instead */
   onLoginScreen?: boolean
+  /** Show install steps immediately (Brain login landing). */
+  defaultExpanded?: boolean
 }
 
 function modeSteps(mode: InstallUiMode, t: (typeof COPY)[keyof typeof COPY]): string {
@@ -77,11 +79,15 @@ function modeSteps(mode: InstallUiMode, t: (typeof COPY)[keyof typeof COPY]): st
   }
 }
 
-export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }: Props) {
+export function BrainAppInstallPrompt({
+  language = 'bn',
+  onLoginScreen = false,
+  defaultExpanded = false,
+}: Props) {
   const t = COPY[language]
   const [mounted, setMounted] = useState(false)
   const [dismissed, setDismissed] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [mode, setMode] = useState<InstallUiMode>('generic')
   const [justInstalled, setJustInstalled] = useState(false)
@@ -94,13 +100,10 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
       /* ignore */
     }
 
-    if (!onLoginScreen) {
-      applyBrainPwaDocumentHead()
-    }
+    applyBrainPwaDocumentHead()
     registerPwaServiceWorker()
 
     const onBeforeInstall = (e: Event) => {
-      if (onLoginScreen) return
       e.preventDefault()
       setInstallPrompt(e as BeforeInstallPromptEvent)
       setMode('chromium_prompt')
@@ -117,24 +120,21 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
     window.addEventListener('appinstalled', onInstalled)
-
-    if (!onLoginScreen) {
-      setMode((m) => (m === 'chromium_prompt' ? m : detectInstallUiMode(false)))
-    }
+    setMode(detectInstallUiMode(false))
 
     return () => {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall)
       window.removeEventListener('appinstalled', onInstalled)
     }
-  }, [onLoginScreen])
+  }, [])
 
   useEffect(() => {
     if (installPrompt) {
       setMode('chromium_prompt')
-    } else if (mounted && !onLoginScreen) {
+    } else if (mounted) {
       setMode((m) => (m === 'chromium_prompt' ? detectInstallUiMode(false) : m))
     }
-  }, [installPrompt, mounted, onLoginScreen])
+  }, [installPrompt, mounted])
 
   const dismiss = useCallback(() => {
     try {
@@ -162,9 +162,10 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
 
   if (!mounted || dismissed || isStandaloneDisplay()) return null
 
-  const canOneClickInstall = !onLoginScreen && mode === 'chromium_prompt' && installPrompt !== null
-  const steps = modeSteps(onLoginScreen ? 'generic' : mode, t)
+  const canOneClickInstall = mode === 'chromium_prompt' && installPrompt !== null
+  const steps = modeSteps(mode, t)
   const isDesktop = mode === 'desktop_manual'
+  const showSteps = expanded || defaultExpanded || !canOneClickInstall
 
   return (
     <div
@@ -193,7 +194,7 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
           {onLoginScreen ? (
             <p className="mt-1.5 text-xs text-indigo-800/90">{t.afterLogin}</p>
           ) : null}
-          {(expanded || onLoginScreen || (!canOneClickInstall && mode !== 'chromium_prompt')) && (
+          {showSteps && (
             <div className="mt-2 space-y-1.5 text-xs leading-relaxed text-indigo-900/90">
               {mode === 'in_app' ? (
                 <p className="rounded-md bg-amber-50 px-2 py-1.5 text-amber-950">{t.inApp}</p>
@@ -204,7 +205,7 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
                 ) : (
                   <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                 )}
-                {onLoginScreen ? `${t.ios} ${t.android} ${t.desktop}` : steps}
+                {steps}
               </p>
             </div>
           )}
@@ -234,7 +235,7 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
         ) : (
           <button
             type="button"
-            onClick={() => (onLoginScreen ? setExpanded((o) => !o) : void handleInstall())}
+            onClick={() => (canOneClickInstall ? void handleInstall() : setExpanded((o) => !o))}
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
           >
             <Download className="h-3.5 w-3.5" aria-hidden />

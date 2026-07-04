@@ -137,6 +137,16 @@ const nextConfig = {
       },
     ]
   },
+  async redirects() {
+    return [
+      {
+        source: '/login',
+        has: [{ type: 'query', key: 'next', value: '/brain-app' }],
+        destination: '/brain-app/login',
+        permanent: false,
+      },
+    ]
+  },
 }
 
 // Webpack dev compiles on this app can exceed the default chunk script timeout on Windows.

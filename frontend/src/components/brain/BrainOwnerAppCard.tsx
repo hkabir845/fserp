@@ -47,8 +47,8 @@ export function BrainOwnerAppCard({ language = 'bn' }: { language?: 'en' | 'bn' 
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
 
   const brainAppUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '/brain-app'
-    return `${window.location.origin}/brain-app`
+    if (typeof window === 'undefined') return '/brain-app/login'
+    return `${window.location.origin}/brain-app/login`
   }, [])
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function BrainOwnerAppCard({ language = 'bn' }: { language?: 'en' | 'bn' 
 
       <div className="mt-4 flex flex-wrap gap-2">
         <Link
-          href="/brain-app"
+          href="/brain-app/login"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"

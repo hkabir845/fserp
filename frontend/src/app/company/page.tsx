@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
+import { BrainOwnerAppCard } from '@/components/brain/BrainOwnerAppCard'
 import {
   Building2,
   Calendar,
@@ -300,6 +301,8 @@ export default function CompanyPage() {
               </p>
             </div>
           ) : (
+            <div className="space-y-8">
+              <BrainOwnerAppCard language={formData.language} />
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
               <aside className="lg:col-span-4">
                 <div className="sticky top-6 overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
@@ -767,6 +770,7 @@ export default function CompanyPage() {
                   </div>
                 </section>
               </div>
+            </div>
             </div>
           )}
       </ErpPageShell>

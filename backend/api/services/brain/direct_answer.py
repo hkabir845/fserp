@@ -9,9 +9,66 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
     Build a structured answer when ERP data is sufficient.
     Returns None if LLM should synthesize instead.
     """
-    intents = context.get("intents") or set()
+    raw_intents = context.get("intents") or []
+    intents: set[str] = set(raw_intents) if not isinstance(raw_intents, set) else raw_intents
     steps: list[str] = []
     parts: list[str] = []
+
+    if "greeting" in intents:
+        company = context.get("company") or {}
+        name = company.get("company_name") or "আপনার কোম্পানি"
+        entities = company.get("entities") or {}
+        stations = entities.get("stations_count", 0)
+        ponds = entities.get("ponds_count", 0)
+        staff = entities.get("employees_active", 0)
+        answer = (
+            f"নমস্কার! আমি **{name}**-এর কোম্পানি ব্রেইন। "
+            f"স্টেশন {stations}, পোন্ড {ponds}, সক্রিয় কর্মচারী {staff} জন। "
+            "বাংলা, বাংলিশ বা ইংরেজিতে যেকোনো প্রশ্ন করুন — আমি বাংলায় উত্তর দেব। "
+            "বিক্রি, লাভ, পোন্ড, কর্মচারী, সাধারণ কথোপকথন — সবই চলবে।"
+        )
+        return {
+            "answer_bn": answer,
+            "reasoning_steps_bn": ["সাধারণ অভিবাদন — ERP ওভারভিউ দিয়ে সংক্ষিপ্ত পরিচয়।"],
+            "confidence": "high",
+            "sources": [],
+            "missing_inputs": [],
+            "suggested_actions": [],
+        }
+
+    if "chat" in intents:
+        company = context.get("company") or {}
+        name = company.get("company_name") or "আপনার কোম্পানি"
+        q = (context.get("user_question") or "").lower()
+        if any(k in q for k in ("thank", "thanks", "dhonnobad", "ধন্যবাদ", "thnx")):
+            answer = "আপনাকে স্বাগতম! আর কিছু জানতে চাইলে বলুন — ব্যবসা বা সাধারণ যেকোনো বিষয়ে।"
+        elif any(k in q for k in ("who are you", "tumi ke", "apni ke", "তুমি কে", "আপনি কে", "ki jinis")):
+            answer = (
+                f"আমি **{name}**-এর কোম্পানি ব্রেইন — আপনার ব্যবসার AI সহকারী। "
+                "ERP ডেটা দিয়ে বিক্রি, লাভ, পোন্ড, কর্মী সম্পর্কে সরাসরি উত্তর দিতে পারি; "
+                "পাশাপাশি ChatGPT-এর মতো সাধারণ কথোপকথনও করতে পারি। সব উত্তর বাংলায়।"
+            )
+        elif any(k in q for k in ("help", "ki korte paro", "korte paro", "কী করতে পার", "সাহায্য")):
+            answer = (
+                "আমি পারি:\n"
+                "• ব্যবসার প্রশ্ন — বিক্রি, লাভ, খরচ, পোন্ড FCR, কর্মচারী\n"
+                "• পরামর্শ — ঝুঁকি, উন্নতি, হারভেস্ট, ফিডিং\n"
+                "• সাধারণ কথোপকথন — ব্যাখ্যা, আলোচনা, ধারণা\n\n"
+                "বাংলিশে লিখলেও চলবে, যেমন: *ajker sales kemon* বা *profit koto*।"
+            )
+        else:
+            answer = (
+                f"বুঝেছি। আমি **{name}**-এর ব্রেইন — ব্যবসা বা যেকোনো বিষয়ে কথা বলতে পারি। "
+                "নির্দিষ্ট সংখ্যা চাইলে বলুন কী দেখতে চান (যেমন আজকের বিক্রি, পোন্ড FCR, মাসের লাভ)।"
+            )
+        return {
+            "answer_bn": answer,
+            "reasoning_steps_bn": ["সাধারণ কথোপকথন — বাংলায় সহজ উত্তর।"],
+            "confidence": "medium",
+            "sources": [],
+            "missing_inputs": [],
+            "suggested_actions": [],
+        }
 
     pond = context.get("pond_analytics")
     if pond and {"fcr", "density", "harvest", "feeding", "pond"} & intents:

@@ -16,6 +16,7 @@ import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 export function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const isPublic = isPublicAuthRoute(pathname)
+  const isBrainApp = pathname === '/brain-app' || pathname?.startsWith('/brain-app/')
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -38,8 +39,8 @@ export function Providers({ children }: { children: ReactNode }) {
           <CompanyProvider>
             <SidebarNavProvider>
               <CompanyLocaleProvider>
-                <FixedBanner />
-                <PwaInstallBanner />
+                {!isBrainApp && <FixedBanner />}
+                {!isBrainApp && <PwaInstallBanner />}
                 {children}
               </CompanyLocaleProvider>
             </SidebarNavProvider>

@@ -121,6 +121,7 @@ const APP_PAGE_HREF_PERMISSIONS = buildAppPageHrefPermissionMap()
 export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   ...APP_PAGE_HREF_PERMISSIONS,
   '/brain': ['app.brain', 'app.launcher'],
+  '/brain-app': ['app.brain', 'app.launcher'],
   '/aquaculture': ['app.aquaculture', 'app.aquaculture.dashboard'],
   '/aquaculture/ponds': ['app.aquaculture', 'app.aquaculture.ponds'],
   '/aquaculture/expenses': ['app.aquaculture', 'app.aquaculture.expenses'],

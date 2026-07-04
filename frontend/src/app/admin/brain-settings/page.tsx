@@ -11,6 +11,7 @@ import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode
 import { useToast } from '@/components/Toast'
 import api, { isSuperAdminRole } from '@/lib/api'
 import { safeLogError } from '@/utils/connectionError'
+import { BrainOwnerAppCard } from '@/components/brain/BrainOwnerAppCard'
 import { Brain, Eye, EyeOff, Loader2, Save } from 'lucide-react'
 
 type BrainConfig = {
@@ -292,9 +293,13 @@ function SaasBrainSettingsContent() {
         </div>
 
         <p className="mt-6 text-xs text-muted-foreground">
-          After saving, open <strong>/brain</strong> in any tenant company to test. Free plan uses the free key; Growth
-          uses the vendor key when set (otherwise falls back to free key).
+          After saving, open <strong>/brain</strong> or share the standalone <strong>/brain-app</strong> link with
+          company owners (Management → Company).
         </p>
+
+        <div className="mt-8">
+          <BrainOwnerAppCard language="en" />
+        </div>
       </div>
     </PageLayout>
   )

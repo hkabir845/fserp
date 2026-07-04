@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
 import { getApiBaseUrl, getBackendOrigin, getApiDocsUrl, setAuthApiOriginStamp } from '@/lib/api'
 import { formatApiErrorJson } from '@/utils/errorHandler'
-import { getDefaultLandingHref } from '@/utils/dashboardLanding'
+import { loginRedirectAfterAuth } from '@/utils/loginRedirect'
 import { AndroidAppDownload } from '@/components/AndroidAppDownload'
 
-export default function LoginPage() {
+function LoginPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const nextPath = searchParams.get('next')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -39,7 +41,11 @@ export default function LoginPage() {
           const userStr = localStorage.getItem('user')
           const u = userStr ? JSON.parse(userStr) : null
           router.replace(
-            getDefaultLandingHref(u?.role, Array.isArray(u?.permissions) ? u.permissions : null)
+            loginRedirectAfterAuth(
+              u?.role,
+              Array.isArray(u?.permissions) ? u.permissions : null,
+              nextPath
+            )
           )
         } catch {
           router.replace('/dashboard')
@@ -48,7 +54,7 @@ export default function LoginPage() {
     } catch {
       /* ignore */
     }
-  }, [mounted, router])
+  }, [mounted, router, nextPath])
 
   // Test backend connection function (can be called manually)
   const testConnection = useCallback(async (showLoading = true) => {
@@ -335,9 +341,10 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(user))
       setAuthApiOriginStamp()
 
-      const landing = getDefaultLandingHref(
+      const landing = loginRedirectAfterAuth(
         user?.role,
-        Array.isArray(user?.permissions) ? user.permissions : null
+        Array.isArray(user?.permissions) ? user.permissions : null,
+        nextPath
       )
       router.push(landing)
     } catch (err: any) {
@@ -513,9 +520,23 @@ export default function LoginPage() {
         </form>
 
         <AndroidAppDownload />
+
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          <Link href="/login?next=/brain-app" className="font-medium text-indigo-600 hover:underline">
+            Owner? Open Company Brain only →
+          </Link>
+        </p>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
   )
 }
 

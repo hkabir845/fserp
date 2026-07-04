@@ -11,35 +11,49 @@ from api.models import BrainConversation, BrainMessage, Company
 from api.services.brain import config as brain_config
 from api.services.brain import gateway, plans, tools
 from api.services.brain.direct_answer import compose_direct_answer
+from api.services.brain.intents import is_greeting_message
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are the Company Brain (কোম্পানি ব্রেইন) — the owner's trusted COO advisor for a Bangladeshi multi-business ERP
-(fuel stations, supershop, agro shop, restaurant, workshop, aquaculture ponds with tilapia and other species).
+SYSTEM_PROMPT = """You are the Company Brain (কোম্পানি ব্রেইন) — the owner's trusted COO advisor and conversational AI
+for a Bangladeshi multi-business ERP (fuel stations, supershop, agro shop, restaurant, workshop, aquaculture ponds).
 
-You speak like a sharp human colleague: warm, direct, no corporate fluff. The owner may ask ANYTHING about their business.
+PERSONALITY: ChatGPT-style — warm, natural, multi-turn. You are a smart colleague, not a report bot.
 
-DATA SOURCES (use all of them):
-1. business_snapshot — whole-application ERP state (sales, expenses, P&L, all ponds, roster, recent invoices/bills/payroll, medicine catalog).
-2. Focused blocks (pond_analytics, employees, etc.) when present — deeper detail for the specific entity asked about.
-3. WEB_RESEARCH_NOTE — when present, supplement with current aquaculture/disease/market knowledge; cite URLs in sources (kind=web).
+LANGUAGE (critical):
+1. ALWAYS reply in fluent Bangla in answer_bn — even if the user writes English, Banglish, or romanized Bengali.
+2. Understand Banglish freely (e.g. "ajker sales kemon", "profit koto", "pond er FCR bolo").
+3. English business terms (sales, profit, FCR, invoice) in user text are normal — explain in Bangla.
 
-CRITICAL RULES:
-1. Answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
-2. Reply in fluent Bangla unless the user writes only in English.
-3. Quote exact numbers (৳, kg, FCR, fish count, salaries) from the JSON context — never invent figures or names.
-4. For stocking: high load → partial harvest with kg/fish from stocking_recommendation; understocked → suggest increasing stocking.
-5. For disease: draft prescription (ঔষধ, ডোজ, প্রয়োগ) from medicine_catalog + symptoms; requires_approval true.
-6. For job cuts: release_candidates_advisory only — advisory, owner decides. Include disclaimer.
-7. If data is missing, say what you know and ask one clear follow-up (missing_inputs).
+MODES:
+- Business questions: answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
+- Casual chat (thanks, jokes, explanations, general knowledge): reply naturally in Bangla; tie back to the business gently when relevant.
+- Quote exact numbers (৳, kg, FCR, fish count, salaries) from JSON — never invent figures or names.
+
+BUSINESS RULES:
+1. For stocking: high load → partial harvest with kg/fish from stocking_recommendation; understocked → suggest increasing stocking.
+2. For disease: draft prescription (ঔষধ, ডোজ, প্রয়োগ) from medicine_catalog + symptoms; requires_approval true.
+3. For job cuts: release_candidates_advisory only — advisory, owner decides. Include disclaimer.
+4. If data is missing, say what you know and ask one clear follow-up (missing_inputs).
+
+DATA SOURCES:
+1. business_snapshot — whole ERP state when present (not in light chat mode).
+2. Focused blocks (pond_analytics, employees, etc.) when present.
+3. WEB_RESEARCH_NOTE — supplement with web knowledge when present; cite URLs (kind=web).
 
 Return ONLY a single JSON object (no markdown fences):
-- answer_bn: string (conversational; lead with the direct answer, then context/recommendation)
-- reasoning_steps_bn: array of strings (how you reasoned — ERP facts, comparisons, web if used)
+- answer_bn: string (conversational Bangla; lead with the direct answer)
+- reasoning_steps_bn: array of strings
 - confidence: "high" | "medium" | "low"
 - sources: array of {kind: "erp"|"inference"|"web", type, id, label, path, url}
 - missing_inputs: array of {key, prompt_bn}
 - suggested_actions: array of {action, label_bn, requires_approval}"""
+
+CHAT_MODE_INSTRUCTION = (
+    "Conversational turn — reply naturally in Bangla like ChatGPT. "
+    "User may chat casually OR ask business questions; use ERP data only when the question needs it. "
+    "Do not dump MTD numbers unless asked."
+)
 
 
 def _merge_direct_with_llm(direct: dict[str, Any], llm: dict[str, Any]) -> dict[str, Any]:
@@ -124,28 +138,56 @@ def _build_messages(
     context: dict[str, Any],
     *,
     web_note: str = "",
+    conversational: bool = False,
 ) -> list[dict[str, str]]:
     history: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if web_note:
         history[0]["content"] += f"\n\nWEB_RESEARCH_NOTE: {web_note}"
 
+    prior_limit = 12 if conversational else 8
     prior = (
         BrainMessage.objects.filter(conversation_id=conversation.id)
-        .order_by("-created_at")[:8]
+        .order_by("-created_at")[:prior_limit]
     )
     for msg in reversed(list(prior)):
         role = "user" if msg.role == BrainMessage.ROLE_USER else "assistant"
         history.append({"role": role, "content": msg.content[:4000]})
 
-    payload = {
-        "ERP_CONTEXT": context,
-        "USER_QUESTION": user_text,
-        "TODAY": timezone.localdate().isoformat(),
-        "INSTRUCTION": (
-            "Answer like a human COO advisor. Use business_snapshot for any question. "
-            "Do not redirect to reports."
-        ),
-    }
+    if conversational:
+        payload = {
+            "COMPANY": context.get("company"),
+            "USER_QUESTION": user_text,
+            "TODAY": timezone.localdate().isoformat(),
+            "INSTRUCTION": CHAT_MODE_INSTRUCTION,
+        }
+    else:
+        erp_context = context
+        if not conversational:
+            # Keep LLM payload smaller — snapshot alone can be huge
+            snap = context.get("business_snapshot")
+            if isinstance(snap, dict) and len(json.dumps(snap, default=str)) > 120_000:
+                erp_context = {
+                    **context,
+                    "business_snapshot": {
+                        "truncated": True,
+                        "financials_mtd": (snap.get("financials_mtd") or {}),
+                        "sales_mtd": snap.get("sales_mtd"),
+                        "record_counts": snap.get("record_counts"),
+                        "ponds_performance_30d": {
+                            "ponds": (snap.get("ponds_performance_30d") or {}).get("ponds", [])[:8],
+                        },
+                        "note": "Full snapshot trimmed for model limits; numbers above are authoritative.",
+                    },
+                }
+        payload = {
+            "ERP_CONTEXT": erp_context,
+            "USER_QUESTION": user_text,
+            "TODAY": timezone.localdate().isoformat(),
+            "INSTRUCTION": (
+                "Answer like a human COO advisor in Bangla. User may write Banglish — understand it. "
+                "Use business_snapshot for business questions. Do not redirect to reports."
+            ),
+        }
     history.append(
         {
             "role": "user",
@@ -155,7 +197,39 @@ def _build_messages(
     return history
 
 
+def _emergency_response(company: Company, user_text: str) -> dict[str, Any]:
+    name = company.name or "আপনার কোম্পানি"
+    if is_greeting_message(user_text):
+        answer = (
+            f"নমস্কার! আমি **{name}**-এর কোম্পানি ব্রেইন। "
+            "বাংলা, বাংলিশ বা ইংরেজিতে জিজ্ঞেস করুন — উত্তর বাংলায় পাবেন।"
+        )
+    else:
+        answer = "দুঃখিত, এই মুহূর্তে উত্তর তৈরি করা যায়নি। একটু পরে আবার চেষ্টা করুন।"
+    return {
+        "answer_bn": answer,
+        "reasoning_steps_bn": ["সিস্টেম ত্রুটির পর সংক্ষিপ্ত উত্তর।"],
+        "confidence": "low",
+        "sources": [],
+        "missing_inputs": [],
+        "suggested_actions": [],
+    }
+
+
 def generate_assistant_reply(
+    conversation: BrainConversation,
+    user_text: str,
+    *,
+    company: Company,
+) -> tuple[dict[str, Any], str]:
+    try:
+        return _generate_assistant_reply_inner(conversation, user_text, company=company)
+    except Exception as exc:
+        logger.exception("Brain generate_assistant_reply failed company=%s", company.id)
+        return _emergency_response(company, user_text), "erp-error-fallback"
+
+
+def _generate_assistant_reply_inner(
     conversation: BrainConversation,
     user_text: str,
     *,
@@ -168,8 +242,54 @@ def generate_assistant_reply(
         context_entity_type=conversation.context_entity_type or "",
         context_entity_id=conversation.context_entity_id,
     )
+    context["user_question"] = user_text
+
+    if "greeting" in (context.get("intents") or []):
+        structured = compose_direct_answer(context, lang=company.language or "bn") or _emergency_response(
+            company, user_text
+        )
+        structured["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]]
+        return structured, "erp-greeting"
+
+    intents_set = set(context.get("intents") or [])
+    conversational = intents_set == {"chat"}
 
     direct = compose_direct_answer(context, lang=company.language or "bn")
+
+    if conversational:
+        if not gateway.openrouter_configured(plan=plan):
+            structured = direct or _offline_response(context, refs, user_text, plan=plan)
+            structured["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]]
+            return structured, "erp-chat"
+
+        messages = _build_messages(conversation, user_text, context, conversational=True)
+        model_id = gateway.model_for_role("fast", plan=plan)
+        api_key = brain_config.api_key_for_plan(plan)
+        raw, err = gateway.chat_completion(
+            messages=messages, model=model_id, api_key=api_key, max_tokens=4096, temperature=0.75
+        )
+        if err or not raw:
+            logger.warning("Brain chat LLM failed: %s", err)
+            structured = direct or _offline_response(context, refs, user_text, plan=plan)
+            if err:
+                structured["answer_bn"] += f"\n\n(AI ত্রুটি: {err})"
+            structured["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]]
+            return structured, "erp-chat-fallback"
+
+        structured = gateway.parse_structured_json(raw)
+        if not structured or not structured.get("answer_bn"):
+            structured = direct or {
+                "answer_bn": raw.strip()[:8000],
+                "reasoning_steps_bn": ["কথোপকথন — মডেল কাঠামোবদ্ধ JSON দেয়নি।"],
+                "confidence": "medium",
+                "sources": [],
+                "missing_inputs": [],
+                "suggested_actions": [],
+            }
+        _merge_sources(structured, refs)
+        structured.setdefault("reasoning_steps_bn", ["সাধারণ কথোপকথন — বাংলায় উত্তর।"])
+        structured.setdefault("confidence", "medium")
+        return structured, model_id
 
     if not gateway.openrouter_configured(plan=plan):
         structured = _offline_response(context, refs, user_text, plan=plan)

@@ -22,7 +22,7 @@ from api.models import (
 from api.services.aquaculture_fcr_service import compute_fcr_for_scope
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.brain import analytics
-from api.services.brain.intents import detect_intents
+from api.services.brain.intents import detect_intents, is_greeting_message, is_light_context
 from api.services.brain.plans import brain_plan_for_company
 from api.services.station_business_kind import station_business_kind_label, station_business_kind
 
@@ -205,12 +205,30 @@ def gather_context(
     period_start, period_end, period_label = analytics._period_for_question(message, today)
 
     overview, refs = company_overview(company_id)
+    light_context = is_light_context(intents)
+
+    business_snapshot: dict[str, Any]
+    if light_context:
+        business_snapshot = {"light_mode": True, "mode": "greeting" if intents == {"greeting"} else "chat"}
+    else:
+        try:
+            business_snapshot = analytics.build_company_knowledge_snapshot(company_id, lang=lang)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Brain business_snapshot failed company=%s: %s", company_id, exc
+            )
+            business_snapshot = {
+                "partial": True,
+                "error_note": "Full snapshot unavailable; using overview only.",
+            }
     context: dict[str, Any] = {
         "company": overview,
         "intents": sorted(intents),
         "period_label": period_label,
-        "answer_mode": "full_erp_snapshot_plus_focus",
-        "business_snapshot": analytics.build_company_knowledge_snapshot(company_id, lang=lang),
+        "answer_mode": "conversational_chat" if intents == {"chat"} else "full_erp_snapshot_plus_focus",
+        "business_snapshot": business_snapshot,
     }
     all_refs = list(refs)
     missing_inputs: list[dict[str, str]] = []
@@ -268,14 +286,19 @@ def gather_context(
                     _ref(kind="erp", type_="station", id_=station_id, label=st.station_name, path="/invoices")
                 )
 
-    if {"profit", "expense", "general", "job_cut"} & intents:
-        context["financials"] = analytics.entity_financials(
-            company_id,
-            start=period_start if period_label != "today" else today.replace(day=1),
-            end=period_end,
-            station_id=station_id,
-            pond_id=pond_id,
-        )
+    if not light_context and {"profit", "expense", "general", "job_cut"} & intents:
+        try:
+            context["financials"] = analytics.entity_financials(
+                company_id,
+                start=period_start if period_label != "today" else today.replace(day=1),
+                end=period_end,
+                station_id=station_id,
+                pond_id=pond_id,
+            )
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Brain financials failed company=%s: %s", company_id, exc)
 
     if "expense" in intents:
         context["expenses"] = analytics.expenses_for_period(

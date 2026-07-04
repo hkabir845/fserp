@@ -70,6 +70,27 @@ def test_gather_context_includes_full_snapshot(company_master):
 
 
 @pytest.mark.django_db
+def test_direct_answer_list_intents_with_pond(company_master):
+    """intents are stored as list in context — must not crash set & list."""
+    cid = company_master.id
+    from api.models import AquaculturePond
+
+    pond = AquaculturePond.objects.filter(company_id=cid, is_active=True).first()
+    if not pond:
+        pytest.skip("No pond")
+    ctx, _ = gather_context(
+        cid,
+        f"পোন্ড {pond.name} FCR কত?",
+        context_entity_type="pond",
+        context_entity_id=pond.id,
+    )
+    assert isinstance(ctx.get("intents"), list)
+    ans = compose_direct_answer(ctx)
+    assert ans is not None
+    assert ans.get("answer_bn")
+
+
+@pytest.mark.django_db
 def test_workforce_analysis_returns_advisory(company_master):
     out = workforce_retention_analysis(company_master.id, lang="bn")
     assert "release_candidates_advisory" in out

@@ -13,6 +13,13 @@ export type AppPagePermissionDef = {
 export const APP_PAGE_PERMISSIONS: AppPagePermissionDef[] = [
   { id: 'app.page.dashboard', label: 'Dashboard', group: 'Apps — Main', parent: 'app.launcher', href: '/dashboard' },
   { id: 'app.page.brain', label: 'Company Brain', group: 'Apps — Main', parent: 'app.brain', href: '/brain' },
+  {
+    id: 'app.page.brain_app',
+    label: 'Brain App (standalone)',
+    group: 'Apps — Main',
+    parent: 'app.brain',
+    href: '/brain-app',
+  },
   { id: 'app.page.cashier', label: 'POS / Cashier', group: 'Apps — Main', parent: 'app.pos', href: '/cashier' },
   { id: 'app.page.stations', label: 'Stations', group: 'Apps — Station', parent: 'app.station', href: '/stations' },
   { id: 'app.page.tanks', label: 'Tanks', group: 'Apps — Station', parent: 'app.station', href: '/tanks' },

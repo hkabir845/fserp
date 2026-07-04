@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Company Brain">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="brain" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0e7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+  <path fill="url(#brain)" d="M256 96c-52 0-94 38-94 88 0 22 9 42 24 57-28 14-46 42-46 74 0 46 38 84 84 84h72c46 0 84-38 84-84 0-32-18-60-46-74 15-15 24-35 24-57 0-50-42-88-94-88zm-8 56c18 0 32 14 32 32s-14 32-32 32-32-14-32-32 14-32 32-32zm16 120c40 0 72 32 72 72H200c0-40 32-72 72-72z"/>
+  <circle cx="208" cy="184" r="18" fill="#c7d2fe"/>
+  <circle cx="304" cy="184" r="18" fill="#c7d2fe"/>
+  <path fill="#a5b4fc" d="M256 300c-28 0-52 12-64 32h128c-12-20-36-32-64-32z"/>
+</svg>

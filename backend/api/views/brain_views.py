@@ -1,6 +1,9 @@
 """Company Brain API — chat, conversations, usage status."""
 from __future__ import annotations
 
+import logging
+
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -17,6 +20,8 @@ from api.utils.auth import (
     user_is_super_admin,
 )
 from api.views.common import parse_json_body
+
+logger = logging.getLogger(__name__)
 
 
 def _brain_access_denied(request):
@@ -162,7 +167,19 @@ def brain_conversation_message(request, conversation_id: int):
     if not ok:
         return JsonResponse({"detail": limit_msg, "usage": brain_plans.usage_status(company)}, status=429)
 
-    assistant = brain_chat.append_user_and_assistant(conv, text, company=company)
+    try:
+        with transaction.atomic():
+            assistant = brain_chat.append_user_and_assistant(conv, text, company=company)
+    except Exception as exc:
+        logger.exception("Brain message failed company=%s conv=%s", company.id, conv.id)
+        return JsonResponse(
+            {
+                "detail": "Brain could not answer right now. Please try again in a moment.",
+                "error": str(exc)[:500],
+            },
+            status=500,
+        )
+
     user_msg = (
         BrainMessage.objects.filter(conversation=conv, role=BrainMessage.ROLE_USER)
         .order_by("-created_at")

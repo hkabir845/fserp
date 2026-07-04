@@ -30,9 +30,27 @@ def _looks_like_mask(value: str) -> bool:
     return not v or "•" in v or _MASK_RE.match(v) is not None
 
 
-def get_platform_brain_config() -> PlatformBrainConfig:
-    row, _ = PlatformBrainConfig.objects.get_or_create(pk=1)
-    return row
+def get_platform_brain_config() -> PlatformBrainConfig | None:
+    try:
+        row, _ = PlatformBrainConfig.objects.get_or_create(pk=1)
+        return row
+    except Exception:
+        return None
+
+
+def _cfg_or_defaults() -> PlatformBrainConfig:
+    cfg = get_platform_brain_config()
+    if cfg is not None:
+        return cfg
+    # Env-only fallback when migration not applied yet
+    return PlatformBrainConfig(
+        pk=1,
+        free_api_key="",
+        vendor_api_key="",
+        free_model_reasoning="google/gemini-2.0-flash-001",
+        vendor_model_reasoning="anthropic/claude-3.5-sonnet",
+        vendor_model_research="perplexity/sonar",
+    )
 
 
 def env_api_key() -> str:
@@ -40,7 +58,7 @@ def env_api_key() -> str:
 
 
 def api_key_for_plan(plan: str) -> str:
-    cfg = get_platform_brain_config()
+    cfg = _cfg_or_defaults()
     free = (cfg.free_api_key or "").strip()
     vendor = (cfg.vendor_api_key or "").strip()
     env_key = env_api_key()
@@ -54,6 +72,8 @@ def openrouter_configured(*, plan: str | None = None) -> bool:
     if plan:
         return bool(api_key_for_plan(plan))
     cfg = get_platform_brain_config()
+    if cfg is None:
+        return bool(env_api_key())
     return bool(
         (cfg.free_api_key or "").strip()
         or (cfg.vendor_api_key or "").strip()
@@ -62,7 +82,7 @@ def openrouter_configured(*, plan: str | None = None) -> bool:
 
 
 def models_for_plan(plan: str) -> dict[str, str]:
-    cfg = get_platform_brain_config()
+    cfg = _cfg_or_defaults()
     if plan in _PAID_BRAIN_PLANS:
         reasoning = (cfg.vendor_model_reasoning or "").strip() or _env(
             "BRAIN_MODEL_REASONING", "anthropic/claude-3.5-sonnet"
@@ -81,6 +101,23 @@ def models_for_plan(plan: str) -> dict[str, str]:
 
 def serialize_brain_config_for_admin() -> dict[str, Any]:
     cfg = get_platform_brain_config()
+    if cfg is None:
+        env_key = env_api_key()
+        return {
+            "free_api_key_set": False,
+            "free_api_key_masked": "",
+            "vendor_api_key_set": False,
+            "vendor_api_key_masked": "",
+            "free_model_reasoning": "google/gemini-2.0-flash-001",
+            "vendor_model_reasoning": "anthropic/claude-3.5-sonnet",
+            "vendor_model_research": "perplexity/sonar",
+            "env_fallback_configured": bool(env_key),
+            "env_fallback_masked": mask_api_key(env_key) if env_key else "",
+            "llm_ready_free": bool(env_key),
+            "llm_ready_vendor": bool(env_key),
+            "updated_at": None,
+            "migration_pending": True,
+        }
     env_key = env_api_key()
     free_set = bool((cfg.free_api_key or "").strip())
     vendor_set = bool((cfg.vendor_api_key or "").strip())
@@ -102,6 +139,8 @@ def serialize_brain_config_for_admin() -> dict[str, Any]:
 
 def update_brain_config_from_admin(body: dict[str, Any], *, user_id: int | None) -> PlatformBrainConfig:
     cfg = get_platform_brain_config()
+    if cfg is None:
+        raise ValueError("platform_brain_config table missing — run migrations (0159)")
 
     for field in ("free_model_reasoning", "vendor_model_reasoning", "vendor_model_research"):
         if field in body:

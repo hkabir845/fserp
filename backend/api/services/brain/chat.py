@@ -56,6 +56,60 @@ CHAT_MODE_INSTRUCTION = (
 )
 
 
+def _trim_snapshot_for_llm(snap: Any) -> Any:
+    """Always send a compact snapshot to the LLM — avoids huge JSON / memory errors."""
+    if not isinstance(snap, dict) or snap.get("light_mode") or snap.get("partial"):
+        return snap
+    ponds_block = snap.get("ponds_performance_30d") or {}
+    return {
+        "truncated": True,
+        "financials_mtd": snap.get("financials_mtd") or {},
+        "sales_mtd": snap.get("sales_mtd"),
+        "expenses_mtd": snap.get("expenses_mtd"),
+        "record_counts": snap.get("record_counts"),
+        "workforce_roster": (snap.get("workforce_roster") or [])[:10],
+        "ponds_performance_30d": {
+            "ponds": (ponds_block.get("ponds") or [])[:8],
+        },
+        "recent_invoices": (snap.get("recent_invoices") or [])[:6],
+        "note": "Trimmed ERP snapshot; quoted numbers are authoritative.",
+    }
+
+
+def _trim_context_for_llm(context: dict[str, Any]) -> dict[str, Any]:
+    snap = context.get("business_snapshot")
+    return {
+        **context,
+        "business_snapshot": _trim_snapshot_for_llm(snap),
+    }
+
+
+def _safe_json_dumps(payload: dict[str, Any]) -> str:
+    try:
+        return json.dumps(payload, ensure_ascii=False, default=str)
+    except Exception as exc:
+        logger.warning("Brain JSON payload failed: %s", exc)
+        minimal = {
+            "COMPANY": (payload.get("ERP_CONTEXT") or payload).get("company")
+            or payload.get("COMPANY"),
+            "USER_QUESTION": payload.get("USER_QUESTION", ""),
+            "TODAY": payload.get("TODAY", timezone.localdate().isoformat()),
+            "INSTRUCTION": payload.get("INSTRUCTION", ""),
+            "NOTE": "Full ERP context omitted due to serialization error.",
+        }
+        return json.dumps(minimal, ensure_ascii=False, default=str)
+
+
+def _erp_refs_as_sources(refs: list[dict[str, Any]], *, limit: int = 16) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for r in refs[:limit]:
+        try:
+            out.append({"kind": "erp", **{k: r[k] for k in r if k != "kind"}})
+        except Exception:
+            continue
+    return out
+
+
 def _merge_direct_with_llm(direct: dict[str, Any], llm: dict[str, Any]) -> dict[str, Any]:
     """Prefer LLM narrative but keep ERP numbers from direct when LLM is thin."""
     out = dict(llm)
@@ -74,7 +128,7 @@ def _offline_response(
 ) -> dict[str, Any]:
     direct = compose_direct_answer(context, lang=(context.get("company") or {}).get("language", "bn"))
     if direct:
-        direct["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:16]]
+        direct["sources"] = _erp_refs_as_sources(refs, limit=16)
         direct.setdefault("missing_inputs", context.get("missing_inputs") or [])
         direct.setdefault("suggested_actions", context.get("suggested_actions") or [])
         if not gateway.openrouter_configured(plan=plan):
@@ -99,7 +153,7 @@ def _offline_response(
             ),
             "reasoning_steps_bn": ["ERP স্ন্যাপশট লোড হয়েছে; প্রশ্নটি আরও ফোকাস করা যায়।"],
             "confidence": "low",
-            "sources": [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]],
+            "sources": _erp_refs_as_sources(refs, limit=8),
             "missing_inputs": context.get("missing_inputs") or [],
             "suggested_actions": [],
         }
@@ -161,26 +215,8 @@ def _build_messages(
             "INSTRUCTION": CHAT_MODE_INSTRUCTION,
         }
     else:
-        erp_context = context
-        if not conversational:
-            # Keep LLM payload smaller — snapshot alone can be huge
-            snap = context.get("business_snapshot")
-            if isinstance(snap, dict) and len(json.dumps(snap, default=str)) > 120_000:
-                erp_context = {
-                    **context,
-                    "business_snapshot": {
-                        "truncated": True,
-                        "financials_mtd": (snap.get("financials_mtd") or {}),
-                        "sales_mtd": snap.get("sales_mtd"),
-                        "record_counts": snap.get("record_counts"),
-                        "ponds_performance_30d": {
-                            "ponds": (snap.get("ponds_performance_30d") or {}).get("ponds", [])[:8],
-                        },
-                        "note": "Full snapshot trimmed for model limits; numbers above are authoritative.",
-                    },
-                }
         payload = {
-            "ERP_CONTEXT": erp_context,
+            "ERP_CONTEXT": _trim_context_for_llm(context),
             "USER_QUESTION": user_text,
             "TODAY": timezone.localdate().isoformat(),
             "INSTRUCTION": (
@@ -191,13 +227,13 @@ def _build_messages(
     history.append(
         {
             "role": "user",
-            "content": json.dumps(payload, ensure_ascii=False, default=str),
+            "content": _safe_json_dumps(payload),
         }
     )
     return history
 
 
-def _emergency_response(company: Company, user_text: str) -> dict[str, Any]:
+def _emergency_response(company: Company, user_text: str, *, error: Exception | None = None) -> dict[str, Any]:
     name = company.name or "আপনার কোম্পানি"
     if is_greeting_message(user_text):
         answer = (
@@ -206,9 +242,14 @@ def _emergency_response(company: Company, user_text: str) -> dict[str, Any]:
         )
     else:
         answer = "দুঃখিত, এই মুহূর্তে উত্তর তৈরি করা যায়নি। একটু পরে আবার চেষ্টা করুন।"
+    reasoning = ["সিস্টেম ত্রুটির পর সংক্ষিপ্ত উত্তর।"]
+    if error is not None:
+        hint = f"{type(error).__name__}: {error}"
+        reasoning.append(hint[:240])
+        logger.warning("Brain emergency fallback: %s", hint)
     return {
         "answer_bn": answer,
-        "reasoning_steps_bn": ["সিস্টেম ত্রুটির পর সংক্ষিপ্ত উত্তর।"],
+        "reasoning_steps_bn": reasoning,
         "confidence": "low",
         "sources": [],
         "missing_inputs": [],
@@ -226,7 +267,19 @@ def generate_assistant_reply(
         return _generate_assistant_reply_inner(conversation, user_text, company=company)
     except Exception as exc:
         logger.exception("Brain generate_assistant_reply failed company=%s", company.id)
-        return _emergency_response(company, user_text), "erp-error-fallback"
+        try:
+            plan = plans.brain_plan_for_company(company)
+            context, refs = tools.gather_context(int(company.id), user_text)
+            context["user_question"] = user_text
+            structured = _offline_response(context, refs, user_text, plan=plan)
+            structured["reasoning_steps_bn"] = [
+                "সিস্টেম ত্রুটি — ERP ডেটা দিয়ে আংশিক উত্তর।",
+                f"{type(exc).__name__}: {str(exc)[:200]}",
+            ]
+            structured.setdefault("confidence", "low")
+            return structured, "erp-error-fallback"
+        except Exception:
+            return _emergency_response(company, user_text, error=exc), "erp-error-fallback"
 
 
 def _generate_assistant_reply_inner(
@@ -248,7 +301,7 @@ def _generate_assistant_reply_inner(
         structured = compose_direct_answer(context, lang=company.language or "bn") or _emergency_response(
             company, user_text
         )
-        structured["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]]
+        structured["sources"] = _erp_refs_as_sources(refs, limit=8)
         return structured, "erp-greeting"
 
     intents_set = set(context.get("intents") or [])
@@ -259,7 +312,7 @@ def _generate_assistant_reply_inner(
     if conversational:
         if not gateway.openrouter_configured(plan=plan):
             structured = direct or _offline_response(context, refs, user_text, plan=plan)
-            structured["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]]
+            structured["sources"] = _erp_refs_as_sources(refs, limit=8)
             return structured, "erp-chat"
 
         messages = _build_messages(conversation, user_text, context, conversational=True)
@@ -273,7 +326,7 @@ def _generate_assistant_reply_inner(
             structured = direct or _offline_response(context, refs, user_text, plan=plan)
             if err:
                 structured["answer_bn"] += f"\n\n(AI ত্রুটি: {err})"
-            structured["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]]
+            structured["sources"] = _erp_refs_as_sources(refs, limit=8)
             return structured, "erp-chat-fallback"
 
         structured = gateway.parse_structured_json(raw)

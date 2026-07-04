@@ -190,6 +190,17 @@ def _employee_query_from_message(message: str, company_id: int) -> str:
     return message
 
 
+def _safe_block(label: str, fn, *args, **kwargs):
+    """Run an ERP analytics block; never break Brain."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning("Brain %s failed: %s", label, exc)
+        return None
+
+
 def gather_context(
     company_id: int,
     message: str,
@@ -204,7 +215,9 @@ def gather_context(
     today = timezone.localdate()
     period_start, period_end, period_label = analytics._period_for_question(message, today)
 
-    overview, refs = company_overview(company_id)
+    overview, refs = _safe_block("company_overview", company_overview, company_id) or ({}, [])
+    if not overview and company:
+        overview = {"company_name": company.name, "language": lang}
     light_context = is_light_context(intents)
 
     business_snapshot: dict[str, Any]
@@ -242,7 +255,7 @@ def gather_context(
     need_all_ponds = not pond_id and {"fcr", "density", "harvest"} & intents
 
     if pond_id:
-        pa = analytics.pond_deep_analytics(company_id, pond_id, lang=lang)
+        pa = _safe_block("pond_analytics", analytics.pond_deep_analytics, company_id, pond_id, lang=lang)
         if pa:
             context["pond_analytics"] = pa
             all_refs.append(
@@ -273,12 +286,21 @@ def gather_context(
                 )
 
     if need_all_ponds:
-        context["all_ponds_summary"] = analytics.all_ponds_summary(company_id, lang=lang)
+        summary = _safe_block("all_ponds_summary", analytics.all_ponds_summary, company_id, lang=lang)
+        if summary:
+            context["all_ponds_summary"] = summary
 
     if {"sales", "sales_today"} & intents:
-        context["sales"] = analytics.sales_for_period(
-            company_id, period_start, period_end, station_id=station_id
+        sales = _safe_block(
+            "sales",
+            analytics.sales_for_period,
+            company_id,
+            period_start,
+            period_end,
+            station_id=station_id,
         )
+        if sales:
+            context["sales"] = sales
         if station_id:
             st = Station.objects.filter(pk=station_id).first()
             if st:
@@ -301,42 +323,59 @@ def gather_context(
             logging.getLogger(__name__).warning("Brain financials failed company=%s: %s", company_id, exc)
 
     if "expense" in intents:
-        context["expenses"] = analytics.expenses_for_period(
-            company_id, period_start, period_end, pond_id=pond_id
+        expenses = _safe_block(
+            "expenses",
+            analytics.expenses_for_period,
+            company_id,
+            period_start,
+            period_end,
+            pond_id=pond_id,
         )
+        if expenses:
+            context["expenses"] = expenses
 
     if "hr" in intents or employee_id:
         eq = _employee_query_from_message(message, company_id)
-        emps = analytics.find_employees(company_id, eq)
+        emps = _safe_block("employees", analytics.find_employees, company_id, eq) or []
         if employee_id and not emps:
             from api.models import Employee
 
             emp = Employee.objects.filter(pk=employee_id, company_id=company_id).first()
             if emp:
-                emps = analytics.find_employees(company_id, _employee_display(emp))
+                emps = _safe_block(
+                    "employees", analytics.find_employees, company_id, _employee_display(emp)
+                ) or []
         if not emps and any(
             k in message.lower()
             for k in ("salary", "worker", "employee", "বেতন", "কর্মচারী", "শ্রমিক", "সব")
         ):
-            emps = analytics.find_employees(company_id, "")
+            emps = _safe_block("employees", analytics.find_employees, company_id, "") or []
         context["employees"] = emps
         for e in emps[:3]:
-            all_refs.append(
-                _ref(
-                    kind="erp",
-                    type_="employee",
-                    id_=int(e["employee_id"]),
-                    label=e.get("name", ""),
-                    path="/employees",
+            try:
+                all_refs.append(
+                    _ref(
+                        kind="erp",
+                        type_="employee",
+                        id_=int(e["employee_id"]),
+                        label=e.get("name", ""),
+                        path="/employees",
+                    )
                 )
-            )
+            except (KeyError, TypeError, ValueError):
+                continue
 
     if "job_cut" in intents:
-        context["workforce_analysis"] = analytics.workforce_retention_analysis(company_id, lang=lang)
+        hr_analysis = _safe_block(
+            "workforce_analysis", analytics.workforce_retention_analysis, company_id, lang=lang
+        )
+        if hr_analysis:
+            context["workforce_analysis"] = hr_analysis
 
     if "disease" in intents:
+        catalog = _safe_block("medicine_catalog", analytics.medicine_catalog_for_brain, company_id) or []
         context["disease_context"] = {
-            "medicine_catalog": analytics.medicine_catalog_for_brain(company_id),
+            "medicine_catalog": catalog,
             "user_symptoms": message[:500],
             "note_bn": (
                 "রোগ নির্ণয়ের জন্য লক্ষণ, পোন্ড, মাছের আচরণ, পানির রং/গন্ধ, মৃত্যুর হার জানান। "

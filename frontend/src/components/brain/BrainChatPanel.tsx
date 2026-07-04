@@ -7,7 +7,8 @@ import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
-import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Send } from 'lucide-react'
+import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Mic, MicOff, Send } from 'lucide-react'
+import { useSpeechRecognition, type SpeechVoiceLang } from '@/hooks/useSpeechRecognition'
 
 export type BrainSource = {
   kind?: string
@@ -65,6 +66,14 @@ const UI = {
     contextPond: 'Focused on pond',
     contextStation: 'Focused on station',
     contextEmployee: 'Focused on employee',
+    voiceListen: 'Voice (Bangla / English)',
+    voiceStop: 'Stop listening',
+    voiceBn: 'BN',
+    voiceEn: 'EN',
+    voiceUnsupported: 'Voice input needs Chrome or Edge on HTTPS.',
+    voiceDenied: 'Microphone permission denied.',
+    voiceNoSpeech: 'No speech detected — try again.',
+    voiceListening: 'Listening…',
   },
   bn: {
     title: 'কোম্পানি ব্রেইন',
@@ -84,6 +93,14 @@ const UI = {
     contextPond: 'পোন্ড ফোকাস',
     contextStation: 'স্টেশন ফোকাস',
     contextEmployee: 'কর্মচারী ফোকাস',
+    voiceListen: 'ভয়েস (বাংলা / ইংরেজি)',
+    voiceStop: 'শোনা বন্ধ করুন',
+    voiceBn: 'বাং',
+    voiceEn: 'EN',
+    voiceUnsupported: 'ভয়েসের জন্য HTTPS-এ Chrome বা Edge লাগবে।',
+    voiceDenied: 'মাইক্রোফোন অনুমতি দেওয়া হয়নি।',
+    voiceNoSpeech: 'কথা শোনা যায়নি — আবার চেষ্টা করুন।',
+    voiceListening: 'শুনছি…',
   },
 } as const
 
@@ -200,8 +217,30 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [bootstrapping, setBootstrapping] = useState(true)
+  const [voiceLang, setVoiceLang] = useState<SpeechVoiceLang>(language === 'bn' ? 'bn' : 'en')
   const bottomRef = useRef<HTMLDivElement>(null)
   const autoSentRef = useRef(false)
+  const voiceSendPendingRef = useRef(false)
+
+  useEffect(() => {
+    setVoiceLang(language === 'bn' ? 'bn' : 'en')
+  }, [language])
+
+  const { supported: voiceSupported, listening, start: startVoice, stop: stopVoice } = useSpeechRecognition({
+    voiceLang,
+    onInterim: (text) => setInput(text),
+    onFinal: (text) => setInput(text),
+    onEnd: (text) => {
+      if (text) {
+        voiceSendPendingRef.current = true
+        setInput(text)
+      }
+    },
+    onError: (code) => {
+      if (code === 'not-allowed') toast.error(labels.voiceDenied)
+      else if (code === 'no-speech') toast.error(labels.voiceNoSpeech)
+    },
+  })
 
   const contextLabel =
     contextType === 'pond'
@@ -306,6 +345,11 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
     void sendMessage(initialQ)
   }, [bootstrapping, conversationId, initialQ, loading, sendMessage])
 
+  const atLimit =
+    usage?.daily_message_limit != null &&
+    usage.messages_remaining_today != null &&
+    usage.messages_remaining_today <= 0
+
   const handleSend = async () => {
     const text = input.trim()
     if (!text) return
@@ -313,10 +357,33 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
     await sendMessage(text)
   }
 
-  const atLimit =
-    usage?.daily_message_limit != null &&
-    usage.messages_remaining_today != null &&
-    usage.messages_remaining_today <= 0
+  useEffect(() => {
+    if (!voiceSendPendingRef.current || listening || loading || atLimit) return
+    const text = input.trim()
+    if (!text) {
+      voiceSendPendingRef.current = false
+      return
+    }
+    voiceSendPendingRef.current = false
+    setInput('')
+    void sendMessage(text)
+  }, [input, listening, loading, atLimit, sendMessage])
+
+  const toggleVoice = () => {
+    if (!voiceSupported) {
+      toast.error(labels.voiceUnsupported)
+      return
+    }
+    if (listening) {
+      stopVoice()
+      return
+    }
+    voiceSendPendingRef.current = false
+    const started = startVoice()
+    if (!started) {
+      toast.error(labels.voiceUnsupported)
+    }
+  }
 
   const heightClass = standalone
     ? 'h-[calc(100dvh-3.5rem)] min-h-0'
@@ -395,6 +462,15 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
 
       <div className="border-t border-border p-4">
         {atLimit && <p className="mb-2 text-sm text-destructive">{labels.upgrade}</p>}
+        {listening && (
+          <p className="mb-2 flex items-center gap-2 text-xs font-medium text-primary">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+            {labels.voiceListening}
+          </p>
+        )}
         <form
           className="flex gap-2"
           onSubmit={(e) => {
@@ -402,21 +478,56 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
             void handleSend()
           }}
         >
+          {voiceSupported && (
+            <div className="flex shrink-0 flex-col gap-1">
+              <button
+                type="button"
+                title={listening ? labels.voiceStop : labels.voiceListen}
+                disabled={loading || atLimit}
+                onClick={toggleVoice}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border transition-colors disabled:opacity-50 ${
+                  listening
+                    ? 'border-destructive bg-destructive/10 text-destructive'
+                    : 'border-border hover:bg-muted'
+                }`}
+              >
+                {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+              <div className="flex overflow-hidden rounded-lg border border-border text-[10px] font-semibold">
+                <button
+                  type="button"
+                  disabled={listening || loading || atLimit}
+                  onClick={() => setVoiceLang('bn')}
+                  className={`px-2 py-1 ${voiceLang === 'bn' ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'}`}
+                >
+                  {labels.voiceBn}
+                </button>
+                <button
+                  type="button"
+                  disabled={listening || loading || atLimit}
+                  onClick={() => setVoiceLang('en')}
+                  className={`px-2 py-1 ${voiceLang === 'en' ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'}`}
+                >
+                  {labels.voiceEn}
+                </button>
+              </div>
+            </div>
+          )}
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={labels.placeholder}
             disabled={loading || atLimit}
-            className="flex-1 rounded-xl border border-border px-4 py-3 text-sm focus:ring-2 focus:ring-ring disabled:opacity-50"
+            className="min-w-0 flex-1 rounded-xl border border-border px-4 py-3 text-sm focus:ring-2 focus:ring-ring disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={loading || atLimit || !input.trim()}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             <Send className="h-4 w-4" />
-            {labels.send}
+            <span className="hidden sm:inline">{labels.send}</span>
           </button>
         </form>
       </div>

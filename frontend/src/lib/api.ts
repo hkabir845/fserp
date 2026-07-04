@@ -240,8 +240,12 @@ function redirectToLoginIfNeeded(): void {
   if (typeof window === 'undefined') return
   if (loginRedirectStarted) return
   const path = window.location?.pathname || ''
-  if (path.startsWith('/login')) return
+  if (path.startsWith('/login') || path.startsWith('/brain-app/login')) return
   loginRedirectStarted = true
+  if (path === '/brain-app' || path.startsWith('/brain-app/')) {
+    window.location.assign('/brain-app/login')
+    return
+  }
   const next = path && path !== '/' ? `?next=${encodeURIComponent(path)}` : ''
   window.location.assign(`/login${next}`)
 }
@@ -307,6 +311,28 @@ const CURRENT_COMPANY_CACHE_MS = 45_000
 export function invalidateCurrentCompanyCache(): void {
   currentCompanyCache = null
   currentCompanyInflight = null
+}
+
+/** Persist tenant for X-Selected-Company-Id (API interceptor reads localStorage, not React state). */
+export function persistSelectedCompanyForApi(company: {
+  id: number
+  name: string
+  is_master?: string | boolean
+}): void {
+  if (typeof window === 'undefined') return
+  try {
+    const im = company.is_master
+    localStorage.setItem(
+      'superadmin_selected_company',
+      JSON.stringify({
+        id: company.id,
+        name: company.name,
+        is_master: im === true || String(im || '').toLowerCase() === 'true' ? 'true' : 'false',
+      }),
+    )
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Deduped + short-lived cache for GET /companies/current/. */

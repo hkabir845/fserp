@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { performLogin } from '@/lib/authLogin'
+import { fetchCurrentCompany, persistSelectedCompanyForApi } from '@/lib/api'
 import {
   enterBrainAppAfterLogin,
   hasValidBrainSession,
@@ -32,6 +33,20 @@ export function BrainAppLoginScreen() {
     setLoading(true)
     try {
       await performLogin(username, password)
+      try {
+        const data = await fetchCurrentCompany({ force: true })
+        const id = data?.id
+        const name = String(data?.name || '').trim()
+        if (typeof id === 'number' && name) {
+          persistSelectedCompanyForApi({
+            id,
+            name,
+            is_master: data.is_master,
+          })
+        }
+      } catch {
+        /* brain home page will retry */
+      }
       enterBrainAppAfterLogin()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')

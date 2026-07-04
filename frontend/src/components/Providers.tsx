@@ -11,12 +11,12 @@ import { FixedBanner } from './FixedBanner'
 import { PwaInstallBanner } from './PwaInstallBanner'
 import { AuthApiOriginGuard } from './AuthApiOriginGuard'
 import { DevEnvironmentBanner } from './DevEnvironmentBanner'
-import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
+import { isBrainAppRoute, isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 
 export function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const isPublic = isPublicAuthRoute(pathname)
-  const isBrainApp = pathname === '/brain-app' || pathname?.startsWith('/brain-app/')
+  const isBrainApp = isBrainAppRoute(pathname)
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -33,7 +33,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <ToastProvider>
       <AuthApiOriginGuard>
         <DevEnvironmentBanner />
-        {isPublic ? (
+        {isPublic || isBrainApp ? (
           children
         ) : (
           <CompanyProvider>

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { BrainChatPanel, brainUiLabels } from '@/components/brain/BrainChatPanel'
-import { fetchCurrentCompany } from '@/lib/api'
+import { fetchCurrentCompany, persistSelectedCompanyForApi } from '@/lib/api'
 import {
   clearBrainSession,
   hasValidBrainSession,
@@ -70,14 +70,16 @@ function BrainAppContent() {
         const id = data?.id
         const name = String(data?.name || '').trim()
         if (typeof id === 'number' && name) {
-          setSelectedCompany({
+          const company = {
             id,
             name,
             is_master:
               data.is_master === true || String(data.is_master || '').toLowerCase() === 'true'
                 ? 'true'
                 : 'false',
-          })
+          }
+          persistSelectedCompanyForApi(company)
+          setSelectedCompany(company)
         }
         setReady(true)
       } catch {

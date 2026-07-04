@@ -87,7 +87,7 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
       return company
     })
-    if (mounted && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       try {
         if (company) {
           localStorage.setItem('superadmin_selected_company', JSON.stringify(company))

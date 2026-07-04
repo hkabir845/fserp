@@ -60,7 +60,7 @@ type Props = {
   onLoginScreen?: boolean
 }
 
-function modeSteps(mode: InstallUiMode, t: (typeof COPY)['en']): string {
+function modeSteps(mode: InstallUiMode, t: (typeof COPY)[keyof typeof COPY]): string {
   switch (mode) {
     case 'in_app':
       return t.inApp
@@ -207,7 +207,7 @@ export function BrainAppInstallPrompt({ language = 'bn', onLoginScreen = false }
                 {onLoginScreen ? `${t.ios} ${t.android} ${t.desktop}` : steps}
               </p>
             </div>
-          ) : null}
+          )}
         </div>
         <button
           type="button"

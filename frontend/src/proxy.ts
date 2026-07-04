@@ -14,7 +14,12 @@ export function proxy(request: NextRequest) {
   res.headers.set('X-Frame-Options', 'SAMEORIGIN')
   res.headers.set('X-Content-Type-Options', 'nosniff')
   res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  const path = request.nextUrl.pathname
+  const isBrainApp = path === '/brain-app' || path.startsWith('/brain-app/')
+  res.headers.set(
+    'Permissions-Policy',
+    isBrainApp ? 'camera=(), microphone=(self), geolocation=()' : 'camera=(), microphone=(), geolocation=()',
+  )
   return res
 }
 

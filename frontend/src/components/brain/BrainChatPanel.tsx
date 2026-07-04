@@ -9,6 +9,7 @@ import api, { fetchCurrentCompany, isApiSessionError } from '@/lib/api'
 import { hasStoredSession } from '@/lib/authSession'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react'
+import { useBrainKeyboardInset } from '@/hooks/useBrainKeyboardInset'
 import { useBrainVoiceInput } from '@/hooks/useBrainVoiceInput'
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
 import type { SpeechVoiceLang } from '@/lib/voiceCapabilities'
@@ -306,6 +307,8 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
   const { language } = useCompanyLocale()
   const labels = language === 'bn' ? UI.bn : UI.en
 
+  useBrainKeyboardInset(standalone)
+
   const contextType = searchParams.get('context_type') || ''
   const contextIdRaw = searchParams.get('context_id')
   const contextName = searchParams.get('context_name') || ''
@@ -428,6 +431,11 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
       setBootstrapping(false)
       return
     }
+    let cancelled = false
+    const timeoutId = window.setTimeout(() => {
+      if (!cancelled) setBootstrapping(false)
+    }, 20_000)
+
     ;(async () => {
       try {
         await loadStatus()
@@ -437,9 +445,16 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
           toast.error(extractErrorMessage(e))
         }
       } finally {
+        cancelled = true
+        window.clearTimeout(timeoutId)
         setBootstrapping(false)
       }
     })()
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
   }, [loadStatus, startConversation, toast])
 
   useEffect(() => {
@@ -519,14 +534,14 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
         : labels.voiceListening
 
   const heightClass = standalone
-    ? 'h-[calc(100dvh-3.5rem)] min-h-0'
+    ? 'min-h-0 flex-1'
     : 'h-[calc(100vh-11rem)] min-h-[28rem]'
 
   return (
     <div
       className={`flex flex-col rounded-xl border border-border bg-card shadow-sm ${heightClass} ${className}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           {contextLabel && contextName ? (
             <span className="rounded-full bg-indigo-50 px-2.5 py-1 font-medium text-indigo-800">
@@ -558,7 +573,11 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div
+        className={`flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-4 ${
+          standalone ? 'pb-2' : ''
+        }`}
+      >
         {bootstrapping ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -601,7 +620,13 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-border p-4">
+      <div
+        className={`shrink-0 border-t border-border bg-card p-4 ${
+          standalone
+            ? 'translate-y-[calc(-1*var(--brain-kb-inset,0px))] pb-[max(1rem,env(safe-area-inset-bottom))] transition-transform duration-150'
+            : 'pb-[max(1rem,env(safe-area-inset-bottom))]'
+        }`}
+      >
         {atLimit && <p className="mb-2 text-sm text-destructive">{labels.upgrade}</p>}
         {voiceBusy && (
           <p className="mb-2 flex items-center gap-2 text-xs font-medium text-primary">
@@ -666,7 +691,18 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
             onChange={(e) => setInput(e.target.value)}
             placeholder={labels.placeholder}
             disabled={loading || atLimit}
-            className="min-w-0 flex-1 rounded-xl border border-border px-4 py-3 text-sm focus:ring-2 focus:ring-ring disabled:opacity-50"
+            enterKeyHint="send"
+            autoComplete="off"
+            onFocus={
+              standalone
+                ? (e) => {
+                    window.setTimeout(() => {
+                      e.target.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+                    }, 300)
+                  }
+                : undefined
+            }
+            className="min-w-0 flex-1 rounded-xl border border-border px-4 py-3 text-base sm:text-sm focus:ring-2 focus:ring-ring disabled:opacity-50"
           />
           <button
             type="submit"

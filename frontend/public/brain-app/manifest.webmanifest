@@ -3,7 +3,7 @@
   "name": "Company Brain",
   "short_name": "Brain",
   "description": "Ask anything about your business — sales, profit, ponds, staff.",
-  "start_url": "/brain-app/login",
+  "start_url": "/brain-app/login?source=pwa",
   "scope": "/brain-app",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
@@ -17,6 +17,12 @@
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/brain-app/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/brain-app/icon-512.png",

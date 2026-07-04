@@ -209,6 +209,19 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  /** Company Brain PWA — reliable touch/keyboard inside fixed viewport shell */
+  html.brain-app-route,
+  body.brain-app-route {
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+
+  html.brain-app-route input,
+  html.brain-app-route textarea,
+  html.brain-app-route button {
+    touch-action: manipulation;
+  }
+
   /* ── ERP app shell (world-standard SaaS layout) ── */
   .erp-sidebar {
     @apply text-[hsl(var(--sidebar-fg))];

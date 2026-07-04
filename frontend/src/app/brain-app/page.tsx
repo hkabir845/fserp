@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect } from 'react'
 import Link from 'next/link'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
@@ -12,8 +12,9 @@ import {
   logoutBrainApp,
   redirectBrainLoginIfNeeded,
 } from '@/lib/brainAppSession'
-import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
-import { Brain, LayoutGrid, LogOut } from 'lucide-react'
+import { registerBrainPwaServiceWorker } from '@/lib/pwaServiceWorker'
+import { BrainAppShell } from '@/components/brain/BrainAppShell'
+import { LayoutGrid, LogOut } from 'lucide-react'
 
 function BrainAppHeader() {
   const { selectedCompany } = useCompany()
@@ -52,13 +53,12 @@ function BrainAppHeader() {
 }
 
 function BrainAppContent() {
-  const [ready, setReady] = useState(false)
   const { language } = useCompanyLocale()
   const { setSelectedCompany } = useCompany()
   const labels = brainUiLabels(language === 'bn' ? 'bn' : 'en')
 
   useEffect(() => {
-    registerPwaServiceWorker()
+    registerBrainPwaServiceWorker()
     if (!hasValidBrainSession()) {
       redirectBrainLoginIfNeeded()
       return
@@ -81,30 +81,22 @@ function BrainAppContent() {
           persistSelectedCompanyForApi(company)
           setSelectedCompany(company)
         }
-        setReady(true)
       } catch {
         clearBrainSession()
         redirectBrainLoginIfNeeded()
       }
     })()
-  }, [setSelectedCompany])
-
-  if (!ready) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-indigo-50">
-        <Brain className="h-10 w-10 animate-pulse text-indigo-600" />
-      </div>
-    )
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount after login redirect
+  }, [])
 
   return (
-    <div className="flex min-h-dvh flex-col bg-indigo-50/50">
+    <BrainAppShell>
       <BrainAppHeader />
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-3 py-3 sm:px-4">
-        <p className="mb-2 text-center text-xs text-muted-foreground">{labels.subtitle}</p>
-        <BrainChatPanel standalone className="flex-1 border-indigo-100 shadow-md" />
+      <main className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col px-3 py-2 sm:px-4 sm:py-3">
+        <p className="mb-2 shrink-0 text-center text-xs text-muted-foreground">{labels.subtitle}</p>
+        <BrainChatPanel standalone className="min-h-0 flex-1 border-indigo-100 shadow-md" />
       </main>
-    </div>
+    </BrainAppShell>
   )
 }
 

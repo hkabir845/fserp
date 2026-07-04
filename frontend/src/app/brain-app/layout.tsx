@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { BrainAppProviders } from './BrainAppProviders'
+import { BrainPwaBootstrap } from '@/components/brain/BrainPwaBootstrap'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -13,6 +14,10 @@ export const metadata: Metadata = {
   title: 'Company Brain',
   description: 'Ask anything about your business — your AI owner advisor.',
   manifest: '/brain-app/manifest.webmanifest',
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+    'mobile-web-app-capable': 'yes',
+  },
   appleWebApp: {
     capable: true,
     title: 'Company Brain',
@@ -28,5 +33,10 @@ export const metadata: Metadata = {
 }
 
 export default function BrainAppLayout({ children }: { children: React.ReactNode }) {
-  return <BrainAppProviders>{children}</BrainAppProviders>
+  return (
+    <BrainAppProviders>
+      <BrainPwaBootstrap />
+      {children}
+    </BrainAppProviders>
+  )
 }

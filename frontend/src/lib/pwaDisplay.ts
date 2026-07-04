@@ -47,6 +47,34 @@ export function isSafariBrowser(): boolean {
   return /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua)
 }
 
+/** Copy page URL so user can paste into Safari/Chrome (in-app browsers block install). */
+export async function copyPageUrlForExternalBrowser(): Promise<boolean> {
+  if (typeof window === 'undefined') return false
+  const url = window.location.href
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url)
+      return true
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = url
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export type InstallUiMode =
   | 'chromium_prompt'
   | 'ios'

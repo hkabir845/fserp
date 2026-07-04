@@ -8,7 +8,7 @@ import {
   isStandaloneDisplay,
   type InstallUiMode,
 } from '@/lib/pwaDisplay'
-import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
+import { registerBrainPwaServiceWorker } from '@/lib/pwaServiceWorker'
 
 const DISMISS_KEY = 'fs-brain-install-dismissed'
 
@@ -101,7 +101,7 @@ export function BrainAppInstallPrompt({
     }
 
     applyBrainPwaDocumentHead()
-    registerPwaServiceWorker()
+    registerBrainPwaServiceWorker()
 
     const onBeforeInstall = (e: Event) => {
       e.preventDefault()

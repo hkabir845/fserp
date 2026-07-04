@@ -12,8 +12,8 @@ _PAID_BRAIN_PLANS = frozenset({"growth", "enterprise"})
 _MASK_RE = re.compile(r"^[•*.\s]+$")
 
 
-def _env(name: str) -> str:
-    return (os.environ.get(name) or "").strip()
+def _env(name: str, default: str = "") -> str:
+    return (os.environ.get(name) or default).strip()
 
 
 def mask_api_key(key: str) -> str:

@@ -7,7 +7,7 @@ from typing import Any
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.module_lists import format_module_list_answer
 from api.services.brain.question_resolver import wants_breakdown
-from api.services.brain.worldfish_gap_audit import wants_worldfish_gap_audit
+from api.services.brain.advisory_envelope import build_advisory_appendix, should_attach_advisory
 
 
 def _md_section(title: str, body: str) -> str:
@@ -597,60 +597,10 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         steps.append("AQ-MED ক্যাটালগ + (পেইড) ওয়েব গবেষণা।")
 
     snapshot = context.get("business_snapshot")
-    brief = context.get("decision_brief")
-    wf_audit = context.get("worldfish_gap_audit")
-    if wf_audit and (
-        wants_worldfish_gap_audit(question)
-        or {"benchmark", "aquaculture_ops", "fcr", "density", "biomass", "harvest"} & intents
-        or context.get("advisory_mode")
-    ):
-        gap_bullets = []
-        for g in (wf_audit.get("gaps") or [])[:10]:
-            line = f"**[{g.get('severity', '?')}]** {g.get('message_bn', '')}"
-            if g.get("fix_bn"):
-                line += f" → {g['fix_bn']}"
-            gap_bullets.append(line)
-        fix_bullets = [
-            f"{f.get('label_bn')}" + (f" → `{f.get('erp_path')}`" if f.get("erp_path") else "")
-            for f in (wf_audit.get("fixes") or [])[:8]
-            if f.get("label_bn")
-        ]
-        wf_body = wf_audit.get("summary_bn", "")
-        if gap_bullets:
-            wf_body += "\n\n" + _md_bullets(gap_bullets)
-        parts.append(_md_section("WorldFish/FAO যাচাই", wf_body))
-        if fix_bullets:
-            parts.append(_md_section("ERP-তে ঠিক করুন", _md_bullets(fix_bullets)))
-        steps.append("worldfish_gap_audit — WorldFish/FAO বনাম ERP ডেটা ও পারফরম্যান্স যাচাই।")
-
-    if brief and ({"benchmark", "decision", "predict"} & intents or context.get("advisory_mode")):
-        comp_lines = [
-            c.get("insight_bn") for c in (brief.get("comparisons") or [])[:6] if c.get("insight_bn")
-        ]
-        risk_lines = [r.get("message_bn") for r in (brief.get("risk_flags") or [])[:4] if r.get("message_bn")]
-        proj_lines = [
-            f"{p.get('label_bn')}: ৳{p.get('value_bdt')} ({p.get('method_bn', '')})"
-            for p in (brief.get("projections") or [])[:3]
-        ]
-        dec_lines = [d.get("label_bn") for d in (brief.get("decision_options") or [])[:4] if d.get("label_bn")]
-        if comp_lines:
-            parts.append(_md_section("বিশ্ব/ইন্ডাস্ট্রি তুলনা", _md_bullets(comp_lines)))
-        if proj_lines:
-            parts.append(_md_section("পূর্বাভাস (অনুমান)", _md_bullets(proj_lines)))
-        if risk_lines:
-            parts.append(_md_section("ঝুঁকি সতর্কতা", _md_bullets(risk_lines)))
-        if dec_lines:
-            parts.append(_md_section("সিদ্ধান্তে সহায়তা", _md_bullets(dec_lines)))
-        disclaimer = brief.get("disclaimer_bn")
-        if disclaimer:
-            parts.append(disclaimer)
-        steps.append("decision_brief — ERP বনাম বেঞ্চমার্ক, পূর্বাভাস, সিদ্ধান্ত বিকল্প।")
-
     if snapshot and "general" in intents and not parts:
         fin = snapshot.get("financials_mtd") or {}
         ct = fin.get("company_total") or {}
         sales_mtd = snapshot.get("sales_mtd") or {}
-        exp_mtd = snapshot.get("expenses_mtd") or {}
         counts = snapshot.get("record_counts") or {}
         ponds_block = snapshot.get("ponds_performance_30d") or {}
         roster = snapshot.get("workforce_roster") or []
@@ -698,6 +648,12 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
 
     if not parts:
         return None
+
+    if should_attach_advisory(context):
+        appendix = build_advisory_appendix(context)
+        if appendix:
+            parts.append(appendix)
+            steps.append("বাধ্যতামূলক: বিশ্ব তুলনা, সুপারিশ, সতর্কতা, পূর্বাভাস।")
 
     return {
         "answer_bn": _format_direct_answer(parts),

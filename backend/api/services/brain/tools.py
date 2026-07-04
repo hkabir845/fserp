@@ -268,8 +268,7 @@ def gather_context(
         )
         if brief:
             context["decision_brief"] = brief
-            if wants_benchmark_or_decision_research(message) or {"benchmark", "decision", "predict"} & intents:
-                context["advisory_mode"] = True
+            context["advisory_mode"] = True
 
     list_module = detect_list_module(message)
     if list_module:
@@ -438,8 +437,12 @@ def gather_context(
         missing_inputs.append({"key": "feeding_pond", "prompt_bn": "কোন পোন্ডের জন্য ফিড সুপারিশ চান?"})
 
     aquaculture_intents = {"fcr", "density", "biomass", "harvest", "feeding", "pond", "aquaculture_ops"}
-    need_wf_audit = wants_worldfish_gap_audit(message) or (
-        "benchmark" in intents and bool(aquaculture_intents & intents)
+    entities = (overview.get("entities") or {}) if isinstance(overview, dict) else {}
+    ponds_count = int(entities.get("ponds_count") or 0)
+    need_wf_audit = not light_context and (
+        wants_worldfish_gap_audit(message)
+        or ponds_count > 0
+        or bool(aquaculture_intents & intents)
     )
     if need_wf_audit:
         wf_audit = _safe_block("worldfish_gap_audit", build_worldfish_gap_audit, company_id, lang=lang)

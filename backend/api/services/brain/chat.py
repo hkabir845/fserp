@@ -10,6 +10,7 @@ from django.utils import timezone
 from api.models import BrainConversation, BrainMessage, Company
 from api.services.brain import config as brain_config
 from api.services.brain import gateway, plans, tools
+from api.services.brain.advisory_envelope import enrich_structured_reply
 from api.services.brain.direct_answer import compose_direct_answer
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.intents import is_conversational_turn, is_greeting_message, wants_benchmark_or_decision_research
@@ -22,14 +23,13 @@ for a Bangladeshi multi-business ERP (fuel stations, supershop, agro shop, resta
 PERSONALITY: ChatGPT-style — warm, natural, multi-turn. You are a smart colleague, not a report bot.
 
 ANSWER SCOPE (critical — highest priority):
-1. Answer ONLY what the user asked. Lead with the direct answer in 1–3 sentences.
-2. Related context is OPTIONAL — add at most 1–2 brief bullets only when it clearly helps; skip otherwise.
-3. Do NOT dump MTD totals, full module summaries, station/pond breakdowns, or cross-module synthesis unless explicitly asked.
-4. Follow question_focus in ERP_CONTEXT: matched_modules, primary_topics, answer_scope, instruction_bn.
-5. Users often mention partial module/feature names (Banglish, typos, abbreviations) — infer the correct ERP module
-   from question_focus.matched_modules and erp_modules.module_index; search the right data block before answering.
-6. For how-to, process, regulation, or best-practice questions: use WEB_RESEARCH_NOTE + training knowledge for a
-   professional reply; cite web sources (kind=web) when used.
+1. Answer what the user asked — lead with ### সারাংশ (1–3 sentences direct answer).
+2. ALWAYS append mandatory advisory sections (see MANDATORY ADVISORY below) — every non-greeting answer.
+3. Follow question_focus in ERP_CONTEXT for which ERP data to use first.
+4. Users often mention partial module/feature names (Banglish, typos) — infer the correct ERP module
+   from question_focus.matched_modules and erp_modules.module_index.
+5. For how-to or regulation questions: use WEB_RESEARCH_NOTE + global best practices; cite web sources.
+6. Do NOT dump unrelated module summaries — stay on topic, then add advisory footer.
 
 LANGUAGE (critical):
 1. ALWAYS reply in fluent Bangla in answer_bn — even if the user writes English, Banglish, or romanized Bengali.
@@ -47,6 +47,14 @@ Write answer_bn as clean GitHub-style markdown so the UI renders like ChatGPT:
    | --- | --- | --- |
 6. Keep 3–6 scannable sections max; conversational but structured — like ChatGPT, not a report dump.
 7. answer_bn is markdown text inside JSON — do NOT wrap the whole answer in code fences.
+
+MANDATORY ADVISORY (every answer except pure greeting):
+After ### সারাংশ, ALWAYS include these markdown sections using decision_brief, worldfish_gap_audit, and global knowledge:
+- ### বিশ্ব/গ্লোবাল তুলনা — compare ERP numbers to WorldFish/FAO/industry/global benchmarks
+- ### সুপারিশ ও পরামর্শ — 2–5 prioritized actionable recommendations (decision_options + fixes)
+- ### ⚠️ সতর্কতা — risk_flags and gaps (or state no urgent warning)
+- ### পূর্বাভাস — positive OR negative outlook from projections; state assumptions
+End with brief disclaimer when predicting or recommending strongly.
 
 MODES:
 - Business questions: answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
@@ -102,12 +110,11 @@ Return ONLY a single JSON object (no markdown fences):
 
 CHAT_MODE_INSTRUCTION = (
     "Conversational ChatGPT-style turn in Bangla. "
-    "Format answer_bn with markdown: short opening line, ### headings, bullet lists, **bold** metrics. "
-    "You may discuss anything: general knowledge, advice, explanations, creative writing, tech, news, life — "
-    "not only business. Use COMPANY JSON only when the question is about this company or its operations; "
-    "otherwise answer from general knowledge like ChatGPT. "
-    "If they mix general + company topics, answer both naturally in one reply. "
-    "Do not dump MTD totals or module lists unless they explicitly ask for numbers or a list."
+    "Format with markdown: ### সারাংশ first, then ### বিশ্ব/গ্লোবাল তুলনা, ### সুপারিশ, ### ⚠️ সতর্কতা, ### পূর্বাভাস. "
+    "Compare to global/industry norms even for general topics when relevant. "
+    "You may discuss anything — general knowledge, advice, tech, life — not only business. "
+    "Use COMPANY JSON when the question is about this company. "
+    "If they mix general + company topics, answer both in one reply."
 )
 
 
@@ -292,7 +299,7 @@ def _offline_response(
                 "\n\n(সম্পূর্ণ AI বিশ্লেষণের জন্য SaaS Admin → Brain API-তে Free API Key দিন — "
                 "অথবা সার্ভারে OPENROUTER_API_KEY সেট করুন।)"
             )
-        return direct
+        return enrich_structured_reply(direct, context)
 
     company = context.get("company") or {}
     entities = company.get("entities") or {}
@@ -383,11 +390,11 @@ def _build_messages(
             "question_focus": context.get("question_focus") or {},
             "INSTRUCTION": (
                 "Answer like a human COO advisor in Bangla. User may write Banglish — understand it. "
-                "Answer ONLY the question asked; related context is optional and brief. "
-                "Use question_focus to find the right ERP module when the user names features partially. "
-                "Use business_snapshot and decision_brief only for the topics requested. "
-                "For advisory/compare/predict: use benchmarks and projections. "
-                "For how-to or support: use WEB_RESEARCH_NOTE professionally. Do not redirect to reports."
+                "Structure answer_bn: ### সারাংশ → direct answer; then MANDATORY ### বিশ্ব/গ্লোবাল তুলনা, "
+                "### সুপারিশ ও পরামর্শ, ### ⚠️ সতর্কতা, ### পূর্বাভাস (positive or negative). "
+                "Use decision_brief, worldfish_gap_audit, pond_analytics for comparisons and predictions. "
+                "Compare ERP metrics to WorldFish/FAO/global industry standards. "
+                "Populate suggested_actions from decision_options and worldfish fixes."
             ),
         }
     history.append(
@@ -475,7 +482,7 @@ def _generate_assistant_reply_inner(
             company, user_text
         )
         structured["sources"] = _erp_refs_as_sources(refs, limit=20)
-        return structured, "erp-module-list"
+        return enrich_structured_reply(structured, context), "erp-module-list"
 
     intents_set = set(context.get("intents") or [])
     conversational = is_conversational_turn(intents_set)
@@ -486,7 +493,7 @@ def _generate_assistant_reply_inner(
         if not gateway.openrouter_configured(plan=plan):
             structured = direct or _offline_response(context, refs, user_text, plan=plan)
             structured["sources"] = _erp_refs_as_sources(refs, limit=8)
-            return structured, "erp-chat"
+            return enrich_structured_reply(structured, context), "erp-chat"
 
         messages = _build_messages(conversation, user_text, context, conversational=True)
         model_id = gateway.model_for_role("fast", plan=plan)
@@ -500,7 +507,7 @@ def _generate_assistant_reply_inner(
             if err:
                 structured["answer_bn"] += f"\n\n(AI ত্রুটি: {err})"
             structured["sources"] = _erp_refs_as_sources(refs, limit=8)
-            return structured, "erp-chat-fallback"
+            return enrich_structured_reply(structured, context), "erp-chat-fallback"
 
         structured = gateway.parse_structured_json(raw)
         if not structured or not structured.get("answer_bn"):
@@ -512,14 +519,16 @@ def _generate_assistant_reply_inner(
                 "missing_inputs": [],
                 "suggested_actions": [],
             }
+        elif direct:
+            structured = _merge_direct_with_llm(direct, structured)
         _merge_sources(structured, refs)
         structured.setdefault("reasoning_steps_bn", ["সাধারণ কথোপকথন — বাংলায় উত্তর।"])
         structured.setdefault("confidence", "medium")
-        return structured, model_id
+        return enrich_structured_reply(structured, context), model_id
 
     if not gateway.openrouter_configured(plan=plan):
         structured = _offline_response(context, refs, user_text, plan=plan)
-        return structured, "erp-direct"
+        return enrich_structured_reply(structured, context), "erp-direct"
 
     use_web = tools.should_use_web_research(user_text, plan)
     model_role = "research" if use_web else "reasoning"
@@ -551,6 +560,12 @@ def _generate_assistant_reply_inner(
             "Use WEB_RESEARCH_NOTE for current regulations, best practices, and industry standards; "
             "cite web URLs in sources (kind=web). Stay focused on what the user asked."
         )
+    else:
+        web_note = (
+            "MANDATORY: Compare ERP data to global/industry standards (WorldFish/FAO aquaculture, "
+            "fuel retail margins, SME payroll, AR best practice). Include recommendations, "
+            "warnings (⚠️), and positive or negative month-end projections in answer_bn."
+        )
 
     messages = _build_messages(conversation, user_text, context, web_note=web_note)
     max_tokens = 8192 if use_web else 6144
@@ -562,7 +577,7 @@ def _generate_assistant_reply_inner(
         structured = _offline_response(context, refs, user_text, plan=plan)
         if err:
             structured["answer_bn"] += f"\n\n(AI ত্রুটি: {err})"
-        return structured, "erp-direct-fallback"
+        return enrich_structured_reply(structured, context), "erp-direct-fallback"
 
     structured = gateway.parse_structured_json(raw)
     if not structured or not structured.get("answer_bn"):
@@ -583,7 +598,7 @@ def _generate_assistant_reply_inner(
     structured.setdefault("confidence", "medium")
     structured.setdefault("missing_inputs", context.get("missing_inputs") or [])
     structured.setdefault("suggested_actions", context.get("suggested_actions") or [])
-    return structured, model_id
+    return enrich_structured_reply(structured, context), model_id
 
 
 def append_user_and_assistant(

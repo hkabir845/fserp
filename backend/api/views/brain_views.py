@@ -2,13 +2,34 @@
 from __future__ import annotations
 
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
 from api.models import BrainConversation, BrainMessage, Company
 from api.services.brain import chat as brain_chat
 from api.services.brain import plans as brain_plans
-from api.utils.auth import auth_required, company_context_error_response, get_company_id, get_user_from_request
+from api.services.permission_service import has_permission, resolve_user_permissions
+from api.utils.auth import (
+    auth_required,
+    company_context_error_response,
+    get_company_id,
+    get_user_from_request,
+    user_is_super_admin,
+)
 from api.views.common import parse_json_body
+
+
+def _brain_access_denied(request):
+    user = get_user_from_request(request) or getattr(request, "api_user", None)
+    if user_is_super_admin(user):
+        return None
+    perms = resolve_user_permissions(user) if user else []
+    if has_permission(perms, "app.brain"):
+        return None
+    return JsonResponse(
+        {"detail": "Company Brain access required. Ask your admin to grant app.brain permission."},
+        status=403,
+    )
 
 
 def _serialize_message(msg: BrainMessage) -> dict:
@@ -43,9 +64,13 @@ def _company_or_404(company_id: int) -> Company | None:
     return Company.objects.filter(pk=company_id, is_deleted=False).first()
 
 
+@csrf_exempt
 @auth_required
 @require_GET
 def brain_status(request):
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
     cid = get_company_id(request)
     err = company_context_error_response(request)
     if err:
@@ -56,9 +81,13 @@ def brain_status(request):
     return JsonResponse(brain_plans.usage_status(company))
 
 
+@csrf_exempt
 @auth_required
 @require_http_methods(["GET", "POST"])
 def brain_conversations(request):
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
     cid = get_company_id(request)
     err = company_context_error_response(request)
     if err:
@@ -86,9 +115,13 @@ def brain_conversations(request):
     return JsonResponse(_serialize_conversation(conv), status=201)
 
 
+@csrf_exempt
 @auth_required
 @require_GET
 def brain_conversation_detail(request, conversation_id: int):
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
     cid = get_company_id(request)
     err = company_context_error_response(request)
     if err:
@@ -99,9 +132,13 @@ def brain_conversation_detail(request, conversation_id: int):
     return JsonResponse(_serialize_conversation(conv, include_messages=True))
 
 
+@csrf_exempt
 @auth_required
 @require_http_methods(["POST"])
 def brain_conversation_message(request, conversation_id: int):
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
     cid = get_company_id(request)
     err = company_context_error_response(request)
     if err:

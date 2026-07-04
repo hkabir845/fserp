@@ -209,7 +209,8 @@ def gather_context(
         "company": overview,
         "intents": sorted(intents),
         "period_label": period_label,
-        "answer_mode": "direct_from_erp",
+        "answer_mode": "full_erp_snapshot_plus_focus",
+        "business_snapshot": analytics.build_company_knowledge_snapshot(company_id, lang=lang),
     }
     all_refs = list(refs)
     missing_inputs: list[dict[str, str]] = []
@@ -346,6 +347,20 @@ def gather_context(
         unique_refs.append(r)
 
     return context, unique_refs
+
+
+def should_use_web_research(message: str, plan: str) -> bool:
+    """
+    Paid plans: web-augmented model on every question (owner may ask anything).
+    Free: web only when the question clearly needs external knowledge.
+    """
+    from api.services.brain.plans import PLAN_FREE, WEB_RESEARCH_PLANS
+
+    if plan in WEB_RESEARCH_PLANS:
+        return True
+    if plan == PLAN_FREE:
+        return wants_web_research(message)
+    return wants_web_research(message)
 
 
 def wants_web_research(message: str) -> bool:

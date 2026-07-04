@@ -145,6 +145,46 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
             parts.append("**স্টকে থাকা ঔষধ/পন্ড কেয়ার:** " + ", ".join(m["name"] for m in meds[:8]))
         steps.append("AQ-MED ক্যাটালগ + (পেইড) ওয়েব গবেষণা।")
 
+    snapshot = context.get("business_snapshot")
+    if snapshot and "general" in intents and not parts:
+        fin = snapshot.get("financials_mtd") or {}
+        ct = fin.get("company_total") or {}
+        sales_mtd = snapshot.get("sales_mtd") or {}
+        exp_mtd = snapshot.get("expenses_mtd") or {}
+        counts = snapshot.get("record_counts") or {}
+        ponds_block = snapshot.get("ponds_performance_30d") or {}
+        roster = snapshot.get("workforce_roster") or []
+
+        parts.append(
+            f"**ব্যবসার পালস (MTD):** নেট লাভ **৳{ct.get('net_income', '0')}** "
+            f"(আয় ৳{ct.get('income', '0')}, খরচ ৳{ct.get('expenses', '0')})। "
+            f"বিক্রি **৳{sales_mtd.get('total_sales_bdt', '0')}** ({sales_mtd.get('invoice_count', 0)} ইনভয়েস)।"
+        )
+        parts.append(
+            f"**সংস্থান:** স্টেশন {counts.get('active_stations', 0)}, "
+            f"পোন্ড {counts.get('active_ponds', 0)}, কর্মচারী {counts.get('active_employees', 0)}।"
+        )
+        pond_rows = (ponds_block.get("ponds") or [])[:6]
+        if pond_rows:
+            lines = [
+                f"• {p.get('pond_name')}: FCR={p.get('fcr_biomass') or '—'}, "
+                f"ঘনত্ব={p.get('kg_per_decimal') or '—'} — {p.get('net_action_hint', '')}"
+                for p in pond_rows
+            ]
+            parts.append("**পোন্ড (৩০ দিন):**\n" + "\n".join(lines))
+        if roster:
+            names = ", ".join(f"{e.get('name')} (৳{e.get('monthly_salary_bdt')})" for e in roster[:5])
+            parts.append(f"**কর্মী (সারাংশ):** {names}" + ("…" if len(roster) > 5 else ""))
+        recent_inv = snapshot.get("recent_invoices") or []
+        if recent_inv:
+            parts.append(
+                "**সাম্প্রতিক বিক্রি:** "
+                + "; ".join(
+                    f"{r.get('number')} ৳{r.get('total_bdt')}" for r in recent_inv[:4]
+                )
+            )
+        steps.append("সম্পূর্ণ ERP স্ন্যাপশট — GL P&L, বিক্রি, পোন্ড পারফরম্যান্স, রোস্টার, সাম্প্রতিক লেনদেন।")
+
     if not parts:
         return None
 

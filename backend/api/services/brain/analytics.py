@@ -10,7 +10,9 @@ from django.db.models import Count, Sum
 from django.utils import timezone
 
 from api.models import (
+    AquacultureBiomassSample,
     AquacultureExpense,
+    AquacultureFishSale,
     AquaculturePond,
     AquacultureProductionCycle,
     Bill,
@@ -478,14 +480,135 @@ def medicine_catalog_for_brain(company_id: int) -> list[dict[str, str]]:
         company_id=company_id,
         is_active=True,
         item_number__startswith=MEDICINE_CATALOG_ITEM_PREFIX,
-    ).order_by("item_name")[:40]
+    ).order_by("name")[:40]
     return [
         {
             "item_id": it.id,
             "item_number": it.item_number,
-            "name": it.item_name,
-            "unit": it.unit_of_measure or "",
+            "name": it.name,
+            "unit": it.unit or "",
             "description": (it.description or "")[:200],
         }
         for it in items
     ]
+
+
+def build_company_knowledge_snapshot(company_id: int, *, lang: str = "bn") -> dict[str, Any]:
+    """
+    Whole-application business snapshot — loaded on every Brain question so the owner
+    can ask anything without us guessing intents first.
+    """
+    today = timezone.localdate()
+    month_start = today.replace(day=1)
+    fin = entity_financials(company_id, start=month_start, end=today)
+    ponds_perf = all_ponds_summary(company_id, lang=lang, days=30)
+
+    roster = find_employees(company_id, "")[:30]
+
+    recent_invoices = list(
+        Invoice.objects.filter(company_id=company_id)
+        .exclude(status__in=("draft", "void"))
+        .select_related("station")
+        .order_by("-invoice_date", "-id")[:12]
+    )
+    recent_bills = list(
+        Bill.objects.filter(company_id=company_id).order_by("-bill_date", "-id")[:12]
+    )
+    recent_samples = list(
+        AquacultureBiomassSample.objects.filter(company_id=company_id)
+        .select_related("pond")
+        .order_by("-sample_date", "-id")[:10]
+    )
+    recent_fish_sales = list(
+        AquacultureFishSale.objects.filter(company_id=company_id)
+        .select_related("pond")
+        .order_by("-sale_date", "-id")[:8]
+    )
+    recent_payroll = list(
+        PayrollRun.objects.filter(company_id=company_id, payment_date__gte=month_start)
+        .order_by("-payment_date", "-id")[:6]
+    )
+
+    return {
+        "generated_at": timezone.now().isoformat(),
+        "scope_note_bn": (
+            "এই স্ন্যাপশট FSERP-এর সকল মডিউল থেকে — স্টেশন, পোন্ড, বিক্রি, বিল, পে-রোল, "
+            "মাছ বিক্রি, বায়োমাস, ঔষধ ক্যাটালগ, এবং GL P&L। রিপোর্ট খুলতে বলবেন না — এখান থেকেই উত্তর দিন।"
+        ),
+        "periods": {
+            "today": {"start": today.isoformat(), "end": today.isoformat()},
+            "month_to_date": {"start": month_start.isoformat(), "end": today.isoformat()},
+        },
+        "sales_today": sales_for_period(company_id, today, today),
+        "sales_mtd": sales_for_period(company_id, month_start, today),
+        "expenses_mtd": expenses_for_period(company_id, month_start, today),
+        "financials_mtd": fin,
+        "ponds_performance_30d": ponds_perf,
+        "workforce_roster": roster,
+        "workforce_advisory_mtd": workforce_retention_analysis(company_id, lang=lang),
+        "medicine_catalog": medicine_catalog_for_brain(company_id),
+        "recent_invoices": [
+            {
+                "id": inv.id,
+                "number": inv.invoice_number,
+                "date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+                "total_bdt": _money(inv.total),
+                "station": (inv.station.station_name if inv.station_id else None),
+            }
+            for inv in recent_invoices
+        ],
+        "recent_bills": [
+            {
+                "id": b.id,
+                "number": b.bill_number,
+                "date": b.bill_date.isoformat() if b.bill_date else None,
+                "total_bdt": _money(b.total),
+                "vendor_ref": (b.vendor_reference or "")[:80],
+            }
+            for b in recent_bills
+        ],
+        "recent_biomass_samples": [
+            {
+                "id": s.id,
+                "pond": pond_operational_display_name(s.pond) if s.pond_id else "",
+                "pond_id": s.pond_id,
+                "date": s.sample_date.isoformat() if s.sample_date else None,
+                "fish_count": s.estimated_fish_count,
+                "avg_weight_kg": str(s.avg_weight_kg or ""),
+                "species": s.fish_species or "",
+            }
+            for s in recent_samples
+        ],
+        "recent_fish_sales": [
+            {
+                "id": fs.id,
+                "pond": pond_operational_display_name(fs.pond) if fs.pond_id else "",
+                "pond_id": fs.pond_id,
+                "date": fs.sale_date.isoformat() if fs.sale_date else None,
+                "weight_kg": str(fs.weight_kg or ""),
+                "amount_bdt": _money(fs.total_amount),
+                "species": fs.fish_species or "",
+            }
+            for fs in recent_fish_sales
+        ],
+        "recent_payroll_runs": [
+            {
+                "id": pr.id,
+                "number": pr.payroll_number,
+                "payment_date": pr.payment_date.isoformat() if pr.payment_date else None,
+                "gross_bdt": _money(pr.total_gross),
+                "net_bdt": _money(pr.total_net),
+                "status": pr.status,
+            }
+            for pr in recent_payroll
+        ],
+        "record_counts": {
+            "active_stations": Station.objects.filter(company_id=company_id, is_active=True).count(),
+            "active_ponds": AquaculturePond.objects.filter(company_id=company_id, is_active=True).count(),
+            "active_employees": Employee.objects.filter(company_id=company_id, is_active=True).count(),
+            "invoices_all_time": Invoice.objects.filter(company_id=company_id).count(),
+            "bills_all_time": Bill.objects.filter(company_id=company_id).count(),
+            "aquaculture_expenses_all_time": AquacultureExpense.objects.filter(company_id=company_id).count(),
+            "fish_sales_all_time": AquacultureFishSale.objects.filter(company_id=company_id).count(),
+        },
+    }

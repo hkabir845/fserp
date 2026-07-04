@@ -13,23 +13,28 @@ from api.services.brain.direct_answer import compose_direct_answer
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are the Company Brain (কোম্পানি ব্রেইন) — the owner's second brain for a Bangladeshi multi-business ERP
+SYSTEM_PROMPT = """You are the Company Brain (কোম্পানি ব্রেইন) — the owner's trusted COO advisor for a Bangladeshi multi-business ERP
 (fuel stations, supershop, agro shop, restaurant, workshop, aquaculture ponds with tilapia and other species).
 
+You speak like a sharp human colleague: warm, direct, no corporate fluff. The owner may ask ANYTHING about their business.
+
+DATA SOURCES (use all of them):
+1. business_snapshot — whole-application ERP state (sales, expenses, P&L, all ponds, roster, recent invoices/bills/payroll, medicine catalog).
+2. Focused blocks (pond_analytics, employees, etc.) when present — deeper detail for the specific entity asked about.
+3. WEB_RESEARCH_NOTE — when present, supplement with current aquaculture/disease/market knowledge; cite URLs in sources (kind=web).
+
 CRITICAL RULES:
-1. Answer the question DIRECTLY using ERP_CONTEXT data. NEVER tell the user to "open Reports" or "run a report".
-2. Reply in fluent Bangla (bn) unless the user writes only in English.
-3. For FCR, density (kg/decimal), fish count, feeding kg, sales, net profit, expenses, salaries — quote exact numbers from ERP_CONTEXT.
-4. For stocking: if load is high_risk/full → recommend partial harvest/sale with kg/fish counts from stocking_recommendation.
-   If understocked → recommend increasing stocking. Cite comfort_kg_per_decimal when available.
-5. For disease: draft a prescription (ঔষধ, ডোজ, প্রয়োগ, নিরাপদ কাল) using medicine_catalog + user symptoms.
-   Mark requires_approval true. Ask missing_inputs if pond/symptoms unclear.
-6. For job cuts: list release_candidates_advisory with reasons; emphasize advisory only — owner decides.
-7. Never invent employees, amounts, or pond names not in ERP_CONTEXT.
+1. Answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
+2. Reply in fluent Bangla unless the user writes only in English.
+3. Quote exact numbers (৳, kg, FCR, fish count, salaries) from the JSON context — never invent figures or names.
+4. For stocking: high load → partial harvest with kg/fish from stocking_recommendation; understocked → suggest increasing stocking.
+5. For disease: draft prescription (ঔষধ, ডোজ, প্রয়োগ) from medicine_catalog + symptoms; requires_approval true.
+6. For job cuts: release_candidates_advisory only — advisory, owner decides. Include disclaimer.
+7. If data is missing, say what you know and ask one clear follow-up (missing_inputs).
 
 Return ONLY a single JSON object (no markdown fences):
-- answer_bn: string (direct answer first, human tone)
-- reasoning_steps_bn: array of strings (how you derived the answer)
+- answer_bn: string (conversational; lead with the direct answer, then context/recommendation)
+- reasoning_steps_bn: array of strings (how you reasoned — ERP facts, comparisons, web if used)
 - confidence: "high" | "medium" | "low"
 - sources: array of {kind: "erp"|"inference"|"web", type, id, label, path, url}
 - missing_inputs: array of {key, prompt_bn}
@@ -64,6 +69,23 @@ def _offline_response(context: dict[str, Any], refs: list[dict[str, Any]], quest
 
     company = context.get("company") or {}
     entities = company.get("entities") or {}
+    snapshot = context.get("business_snapshot") or {}
+    ct = (snapshot.get("financials_mtd") or {}).get("company_total") or {}
+    if ct:
+        return {
+            "answer_bn": (
+                f"কোম্পানি '{company.get('company_name', '')}' — "
+                f"স্টেশন {entities.get('stations_count', 0)}, পোন্ড {entities.get('ponds_count', 0)}, "
+                f"কর্মচারী {entities.get('employees_active', 0)}। "
+                f"এই মাসে নেট লাভ ৳{ct.get('net_income', '0')}। "
+                "আরও নির্দিষ্ট প্রশ্ন করুন (পোন্ড, স্টেশন, কর্মচারী, বিক্রি, খরচ)।"
+            ),
+            "reasoning_steps_bn": ["ERP স্ন্যাপশট লোড হয়েছে; প্রশ্নটি আরও ফোকাস করা যায়।"],
+            "confidence": "low",
+            "sources": [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:8]],
+            "missing_inputs": context.get("missing_inputs") or [],
+            "suggested_actions": [],
+        }
     return {
         "answer_bn": (
             f"কোম্পানি '{company.get('company_name', '')}' — "
@@ -116,7 +138,10 @@ def _build_messages(
         "ERP_CONTEXT": context,
         "USER_QUESTION": user_text,
         "TODAY": timezone.localdate().isoformat(),
-        "INSTRUCTION": "Answer directly from ERP_CONTEXT. Do not redirect to reports.",
+        "INSTRUCTION": (
+            "Answer like a human COO advisor. Use business_snapshot for any question. "
+            "Do not redirect to reports."
+        ),
     }
     history.append(
         {
@@ -147,24 +172,25 @@ def generate_assistant_reply(
         structured = _offline_response(context, refs, user_text)
         return structured, "erp-direct"
 
-    use_web = tools.wants_web_research(user_text) and plan in plans.WEB_RESEARCH_PLANS
+    use_web = tools.should_use_web_research(user_text, plan)
     model_role = "research" if use_web else "reasoning"
     model_id = gateway.model_for_role(model_role, plan=plan)
 
     web_note = ""
     if use_web:
         web_note = (
-            "User needs external aquaculture/disease/market knowledge. Cite web URLs in sources (kind=web). "
-            "Combine with ERP_CONTEXT medicine_catalog for prescriptions."
+            "Supplement ERP data with current web knowledge (aquaculture, disease, market prices, regulations). "
+            "Cite web URLs in sources (kind=web). Combine with business_snapshot.medicine_catalog for prescriptions."
         )
     elif "disease" in (context.get("intents") or []):
         web_note = (
-            "Disease question on free tier: use medicine_catalog + general aquaculture knowledge; "
-            "note if paid web research would improve accuracy."
+            "Disease question on free tier: use medicine_catalog + aquaculture knowledge from training; "
+            "note that Growth plan enables live web research for better accuracy."
         )
 
     messages = _build_messages(conversation, user_text, context, web_note=web_note)
-    raw, err = gateway.chat_completion(messages=messages, model=model_id)
+    max_tokens = 8192 if use_web else 6144
+    raw, err = gateway.chat_completion(messages=messages, model=model_id, max_tokens=max_tokens)
     if err or not raw:
         logger.warning("Brain LLM failed: %s", err)
         structured = _offline_response(context, refs, user_text)

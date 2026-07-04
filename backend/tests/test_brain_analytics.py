@@ -51,6 +51,25 @@ def test_direct_answer_fcr_offline(company_master):
 
 
 @pytest.mark.django_db
+def test_build_company_knowledge_snapshot(company_master):
+    from api.services.brain.analytics import build_company_knowledge_snapshot
+
+    snap = build_company_knowledge_snapshot(company_master.id, lang="bn")
+    assert snap.get("financials_mtd")
+    assert snap.get("sales_mtd")
+    assert snap.get("record_counts")
+    assert "active_stations" in snap["record_counts"]
+
+
+@pytest.mark.django_db
+def test_gather_context_includes_full_snapshot(company_master):
+    ctx, refs = gather_context(company_master.id, "আমার ব্যবসা কেমন চলছে?")
+    assert "business_snapshot" in ctx
+    assert ctx["business_snapshot"].get("financials_mtd")
+    assert refs
+
+
+@pytest.mark.django_db
 def test_workforce_analysis_returns_advisory(company_master):
     out = workforce_retention_analysis(company_master.id, lang="bn")
     assert "release_candidates_advisory" in out

@@ -25,7 +25,7 @@ const btnSecondary =
 /**
  * Login-screen Android download / install — all SaaS tenants, mobile-first touch targets.
  */
-export function AndroidAppDownload() {
+export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainFlow?: boolean }) {
   const apkUrl = getAndroidApkUrl()
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(false)
@@ -63,8 +63,10 @@ export function AndroidAppDownload() {
     setInstallPrompt(null)
   }, [installPrompt])
 
-  if (nativeApp || installed) {
-    if (nativeApp) return null
+  if (nativeApp) return null
+  if (hideForBrainFlow) return null
+
+  if (installed) {
     return (
       <p className="mt-4 flex items-center justify-center gap-2 text-sm text-emerald-700">
         <Smartphone className="h-4 w-4 shrink-0" aria-hidden />

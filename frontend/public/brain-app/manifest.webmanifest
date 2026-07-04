@@ -6,16 +6,12 @@
   "start_url": "/brain-app",
   "scope": "/brain-app",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#eef2ff",
   "theme_color": "#4f46e5",
-  "orientation": "portrait-primary",
+  "orientation": "any",
+  "prefer_related_applications": false,
   "icons": [
-    {
-      "src": "/brain-app/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
     {
       "src": "/brain-app/icon-192.png",
       "sizes": "192x192",
@@ -26,7 +22,13 @@
       "src": "/brain-app/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/brain-app/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

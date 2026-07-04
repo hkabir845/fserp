@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { BrainChatPanel, brainUiLabels } from '@/components/brain/BrainChatPanel'
+import { BrainAppInstallPrompt } from '@/components/brain/BrainAppInstallPrompt'
 import { fetchCurrentCompany } from '@/lib/api'
 import { hasStoredSession, readStoredAccessToken } from '@/lib/authSession'
 import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
@@ -105,6 +106,7 @@ function BrainAppContent() {
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-3 py-3 sm:px-4">
         <p className="mb-2 text-center text-xs text-muted-foreground">{labels.subtitle}</p>
         <BrainChatPanel standalone className="flex-1 border-indigo-100 shadow-md" />
+        <BrainAppInstallPrompt language={language === 'bn' ? 'bn' : 'en'} />
       </main>
     </div>
   )

@@ -15,9 +15,9 @@ const COPY = {
     copyLink: 'Copy link',
     copied: 'Link copied',
     downloadIcon: 'Download app icon',
-    installTitle: 'Install on phone (home screen)',
+    installTitle: 'Install on any device (browser)',
     installSteps:
-      'Open the link on your phone → browser menu → Add to Home screen / Install app. Uses the icon above.',
+      'Phone, tablet, or PC: log in → Brain screen → Install app. iPhone: Share → Add to Home Screen. Android/Chrome: Install button or menu.',
     urlLabel: 'Standalone URL',
   },
   bn: {
@@ -28,9 +28,9 @@ const COPY = {
     copyLink: 'লিংক কপি',
     copied: 'লিংক কপি হয়েছে',
     downloadIcon: 'অ্যাপ আইকন ডাউনলোড',
-    installTitle: 'ফোনে ইনস্টল (হোম স্ক্রিন)',
+    installTitle: 'যেকোনো ডিভাইসে ইনস্টল (ব্রাউজার)',
     installSteps:
-      'ফোনে লিংক খুলুন → ব্রাউজার মেনু → Add to Home screen / Install app। উপরের আইকন ব্যবহার হবে।',
+      'ফোন, ট্যাবলেট বা PC: লগইন → Brain স্ক্রিন → Install app। iPhone: Share → Add to Home Screen। Android/Chrome: Install বাটন বা menu।',
     urlLabel: 'স্ট্যান্ডঅ্যালোন URL',
   },
 } as const

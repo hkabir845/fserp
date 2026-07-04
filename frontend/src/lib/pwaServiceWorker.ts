@@ -1,5 +1,5 @@
 /** Bump ?v= when sw.js behavior changes so browsers pick up the new worker. */
-export const SERVICE_WORKER_URL = '/sw.js?v=3'
+export const SERVICE_WORKER_URL = '/sw.js?v=4'
 
 /** Register PWA service worker (production HTTPS only). Safe on login and in-app. */
 export function registerPwaServiceWorker(): void {

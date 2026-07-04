@@ -8,6 +8,7 @@ import { getApiBaseUrl, getBackendOrigin, getApiDocsUrl, setAuthApiOriginStamp }
 import { formatApiErrorJson } from '@/utils/errorHandler'
 import { loginRedirectAfterAuth } from '@/utils/loginRedirect'
 import { AndroidAppDownload } from '@/components/AndroidAppDownload'
+import { BrainAppInstallPrompt } from '@/components/brain/BrainAppInstallPrompt'
 
 function LoginPageInner() {
   const router = useRouter()
@@ -519,7 +520,9 @@ function LoginPageInner() {
           </button>
         </form>
 
-        <AndroidAppDownload />
+        <AndroidAppDownload hideForBrainFlow={nextPath === '/brain-app'} />
+
+        {nextPath === '/brain-app' ? <BrainAppInstallPrompt onLoginScreen language="bn" /> : null}
 
         <p className="mt-4 text-center text-sm text-muted-foreground">
           <Link href="/login?next=/brain-app" className="font-medium text-indigo-600 hover:underline">

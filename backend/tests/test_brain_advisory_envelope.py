@@ -1,7 +1,5 @@
-"""Tests for mandatory Brain advisory envelope."""
+"""Tests for optional Brain advisory envelope."""
 from __future__ import annotations
-
-import pytest
 
 from api.services.brain.advisory_envelope import (
     build_advisory_appendix,
@@ -11,14 +9,22 @@ from api.services.brain.advisory_envelope import (
 )
 
 
-def test_should_skip_greeting_only():
+def test_should_skip_greeting_and_plain_factual():
     assert not should_attach_advisory({"intents": ["greeting"]})
-    assert should_attach_advisory({"intents": ["profit", "sales"]})
+    assert not should_attach_advisory({"intents": ["profit", "sales"], "user_question": "profit koto"})
+    assert should_attach_advisory(
+        {
+            "intents": ["profit"],
+            "user_question": "profit er sathe industry compare koro",
+            "user_wants_advisory": True,
+        }
+    )
 
 
 def test_build_advisory_appendix_has_required_sections():
     ctx = {
         "intents": ["fcr", "density"],
+        "user_wants_advisory": True,
         "decision_brief": {
             "comparisons": [{"insight_bn": "FCR 1.8 — WorldFish সীমার উপরে"}],
             "risk_flags": [{"message_bn": "ঘনত্ব বেশি"}],
@@ -42,8 +48,23 @@ def test_merge_advisory_skips_duplicate():
     assert "### সুপারিশ ও পরামর্শ" in merged
 
 
-def test_enrich_structured_reply():
-    ctx = {"intents": ["profit"], "business_snapshot": {"financials_mtd": {"company_total": {"net_income": "5000"}}}}
-    out = enrich_structured_reply({"answer_bn": "### সারাংশ\n\nলাভ ভালো"}, ctx)
-    assert "বিশ্ব" in out["answer_bn"] or "গ্লোবাল" in out["answer_bn"]
-    assert out.get("reasoning_steps_bn")
+def test_enrich_structured_reply_only_when_requested():
+    ctx = {
+        "intents": ["profit"],
+        "user_question": "profit koto",
+        "business_snapshot": {"financials_mtd": {"company_total": {"net_income": "5000"}}},
+    }
+    out = enrich_structured_reply(
+        {"answer_bn": "### সারাংশ\n\nলাভ ভালো", "suggested_actions": [{"action": "x"}]},
+        ctx,
+    )
+    assert "বিশ্ব" not in out["answer_bn"] and "গ্লোবাল" not in out["answer_bn"]
+    assert out.get("suggested_actions") == []
+
+    ctx_adv = {
+        **ctx,
+        "user_question": "profit compare with industry and recommend",
+        "user_wants_advisory": True,
+    }
+    out_adv = enrich_structured_reply({"answer_bn": "### সারাংশ\n\nলাভ ভালো"}, ctx_adv)
+    assert "বিশ্ব" in out_adv["answer_bn"] or "গ্লোবাল" in out_adv["answer_bn"]

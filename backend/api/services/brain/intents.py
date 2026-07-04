@@ -38,6 +38,74 @@ def is_employee_list_request(message: str) -> bool:
     return detect_list_module(message) == "employees"
 
 
+def wants_advisory_extras(message: str, intents: set[str] | None = None) -> bool:
+    """Owner explicitly wants compare, advice, warnings, forecast, roadmap, or decision support."""
+    if wants_benchmark_or_decision_research(message):
+        return True
+    if is_business_overview_question(message):
+        return True
+    intents = intents or set()
+    if intents & {"benchmark", "decision", "predict", "job_cut", "disease"}:
+        return True
+    lower = (message or "").lower()
+    extra = (
+        "roadmap",
+        "action plan",
+        "next step",
+        "improve",
+        "improvement",
+        "warning",
+        "warn",
+        "outlook",
+        "road map",
+        "plan koro",
+        "plan dao",
+        "রোডম্যাপ",
+        "পরিকল্পনা",
+        "উন্নতি",
+        "সতর্ক",
+        "সতর্কতা",
+        "পরবর্তী",
+        "ধাপ",
+        "কী করব",
+        "ki korbo",
+        "kivabe",
+        "overview",
+        "audit",
+        "gap analysis",
+        "worldfish",
+    )
+    return any(k in lower for k in extra)
+
+
+def wants_execution_actions(message: str, intents: set[str] | None = None) -> bool:
+    """Owner asked to execute, approve, or implement — not just inform."""
+    lower = (message or "").lower()
+    intents = intents or set()
+    if intents & {"disease", "job_cut", "harvest"}:
+        return True
+    exec_kw = (
+        "execute",
+        "do it",
+        "apply",
+        "approve",
+        "implement",
+        "go ahead",
+        "start harvest",
+        "cut job",
+        "fire ",
+        "koro",
+        "korun",
+        "kore dao",
+        "শুরু কর",
+        "এপ্রুভ",
+        "বাস্তবায়ন",
+        "করে দাও",
+        "করে দিন",
+    )
+    return any(k in lower for k in exec_kw)
+
+
 def wants_benchmark_or_decision_research(message: str) -> bool:
     """Questions that benefit from world standards, forecasts, or decision support."""
     lower = (message or "").lower()

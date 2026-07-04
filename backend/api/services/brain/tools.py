@@ -27,7 +27,9 @@ from api.services.brain.intents import (
     is_employee_list_request,
     is_greeting_message,
     is_light_context,
+    wants_advisory_extras,
     wants_benchmark_or_decision_research,
+    wants_execution_actions,
 )
 from api.services.brain.decision_intelligence import build_decision_brief
 from api.services.brain.worldfish_gap_audit import build_worldfish_gap_audit, wants_worldfish_gap_audit
@@ -253,6 +255,8 @@ def gather_context(
     context: dict[str, Any] = {
         "company": overview,
         "intents": sorted(intents),
+        "user_question": message,
+        "user_wants_advisory": wants_advisory_extras(message, intents),
         "period_label": period_label,
         "answer_mode": "conversational_chat" if intents == {"chat"} else "full_erp_snapshot_plus_focus",
         "business_snapshot": business_snapshot,
@@ -268,7 +272,8 @@ def gather_context(
         )
         if brief:
             context["decision_brief"] = brief
-            context["advisory_mode"] = True
+            if context["user_wants_advisory"]:
+                context["advisory_mode"] = True
 
     list_module = detect_list_module(message)
     if list_module:
@@ -301,22 +306,23 @@ def gather_context(
                 )
             )
             rec = pa.get("stocking_recommendation") or {}
-            if rec.get("owner_action") == "partial_harvest":
-                suggested_actions.append(
-                    {
-                        "action": "partial_harvest",
-                        "label_bn": "আংশিক হারভেস্ট / বিক্রি পরিকল্পনা করুন",
-                        "requires_approval": True,
-                    }
-                )
-            if rec.get("owner_action") == "grow":
-                suggested_actions.append(
-                    {
-                        "action": "increase_stocking",
-                        "label_bn": "স্টকিং বাড়ানোর পরিকল্পনা করুন",
-                        "requires_approval": True,
-                    }
-                )
+            if context["user_wants_advisory"] or wants_execution_actions(message, intents):
+                if rec.get("owner_action") == "partial_harvest":
+                    suggested_actions.append(
+                        {
+                            "action": "partial_harvest",
+                            "label_bn": "আংশিক হারভেস্ট / বিক্রি পরিকল্পনা করুন",
+                            "requires_approval": True,
+                        }
+                    )
+                if rec.get("owner_action") == "grow":
+                    suggested_actions.append(
+                        {
+                            "action": "increase_stocking",
+                            "label_bn": "স্টকিং বাড়ানোর পরিকল্পনা করুন",
+                            "requires_approval": True,
+                        }
+                    )
 
     if need_all_ponds:
         summary = _safe_block("all_ponds_summary", analytics.all_ponds_summary, company_id, lang=lang)
@@ -441,25 +447,26 @@ def gather_context(
     ponds_count = int(entities.get("ponds_count") or 0)
     need_wf_audit = not light_context and (
         wants_worldfish_gap_audit(message)
-        or ponds_count > 0
-        or bool(aquaculture_intents & intents)
+        or (context["user_wants_advisory"] and ponds_count > 0 and bool(aquaculture_intents & intents))
     )
     if need_wf_audit:
         wf_audit = _safe_block("worldfish_gap_audit", build_worldfish_gap_audit, company_id, lang=lang)
         if wf_audit:
             context["worldfish_gap_audit"] = wf_audit
-            context["advisory_mode"] = True
-            for fix in (wf_audit.get("fixes") or [])[:12]:
-                suggested_actions.append(
-                    {
-                        "action": fix.get("action", "worldfish_fix"),
-                        "label_bn": fix.get("label_bn", ""),
-                        "erp_path": fix.get("erp_path"),
-                        "pond_id": fix.get("pond_id"),
-                        "requires_approval": bool(fix.get("requires_approval")),
-                        "source": "worldfish_gap_audit",
-                    }
-                )
+            if context["user_wants_advisory"]:
+                context["advisory_mode"] = True
+            if context["user_wants_advisory"] or wants_execution_actions(message, intents):
+                for fix in (wf_audit.get("fixes") or [])[:12]:
+                    suggested_actions.append(
+                        {
+                            "action": fix.get("action", "worldfish_fix"),
+                            "label_bn": fix.get("label_bn", ""),
+                            "erp_path": fix.get("erp_path"),
+                            "pond_id": fix.get("pond_id"),
+                            "requires_approval": bool(fix.get("requires_approval")),
+                            "source": "worldfish_gap_audit",
+                        }
+                    )
             all_refs.append(
                 _ref(
                     kind="erp",
@@ -471,14 +478,15 @@ def gather_context(
             )
 
     brief = context.get("decision_brief") or {}
-    for opt in (brief.get("decision_options") or [])[:6]:
-        suggested_actions.append(
-            {
-                "action": opt.get("action", "advisory"),
-                "label_bn": opt.get("label_bn", ""),
-                "requires_approval": bool(opt.get("requires_approval")),
-            }
-        )
+    if context["user_wants_advisory"] or wants_execution_actions(message, intents):
+        for opt in (brief.get("decision_options") or [])[:6]:
+            suggested_actions.append(
+                {
+                    "action": opt.get("action", "advisory"),
+                    "label_bn": opt.get("label_bn", ""),
+                    "requires_approval": bool(opt.get("requires_approval")),
+                }
+            )
 
     context["missing_inputs"] = missing_inputs
     context["suggested_actions"] = suggested_actions

@@ -653,7 +653,7 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         appendix = build_advisory_appendix(context)
         if appendix:
             parts.append(appendix)
-            steps.append("বাধ্যতামূলক: বিশ্ব তুলনা, সুপারিশ, সতর্কতা, পূর্বাভাস।")
+            steps.append("অনুরোধ অনুযায়ী: বিশ্ব তুলনা, সুপারিশ, সতর্কতা, পূর্বাভাস।")
 
     return {
         "answer_bn": _format_direct_answer(parts),

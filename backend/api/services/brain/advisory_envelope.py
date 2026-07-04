@@ -1,4 +1,4 @@
-"""Mandatory global compare, recommendations, warnings, and predictions for every Brain answer."""
+"""Optional advisory appendix — compare, recommendations, warnings, predictions when requested."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -73,10 +73,7 @@ def _outlook_positive(projection_lines: list[str], snapshot: dict) -> bool:
 
 
 def build_advisory_appendix(context: dict[str, Any]) -> str:
-    """
-    Mandatory advisory footer: global compare, recommendations, warnings, predictions.
-    Appended to every non-greeting Brain answer.
-    """
+    """Advisory footer when the owner asked for compare / advice / forecast / roadmap."""
     intents: set[str] = set(context.get("intents") or [])
     brief = context.get("decision_brief") or {}
     wf = context.get("worldfish_gap_audit") or {}
@@ -197,11 +194,30 @@ def merge_advisory_into_answer(answer: str, appendix: str) -> str:
 
 def should_attach_advisory(context: dict[str, Any]) -> bool:
     intents = set(context.get("intents") or [])
-    return "greeting" not in intents
+    if "greeting" in intents or intents <= {"chat"}:
+        return False
+    if context.get("user_wants_advisory"):
+        return True
+    from api.services.brain.intents import wants_advisory_extras
+
+    question = str(context.get("user_question") or "")
+    return wants_advisory_extras(question, intents)
+
+
+def _filter_suggested_actions(structured: dict[str, Any], context: dict[str, Any]) -> None:
+    """Keep execution buttons only when the owner asked for advice or to act."""
+    from api.services.brain.intents import wants_advisory_extras, wants_execution_actions
+
+    question = str(context.get("user_question") or "")
+    intents = set(context.get("intents") or [])
+    if wants_advisory_extras(question, intents) or wants_execution_actions(question, intents):
+        return
+    structured["suggested_actions"] = []
 
 
 def enrich_structured_reply(structured: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    """Ensure every reply includes global compare, advice, warnings, and outlook."""
+    """Append advisory sections and actions only when the owner requested them."""
+    _filter_suggested_actions(structured, context)
     if not should_attach_advisory(context):
         return structured
     appendix = build_advisory_appendix(context)
@@ -215,8 +231,7 @@ def enrich_structured_reply(structured: dict[str, Any], context: dict[str, Any])
         steps.extend(
             [
                 "ERP তথ্য সংগ্রহ",
-                "বিশ্ব/ইন্ডাস্ট্রি বেঞ্চমার্ক তুলনা",
-                "সুপারিশ, সতর্কতা ও পূর্বাভাস যোগ",
+                "অনুরোধ অনুযায়ী বেঞ্চমার্ক/পরামর্শ/পূর্বাভাস যোগ",
             ]
         )
     structured["reasoning_steps_bn"] = steps[:8]

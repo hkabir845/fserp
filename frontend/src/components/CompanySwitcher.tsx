@@ -148,7 +148,7 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
     const role = readUserRole()
     try {
       const data = await fetchCurrentCompany()
-      const cid = data?.id
+      const cid = data.id
       if (cid == null || typeof cid !== 'number') {
         setFetchError('Could not load company context.')
         setCompanies([])
@@ -157,9 +157,10 @@ export default function CompanySwitcher({ compact = false }: { compact?: boolean
         return
       }
       const admin = isTenantAdminRole(role)
-      const multi = Boolean(data.can_switch_group_company) && Array.isArray(data.group_companies)
-      if (admin && multi && data.group_companies!.length > 1) {
-        const list: Company[] = data.group_companies!.map((g) => ({
+      const groupCompanies = data.group_companies ?? []
+      const multi = Boolean(data.can_switch_group_company) && groupCompanies.length > 0
+      if (admin && multi && groupCompanies.length > 1) {
+        const list: Company[] = groupCompanies.map((g) => ({
           id: g.id,
           name: String(g.name || '').trim() || `Company #${g.id}`,
           is_master:

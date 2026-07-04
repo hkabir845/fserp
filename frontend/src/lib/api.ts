@@ -278,7 +278,27 @@ export async function ensureAccessTokenFresh(): Promise<string | null> {
   return null
 }
 
-export type CurrentCompanyPayload = Record<string, unknown>
+export type CurrentCompanyGroupRow = {
+  id: number
+  name: string
+  is_master?: string | boolean
+  company_code?: string
+}
+
+export type CurrentCompanyPayload = {
+  id?: number
+  name?: string
+  is_master?: string | boolean
+  can_switch_group_company?: boolean
+  group_companies?: CurrentCompanyGroupRow[]
+  date_format?: string
+  time_format?: string
+  time_zone?: string
+  station_mode?: string
+  language?: string
+  aquaculture_enabled?: boolean
+  currency?: string
+}
 
 let currentCompanyInflight: Promise<CurrentCompanyPayload> | null = null
 let currentCompanyCache: { data: CurrentCompanyPayload; at: number } | null = null

@@ -85,6 +85,7 @@ const NAV_BY_HREF: Record<string, Row> = {
   '/admin/subscription-ledger': { en: 'Subscription Ledger', bn: 'সাবস্ক্রিপশন লেজার' },
   '/admin/broadcasting': { en: 'Broadcasting', bn: 'ব্রডকাস্টিং' },
   '/admin/backup': { en: 'Backup & Restore', bn: 'ব্যাকআপ ও রিস্টোর' },
+  '/admin/brain-settings': { en: 'Brain API', bn: 'ব্রেইন API' },
 }
 
 export type ErpNavSectionId =

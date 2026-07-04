@@ -1,0 +1,128 @@
+"""Platform Brain API keys — SaaS UI with env fallback."""
+from __future__ import annotations
+
+import os
+import re
+from typing import Any
+
+from api.models import PlatformBrainConfig
+
+_PAID_BRAIN_PLANS = frozenset({"growth", "enterprise"})
+
+_MASK_RE = re.compile(r"^[•*.\s]+$")
+
+
+def _env(name: str) -> str:
+    return (os.environ.get(name) or "").strip()
+
+
+def mask_api_key(key: str) -> str:
+    k = (key or "").strip()
+    if not k:
+        return ""
+    if len(k) <= 10:
+        return "••••••••"
+    return f"{k[:6]}••••••••{k[-4:]}"
+
+
+def _looks_like_mask(value: str) -> bool:
+    v = (value or "").strip()
+    return not v or "•" in v or _MASK_RE.match(v) is not None
+
+
+def get_platform_brain_config() -> PlatformBrainConfig:
+    row, _ = PlatformBrainConfig.objects.get_or_create(pk=1)
+    return row
+
+
+def env_api_key() -> str:
+    return _env("OPENROUTER_API_KEY")
+
+
+def api_key_for_plan(plan: str) -> str:
+    cfg = get_platform_brain_config()
+    free = (cfg.free_api_key or "").strip()
+    vendor = (cfg.vendor_api_key or "").strip()
+    env_key = env_api_key()
+
+    if plan in _PAID_BRAIN_PLANS:
+        return vendor or free or env_key
+    return free or env_key or vendor
+
+
+def openrouter_configured(*, plan: str | None = None) -> bool:
+    if plan:
+        return bool(api_key_for_plan(plan))
+    cfg = get_platform_brain_config()
+    return bool(
+        (cfg.free_api_key or "").strip()
+        or (cfg.vendor_api_key or "").strip()
+        or env_api_key()
+    )
+
+
+def models_for_plan(plan: str) -> dict[str, str]:
+    cfg = get_platform_brain_config()
+    if plan in _PAID_BRAIN_PLANS:
+        reasoning = (cfg.vendor_model_reasoning or "").strip() or _env(
+            "BRAIN_MODEL_REASONING", "anthropic/claude-3.5-sonnet"
+        )
+        research = (cfg.vendor_model_research or "").strip() or _env(
+            "BRAIN_MODEL_RESEARCH", "perplexity/sonar"
+        )
+    else:
+        reasoning = (cfg.free_model_reasoning or "").strip() or _env(
+            "BRAIN_MODEL_REASONING", "google/gemini-2.0-flash-001"
+        )
+        research = _env("BRAIN_MODEL_RESEARCH", "perplexity/sonar")
+    fast = _env("BRAIN_MODEL_FAST", reasoning)
+    return {"fast": fast, "reasoning": reasoning, "research": research}
+
+
+def serialize_brain_config_for_admin() -> dict[str, Any]:
+    cfg = get_platform_brain_config()
+    env_key = env_api_key()
+    free_set = bool((cfg.free_api_key or "").strip())
+    vendor_set = bool((cfg.vendor_api_key or "").strip())
+    return {
+        "free_api_key_set": free_set,
+        "free_api_key_masked": mask_api_key(cfg.free_api_key) if free_set else "",
+        "vendor_api_key_set": vendor_set,
+        "vendor_api_key_masked": mask_api_key(cfg.vendor_api_key) if vendor_set else "",
+        "free_model_reasoning": cfg.free_model_reasoning or "google/gemini-2.0-flash-001",
+        "vendor_model_reasoning": cfg.vendor_model_reasoning or "anthropic/claude-3.5-sonnet",
+        "vendor_model_research": cfg.vendor_model_research or "perplexity/sonar",
+        "env_fallback_configured": bool(env_key),
+        "env_fallback_masked": mask_api_key(env_key) if env_key else "",
+        "llm_ready_free": free_set or bool(env_key),
+        "llm_ready_vendor": vendor_set or bool(env_key),
+        "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
+    }
+
+
+def update_brain_config_from_admin(body: dict[str, Any], *, user_id: int | None) -> PlatformBrainConfig:
+    cfg = get_platform_brain_config()
+
+    for field in ("free_model_reasoning", "vendor_model_reasoning", "vendor_model_research"):
+        if field in body:
+            val = (str(body.get(field) or "")).strip()[:128]
+            if val:
+                setattr(cfg, field, val)
+
+    if "free_api_key" in body:
+        raw = (body.get("free_api_key") or "").strip()
+        if raw and not _looks_like_mask(raw):
+            cfg.free_api_key = raw[:256]
+        elif raw == "":
+            cfg.free_api_key = ""
+
+    if "vendor_api_key" in body:
+        raw = (body.get("vendor_api_key") or "").strip()
+        if raw and not _looks_like_mask(raw):
+            cfg.vendor_api_key = raw[:256]
+        elif raw == "":
+            cfg.vendor_api_key = ""
+
+    cfg.updated_by_id = user_id
+    cfg.save()
+    return cfg

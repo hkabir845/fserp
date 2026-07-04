@@ -279,6 +279,7 @@ export function getSaasMenuItems(
     fsmsNavItem('/admin/contracts', 'saas', FileText, tile('bg-emerald-100', 'text-emerald-600'), lang),
     fsmsNavItem('/admin/subscription-ledger', 'saas', Receipt, tile('bg-fuchsia-100', 'text-fuchsia-600'), lang),
     fsmsNavItem('/admin/broadcasting', 'saas', Megaphone, tile('bg-orange-100', 'text-orange-600'), lang),
+    fsmsNavItem('/admin/brain-settings', 'saas', Brain, tile('bg-indigo-100', 'text-indigo-700'), lang),
     fsmsNavItem('/admin/backup', 'saas', Database, tile('bg-muted', 'text-muted-foreground'), lang),
   ]
 }

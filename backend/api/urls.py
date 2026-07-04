@@ -19,6 +19,7 @@ from api.views import (
     broadcasts_views,
     brain_views,
     admin_views,
+    admin_brain_views,
     users_views,
     company_roles_views,
     contracts_views,
@@ -201,6 +202,7 @@ urlpatterns = [
     ),
     # Admin (Super Admin)
     path("admin/stats/", admin_views.admin_stats),
+    path("admin/brain-config/", admin_brain_views.admin_brain_config),
     path("admin/companies/", admin_views.admin_companies),
     path("admin/platform-release/", admin_views.admin_platform_release),
     path("admin/platform-release", admin_views.admin_platform_release),

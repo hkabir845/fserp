@@ -8,6 +8,7 @@ from typing import Any
 from django.utils import timezone
 
 from api.models import BrainConversation, BrainMessage, Company
+from api.services.brain import config as brain_config
 from api.services.brain import gateway, plans, tools
 from api.services.brain.direct_answer import compose_direct_answer
 
@@ -54,16 +55,18 @@ def _merge_direct_with_llm(direct: dict[str, Any], llm: dict[str, Any]) -> dict[
     return out
 
 
-def _offline_response(context: dict[str, Any], refs: list[dict[str, Any]], question: str) -> dict[str, Any]:
+def _offline_response(
+    context: dict[str, Any], refs: list[dict[str, Any]], question: str, *, plan: str = "free"
+) -> dict[str, Any]:
     direct = compose_direct_answer(context, lang=(context.get("company") or {}).get("language", "bn"))
     if direct:
         direct["sources"] = [{"kind": "erp", **{k: r[k] for k in r if k != "kind"}} for r in refs[:16]]
         direct.setdefault("missing_inputs", context.get("missing_inputs") or [])
         direct.setdefault("suggested_actions", context.get("suggested_actions") or [])
-        if not gateway.openrouter_configured():
+        if not gateway.openrouter_configured(plan=plan):
             direct["answer_bn"] += (
-                "\n\n(সম্পূর্ণ AI বিশ্লেষণের জন্য সার্ভারে OPENROUTER_API_KEY সেট করুন — "
-                "রোগ/প্রেসক্রিপশন ও ওয়েব গবেষণার জন্য বিশেষভাবে দরকার।)"
+                "\n\n(সম্পূর্ণ AI বিশ্লেষণের জন্য SaaS Admin → Brain API-তে Free API Key দিন — "
+                "অথবা সার্ভারে OPENROUTER_API_KEY সেট করুন।)"
             )
         return direct
 
@@ -168,13 +171,14 @@ def generate_assistant_reply(
 
     direct = compose_direct_answer(context, lang=company.language or "bn")
 
-    if not gateway.openrouter_configured():
-        structured = _offline_response(context, refs, user_text)
+    if not gateway.openrouter_configured(plan=plan):
+        structured = _offline_response(context, refs, user_text, plan=plan)
         return structured, "erp-direct"
 
     use_web = tools.should_use_web_research(user_text, plan)
     model_role = "research" if use_web else "reasoning"
     model_id = gateway.model_for_role(model_role, plan=plan)
+    api_key = brain_config.api_key_for_plan(plan)
 
     web_note = ""
     if use_web:
@@ -190,10 +194,12 @@ def generate_assistant_reply(
 
     messages = _build_messages(conversation, user_text, context, web_note=web_note)
     max_tokens = 8192 if use_web else 6144
-    raw, err = gateway.chat_completion(messages=messages, model=model_id, max_tokens=max_tokens)
+    raw, err = gateway.chat_completion(
+        messages=messages, model=model_id, api_key=api_key, max_tokens=max_tokens
+    )
     if err or not raw:
         logger.warning("Brain LLM failed: %s", err)
-        structured = _offline_response(context, refs, user_text)
+        structured = _offline_response(context, refs, user_text, plan=plan)
         if err:
             structured["answer_bn"] += f"\n\n(AI ত্রুটি: {err})"
         return structured, "erp-direct-fallback"

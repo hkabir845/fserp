@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from api.services.brain import config as brain_config
+
 logger = logging.getLogger(__name__)
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1/chat/completions"
@@ -18,26 +20,25 @@ def _env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or default).strip()
 
 
-def openrouter_configured() -> bool:
-    return bool(_env("OPENROUTER_API_KEY"))
+def openrouter_configured(*, plan: str | None = None) -> bool:
+    return brain_config.openrouter_configured(plan=plan)
 
 
 def model_for_role(role: str, *, plan: str) -> str:
-    """Map internal role to OpenRouter model id."""
+    """Map internal role to OpenRouter model id (DB config + env fallback)."""
+    models = brain_config.models_for_plan(plan)
     if role == "research":
-        return _env("BRAIN_MODEL_RESEARCH", "perplexity/sonar")
+        return models["research"]
     if role == "reasoning":
-        return _env(
-            "BRAIN_MODEL_REASONING",
-            "anthropic/claude-3.5-sonnet" if plan != "free" else "google/gemini-2.0-flash-001",
-        )
-    return _env("BRAIN_MODEL_FAST", "google/gemini-2.0-flash-001")
+        return models["reasoning"]
+    return models["fast"]
 
 
 def chat_completion(
     *,
     messages: list[dict[str, str]],
     model: str,
+    api_key: str | None = None,
     temperature: float = 0.3,
     max_tokens: int = 4096,
 ) -> tuple[str | None, str | None]:
@@ -45,9 +46,9 @@ def chat_completion(
     Returns (content_text, error_message).
     Uses stdlib urllib — no extra dependency.
     """
-    api_key = _env("OPENROUTER_API_KEY")
-    if not api_key:
-        return None, "OPENROUTER_API_KEY not configured"
+    key = (api_key or brain_config.env_api_key()).strip()
+    if not key:
+        return None, "Brain API key not configured (SaaS Admin → Brain API or OPENROUTER_API_KEY)"
 
     payload = {
         "model": model,
@@ -61,7 +62,7 @@ def chat_completion(
         data=body,
         method="POST",
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": _env("FRONTEND_BASE_URL", "https://mahasoftcorporation.com"),
             "X-Title": "FSERP Company Brain",

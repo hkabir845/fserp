@@ -3400,6 +3400,45 @@ class PayrollRunEmployeeAllocation(models.Model):
         ]
 
 
+class PlatformBrainConfig(models.Model):
+    """
+    Singleton (pk=1) platform-wide Company Brain API keys — edited in SaaS Super Admin UI.
+    Free key serves free-tier tenants; vendor key serves Growth/Enterprise (web research).
+    """
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    free_api_key = models.CharField(
+        max_length=256,
+        blank=True,
+        default="",
+        help_text="OpenRouter (or compatible) API key for free-tier Brain chat.",
+    )
+    vendor_api_key = models.CharField(
+        max_length=256,
+        blank=True,
+        default="",
+        help_text="Paid vendor API key for Growth/Enterprise (reasoning + web research).",
+    )
+    free_model_reasoning = models.CharField(max_length=128, default="google/gemini-2.0-flash-001")
+    vendor_model_reasoning = models.CharField(max_length=128, default="anthropic/claude-3.5-sonnet")
+    vendor_model_research = models.CharField(max_length=128, default="perplexity/sonar")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="brain_config_updates",
+    )
+
+    class Meta:
+        db_table = "platform_brain_config"
+        verbose_name = "Platform Brain config"
+
+    def __str__(self) -> str:
+        return "Platform Brain API config"
+
+
 class BrainConversation(models.Model):
     """Owner ↔ Company Brain chat thread (scoped to one company)."""
 

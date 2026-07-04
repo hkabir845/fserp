@@ -7,6 +7,7 @@ from django.db.models import Count
 from django.utils import timezone
 
 from api.models import BrainMessage, Company
+from api.services.brain import config as brain_config
 
 PLAN_FREE = "free"
 PLAN_GROWTH = "growth"
@@ -73,7 +74,7 @@ def usage_status(company: Company) -> dict:
         "daily_message_limit": limit,
         "messages_remaining_today": remaining,
         "web_research_enabled": plan in WEB_RESEARCH_PLANS,
-        "llm_enabled": bool((__import__("os").environ.get("OPENROUTER_API_KEY") or "").strip()),
+        "llm_enabled": brain_config.openrouter_configured(plan=plan),
     }
 
 

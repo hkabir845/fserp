@@ -1,7 +1,11 @@
 """Compose direct Bangla answers from ERP analytics (works with or without LLM)."""
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
+
+from api.services.brain.list_requests import detect_list_module
+from api.services.brain.module_lists import format_module_list_answer
 
 
 def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[str, Any] | None:
@@ -65,6 +69,33 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
             "answer_bn": answer,
             "reasoning_steps_bn": ["সাধারণ কথোপকথন — বাংলায় সহজ উত্তর।"],
             "confidence": "medium",
+            "sources": [],
+            "missing_inputs": [],
+            "suggested_actions": [],
+        }
+
+    question = context.get("user_question") or ""
+    list_module = context.get("list_module") or detect_list_module(question)
+    if list_module:
+        data = context.get("module_list") or {}
+        if data.get("rows"):
+            answer = format_module_list_answer(data)
+            if list_module == "employees":
+                hr_mod = (context.get("business_snapshot") or {}).get("erp_modules", {}).get("hr_payroll") or {}
+                if hr_mod.get("monthly_payroll_commitment_bdt"):
+                    answer += f"\n\nমোট মাসিক বেতন বিল **৳{hr_mod['monthly_payroll_commitment_bdt']}**।"
+            return {
+                "answer_bn": answer,
+                "reasoning_steps_bn": [f"সাইডবার মডিউল `{list_module}` থেকে সম্পূর্ণ তালিকা।"],
+                "confidence": "high",
+                "sources": [],
+                "missing_inputs": [],
+                "suggested_actions": [],
+            }
+        return {
+            "answer_bn": f"**{data.get('title_bn') or list_module}:** কোনো রেকর্ড পাওয়া যায়নি।",
+            "reasoning_steps_bn": [f"{list_module} — সক্রিয় রেকর্ড নেই।"],
+            "confidence": "high",
             "sources": [],
             "missing_inputs": [],
             "suggested_actions": [],
@@ -164,7 +195,8 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
 
     employees = context.get("employees") or []
     if employees and "hr" in intents:
-        for e in employees[:3]:
+        show_limit = 50 if context.get("employee_list_all") else 10
+        for e in employees[:show_limit]:
             parts.append(
                 f"**{e.get('name')}** — বেতন ৳{e.get('monthly_salary_bdt')}/মাস, "
                 f"পদ: {e.get('job_title') or '—'}, স্টেশন: {e.get('home_station') or '—'}, পোন্ড: {e.get('home_pond') or '—'}।"
@@ -203,6 +235,29 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         steps.append("AQ-MED ক্যাটালগ + (পেইড) ওয়েব গবেষণা।")
 
     snapshot = context.get("business_snapshot")
+    brief = context.get("decision_brief")
+    if brief and ({"benchmark", "decision", "predict", "general"} & intents or context.get("advisory_mode")):
+        comp_lines = [
+            c.get("insight_bn") for c in (brief.get("comparisons") or [])[:6] if c.get("insight_bn")
+        ]
+        risk_lines = [r.get("message_bn") for r in (brief.get("risk_flags") or [])[:4] if r.get("message_bn")]
+        proj_lines = [
+            f"{p.get('label_bn')}: ৳{p.get('value_bdt')} ({p.get('method_bn', '')})"
+            for p in (brief.get("projections") or [])[:3]
+        ]
+        dec_lines = [d.get("label_bn") for d in (brief.get("decision_options") or [])[:4] if d.get("label_bn")]
+        if comp_lines or risk_lines or proj_lines:
+            if comp_lines:
+                parts.append("**বিশ্ব/ইন্ডাস্ট্রি তুলনা:**\n" + "\n".join(f"• {x}" for x in comp_lines))
+            if proj_lines:
+                parts.append("**পূর্বাভাস (অনুমান):**\n" + "\n".join(f"• {x}" for x in proj_lines))
+            if risk_lines:
+                parts.append("**ঝুঁকি সতর্কতা:**\n" + "\n".join(f"• {x}" for x in risk_lines))
+            if dec_lines:
+                parts.append("**সিদ্ধান্তে সহায়তা:**\n" + "\n".join(f"• {x}" for x in dec_lines))
+            parts.append(brief.get("disclaimer_bn", ""))
+            steps.append("decision_brief — ERP বনাম বেঞ্চমার্ক, পূর্বাভাস, সিদ্ধান্ত বিকল্প।")
+
     if snapshot and "general" in intents and not parts:
         fin = snapshot.get("financials_mtd") or {}
         ct = fin.get("company_total") or {}

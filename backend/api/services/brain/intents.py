@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from api.services.brain.list_requests import detect_list_module, is_employee_list_request
+
 
 def is_greeting_message(message: str) -> bool:
     """Short hellos / salutations — skip heavy ERP + LLM."""
@@ -30,6 +32,63 @@ def is_greeting_message(message: str) -> bool:
     if re.fullmatch(r"(kemon\s+acho|ki\s+khobor|ki\s+obostha)[!?.…]*", lower):
         return True
     return False
+
+
+def is_employee_list_request(message: str) -> bool:
+    return detect_list_module(message) == "employees"
+
+
+def wants_benchmark_or_decision_research(message: str) -> bool:
+    """Questions that benefit from world standards, forecasts, or decision support."""
+    lower = (message or "").lower()
+    keywords = (
+        "compare",
+        "comparison",
+        "benchmark",
+        "standard",
+        "world",
+        "global",
+        "industry",
+        "international",
+        "best practice",
+        "predict",
+        "prediction",
+        "forecast",
+        "future",
+        "consequence",
+        "what if",
+        "what will",
+        "decide",
+        "decision",
+        "should i",
+        "recommend",
+        "recommendation",
+        "suggest",
+        "advice",
+        "advisory",
+        "risk",
+        "opportunity",
+        "তুলনা",
+        "মান",
+        "আন্তর্জাতিক",
+        "বিশ্ব",
+        "পূর্বাভাস",
+        "ভবিষ্যৎ",
+        "ফলাফল",
+        "সিদ্ধান্ত",
+        "পরামর্শ",
+        "উচিত",
+        "ঝুঁকি",
+        "সুযোগ",
+        "বেঞ্চমার্ক",
+        "স্ট্যান্ডার্ড",
+        "ভালো কিনা",
+        "kemon hobe",
+        "ki hobe",
+        "ki korbo",
+        "kivabe",
+    )
+    return any(k in lower for k in keywords)
 
 
 def is_business_overview_question(message: str) -> bool:
@@ -204,8 +263,14 @@ def detect_intents(message: str) -> set[str]:
         "kormchari",
         "bheton",
         "staff er",
+        "list",
+        "তালিকা",
+        "names",
+        "নাম",
     ):
         intents.add("hr")
+    if detect_list_module(message):
+        intents.add("module_list")
     if hit(
         "job cut",
         "layoff",
@@ -228,6 +293,113 @@ def detect_intents(message: str) -> set[str]:
         intents.add("pond")
     if hit("station", "filling", "shop", "agro", "স্টেশন", "পেট্রোল", "শপ", "pump"):
         intents.add("station")
+    if hit(
+        "customer",
+        "client",
+        "buyer",
+        "গ্রাহক",
+        "grahok",
+        "receivable",
+        "a/r",
+        "ar balance",
+        "due invoice",
+        "overdue",
+        "বকেয়া",
+        "বাকি",
+        "due ache",
+    ):
+        intents.add("customer_ar")
+    if hit(
+        "vendor",
+        "supplier",
+        "সরবরাহকারী",
+        "payable",
+        "a/p",
+        "ap balance",
+        "open bill",
+        "বিল বাকি",
+    ):
+        intents.add("vendor_ap")
+    if hit(
+        "payment",
+        "receipt",
+        "received",
+        "paid",
+        "deposit",
+        "পেমেন্ট",
+        "টাকা পেলাম",
+        "টাকা দিলাম",
+        "collection",
+        "পাওনা আদায়",
+    ):
+        intents.add("payments")
+    if hit(
+        "inventory",
+        "stock",
+        "item",
+        "reorder",
+        "low stock",
+        "স্টক",
+        "ইনভেন্টরি",
+        "মাল",
+        "stock koto",
+        "stock ache",
+    ):
+        intents.add("inventory")
+    if hit(
+        "tank",
+        "nozzle",
+        "shift",
+        "dip",
+        "forecourt",
+        "fuel stock",
+        "ট্যাংক",
+        "নজল",
+        "শিফট",
+        "ডিপ",
+        "diesel stock",
+        "petrol stock",
+    ):
+        intents.add("fuel")
+    if hit(
+        "journal",
+        "ledger",
+        "gl",
+        "accounting",
+        "fund transfer",
+        "জার্নাল",
+        "হিসাব",
+        "লেজার",
+    ):
+        intents.add("accounting")
+    if hit("loan", "borrow", "lend", "financing", "ঋণ", "লোন", "loan er"):
+        intents.add("loans")
+    if hit(
+        "landlord",
+        "land lease",
+        "warehouse transfer",
+        "stock transfer",
+        "production cycle",
+        "জমিদার",
+        "লিজ",
+    ):
+        intents.add("aquaculture_ops")
+    if hit("asset", "depreciation", "fixed asset", "স্থায়ী সম্পদ", "ডিপ্রিসিয়েশন"):
+        intents.add("fixed_assets")
+    if wants_benchmark_or_decision_research(message):
+        intents.add("benchmark")
+        intents.add("decision")
+    if hit(
+        "predict",
+        "forecast",
+        "future",
+        "পূর্বাভাস",
+        "ভবিষ্যৎ",
+        "আগামী",
+        "next month",
+        "পরের মাস",
+    ):
+        intents.add("predict")
 
     if intents:
         return intents

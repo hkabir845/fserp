@@ -29,6 +29,7 @@ from api.services.aquaculture_partial_harvest import compute_biomass_load_advice
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.aquaculture_pond_performance_service import build_pond_performance_report
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+from api.services.brain.module_analytics import build_erp_module_summaries
 from api.services.reporting import _collect_all_entity_financial_rows, _entity_pl_row
 
 
@@ -313,7 +314,7 @@ def expenses_for_period(
     }
 
 
-def find_employees(company_id: int, query: str) -> list[dict[str, Any]]:
+def find_employees(company_id: int, query: str, *, limit: int = 50) -> list[dict[str, Any]]:
     q = (query or "").strip().lower()
     emps = Employee.objects.filter(company_id=company_id, is_active=True).select_related(
         "home_station", "home_aquaculture_pond"
@@ -378,7 +379,7 @@ def find_employees(company_id: int, query: str) -> list[dict[str, Any]]:
                 ),
             }
         )
-    return hits[:10]
+    return hits[: max(1, int(limit))]
 
 
 def workforce_retention_analysis(company_id: int, *, lang: str = "bn") -> dict[str, Any]:
@@ -518,7 +519,7 @@ def _build_company_knowledge_snapshot_body(company_id: int, *, lang: str = "bn")
     fin = entity_financials(company_id, start=month_start, end=today)
     ponds_perf = all_ponds_summary(company_id, lang=lang, days=30)
 
-    roster = find_employees(company_id, "")[:30]
+    roster = find_employees(company_id, "", limit=200)
 
     recent_invoices = list(
         Invoice.objects.filter(company_id=company_id)
@@ -543,12 +544,14 @@ def _build_company_knowledge_snapshot_body(company_id: int, *, lang: str = "bn")
         PayrollRun.objects.filter(company_id=company_id, payment_date__gte=month_start)
         .order_by("-payment_date", "-id")[:6]
     )
+    erp_modules = build_erp_module_summaries(company_id, month_start=month_start, today=today, lang=lang)
 
     return {
         "generated_at": timezone.now().isoformat(),
         "scope_note_bn": (
-            "এই স্ন্যাপশট FSERP-এর সকল মডিউল থেকে — স্টেশন, পোন্ড, বিক্রি, বিল, পে-রোল, "
-            "মাছ বিক্রি, বায়োমাস, ঔষধ ক্যাটালগ, এবং GL P&L। রিপোর্ট খুলতে বলবেন না — এখান থেকেই উত্তর দিন।"
+            "এই স্ন্যাপশট FSERP-এর সকল মডিউল থেকে — গ্রাহক, সরবরাহকারী, পেমেন্ট, ইনভেন্টরি, "
+            "ট্যাংক/শিফট, হিসাব, ঋণ, পে-রোল, পোন্ড, স্থায়ী সম্পদ, এবং GL P&L। "
+            "রিপোর্ট খুলতে বলবেন না — এখান থেকেই মানুষের মতো উত্তর দিন।"
         ),
         "periods": {
             "today": {"start": today.isoformat(), "end": today.isoformat()},
@@ -562,6 +565,7 @@ def _build_company_knowledge_snapshot_body(company_id: int, *, lang: str = "bn")
         "workforce_roster": roster,
         "workforce_advisory_mtd": workforce_retention_analysis(company_id, lang=lang),
         "medicine_catalog": medicine_catalog_for_brain(company_id),
+        "erp_modules": erp_modules,
         "recent_invoices": [
             {
                 "id": inv.id,
@@ -621,6 +625,11 @@ def _build_company_knowledge_snapshot_body(company_id: int, *, lang: str = "bn")
             "active_stations": Station.objects.filter(company_id=company_id, is_active=True).count(),
             "active_ponds": AquaculturePond.objects.filter(company_id=company_id, is_active=True).count(),
             "active_employees": Employee.objects.filter(company_id=company_id, is_active=True).count(),
+            "active_customers": erp_modules.get("sales_customers_ar", {}).get("active_customers"),
+            "active_vendors": erp_modules.get("purchases_vendors_ap", {}).get("active_vendors"),
+            "active_items": erp_modules.get("inventory_stock", {}).get("active_items"),
+            "active_tanks": erp_modules.get("fuel_forecourt", {}).get("active_tanks"),
+            "active_loans": erp_modules.get("loans_financing", {}).get("active_loans_count"),
             "invoices_all_time": Invoice.objects.filter(company_id=company_id).count(),
             "bills_all_time": Bill.objects.filter(company_id=company_id).count(),
             "aquaculture_expenses_all_time": AquacultureExpense.objects.filter(company_id=company_id).count(),

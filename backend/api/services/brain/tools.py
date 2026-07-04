@@ -22,7 +22,16 @@ from api.models import (
 from api.services.aquaculture_fcr_service import compute_fcr_for_scope
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.brain import analytics
-from api.services.brain.intents import detect_intents, is_greeting_message, is_light_context
+from api.services.brain.intents import (
+    detect_intents,
+    is_employee_list_request,
+    is_greeting_message,
+    is_light_context,
+    wants_benchmark_or_decision_research,
+)
+from api.services.brain.decision_intelligence import build_decision_brief
+from api.services.brain.list_requests import detect_list_module
+from api.services.brain.module_lists import fetch_module_list
 from api.services.brain.plans import brain_plan_for_company
 from api.services.station_business_kind import station_business_kind_label, station_business_kind
 
@@ -175,7 +184,9 @@ def _employee_display(emp: Employee) -> str:
 
 
 def _employee_query_from_message(message: str, company_id: int) -> str:
-    """Best-effort name/title fragment for employee lookup."""
+    """Best-effort name/title fragment for employee lookup — never pass the whole question."""
+    if is_employee_list_request(message):
+        return ""
     lower = message.lower()
     for emp in Employee.objects.filter(company_id=company_id, is_active=True):
         name = f"{emp.first_name or ''} {emp.last_name or ''}".strip().lower()
@@ -187,7 +198,7 @@ def _employee_query_from_message(message: str, company_id: int) -> str:
         title = (emp.job_title or "").strip().lower()
         if title and title in lower:
             return title
-    return message
+    return ""
 
 
 def _safe_block(label: str, fn, *args, **kwargs):
@@ -242,7 +253,26 @@ def gather_context(
         "period_label": period_label,
         "answer_mode": "conversational_chat" if intents == {"chat"} else "full_erp_snapshot_plus_focus",
         "business_snapshot": business_snapshot,
+        "user_question": message,
     }
+    if not light_context and isinstance(business_snapshot, dict) and not business_snapshot.get("partial"):
+        brief = _safe_block(
+            "decision_brief",
+            build_decision_brief,
+            business_snapshot,
+            message=message,
+        )
+        if brief:
+            context["decision_brief"] = brief
+            if wants_benchmark_or_decision_research(message) or {"benchmark", "decision", "predict"} & intents:
+                context["advisory_mode"] = True
+
+    list_module = detect_list_module(message)
+    if list_module:
+        context["list_module"] = list_module
+        context["module_list"] = (
+            _safe_block("module_list", fetch_module_list, company_id, list_module, limit=200) or {}
+        )
     all_refs = list(refs)
     missing_inputs: list[dict[str, str]] = []
     suggested_actions: list[dict[str, Any]] = []
@@ -335,23 +365,30 @@ def gather_context(
             context["expenses"] = expenses
 
     if "hr" in intents or employee_id:
+        list_all = is_employee_list_request(message)
         eq = _employee_query_from_message(message, company_id)
-        emps = _safe_block("employees", analytics.find_employees, company_id, eq) or []
+        emp_limit = 200 if list_all else 50
+        emps = _safe_block("employees", analytics.find_employees, company_id, eq, limit=emp_limit) or []
         if employee_id and not emps:
             from api.models import Employee
 
             emp = Employee.objects.filter(pk=employee_id, company_id=company_id).first()
             if emp:
                 emps = _safe_block(
-                    "employees", analytics.find_employees, company_id, _employee_display(emp)
+                    "employees", analytics.find_employees, company_id, _employee_display(emp), limit=emp_limit
                 ) or []
-        if not emps and any(
-            k in message.lower()
-            for k in ("salary", "worker", "employee", "বেতন", "কর্মচারী", "শ্রমিক", "সব")
+        if not emps and (
+            list_all
+            or any(
+                k in message.lower()
+                for k in ("salary", "worker", "employee", "বেতন", "কর্মচারী", "শ্রমিক", "সব", "list", "তালিকা")
+            )
         ):
-            emps = _safe_block("employees", analytics.find_employees, company_id, "") or []
+            emps = _safe_block("employees", analytics.find_employees, company_id, "", limit=emp_limit) or []
         context["employees"] = emps
-        for e in emps[:3]:
+        context["employee_list_all"] = list_all
+        ref_limit = min(len(emps), 20 if list_all else 3)
+        for e in emps[:ref_limit]:
             try:
                 all_refs.append(
                     _ref(
@@ -396,6 +433,16 @@ def gather_context(
     if "feeding" in intents and not pond_id:
         missing_inputs.append({"key": "feeding_pond", "prompt_bn": "কোন পোন্ডের জন্য ফিড সুপারিশ চান?"})
 
+    brief = context.get("decision_brief") or {}
+    for opt in (brief.get("decision_options") or [])[:6]:
+        suggested_actions.append(
+            {
+                "action": opt.get("action", "advisory"),
+                "label_bn": opt.get("label_bn", ""),
+                "requires_approval": bool(opt.get("requires_approval")),
+            }
+        )
+
     context["missing_inputs"] = missing_inputs
     context["suggested_actions"] = suggested_actions
 
@@ -414,10 +461,12 @@ def gather_context(
 def should_use_web_research(message: str, plan: str) -> bool:
     """
     Paid plans: web-augmented model on every question (owner may ask anything).
-    Free: web only when the question clearly needs external knowledge.
+    Free: web when external knowledge, benchmarks, or decision research is needed.
     """
     from api.services.brain.plans import PLAN_FREE, WEB_RESEARCH_PLANS
 
+    if wants_benchmark_or_decision_research(message):
+        return True
     if plan in WEB_RESEARCH_PLANS:
         return True
     if plan == PLAN_FREE:
@@ -431,6 +480,15 @@ def wants_web_research(message: str) -> bool:
         "web",
         "internet",
         "research",
+        "benchmark",
+        "compare",
+        "standard",
+        "predict",
+        "forecast",
+        "decision",
+        "তুলনা",
+        "পূর্বাভাস",
+        "সিদ্ধান্ত",
         "market price",
         "disease",
         "symptom",

@@ -11,7 +11,8 @@ from api.models import BrainConversation, BrainMessage, Company
 from api.services.brain import config as brain_config
 from api.services.brain import gateway, plans, tools
 from api.services.brain.direct_answer import compose_direct_answer
-from api.services.brain.intents import is_greeting_message
+from api.services.brain.list_requests import detect_list_module
+from api.services.brain.intents import is_greeting_message, wants_benchmark_or_decision_research
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,12 @@ LANGUAGE (critical):
 
 MODES:
 - Business questions: answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
-- Casual chat (thanks, jokes, explanations, general knowledge): reply naturally in Bangla; tie back to the business gently when relevant.
+- Advisory / decision mode: when decision_brief is present, COMPARE the owner's ERP metrics to industry/world
+  benchmarks (FCR, pond density, net margin, payroll ratio, overdue AR), explain gaps in plain Bangla,
+  project likely month-end outcomes from projections, and recommend 2–4 prioritized actions from decision_options.
+- Predictions: use projections in decision_brief as estimates — state assumptions (run-rate, seasonality caveat).
+  Supplement with WEB_RESEARCH_NOTE for latest global/regional standards, disease alerts, fuel/fish market prices.
+- Casual chat: reply naturally in Bangla; tie back to the business gently when relevant.
 - Quote exact numbers (৳, kg, FCR, fish count, salaries) from JSON — never invent figures or names.
 
 BUSINESS RULES:
@@ -38,8 +44,20 @@ BUSINESS RULES:
 
 DATA SOURCES:
 1. business_snapshot — whole ERP state when present (not in light chat mode).
-2. Focused blocks (pond_analytics, employees, etc.) when present.
-3. WEB_RESEARCH_NOTE — supplement with web knowledge when present; cite URLs (kind=web).
+2. erp_modules inside business_snapshot — every sidebar module (station, sales, inventory, HR, aquaculture, GL…).
+3. module_list — full record list when the owner asks "list all customers/ponds/tanks…".
+4. Focused blocks (pond_analytics, employees, etc.) when present.
+5. decision_brief — ERP vs industry benchmarks, risk_flags, projections, decision_options (always use for advisory).
+6. WEB_RESEARCH_NOTE — supplement with current web knowledge (global standards, market prices, disease, regulations);
+   cite URLs (kind=web). Compare web findings to decision_brief.comparisons.
+
+ADVISORY OUTPUT (when owner asks compare/predict/decide or decision_brief present):
+- reasoning_steps_bn must include: (১) ERP তথ্য, (২) বেঞ্চমার্ক তুলনা, (৩) পূর্বাভাস/ঝুঁকি, (৪) সিদ্ধান্ত বিকল্প।
+- suggested_actions: populate from decision_options; requires_approval true for operational changes.
+- Include decision_brief.disclaimer_bn at end of answer when giving predictions or strong recommendations.
+
+SYNTHESIS: Combine cross-module data like a human COO — e.g. link overdue A/R with customer MTD sales,
+low tank stock with recent shifts, pond expenses with fish sales and payroll.
 
 Return ONLY a single JSON object (no markdown fences):
 - answer_bn: string (conversational Bangla; lead with the direct answer)
@@ -56,32 +74,123 @@ CHAT_MODE_INSTRUCTION = (
 )
 
 
+def _trim_module_block(block: Any, *, list_keys: dict[str, int] | None = None) -> Any:
+    if not isinstance(block, dict):
+        return block
+    out = dict(block)
+    for key, limit in (list_keys or {}).items():
+        if isinstance(out.get(key), list):
+            out[key] = out[key][:limit]
+    return out
+
+
 def _trim_snapshot_for_llm(snap: Any) -> Any:
     """Always send a compact snapshot to the LLM — avoids huge JSON / memory errors."""
     if not isinstance(snap, dict) or snap.get("light_mode") or snap.get("partial"):
         return snap
     ponds_block = snap.get("ponds_performance_30d") or {}
+    mods = snap.get("erp_modules") or {}
     return {
         "truncated": True,
         "financials_mtd": snap.get("financials_mtd") or {},
         "sales_mtd": snap.get("sales_mtd"),
         "expenses_mtd": snap.get("expenses_mtd"),
         "record_counts": snap.get("record_counts"),
-        "workforce_roster": (snap.get("workforce_roster") or [])[:10],
+        "workforce_roster": (snap.get("workforce_roster") or [])[:50],
         "ponds_performance_30d": {
             "ponds": (ponds_block.get("ponds") or [])[:8],
         },
         "recent_invoices": (snap.get("recent_invoices") or [])[:6],
+        "erp_modules": {
+            "module_index": mods.get("module_index"),
+            "sales_customers_ar": _trim_module_block(
+                mods.get("sales_customers_ar"),
+                list_keys={"overdue_invoices": 6, "top_customers_mtd": 5},
+            ),
+            "purchases_vendors_ap": _trim_module_block(
+                mods.get("purchases_vendors_ap"),
+                list_keys={"open_bills": 6, "top_vendors_mtd": 5},
+            ),
+            "payments_cash": _trim_module_block(
+                mods.get("payments_cash"),
+                list_keys={"recent_payments": 6},
+            ),
+            "inventory_stock": _trim_module_block(
+                mods.get("inventory_stock"),
+                list_keys={"low_stock_items": 6, "top_station_stock": 5, "top_pond_stock": 5},
+            ),
+            "fuel_forecourt": _trim_module_block(
+                mods.get("fuel_forecourt"),
+                list_keys={"tanks_low_stock": 6, "recent_shift_sessions": 4, "recent_tank_dips": 4},
+            ),
+            "accounting_gl": _trim_module_block(
+                mods.get("accounting_gl"),
+                list_keys={"recent_journal_entries": 4, "recent_fund_transfers": 4},
+            ),
+            "loans_financing": _trim_module_block(
+                mods.get("loans_financing"),
+                list_keys={"active_loans": 5},
+            ),
+            "hr_payroll": _trim_module_block(
+                mods.get("hr_payroll"),
+                list_keys={"by_home_station": 6},
+            ),
+            "aquaculture_ops": _trim_module_block(
+                mods.get("aquaculture_ops"),
+                list_keys={"expenses_mtd_by_category": 6, "recent_feeding_advice": 4},
+            ),
+            "fixed_assets": _trim_module_block(
+                mods.get("fixed_assets"),
+                list_keys={"recent_assets": 4},
+            ),
+            "aquaculture_extended": _trim_module_block(
+                mods.get("aquaculture_extended"),
+                list_keys={"landlords": 8},
+            ),
+            "payroll_runs": _trim_module_block(
+                mods.get("payroll_runs"),
+                list_keys={"recent_runs": 6},
+            ),
+            "station_equipment": mods.get("station_equipment"),
+            "operations_summary": mods.get("operations_summary"),
+            "chart_of_accounts": mods.get("chart_of_accounts"),
+            "management_settings": _trim_module_block(
+                mods.get("management_settings"),
+                list_keys={"taxes": 8},
+            ),
+            "stations_sites": _trim_module_block(
+                mods.get("stations_sites"),
+                list_keys={"stations": 8},
+            ),
+        },
         "note": "Trimmed ERP snapshot; quoted numbers are authoritative.",
     }
 
 
 def _trim_context_for_llm(context: dict[str, Any]) -> dict[str, Any]:
     snap = context.get("business_snapshot")
-    return {
+    trimmed = {
         **context,
         "business_snapshot": _trim_snapshot_for_llm(snap),
     }
+    brief = context.get("decision_brief")
+    if isinstance(brief, dict):
+        trimmed["decision_brief"] = {
+            "comparisons": (brief.get("comparisons") or [])[:12],
+            "risk_flags": (brief.get("risk_flags") or [])[:8],
+            "projections": brief.get("projections") or [],
+            "decision_options": (brief.get("decision_options") or [])[:6],
+            "advisory_mode_bn": brief.get("advisory_mode_bn"),
+            "disclaimer_bn": brief.get("disclaimer_bn"),
+            "benchmarks_reference": {
+                k: {"label_bn": v.get("label_bn"), "note_bn": v.get("note_bn")}
+                for k, v in list((brief.get("benchmarks_reference") or {}).items())[:8]
+            },
+        }
+    ml = context.get("module_list")
+    if isinstance(ml, dict) and isinstance(ml.get("rows"), list) and len(ml["rows"]) > 80:
+        trimmed["module_list"] = {**ml, "rows": ml["rows"][:80], "truncated_rows": True}
+    return trimmed
 
 
 def _safe_json_dumps(payload: dict[str, Any]) -> str:
@@ -221,7 +330,9 @@ def _build_messages(
             "TODAY": timezone.localdate().isoformat(),
             "INSTRUCTION": (
                 "Answer like a human COO advisor in Bangla. User may write Banglish — understand it. "
-                "Use business_snapshot for business questions. Do not redirect to reports."
+                "Use business_snapshot and decision_brief for business questions. "
+                "Compare ERP metrics to benchmarks_reference; explain future consequences from projections; "
+                "help the owner decide with clear prioritized actions. Do not redirect to reports."
             ),
         }
     history.append(
@@ -304,6 +415,13 @@ def _generate_assistant_reply_inner(
         structured["sources"] = _erp_refs_as_sources(refs, limit=8)
         return structured, "erp-greeting"
 
+    if detect_list_module(user_text) or context.get("list_module"):
+        structured = compose_direct_answer(context, lang=company.language or "bn") or _emergency_response(
+            company, user_text
+        )
+        structured["sources"] = _erp_refs_as_sources(refs, limit=20)
+        return structured, "erp-module-list"
+
     intents_set = set(context.get("intents") or [])
     conversational = intents_set == {"chat"}
 
@@ -356,8 +474,16 @@ def _generate_assistant_reply_inner(
     web_note = ""
     if use_web:
         web_note = (
-            "Supplement ERP data with current web knowledge (aquaculture, disease, market prices, regulations). "
-            "Cite web URLs in sources (kind=web). Combine with business_snapshot.medicine_catalog for prescriptions."
+            "Use live web knowledge to compare the owner's ERP metrics with CURRENT global/regional standards "
+            "(aquaculture FCR, pond density, fuel retail margins, fish market prices, disease outbreaks, regulations). "
+            "Reconcile with decision_brief.comparisons — cite web URLs in sources (kind=web). "
+            "For predictions: combine decision_brief.projections with web trends; state uncertainty. "
+            "For decisions: merge decision_options with web best practices; owner must approve operational changes."
+        )
+    elif wants_benchmark_or_decision_research(user_text) or context.get("advisory_mode"):
+        web_note = (
+            "Advisory question: use decision_brief benchmarks and projections. "
+            "Growth/Enterprise plan enables live web research for fresher global comparisons."
         )
     elif "disease" in (context.get("intents") or []):
         web_note = (

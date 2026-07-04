@@ -22,6 +22,7 @@ import {
   MapPin,
 } from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
+import { AskBrainButton } from '@/components/brain/AskBrainButton'
 import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { PondOpeningBalancesModal, type PondOpeningSource } from '@/components/aquaculture/PondOpeningBalancesModal'
 import {
@@ -833,7 +834,8 @@ export default function AquaculturePondsPage() {
   }
 
   const PondActions = ({ p }: { p: Pond }) => (
-    <div className="flex shrink-0 gap-1">
+    <div className="flex shrink-0 items-center gap-1">
+      <AskBrainButton entityType="pond" entityId={p.id} entityName={p.name} compact />
       <Link
         href={`/aquaculture/ponds/${p.id}`}
         className="rounded p-2 text-primary hover:bg-accent"

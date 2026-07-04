@@ -9,6 +9,7 @@ from __future__ import annotations
 APP_PAGE_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     # Main
     {"id": "app.page.dashboard", "label": "Dashboard", "group": "Apps — Main", "parent": "app.launcher", "href": "/dashboard"},
+    {"id": "app.page.brain", "label": "Company Brain", "group": "Apps — Main", "parent": "app.brain", "href": "/brain"},
     {"id": "app.page.cashier", "label": "POS / Cashier", "group": "Apps — Main", "parent": "app.pos", "href": "/cashier"},
     # Station
     {"id": "app.page.stations", "label": "Stations", "group": "Apps — Station", "parent": "app.station", "href": "/stations"},

@@ -9,6 +9,7 @@ type Row = { en: string; bn: string }
 const NAV_BY_HREF: Record<string, Row> = {
   '/apps': { en: 'Apps', bn: 'অ্যাপস' },
   '/dashboard': { en: 'Dashboard', bn: 'ড্যাশবোর্ড' },
+  '/brain': { en: 'Company Brain', bn: 'কোম্পানি ব্রেইন' },
   '/cashier': { en: 'POS / Cashier', bn: 'POS / ক্যাশিয়ার' },
 
   '/stations': { en: 'Stations', bn: 'স্টেশন' },

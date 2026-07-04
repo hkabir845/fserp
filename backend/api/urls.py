@@ -17,6 +17,7 @@ from api.views import (
     companies_views,
     dashboard_views,
     broadcasts_views,
+    brain_views,
     admin_views,
     users_views,
     company_roles_views,
@@ -259,6 +260,21 @@ urlpatterns = [
     path("contracts/<int:contract_id>/print/", contracts_views.contract_print),
     # Dashboard
     path("dashboard/stats/", dashboard_views.dashboard_stats),
+    # Company Brain
+    path("brain/status/", brain_views.brain_status),
+    path("brain/status", brain_views.brain_status),
+    path("brain/conversations/", brain_views.brain_conversations),
+    path("brain/conversations", brain_views.brain_conversations),
+    path("brain/conversations/<int:conversation_id>/", brain_views.brain_conversation_detail),
+    path("brain/conversations/<int:conversation_id>", brain_views.brain_conversation_detail),
+    path(
+        "brain/conversations/<int:conversation_id>/messages/",
+        brain_views.brain_conversation_message,
+    ),
+    path(
+        "brain/conversations/<int:conversation_id>/messages",
+        brain_views.brain_conversation_message,
+    ),
     path("system/tenant-data-summary/", system_views.tenant_data_summary),
     path("system/tenant-data-summary", system_views.tenant_data_summary),
     # Broadcasts

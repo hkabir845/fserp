@@ -31,6 +31,7 @@ import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
+import { AskBrainButton } from '@/components/brain/AskBrainButton'
 import {
   PondEconomicsSnapshotPanel,
   type PondEconomicsSnapshot,
@@ -741,6 +742,14 @@ export default function PondDetailViewPage() {
           <RefreshCw className="h-4 w-4" />
           Refresh
         </button>
+        {pond ? (
+          <AskBrainButton
+            entityType="pond"
+            entityId={pondIdNum}
+            entityName={pond.name}
+            compact
+          />
+        ) : null}
       </div>
 
       {periodClosed && dataBankLock ? (

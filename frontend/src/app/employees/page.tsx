@@ -7,6 +7,7 @@ import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { CompanyProvider } from '@/contexts/CompanyContext'
+import { AskBrainButton } from '@/components/brain/AskBrainButton'
 import { Plus, Edit2, Trash2, Mail, Phone, X, User, Briefcase, DollarSign, MapPin, Building2, AlertTriangle, RefreshCw, Search, Filter, BookOpen, Grid3x3, List, Droplets } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
@@ -752,6 +753,12 @@ export default function EmployeesPage() {
                         </div>
 
                         <div className="px-6 py-4 bg-muted/40 border-t border-border flex flex-wrap items-center justify-end gap-2">
+                          <AskBrainButton
+                            entityType="employee"
+                            entityId={employee.id}
+                            entityName={`${employee.first_name} ${employee.last_name || ''}`.trim()}
+                            compact
+                          />
                           <Link
                             href={`/employees/${employee.id}/ledger`}
                             className="flex items-center space-x-2 px-4 py-2 text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors font-medium text-sm"
@@ -904,6 +911,13 @@ export default function EmployeesPage() {
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-right text-sm">
                               <div className="flex items-center justify-end gap-1">
+                                <AskBrainButton
+                                  entityType="employee"
+                                  entityId={employee.id}
+                                  entityName={`${employee.first_name} ${employee.last_name || ''}`.trim()}
+                                  compact
+                                  className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+                                />
                                 <Link
                                   href={`/employees/${employee.id}/ledger`}
                                   className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"

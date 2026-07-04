@@ -326,6 +326,7 @@ def _build_permission_catalog() -> list[dict[str, str]]:
             "group": "Apps — Main",
         },
         {"id": "app.pos", "label": "POS / Cashier (all Main POS access)", "group": "Apps — Main"},
+        {"id": "app.brain", "label": "Company Brain (AI advisor)", "group": "Apps — Main"},
         *page_permission_catalog_entries_for_group("Apps — Main"),
         {
             "id": "app.station",
@@ -452,6 +453,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
         "app.hr",
         "app.settings",
         "app.reports",
+        "app.brain",
         "report.inventory_sku",
         "app.aquaculture",
     ],

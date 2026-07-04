@@ -6,6 +6,7 @@ import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { CompanyProvider } from '@/contexts/CompanyContext'
+import { AskBrainButton } from '@/components/brain/AskBrainButton'
 import { Plus, Edit, Trash2, Search, Building2, AlertTriangle, RefreshCw, Phone, MapPin, Fuel, Sprout } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
@@ -508,6 +509,13 @@ export default function StationsPage() {
                       </div>
                     )}
                     <div className="flex items-center gap-1">
+                      <AskBrainButton
+                        entityType="station"
+                        entityId={station.id}
+                        entityName={station.station_name}
+                        compact
+                        className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+                      />
                       <button
                         type="button"
                         onClick={() => handleEdit(station)}

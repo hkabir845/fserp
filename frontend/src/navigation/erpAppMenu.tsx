@@ -17,6 +17,7 @@ import {
   Clock,
   BarChart3,
   Landmark,
+  Brain,
   Boxes,
   BookOpen,
   Receipt,
@@ -42,7 +43,7 @@ import {
 import type { AppLanguage } from '@/lib/i18n'
 /** Sidebar search hints (unchanged from Sidebar) */
 export const MENU_SECTION_SEARCH_HINTS: Record<string, string> = {
-  main: 'home apps launcher dashboard pos cashier point of sale register',
+  main: 'home apps launcher dashboard pos cashier point of sale register company brain ai advisor',
   station: 'station pump fuel tank island dispenser nozzle meter forecourt',
   operations: 'operations shift dip variance inventory transfer stock station fuel ops',
   accounting:
@@ -119,6 +120,7 @@ const APP_PAGE_HREF_PERMISSIONS = buildAppPageHrefPermissionMap()
 
 export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   ...APP_PAGE_HREF_PERMISSIONS,
+  '/brain': ['app.brain', 'app.launcher'],
   '/aquaculture': ['app.aquaculture', 'app.aquaculture.dashboard'],
   '/aquaculture/ponds': ['app.aquaculture', 'app.aquaculture.ponds'],
   '/aquaculture/expenses': ['app.aquaculture', 'app.aquaculture.expenses'],
@@ -181,6 +183,7 @@ export function getFsmsErpMenuItems(lang: AppLanguage = 'en'): ErpAppMenuItem[] 
   return [
     fsmsNavItem('/apps', 'main', LayoutGrid, tile('bg-muted', 'text-muted-foreground'), lang),
     fsmsNavItem('/dashboard', 'main', LayoutDashboard, tile('bg-sky-100', 'text-sky-600'), lang),
+    fsmsNavItem('/brain', 'main', Brain, tile('bg-indigo-100', 'text-indigo-700'), lang),
     fsmsNavItem('/cashier', 'main', ShoppingCart, tile('bg-cyan-100', 'text-cyan-600'), lang),
 
     fsmsNavItem('/stations', 'station', Building2, tile('bg-amber-100', 'text-amber-600'), lang),

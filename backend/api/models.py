@@ -76,6 +76,11 @@ class Company(models.Model):
     payment_end_date = models.DateField(null=True, blank=True)
     payment_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     billing_plan_code = models.CharField(max_length=32, blank=True)  # starter, growth, enterprise, platform, custom
+    brain_plan = models.CharField(
+        max_length=16,
+        default="free",
+        help_text="Company Brain tier: free (ERP rules + limited chat), growth, enterprise (LLM + web research).",
+    )
     subscription_cancel_at_period_end = models.BooleanField(default=False)
     # Manual SaaS rollout: super admin promotes each tenant to PLATFORM_TARGET_RELEASE when ready.
     platform_release = models.CharField(max_length=64, blank=True, default="")
@@ -3392,4 +3397,62 @@ class PayrollRunEmployeeAllocation(models.Model):
         unique_together = [["payroll_run", "employee"]]
         indexes = [
             models.Index(fields=["employee"]),
+        ]
+
+
+class BrainConversation(models.Model):
+    """Owner ↔ Company Brain chat thread (scoped to one company)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="brain_conversations")
+    user = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="brain_conversations",
+    )
+    title = models.CharField(max_length=200, blank=True, default="")
+    context_entity_type = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="Optional focus: station, pond, employee, company.",
+    )
+    context_entity_id = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "brain_conversation"
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["company", "-updated_at"]),
+        ]
+
+
+class BrainMessage(models.Model):
+    """Single turn in a Brain conversation (user question or assistant reply)."""
+
+    ROLE_USER = "user"
+    ROLE_ASSISTANT = "assistant"
+    ROLE_CHOICES = ((ROLE_USER, "User"), (ROLE_ASSISTANT, "Assistant"))
+
+    conversation = models.ForeignKey(
+        BrainConversation, on_delete=models.CASCADE, related_name="messages"
+    )
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES)
+    content = models.TextField(help_text="User text or assistant answer (Bangla by default).")
+    structured = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="reasoning_steps_bn, sources, confidence, missing_inputs, suggested_actions.",
+    )
+    model_used = models.CharField(max_length=128, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "brain_message"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["conversation", "created_at"]),
         ]

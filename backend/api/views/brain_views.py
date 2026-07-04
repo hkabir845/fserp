@@ -182,3 +182,51 @@ def brain_conversation_message(request, conversation_id: int):
             "usage": brain_plans.usage_status(company),
         }
     )
+
+
+@csrf_exempt
+@auth_required
+@require_http_methods(["POST"])
+def brain_transcribe(request):
+    """Transcribe voice audio (Bangla/English) — fallback for devices without Web Speech API."""
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
+    cid = get_company_id(request)
+    err = company_context_error_response(request)
+    if err:
+        return err
+    company = _company_or_404(int(cid))
+    if not company:
+        return JsonResponse({"detail": "Company not found."}, status=404)
+
+    upload = request.FILES.get("audio")
+    if not upload:
+        return JsonResponse({"detail": "audio file is required."}, status=400)
+
+    language = (request.POST.get("language") or "bn").strip().lower()
+    if language not in ("bn", "en", "bn-bd", "bn-in"):
+        language = "bn"
+
+    audio_bytes = upload.read()
+    mime = (upload.content_type or "audio/webm").strip()
+
+    from api.services.brain import plans as brain_plans_module
+    from api.services.brain.speech_transcription import transcribe_audio_bytes
+
+    plan = brain_plans_module.brain_plan_for_company(company)
+    if not brain_plans_module.usage_status(company).get("llm_enabled"):
+        return JsonResponse(
+            {"detail": "Brain API not configured — cannot transcribe voice on this device."},
+            status=503,
+        )
+
+    text, error = transcribe_audio_bytes(
+        audio_bytes,
+        mime_type=mime,
+        language=language,
+        plan=plan,
+    )
+    if error and not text:
+        return JsonResponse({"detail": error}, status=502)
+    return JsonResponse({"transcript": text or "", "language": language})

@@ -277,6 +277,8 @@ urlpatterns = [
         "brain/conversations/<int:conversation_id>/messages",
         brain_views.brain_conversation_message,
     ),
+    path("brain/transcribe/", brain_views.brain_transcribe),
+    path("brain/transcribe", brain_views.brain_transcribe),
     path("system/tenant-data-summary/", system_views.tenant_data_summary),
     path("system/tenant-data-summary", system_views.tenant_data_summary),
     # Broadcasts

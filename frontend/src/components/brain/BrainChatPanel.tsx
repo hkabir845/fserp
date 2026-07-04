@@ -8,8 +8,10 @@ import { useToast } from '@/components/Toast'
 import api, { fetchCurrentCompany, isApiSessionError } from '@/lib/api'
 import { hasStoredSession } from '@/lib/authSession'
 import { extractErrorMessage } from '@/utils/errorHandler'
-import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Mic, MicOff, Send } from 'lucide-react'
-import { useSpeechRecognition, type SpeechVoiceLang } from '@/hooks/useSpeechRecognition'
+import { Brain, ChevronDown, ChevronUp, ExternalLink, Loader2, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react'
+import { useBrainVoiceInput } from '@/hooks/useBrainVoiceInput'
+import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
+import type { SpeechVoiceLang } from '@/lib/voiceCapabilities'
 import { BrainMarkdown } from '@/components/brain/BrainMarkdown'
 
 export type BrainSource = {
@@ -79,12 +81,19 @@ const UI = {
     contextEmployee: 'Focused on employee',
     voiceListen: 'Voice (Bangla / English)',
     voiceStop: 'Stop listening',
+    voiceRecording: 'Recording… tap mic again to stop',
+    voiceTranscribing: 'Transcribing…',
     voiceBn: 'BN',
     voiceEn: 'EN',
-    voiceUnsupported: 'Voice input needs Chrome or Edge on HTTPS.',
+    voiceUnsupported: 'Voice input is not supported on this browser.',
+    voiceInsecure: 'Voice needs a secure connection (HTTPS).',
     voiceDenied: 'Microphone permission denied.',
     voiceNoSpeech: 'No speech detected — try again.',
+    voiceTranscriptionFailed: 'Could not transcribe — try again or type your question.',
     voiceListening: 'Listening…',
+    voiceSpeak: 'Listen to reply',
+    voiceStopSpeak: 'Stop speaking',
+    voiceSpeaking: 'Speaking…',
   },
   bn: {
     title: 'কোম্পানি ব্রেইন',
@@ -110,12 +119,19 @@ const UI = {
     contextEmployee: 'কর্মচারী ফোকাস',
     voiceListen: 'ভয়েস (বাংলা / ইংরেজি)',
     voiceStop: 'শোনা বন্ধ করুন',
+    voiceRecording: 'রেকর্ড হচ্ছে… আবার মাইক চাপুন',
+    voiceTranscribing: 'ট্রান্সক্রাইব হচ্ছে…',
     voiceBn: 'বাং',
     voiceEn: 'EN',
-    voiceUnsupported: 'ভয়েসের জন্য HTTPS-এ Chrome বা Edge লাগবে।',
+    voiceUnsupported: 'এই ব্রাউজারে ভয়েস সমর্থিত নয়।',
+    voiceInsecure: 'ভয়েসের জন্য নিরাপদ সংযোগ (HTTPS) লাগবে।',
     voiceDenied: 'মাইক্রোফোন অনুমতি দেওয়া হয়নি।',
     voiceNoSpeech: 'কথা শোনা যায়নি — আবার চেষ্টা করুন।',
+    voiceTranscriptionFailed: 'ট্রান্সক্রাইব হয়নি — আবার চেষ্টা করুন বা লিখুন।',
     voiceListening: 'শুনছি…',
+    voiceSpeak: 'উত্তর শুনুন',
+    voiceStopSpeak: 'কথা বন্ধ করুন',
+    voiceSpeaking: 'বলছে…',
   },
 } as const
 
@@ -157,20 +173,49 @@ function AssistantBubble({
   message,
   labels,
   standalone,
+  voiceOutSupported,
+  speakingMessageId,
+  onSpeak,
+  onStopSpeak,
 }: {
   message: BrainMessage
   labels: BrainUiLabels
   standalone?: boolean
+  voiceOutSupported?: boolean
+  speakingMessageId?: number | null
+  onSpeak?: (text: string, messageId: number) => void
+  onStopSpeak?: () => void
 }) {
   const [showReasoning, setShowReasoning] = useState(false)
   const structured = message.structured || {}
   const steps = structured.reasoning_steps_bn || []
   const missingInputs = structured.missing_inputs || []
   const suggestedActions = structured.suggested_actions || []
+  const isSpeaking = speakingMessageId === message.id
 
   return (
     <div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-border bg-white px-4 py-3.5 shadow-sm">
-      <BrainMarkdown content={message.content} />
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <BrainMarkdown content={message.content} />
+        </div>
+        {voiceOutSupported && onSpeak && onStopSpeak ? (
+          <button
+            type="button"
+            title={isSpeaking ? labels.voiceStopSpeak : labels.voiceSpeak}
+            onClick={() =>
+              isSpeaking ? onStopSpeak() : onSpeak(message.content, message.id)
+            }
+            className={`shrink-0 rounded-lg border p-1.5 transition-colors ${
+              isSpeaking
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </button>
+        ) : null}
+      </div>
       {structured.confidence && (
         <p className="mt-2 text-xs text-muted-foreground">
           {labels.confidence}: {structured.confidence}
@@ -275,27 +320,12 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
   const [voiceLang, setVoiceLang] = useState<SpeechVoiceLang>(language === 'bn' ? 'bn' : 'en')
   const bottomRef = useRef<HTMLDivElement>(null)
   const autoSentRef = useRef(false)
-  const voiceSendPendingRef = useRef(false)
+  const voiceInputUsedRef = useRef(false)
+  const speakReplyRef = useRef<(text: string, messageId?: number) => boolean>(() => false)
 
   useEffect(() => {
     setVoiceLang(language === 'bn' ? 'bn' : 'en')
   }, [language])
-
-  const { supported: voiceSupported, listening, start: startVoice, stop: stopVoice } = useSpeechRecognition({
-    voiceLang,
-    onInterim: (text) => setInput(text),
-    onFinal: (text) => setInput(text),
-    onEnd: (text) => {
-      if (text) {
-        voiceSendPendingRef.current = true
-        setInput(text)
-      }
-    },
-    onError: (code) => {
-      if (code === 'not-allowed') toast.error(labels.voiceDenied)
-      else if (code === 'no-speech') toast.error(labels.voiceNoSpeech)
-    },
-  })
 
   const contextLabel =
     contextType === 'pond'
@@ -373,7 +403,15 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
           return [...withoutOptimistic, userMsg, res.data.assistant_message]
         })
         setUsage(res.data.usage)
+        if (voiceInputUsedRef.current && res.data.assistant_message?.content) {
+          voiceInputUsedRef.current = false
+          speakReplyRef.current(
+            res.data.assistant_message.content,
+            res.data.assistant_message.id,
+          )
+        }
       } catch (e) {
+        voiceInputUsedRef.current = false
         setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
         if (!isApiSessionError(e)) {
           toast.error(extractErrorMessage(e))
@@ -415,6 +453,55 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
     usage.messages_remaining_today != null &&
     usage.messages_remaining_today <= 0
 
+  const onVoiceAutoSend = useCallback(
+    (text: string) => {
+      if (atLimit) return
+      voiceInputUsedRef.current = true
+      setInput('')
+      void sendMessage(text)
+    },
+    [atLimit, sendMessage],
+  )
+
+  const onVoiceError = useCallback(
+    (code: string) => {
+      if (code === 'not-allowed') toast.error(labels.voiceDenied)
+      else if (code === 'no-speech') toast.error(labels.voiceNoSpeech)
+      else if (code === 'insecure-context') toast.error(labels.voiceInsecure)
+      else if (code === 'transcription-failed') toast.error(labels.voiceTranscriptionFailed)
+      else if (code === 'unsupported') toast.error(labels.voiceUnsupported)
+    },
+    [labels, toast],
+  )
+
+  const {
+    available: voiceCapable,
+    mode: voiceMode,
+    listening,
+    transcribing,
+    toggle: toggleVoice,
+  } = useBrainVoiceInput({
+    voiceLang,
+    onText: setInput,
+    onAutoSend: onVoiceAutoSend,
+    onError: onVoiceError,
+  })
+
+  const voiceAvailable =
+    voiceCapable && (voiceMode === 'browser' || (usage?.llm_enabled ?? false))
+
+  const {
+    supported: voiceOutSupported,
+    speaking: voiceOutSpeaking,
+    speakingMessageId,
+    speak: speakReply,
+    stop: stopSpeaking,
+  } = useSpeechSynthesis(voiceLang)
+
+  useEffect(() => {
+    speakReplyRef.current = speakReply
+  }, [speakReply])
+
   const handleSend = async () => {
     const text = input.trim()
     if (!text) return
@@ -422,33 +509,14 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
     await sendMessage(text)
   }
 
-  useEffect(() => {
-    if (!voiceSendPendingRef.current || listening || loading || atLimit) return
-    const text = input.trim()
-    if (!text) {
-      voiceSendPendingRef.current = false
-      return
-    }
-    voiceSendPendingRef.current = false
-    setInput('')
-    void sendMessage(text)
-  }, [input, listening, loading, atLimit, sendMessage])
-
-  const toggleVoice = () => {
-    if (!voiceSupported) {
-      toast.error(labels.voiceUnsupported)
-      return
-    }
-    if (listening) {
-      stopVoice()
-      return
-    }
-    voiceSendPendingRef.current = false
-    const started = startVoice()
-    if (!started) {
-      toast.error(labels.voiceUnsupported)
-    }
-  }
+  const voiceBusy = listening || transcribing
+  const voiceStatusLabel = transcribing
+    ? labels.voiceTranscribing
+    : voiceOutSpeaking
+      ? labels.voiceSpeaking
+      : voiceMode === 'server' && listening
+        ? labels.voiceRecording
+        : labels.voiceListening
 
   const heightClass = standalone
     ? 'h-[calc(100dvh-3.5rem)] min-h-0'
@@ -511,7 +579,15 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
                   {msg.content}
                 </div>
               ) : (
-                <AssistantBubble message={msg} labels={labels} standalone={standalone} />
+                <AssistantBubble
+                  message={msg}
+                  labels={labels}
+                  standalone={standalone}
+                  voiceOutSupported={voiceOutSupported}
+                  speakingMessageId={speakingMessageId}
+                  onSpeak={speakReply}
+                  onStopSpeak={stopSpeaking}
+                />
               )}
             </div>
           ))
@@ -527,13 +603,19 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
 
       <div className="border-t border-border p-4">
         {atLimit && <p className="mb-2 text-sm text-destructive">{labels.upgrade}</p>}
-        {listening && (
+        {voiceBusy && (
           <p className="mb-2 flex items-center gap-2 text-xs font-medium text-primary">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
             </span>
-            {labels.voiceListening}
+            {voiceStatusLabel}
+          </p>
+        )}
+        {voiceOutSpeaking && !voiceBusy && (
+          <p className="mb-2 flex items-center gap-2 text-xs font-medium text-indigo-700">
+            <Volume2 className="h-3.5 w-3.5" />
+            {labels.voiceSpeaking}
           </p>
         )}
         <form
@@ -543,25 +625,25 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
             void handleSend()
           }}
         >
-          {voiceSupported && (
+          {voiceAvailable && (
             <div className="flex shrink-0 flex-col gap-1">
               <button
                 type="button"
-                title={listening ? labels.voiceStop : labels.voiceListen}
-                disabled={loading || atLimit}
-                onClick={toggleVoice}
+                title={voiceBusy ? labels.voiceStop : labels.voiceListen}
+                disabled={loading || atLimit || transcribing}
+                onClick={() => void toggleVoice()}
                 className={`inline-flex h-11 w-11 items-center justify-center rounded-xl border transition-colors disabled:opacity-50 ${
-                  listening
+                  voiceBusy
                     ? 'border-destructive bg-destructive/10 text-destructive'
                     : 'border-border hover:bg-muted'
                 }`}
               >
-                {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                {voiceBusy ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </button>
               <div className="flex overflow-hidden rounded-lg border border-border text-[10px] font-semibold">
                 <button
                   type="button"
-                  disabled={listening || loading || atLimit}
+                  disabled={voiceBusy || loading || atLimit}
                   onClick={() => setVoiceLang('bn')}
                   className={`px-2 py-1 ${voiceLang === 'bn' ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'}`}
                 >
@@ -569,7 +651,7 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
                 </button>
                 <button
                   type="button"
-                  disabled={listening || loading || atLimit}
+                  disabled={voiceBusy || loading || atLimit}
                   onClick={() => setVoiceLang('en')}
                   className={`px-2 py-1 ${voiceLang === 'en' ? 'bg-primary text-primary-foreground' : 'bg-muted/30 text-muted-foreground'}`}
                 >

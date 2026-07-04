@@ -183,3 +183,72 @@ def test_workforce_analysis_returns_advisory(company_master):
     out = workforce_retention_analysis(company_master.id, lang="bn")
     assert "release_candidates_advisory" in out
     assert "disclaimer_bn" in out
+
+
+def test_question_resolver_partial_module_match():
+    from api.services.brain.question_resolver import match_modules_in_message
+
+    assert "customers" in match_modules_in_message("bokewa grahok ke ke?")
+    assert "invoices" in match_modules_in_message("ajker bikri koto")
+    assert "ponds" in match_modules_in_message("pukur er obostha")
+
+
+def test_boost_intents_from_partial_module():
+    from api.services.brain.question_resolver import boost_intents_from_modules
+
+    intents = boost_intents_from_modules("grahok er due", {"chat"})
+    assert "customer_ar" in intents
+
+
+def test_build_question_focus_scoped():
+    from api.services.brain.question_resolver import build_question_focus
+
+    focus = build_question_focus("profit koto", {"profit"})
+    assert focus["answer_scope"] == "focused"
+    assert focus["include_related_context"] is False
+
+
+def test_detect_list_module_aquaculture_modules():
+    from api.services.brain.list_requests import detect_list_module
+
+    assert detect_list_module("list all pond stock items") == "pond_stock"
+    assert detect_list_module("সব ঔষধের তালিকা দাও") == "aquaculture_medicine"
+    assert detect_list_module("show aquaculture financing loans") == "aquaculture_financing"
+
+
+@pytest.mark.django_db
+def test_direct_answer_customer_ar_offline(company_master):
+    from api.services.brain.direct_answer import compose_direct_answer
+
+    ctx, _ = gather_context(company_master.id, "কোন গ্রাহকের বকেয়া বেশি?")
+    ctx["user_question"] = "কোন গ্রাহকের বকেয়া বেশি?"
+    ans = compose_direct_answer(ctx)
+    assert ans is not None
+    assert ans.get("answer_bn")
+    assert "গ্রাহক" in ans["answer_bn"] or "বকেয়া" in ans["answer_bn"]
+
+
+@pytest.mark.django_db
+def test_direct_answer_inventory_offline(company_master):
+    from api.services.brain.direct_answer import compose_direct_answer
+
+    ctx, _ = gather_context(company_master.id, "low stock item ache ki?")
+    ctx["user_question"] = "low stock item ache ki?"
+    ans = compose_direct_answer(ctx)
+    assert ans is not None
+    assert "ইনভেন্টরি" in ans["answer_bn"] or "স্টক" in ans["answer_bn"]
+
+
+def test_wants_breakdown():
+    from api.services.brain.question_resolver import wants_breakdown
+
+    assert wants_breakdown("station wise profit dao")
+    assert not wants_breakdown("profit koto")
+
+
+def test_is_help_or_howto():
+    from api.services.brain.question_resolver import is_help_or_howto_question
+
+    assert is_help_or_howto_question("FCR kivabe komabo?")
+    assert is_help_or_howto_question("how to reduce pond density")
+    assert not is_help_or_howto_question("profit koto")

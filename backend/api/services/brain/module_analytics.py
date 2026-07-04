@@ -221,22 +221,20 @@ def _payments_cash(company_id: int, *, month_start: date, today: date) -> dict[s
 
 
 def _inventory_stock(company_id: int, *, month_start: date, today: date) -> dict[str, Any]:
-    items_qs = Item.objects.filter(company_id=company_id, is_active=True)
-    low_candidates = list(
-        items_qs.filter(reorder_level__gt=0).order_by("quantity_on_hand")[:40]
-    )
+    items_qs = Item.objects.filter(company_id=company_id, is_active=True, item_type="inventory")
+    ordered = list(items_qs.order_by("quantity_on_hand", "name")[:30])
+    zero_or_negative = [it for it in ordered if _d(it.quantity_on_hand) <= 0]
+    low_items = zero_or_negative[:10] if zero_or_negative else ordered[:8]
     low_stock = [
         {
             "item_id": it.id,
             "item_number": it.item_number,
             "name": it.name,
             "quantity_on_hand": str(it.quantity_on_hand),
-            "reorder_level": str(it.reorder_level),
             "unit": it.unit or "",
         }
-        for it in low_candidates
-        if _d(it.quantity_on_hand) <= _d(it.reorder_level)
-    ][:10]
+        for it in low_items
+    ]
 
     station_stock_rows = (
         ItemStationStock.objects.filter(company_id=company_id, quantity__gt=0)
@@ -249,7 +247,8 @@ def _inventory_stock(company_id: int, *, month_start: date, today: date) -> dict
         .order_by("-quantity")[:8]
     )
     return {
-        "active_items": items_qs.count(),
+        "active_items": Item.objects.filter(company_id=company_id, is_active=True).count(),
+        "inventory_items": items_qs.count(),
         "low_stock_items": low_stock,
         "top_station_stock": [
             {

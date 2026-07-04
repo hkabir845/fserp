@@ -34,6 +34,9 @@ _MODULE_ENTITY_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("feeding_advice", ("feeding advice", "feed advice", "ফিডিং পরামর্শ")),
     ("fish_sales", ("fish sale", "pond sale", "মাছ বিক্রি", "পোন্ড বিক্রি")),
     ("pond_expenses", ("pond expense", "pond cost", "পোন্ড খরচ")),
+    ("pond_stock", ("pond stock", "pond warehouse", "pond feed stock", "পোন্ড স্টক", "পোন্ড মাল")),
+    ("aquaculture_medicine", ("medicine", "aquaculture medicine", "pond care", "ঔষধ", "চিকিৎসা", "med catalog")),
+    ("aquaculture_financing", ("aquaculture financing", "pond loan", "fish loan", "মৎস্য ঋণ", "পোন্ড ঋণ")),
     ("reporting_categories", ("reporting category", "রিপোর্টিং ক্যাটাগরি")),
 ]
 
@@ -43,6 +46,7 @@ _LIST_SIGNALS = (
     "list my",
     "show all",
     "show me",
+    "show ",
     "all ",
     "every ",
     "তালিকা",

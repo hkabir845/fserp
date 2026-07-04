@@ -28,6 +28,7 @@ from api.models import (
     Invoice,
     Island,
     Item,
+    ItemPondStock,
     JournalEntry,
     Loan,
     Meter,
@@ -42,6 +43,7 @@ from api.models import (
     TenantReportingCategory,
     Vendor,
 )
+from api.services.aquaculture_medicine_catalog_seed import MEDICINE_CATALOG_ITEM_PREFIX
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.brain.analytics import find_employees
 from api.services.brain.module_registry import SIDEBAR_MODULES
@@ -86,6 +88,9 @@ MODULE_LIST_TITLES: dict[str, str] = {
     "feeding_advice": "ফিডিং পরামর্শ তালিকা",
     "fish_sales": "পোন্ড মাছ বিক্রি তালিকা",
     "pond_expenses": "পোন্ড খরচ তালিকা",
+    "pond_stock": "পোন্ড স্টক তালিকা",
+    "aquaculture_medicine": "ঔষধ ও চিকিৎসা তালিকা",
+    "aquaculture_financing": "মৎস্য ফাইন্যান্সিং তালিকা",
     "reporting_categories": "রিপোর্টিং ক্যাটাগরি তালিকা",
 }
 
@@ -200,7 +205,7 @@ def fetch_module_list(
                     "name": it.name,
                     "quantity_on_hand": str(it.quantity_on_hand),
                     "unit": it.unit or "",
-                    "reorder_level": str(it.reorder_level),
+                    "item_type": it.item_type or "",
                 }
             )
     elif module_key == "stations":
@@ -523,6 +528,54 @@ def fetch_module_list(
                     "amount_bdt": _money(ex.amount),
                 }
             )
+    elif module_key == "pond_stock":
+        for row in (
+            ItemPondStock.objects.filter(company_id=company_id, quantity__gt=0)
+            .select_related("item", "pond")
+            .order_by("pond__sort_order", "item__name")[:limit]
+        ):
+            rows.append(
+                {
+                    "id": row.id,
+                    "pond": pond_operational_display_name(row.pond) if row.pond_id else "",
+                    "item": row.item.name if row.item_id else "",
+                    "item_number": row.item.item_number if row.item_id else "",
+                    "quantity": str(row.quantity),
+                    "unit": row.item.unit if row.item_id else "",
+                }
+            )
+    elif module_key == "aquaculture_medicine":
+        for it in Item.objects.filter(
+            company_id=company_id,
+            is_active=True,
+            item_number__startswith=MEDICINE_CATALOG_ITEM_PREFIX,
+        ).order_by("name", "id")[:limit]:
+            rows.append(
+                {
+                    "id": it.id,
+                    "item_number": it.item_number,
+                    "name": it.name,
+                    "quantity_on_hand": str(it.quantity_on_hand),
+                    "unit": it.unit or "",
+                }
+            )
+    elif module_key == "aquaculture_financing":
+        for loan in (
+            Loan.objects.filter(company_id=company_id, aquaculture_financing=True)
+            .select_related("counterparty")
+            .order_by("-outstanding_principal", "-id")[:limit]
+        ):
+            rows.append(
+                {
+                    "id": loan.id,
+                    "loan_no": loan.loan_no,
+                    "title": loan.title or "",
+                    "counterparty": loan.counterparty.name if loan.counterparty_id else "",
+                    "status": loan.status,
+                    "outstanding_bdt": _money(loan.outstanding_principal),
+                    "sanction_bdt": _money(loan.sanction_amount),
+                }
+            )
     elif module_key == "reporting_categories":
         for rc in TenantReportingCategory.objects.filter(company_id=company_id, is_active=True).order_by("code")[:limit]:
             rows.append(
@@ -609,6 +662,20 @@ def format_module_list_answer(data: dict[str, Any]) -> str:
         elif module == "production_cycles":
             lines.append(
                 f"{i}. **{row.get('name')}** @ {row.get('pond')} — {row.get('species')}, {row.get('start_date')}"
+            )
+        elif module == "pond_stock":
+            lines.append(
+                f"{i}. **{row.get('pond')}** — {row.get('item')} ({row.get('item_number')}): "
+                f"{row.get('quantity')} {row.get('unit')}"
+            )
+        elif module == "aquaculture_medicine":
+            lines.append(
+                f"{i}. **{row.get('name')}** ({row.get('item_number')}) — স্টক {row.get('quantity_on_hand')} {row.get('unit')}"
+            )
+        elif module == "aquaculture_financing":
+            lines.append(
+                f"{i}. **{row.get('loan_no')}** — {row.get('counterparty') or row.get('title')}, "
+                f"বকেয়া ৳{row.get('outstanding_bdt')}, {row.get('status')}"
             )
         else:
             label = (

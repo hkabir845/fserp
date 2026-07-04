@@ -33,6 +33,7 @@ from api.services.brain.decision_intelligence import build_decision_brief
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.module_lists import fetch_module_list
 from api.services.brain.plans import brain_plan_for_company
+from api.services.brain.question_resolver import boost_intents_from_modules, build_question_focus, is_help_or_howto_question
 from api.services.station_business_kind import station_business_kind_label, station_business_kind
 
 
@@ -223,6 +224,7 @@ def gather_context(
     company = Company.objects.filter(pk=company_id, is_deleted=False).first()
     lang = (company.language if company else "bn") or "bn"
     intents = detect_intents(message)
+    intents = boost_intents_from_modules(message, intents)
     today = timezone.localdate()
     period_start, period_end, period_label = analytics._period_for_question(message, today)
 
@@ -254,6 +256,7 @@ def gather_context(
         "answer_mode": "conversational_chat" if intents == {"chat"} else "full_erp_snapshot_plus_focus",
         "business_snapshot": business_snapshot,
         "user_question": message,
+        "question_focus": build_question_focus(message, intents),
     }
     if not light_context and isinstance(business_snapshot, dict) and not business_snapshot.get("partial"):
         brief = _safe_block(
@@ -446,6 +449,48 @@ def gather_context(
     context["missing_inputs"] = missing_inputs
     context["suggested_actions"] = suggested_actions
 
+    if not light_context and isinstance(business_snapshot, dict):
+        mods = (business_snapshot.get("erp_modules") or {}) if not business_snapshot.get("partial") else {}
+        if mods:
+            ar = mods.get("sales_customers_ar") or {}
+            for inv in (ar.get("overdue_invoices") or [])[:6]:
+                try:
+                    all_refs.append(
+                        _ref(
+                            kind="erp",
+                            type_="invoice",
+                            id_=int(inv["id"]),
+                            label=inv.get("number") or f"Invoice #{inv['id']}",
+                            path="/invoices",
+                        )
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+            ap = mods.get("purchases_vendors_ap") or {}
+            for bill in (ap.get("open_bills") or [])[:6]:
+                try:
+                    all_refs.append(
+                        _ref(
+                            kind="erp",
+                            type_="bill",
+                            id_=int(bill["id"]),
+                            label=bill.get("number") or f"Bill #{bill['id']}",
+                            path="/bills",
+                        )
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if {"inventory", "fuel"} & intents:
+                path = "/items" if "inventory" in intents else "/tanks"
+                label = "ইনভেন্টরি" if "inventory" in intents else "ট্যাংক/ফুয়েল"
+                all_refs.append(_ref(kind="erp", type_="module", id_=0, label=label, path=path))
+            if "payments" in intents:
+                all_refs.append(_ref(kind="erp", type_="module", id_=0, label="পেমেন্ট", path="/payments"))
+            if "accounting" in intents:
+                all_refs.append(_ref(kind="erp", type_="module", id_=0, label="হিসাব", path="/journal-entries"))
+            if "loans" in intents:
+                all_refs.append(_ref(kind="erp", type_="module", id_=0, label="ঋণ", path="/loans"))
+
     seen: set[tuple[str, int]] = set()
     unique_refs: list[dict[str, Any]] = []
     for r in all_refs:
@@ -461,11 +506,13 @@ def gather_context(
 def should_use_web_research(message: str, plan: str) -> bool:
     """
     Paid plans: web-augmented model on every question (owner may ask anything).
-    Free: web when external knowledge, benchmarks, or decision research is needed.
+    Free: web when external knowledge, benchmarks, decision research, or help/how-to is needed.
     """
     from api.services.brain.plans import PLAN_FREE, WEB_RESEARCH_PLANS
 
     if wants_benchmark_or_decision_research(message):
+        return True
+    if is_help_or_howto_question(message):
         return True
     if plan in WEB_RESEARCH_PLANS:
         return True
@@ -507,5 +554,20 @@ def wants_web_research(message: str) -> bool:
         "ঔষধ",
         "বাজার দর",
         "গবেষণা",
+        "how to",
+        "how do",
+        "guide",
+        "tutorial",
+        "kivabe",
+        "ki vabe",
+        "process",
+        "procedure",
+        "support",
+        "explain",
+        "কিভাবে",
+        "কীভাবে",
+        "পদ্ধতি",
+        "সাহায্য",
+        "ব্যাখ্যা",
     )
     return any(k in lower for k in keywords)

@@ -59,6 +59,9 @@ const UI = {
     hideReasoning: 'Hide reasoning',
     sources: 'Sources',
     confidence: 'Confidence',
+    followUp: 'Follow-up needed',
+    suggestedActions: 'Suggested actions',
+    requiresApproval: 'Requires your approval',
     newChat: 'New conversation',
     plan: 'Plan',
     messagesToday: 'Messages today',
@@ -86,6 +89,9 @@ const UI = {
     hideReasoning: 'যুক্তি লুকান',
     sources: 'তথ্যসূত্র',
     confidence: 'আত্মবিশ্বাস',
+    followUp: 'আরও তথ্য লাগবে',
+    suggestedActions: 'প্রস্তাবিত পদক্ষেপ',
+    requiresApproval: 'আপনার অনুমোদন লাগবে',
     newChat: 'নতুন কথোপকথন',
     plan: 'প্ল্যান',
     messagesToday: 'আজকের বার্তা',
@@ -151,6 +157,8 @@ function AssistantBubble({
   const [showReasoning, setShowReasoning] = useState(false)
   const structured = message.structured || {}
   const steps = structured.reasoning_steps_bn || []
+  const missingInputs = structured.missing_inputs || []
+  const suggestedActions = structured.suggested_actions || []
 
   return (
     <div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-border bg-white px-4 py-3 shadow-sm">
@@ -159,6 +167,36 @@ function AssistantBubble({
         <p className="mt-2 text-xs text-muted-foreground">
           {labels.confidence}: {structured.confidence}
         </p>
+      )}
+      {missingInputs.length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+          <p className="mb-1 text-xs font-medium text-amber-900">{labels.followUp}</p>
+          <ul className="list-disc space-y-0.5 pl-4 text-xs text-amber-950">
+            {missingInputs.map((item, i) => (
+              <li key={item.key || i}>{item.prompt_bn || item.key}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {suggestedActions.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">{labels.suggestedActions}</p>
+          <ul className="space-y-1">
+            {suggestedActions.map((action, i) => (
+              <li
+                key={`${action.action}-${i}`}
+                className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-950"
+              >
+                {action.label_bn || action.action}
+                {action.requires_approval ? (
+                  <span className="mt-0.5 block text-[10px] font-medium text-indigo-700">
+                    {labels.requiresApproval}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {steps.length > 0 && (
         <div className="mt-2">

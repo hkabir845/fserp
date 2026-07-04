@@ -26,6 +26,10 @@ type BrainConfig = {
   env_fallback_masked: string
   llm_ready_free: boolean
   llm_ready_vendor: boolean
+  active_key_free_plan_source?: string
+  active_key_free_plan_masked?: string
+  active_key_paid_plan_source?: string
+  active_key_paid_plan_masked?: string
   updated_at: string | null
 }
 
@@ -155,21 +159,45 @@ function SaasBrainSettingsContent() {
         </div>
 
         {config && (
-          <div className="mb-6 flex flex-wrap gap-2 text-sm">
-            <span
-              className={`rounded-full px-3 py-1 ${config.llm_ready_free ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}
-            >
-              Free tier: {config.llm_ready_free ? 'ready' : 'no key'}
-            </span>
-            <span
-              className={`rounded-full px-3 py-1 ${config.llm_ready_vendor ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-muted-foreground'}`}
-            >
-              Paid vendor: {config.llm_ready_vendor ? 'ready' : 'not set (optional for now)'}
-            </span>
-            {config.env_fallback_configured && (
-              <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">
-                Server env fallback: {config.env_fallback_masked || 'set'}
+          <div className="mb-6 space-y-3">
+            <div className="flex flex-wrap gap-2 text-sm">
+              <span
+                className={`rounded-full px-3 py-1 ${config.llm_ready_free ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}
+              >
+                Free tier: {config.llm_ready_free ? 'ready' : 'no key'}
               </span>
+              <span
+                className={`rounded-full px-3 py-1 ${config.llm_ready_vendor ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-muted-foreground'}`}
+              >
+                Paid vendor: {config.llm_ready_vendor ? 'ready' : 'not set (optional for now)'}
+              </span>
+              {config.env_fallback_configured && (
+                <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">
+                  Server env fallback: {config.env_fallback_masked || 'set'}
+                </span>
+              )}
+            </div>
+            {config.active_key_free_plan_masked && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
+                <p className="font-medium">Active key for Free-plan companies</p>
+                <p className="mt-1 font-mono text-xs">
+                  {config.active_key_free_plan_masked}{' '}
+                  <span className="text-indigo-700">({config.active_key_free_plan_source})</span>
+                </p>
+                <p className="mt-2 text-xs text-indigo-800">
+                  Free-plan Brain always uses the <strong>Free API key</strong> first — not the vendor key below.
+                  If credit is exhausted, paste your new key into Free API key, or clear the old free key first.
+                </p>
+              </div>
+            )}
+            {config.active_key_paid_plan_masked && (
+              <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
+                <p className="font-medium">Active key for Growth / Enterprise</p>
+                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                  {config.active_key_paid_plan_masked}{' '}
+                  <span>({config.active_key_paid_plan_source})</span>
+                </p>
+              </div>
             )}
           </div>
         )}

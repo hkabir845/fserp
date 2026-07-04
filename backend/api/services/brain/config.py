@@ -57,15 +57,34 @@ def env_api_key() -> str:
     return _env("OPENROUTER_API_KEY")
 
 
-def api_key_for_plan(plan: str) -> str:
+def _resolve_api_key(plan: str) -> tuple[str, str, str]:
+    """Return (source_label, masked_key, raw_key) for a Brain plan tier."""
     cfg = _cfg_or_defaults()
     free = (cfg.free_api_key or "").strip()
     vendor = (cfg.vendor_api_key or "").strip()
     env_key = env_api_key()
 
     if plan in _PAID_BRAIN_PLANS:
-        return vendor or free or env_key
-    return free or env_key or vendor
+        if vendor:
+            return "vendor_api_key", mask_api_key(vendor), vendor
+        if free:
+            return "free_api_key", mask_api_key(free), free
+        if env_key:
+            return "OPENROUTER_API_KEY (server env)", mask_api_key(env_key), env_key
+        return "none", "", ""
+
+    if free:
+        return "free_api_key", mask_api_key(free), free
+    if env_key:
+        return "OPENROUTER_API_KEY (server env)", mask_api_key(env_key), env_key
+    if vendor:
+        return "vendor_api_key (fallback)", mask_api_key(vendor), vendor
+    return "none", "", ""
+
+
+def api_key_for_plan(plan: str) -> str:
+    _source, _masked, raw = _resolve_api_key(plan)
+    return raw
 
 
 def openrouter_configured(*, plan: str | None = None) -> bool:
@@ -121,6 +140,8 @@ def serialize_brain_config_for_admin() -> dict[str, Any]:
     env_key = env_api_key()
     free_set = bool((cfg.free_api_key or "").strip())
     vendor_set = bool((cfg.vendor_api_key or "").strip())
+    free_src, free_active_masked, _ = _resolve_api_key("free")
+    vendor_src, vendor_active_masked, _ = _resolve_api_key("growth")
     return {
         "free_api_key_set": free_set,
         "free_api_key_masked": mask_api_key(cfg.free_api_key) if free_set else "",
@@ -131,8 +152,12 @@ def serialize_brain_config_for_admin() -> dict[str, Any]:
         "vendor_model_research": cfg.vendor_model_research or "perplexity/sonar",
         "env_fallback_configured": bool(env_key),
         "env_fallback_masked": mask_api_key(env_key) if env_key else "",
-        "llm_ready_free": free_set or bool(env_key),
-        "llm_ready_vendor": vendor_set or bool(env_key),
+        "llm_ready_free": free_set or bool(env_key) or vendor_set,
+        "llm_ready_vendor": vendor_set or bool(env_key) or free_set,
+        "active_key_free_plan_source": free_src,
+        "active_key_free_plan_masked": free_active_masked,
+        "active_key_paid_plan_source": vendor_src,
+        "active_key_paid_plan_masked": vendor_active_masked,
         "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
     }
 

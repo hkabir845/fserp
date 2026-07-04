@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { BrainAppProviders } from './BrainAppProviders'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -27,5 +28,5 @@ export const metadata: Metadata = {
 }
 
 export default function BrainAppLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return <BrainAppProviders>{children}</BrainAppProviders>
 }

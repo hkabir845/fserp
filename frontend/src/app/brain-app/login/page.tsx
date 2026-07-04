@@ -1,12 +1,7 @@
 'use client'
 
-import { Suspense } from 'react'
-import { LoginPageInner } from '@/components/auth/LoginPageInner'
+import { BrainAppLoginScreen } from '@/components/brain/BrainAppLoginScreen'
 
 export default function BrainAppLoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginPageInner variant="brain" />
-    </Suspense>
-  )
+  return <BrainAppLoginScreen />
 }

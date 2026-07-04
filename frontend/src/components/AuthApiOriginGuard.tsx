@@ -1,17 +1,20 @@
 'use client'
 
 import { useLayoutEffect, type ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { clearAuthIfApiOriginMismatch } from '@/lib/api'
+import { BRAIN_LOGIN_PATH } from '@/lib/brainAppSession'
 
-/**
- * Runs before child useEffects: clears session if tokens were issued for another API host
- * (e.g. production JWT while NEXT_PUBLIC_API_BASE_URL points at local Django).
- */
 export function AuthApiOriginGuard({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+
   useLayoutEffect(() => {
     if (clearAuthIfApiOriginMismatch()) {
-      window.location.replace('/login')
+      const loginPath =
+        pathname === '/brain-app' || pathname?.startsWith('/brain-app/') ? BRAIN_LOGIN_PATH : '/login'
+      window.location.replace(loginPath)
     }
-  }, [])
+  }, [pathname])
+
   return <>{children}</>
 }

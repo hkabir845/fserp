@@ -66,7 +66,8 @@ const UI = {
     plan: 'Plan',
     messagesToday: 'Messages today',
     llmOff: 'AI API not configured — add a Free API key in SaaS Admin → Brain API.',
-    upgrade: 'Daily limit reached. Upgrade to Growth for more messages.',
+    upgrade:
+      'Daily limit reached (Free plan: 15/day). This is your company Brain tier — not OpenRouter credits. SaaS Admin → Companies → set Billing plan to Growth, then refresh.',
     contextPond: 'Focused on pond',
     contextStation: 'Focused on station',
     contextEmployee: 'Focused on employee',
@@ -96,7 +97,8 @@ const UI = {
     plan: 'প্ল্যান',
     messagesToday: 'আজকের বার্তা',
     llmOff: 'AI API সেট নেই — SaaS Admin → Brain API-তে Free API Key দিন।',
-    upgrade: 'আজকের সীমা শেষ। Growth প্ল্যানে আপগ্রেড করুন।',
+    upgrade:
+      'আজকের সীমা শেষ (Free: ১৫/দিন)। এটি কোম্পানির Brain প্ল্যান — OpenRouter ক্রেডিট নয়। SaaS Admin → Companies → Billing plan Growth করুন, তারপর রিফ্রেশ।',
     contextPond: 'পোন্ড ফোকাস',
     contextStation: 'স্টেশন ফোকাস',
     contextEmployee: 'কর্মচারী ফোকাস',

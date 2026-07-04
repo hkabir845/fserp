@@ -3495,3 +3495,186 @@ class BrainMessage(models.Model):
         indexes = [
             models.Index(fields=["conversation", "created_at"]),
         ]
+
+
+class BrainCompanySettings(models.Model):
+    """Per-company AI Manager settings — tenant isolation enforced via company FK."""
+
+    company = models.OneToOneField(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="brain_settings",
+    )
+    brain_enabled = models.BooleanField(
+        default=True,
+        help_text="When false, Company Brain is disabled for this tenant.",
+    )
+    default_advisor_mode = models.CharField(
+        max_length=32,
+        default="manager",
+        help_text="manager, accountant, inventory, sales, hr, ceo, risk",
+    )
+    monthly_token_budget = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Optional monthly token budget; null = platform default.",
+    )
+    monthly_cost_budget_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Optional monthly USD budget for AI usage.",
+    )
+    allowed_models = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Optional allow-list of OpenRouter model ids for this company.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "brain_company_settings"
+
+
+class BrainUsageLog(models.Model):
+    """Token and cost tracking per AI request — tenant scoped."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="brain_usage_logs")
+    user = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="brain_usage_logs",
+    )
+    conversation = models.ForeignKey(
+        BrainConversation,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="usage_logs",
+    )
+    model = models.CharField(max_length=128, blank=True, default="")
+    prompt_tokens = models.PositiveIntegerField(default=0)
+    completion_tokens = models.PositiveIntegerField(default=0)
+    total_tokens = models.PositiveIntegerField(default=0)
+    estimated_cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    question_type = models.CharField(max_length=32, blank=True, default="")
+    route = models.CharField(max_length=64, blank=True, default="")
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True, default="")
+    latency_ms = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "brain_usage_log"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+            models.Index(fields=["company", "created_at"]),
+        ]
+
+
+class BrainKnowledgeSource(models.Model):
+    """Curated external / industry knowledge references for RAG-style retrieval."""
+
+    slug = models.SlugField(max_length=64, unique=True)
+    title = models.CharField(max_length=200)
+    category = models.CharField(max_length=64, blank=True, default="")
+    content_bn = models.TextField(blank=True, default="")
+    content_en = models.TextField(blank=True, default="")
+    source_url = models.URLField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    tags = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "brain_knowledge_source"
+        ordering = ["category", "title"]
+
+
+class BrainInsight(models.Model):
+    """Proactive or on-demand business insight generated for a company."""
+
+    SEVERITY_INFO = "info"
+    SEVERITY_WARNING = "warning"
+    SEVERITY_CRITICAL = "critical"
+    SEVERITY_CHOICES = (
+        (SEVERITY_INFO, "Info"),
+        (SEVERITY_WARNING, "Warning"),
+        (SEVERITY_CRITICAL, "Critical"),
+    )
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="brain_insights")
+    insight_type = models.CharField(max_length=64, blank=True, default="")
+    title_bn = models.CharField(max_length=300)
+    body_bn = models.TextField(blank=True, default="")
+    severity = models.CharField(max_length=16, choices=SEVERITY_CHOICES, default=SEVERITY_INFO)
+    key_numbers = models.JSONField(default=dict, blank=True)
+    recommended_action_bn = models.TextField(blank=True, default="")
+    confidence = models.CharField(max_length=16, blank=True, default="medium")
+    data_sources = models.JSONField(default=list, blank=True)
+    is_dismissed = models.BooleanField(default=False)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "brain_insight"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+            models.Index(fields=["company", "is_dismissed"]),
+        ]
+
+
+class BrainPrediction(models.Model):
+    """Stored forecast / prediction with confidence and assumptions."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="brain_predictions")
+    prediction_type = models.CharField(max_length=64)
+    title_bn = models.CharField(max_length=300)
+    summary_bn = models.TextField(blank=True, default="")
+    forecast_data = models.JSONField(default=dict, blank=True)
+    confidence = models.CharField(max_length=16, default="medium")
+    assumptions_bn = models.JSONField(default=list, blank=True)
+    horizon_days = models.PositiveSmallIntegerField(default=30)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "brain_prediction"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+            models.Index(fields=["company", "prediction_type"]),
+        ]
+
+
+class BrainActionLog(models.Model):
+    """Audit trail for AI-suggested actions and admin AI configuration changes."""
+
+    company = models.ForeignKey(
+        Company,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="brain_action_logs",
+    )
+    user = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="brain_action_logs",
+    )
+    action_type = models.CharField(max_length=64)
+    description = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "brain_action_log"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["company", "-created_at"]),
+        ]

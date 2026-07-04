@@ -32,6 +32,7 @@ from api.services.brain.intents import (
     wants_execution_actions,
 )
 from api.services.brain.decision_intelligence import build_decision_brief
+from api.services.brain.global_business_gaps import wants_global_gap_analysis, wants_solution_explanation
 from api.services.brain.worldfish_gap_audit import build_worldfish_gap_audit, wants_worldfish_gap_audit
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.module_lists import fetch_module_list
@@ -256,8 +257,15 @@ def gather_context(
         "company": overview,
         "intents": sorted(intents),
         "user_question": message,
-        "user_wants_advisory": wants_advisory_extras(message, intents),
+        "user_wants_advisory": (
+            wants_advisory_extras(message, intents)
+            or wants_global_gap_analysis(message)
+            or wants_solution_explanation(message)
+            or wants_benchmark_or_decision_research(message)
+        ),
         "period_label": period_label,
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
         "answer_mode": "conversational_chat" if intents == {"chat"} else "full_erp_snapshot_plus_focus",
         "business_snapshot": business_snapshot,
         "user_question": message,
@@ -341,7 +349,7 @@ def gather_context(
         if sales:
             context["sales"] = sales
         if station_id:
-            st = Station.objects.filter(pk=station_id).first()
+            st = Station.objects.filter(pk=station_id, company_id=company_id).first()
             if st:
                 all_refs.append(
                     _ref(kind="erp", type_="station", id_=station_id, label=st.station_name, path="/invoices")
@@ -351,7 +359,7 @@ def gather_context(
         try:
             context["financials"] = analytics.entity_financials(
                 company_id,
-                start=period_start if period_label != "today" else today.replace(day=1),
+                start=period_start,
                 end=period_end,
                 station_id=station_id,
                 pond_id=pond_id,
@@ -554,6 +562,8 @@ def should_use_web_research(message: str, plan: str) -> bool:
 
     if wants_benchmark_or_decision_research(message):
         return True
+    if wants_global_gap_analysis(message) or wants_solution_explanation(message):
+        return True
     if is_help_or_howto_question(message):
         return True
     if plan in WEB_RESEARCH_PLANS:
@@ -571,6 +581,13 @@ def wants_web_research(message: str) -> bool:
         "research",
         "benchmark",
         "compare",
+        "gap",
+        "gaps",
+        "worldwide",
+        "global",
+        "best practice",
+        "solve",
+        "reference",
         "standard",
         "predict",
         "forecast",

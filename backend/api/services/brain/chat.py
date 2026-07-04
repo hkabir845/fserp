@@ -11,9 +11,17 @@ from api.models import BrainConversation, BrainMessage, Company
 from api.services.brain import config as brain_config
 from api.services.brain import gateway, plans, tools
 from api.services.brain.advisory_envelope import enrich_structured_reply
+from api.services.brain.context_engine import build_company_context
 from api.services.brain.direct_answer import compose_direct_answer
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.intents import is_conversational_turn, is_greeting_message, wants_benchmark_or_decision_research
+from api.services.brain.question_resolver import is_help_or_howto_question
+from api.services.brain.question_router import route_question, route_to_dict
+from api.services.brain import prompts as brain_prompts
+from api.services.brain.prompts import get_risky_question_addon
+from api.services.brain import forecasting as brain_forecasting
+from api.services.brain.response_format import enrich_response_metadata
+from api.services.brain import usage_logging as brain_usage
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +95,9 @@ BUSINESS RULES:
 5. For job cuts: release_candidates_advisory only — advisory, owner decides. Include disclaimer.
 6. worldfish_gap_audit — ERP data shortages + performance gaps vs WorldFish/FAO; fixes list erp_path modules to update.
 7. If data is missing, say what you know and ask one clear follow-up (missing_inputs).
+8. DATE PERIOD (critical): Use sales.period.start and sales.period.end EXACTLY — if they match, it is ONE day only.
+   Never widen to month-to-date when the owner named a specific date (e.g. "4th July sale" = that day only).
+   period_label in ERP_CONTEXT shows how the range was interpreted (specific_date, today, month_to_date, etc.).
 
 DATA SOURCES:
 1. business_snapshot — whole ERP state when present (not in light chat mode).
@@ -249,6 +260,15 @@ def _trim_context_for_llm(context: dict[str, Any]) -> dict[str, Any]:
             "gaps": (wf.get("gaps") or [])[:12],
             "fixes": (wf.get("fixes") or [])[:10],
         }
+    gbg = context.get("global_business_gaps")
+    if isinstance(gbg, dict):
+        trimmed["global_business_gaps"] = {
+            "summary_bn": gbg.get("summary_bn"),
+            "gap_count": gbg.get("gap_count"),
+            "instruction_bn": gbg.get("instruction_bn"),
+            "gaps": (gbg.get("gaps") or [])[:12],
+            "benchmark_notes_bn": (gbg.get("benchmark_notes_bn") or [])[:6],
+        }
     return trimmed
 
 
@@ -361,8 +381,15 @@ def _build_messages(
     *,
     web_note: str = "",
     conversational: bool = False,
+    advisor_mode: str = "manager",
+    include_advisory: bool = False,
+    risk_flag: bool = False,
 ) -> list[dict[str, str]]:
-    history: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system = brain_prompts.get_system_prompt(mode=advisor_mode, include_advisory=include_advisory)
+    system += f"\n\n{SYSTEM_PROMPT}"
+    if risk_flag:
+        system += f"\n\n{brain_prompts.get_risky_question_addon()}"
+    history: list[dict[str, str]] = [{"role": "system", "content": system}]
     if web_note:
         history[0]["content"] += f"\n\nWEB_RESEARCH_NOTE: {web_note}"
 
@@ -390,18 +417,26 @@ def _build_messages(
     else:
         payload = {
             "ERP_CONTEXT": _trim_context_for_llm(context),
+            "CONTEXT_SUMMARY": context.get("context_summary") or {},
             "USER_QUESTION": user_text,
             "TODAY": timezone.localdate().isoformat(),
             "question_focus": context.get("question_focus") or {},
+            "QUESTION_ROUTE": context.get("question_route") or {},
             "INSTRUCTION": (
                 "Answer like a human COO advisor in Bangla. User may write Banglish — understand it. "
                 "Structure answer_bn: ### সারাংশ → direct answer to the question ONLY. "
                 "Add ### বিশ্ব/গ্লোবাল তুলনা, ### সুপারিশ, ### ⚠️ সতর্কতা, ### পূর্বাভাস/রোডম্যাপ "
                 "ONLY if the owner explicitly asked for compare, advice, warning, forecast, roadmap, or decision. "
-                "Use decision_brief and worldfish_gap_audit when advisory was requested. "
+                "Use decision_brief, forecast_pack, and external_knowledge when advisory was requested. "
                 "suggested_actions: [] unless owner asked for recommendations or to act/approve."
             ),
         }
+        if context.get("forecast_pack"):
+            payload["forecast_pack"] = context["forecast_pack"]
+        if context.get("external_knowledge"):
+            payload["EXTERNAL_KNOWLEDGE"] = context["external_knowledge"]
+        if context.get("global_business_gaps"):
+            payload["GLOBAL_BUSINESS_GAPS"] = context["global_business_gaps"]
     history.append(
         {
             "role": "user",
@@ -409,6 +444,43 @@ def _build_messages(
         }
     )
     return history
+
+
+def _log_llm_usage(
+    *,
+    company: Company,
+    conversation: BrainConversation,
+    result: gateway.CompletionResult,
+    route: dict[str, Any],
+    success: bool = True,
+) -> None:
+    try:
+        brain_usage.log_usage(
+            company_id=int(company.id),
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            model=result.model,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            question_type=str(route.get("question_type") or ""),
+            route=str(route.get("advisor_mode") or ""),
+            success=success and bool(result.content),
+            error_message=result.error or "",
+            latency_ms=result.latency_ms,
+        )
+    except Exception:
+        logger.warning("Brain usage log failed company=%s", company.id)
+
+
+def _finalize_structured(
+    structured: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    route: dict[str, Any],
+    model_id: str,
+) -> dict[str, Any]:
+    enriched = enrich_structured_reply(structured, context)
+    return enrich_response_metadata(enriched, context=context, route=route, model_used=model_id)
 
 
 def _emergency_response(company: Company, user_text: str, *, error: Exception | None = None) -> dict[str, Any]:
@@ -467,13 +539,19 @@ def _generate_assistant_reply_inner(
     company: Company,
 ) -> tuple[dict[str, Any], str]:
     plan = plans.brain_plan_for_company(company)
-    context, refs = tools.gather_context(
+    qroute = route_question(user_text, plan=plan)
+    context, refs = build_company_context(
         int(company.id),
         user_text,
         context_entity_type=conversation.context_entity_type or "",
         context_entity_id=conversation.context_entity_id,
+        include_forecast=qroute.include_forecast,
+        include_external=qroute.include_external,
+        include_global_gaps=qroute.include_global_gaps,
     )
     context["user_question"] = user_text
+    context["question_route"] = route_to_dict(qroute)
+    route_dict = context["question_route"]
 
     if "greeting" in (context.get("intents") or []):
         structured = compose_direct_answer(context, lang=company.language or "bn") or _emergency_response(
@@ -500,12 +578,22 @@ def _generate_assistant_reply_inner(
             structured["sources"] = _erp_refs_as_sources(refs, limit=8)
             return enrich_structured_reply(structured, context), "erp-chat"
 
-        messages = _build_messages(conversation, user_text, context, conversational=True)
-        model_id = gateway.model_for_role("fast", plan=plan)
+        messages = _build_messages(
+            conversation,
+            user_text,
+            context,
+            conversational=True,
+            advisor_mode=qroute.advisor_mode,
+        )
+        model_id = gateway.model_for_role(qroute.model_role, plan=plan)
         api_key = brain_config.api_key_for_plan(plan)
-        raw, err = gateway.chat_completion(
+        result = gateway.chat_completion_with_meta(
             messages=messages, model=model_id, api_key=api_key, max_tokens=4096, temperature=0.75
         )
+        _log_llm_usage(company=company, conversation=conversation, result=result, route=route_dict)
+        raw, err = result.content, result.error
+        if result.used_fallback:
+            model_id = result.model
         if err or not raw:
             logger.warning("Brain chat LLM failed: %s", err)
             structured = direct or _offline_response(context, refs, user_text, plan=plan)
@@ -529,19 +617,28 @@ def _generate_assistant_reply_inner(
         _merge_sources(structured, refs)
         structured.setdefault("reasoning_steps_bn", ["সাধারণ কথোপকথন — বাংলায় উত্তর।"])
         structured.setdefault("confidence", "medium")
-        return enrich_structured_reply(structured, context), model_id
+        return _finalize_structured(structured, context, route=route_dict, model_id=model_id), model_id
 
     if not gateway.openrouter_configured(plan=plan):
         structured = _offline_response(context, refs, user_text, plan=plan)
         return enrich_structured_reply(structured, context), "erp-direct"
 
-    use_web = tools.should_use_web_research(user_text, plan)
-    model_role = "research" if use_web else "reasoning"
+    use_web = tools.should_use_web_research(user_text, plan) or qroute.model_role == "research"
+    model_role = "research" if use_web else qroute.model_role
     model_id = gateway.model_for_role(model_role, plan=plan)
     api_key = brain_config.api_key_for_plan(plan)
 
     web_note = ""
-    if use_web:
+    if qroute.risk_flag:
+        web_note = get_risky_question_addon()
+    elif qroute.question_type in ("gap_analysis", "external_compare", "solution_explain"):
+        web_note = (
+            "GLOBAL GAP / COMPARISON / SOLUTION question. Use GLOBAL_BUSINESS_GAPS + EXTERNAL_KNOWLEDGE + "
+            "decision_brief. Compare owner ERP data with worldwide industry/SME best practice (web + training). "
+            "List gaps clearly. If owner asks how something solves their problem — explain step-by-step with "
+            "reference/examples. Cite web URLs (kind=web). Never invent ERP numbers."
+        )
+    elif use_web:
         web_note = (
             "Use live web knowledge to compare the owner's ERP metrics with CURRENT global/regional standards "
             "(aquaculture FCR, pond density, fuel retail margins, fish market prices, disease outbreaks, regulations). "
@@ -572,11 +669,23 @@ def _generate_assistant_reply_inner(
             "You may offer one line: owner can ask for compare/advice/roadmap if they want more."
         )
 
-    messages = _build_messages(conversation, user_text, context, web_note=web_note)
+    messages = _build_messages(
+        conversation,
+        user_text,
+        context,
+        web_note=web_note,
+        advisor_mode=qroute.advisor_mode,
+        include_advisory=qroute.include_advisory or qroute.include_global_gaps,
+        risk_flag=qroute.risk_flag,
+    )
     max_tokens = 8192 if use_web else 6144
-    raw, err = gateway.chat_completion(
+    result = gateway.chat_completion_with_meta(
         messages=messages, model=model_id, api_key=api_key, max_tokens=max_tokens
     )
+    _log_llm_usage(company=company, conversation=conversation, result=result, route=route_dict)
+    raw, err = result.content, result.error
+    if result.used_fallback:
+        model_id = result.model
     if err or not raw:
         logger.warning("Brain LLM failed: %s", err)
         structured = _offline_response(context, refs, user_text, plan=plan)
@@ -603,7 +712,7 @@ def _generate_assistant_reply_inner(
     structured.setdefault("confidence", "medium")
     structured.setdefault("missing_inputs", context.get("missing_inputs") or [])
     structured.setdefault("suggested_actions", context.get("suggested_actions") or [])
-    return enrich_structured_reply(structured, context), model_id
+    return _finalize_structured(structured, context, route=route_dict, model_id=model_id), model_id
 
 
 def append_user_and_assistant(

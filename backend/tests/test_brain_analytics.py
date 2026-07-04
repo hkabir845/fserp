@@ -253,6 +253,74 @@ def test_direct_answer_inventory_offline(company_master):
     assert "ইনভেন্টরি" in ans["answer_bn"] or "স্টক" in ans["answer_bn"]
 
 
+def test_period_for_question_specific_july_day():
+    from datetime import date
+
+    from api.services.brain.analytics import _period_for_question
+
+    today = date(2026, 7, 5)
+    start, end, label = _period_for_question("4th july sale koto?", today)
+    assert label == "specific_date"
+    assert start == date(2026, 7, 4)
+    assert end == date(2026, 7, 4)
+
+
+def test_period_for_question_july_four_banglish():
+    from datetime import date
+
+    from api.services.brain.analytics import _period_for_question
+
+    today = date(2026, 7, 5)
+    start, end, label = _period_for_question("july 4 er sales kemon", today)
+    assert label == "specific_date"
+    assert start == end == date(2026, 7, 4)
+
+
+def test_period_for_question_explicit_range():
+    from datetime import date
+
+    from api.services.brain.analytics import _period_for_question
+
+    today = date(2026, 7, 5)
+    start, end, label = _period_for_question("1 to 5 july sales", today)
+    assert label == "date_range"
+    assert start == date(2026, 7, 1)
+    assert end == date(2026, 7, 5)
+
+
+def test_period_for_question_today_not_mtd():
+    from datetime import date
+
+    from api.services.brain.analytics import _period_for_question
+
+    today = date(2026, 7, 5)
+    start, end, label = _period_for_question("ajker sales koto", today)
+    assert label == "today"
+    assert start == end == today
+
+
+def test_period_for_question_no_date_defaults_mtd():
+    from datetime import date
+
+    from api.services.brain.analytics import _period_for_question
+
+    today = date(2026, 7, 5)
+    start, end, label = _period_for_question("total sales koto", today)
+    assert label == "month_to_date"
+    assert start == date(2026, 7, 1)
+    assert end == today
+
+
+def test_try_parse_specific_date_iso_and_bengali():
+    from datetime import date
+
+    from api.services.brain.date_parsing import try_parse_specific_date
+
+    today = date(2026, 7, 5)
+    assert try_parse_specific_date("2026-07-04 sales", today) == date(2026, 7, 4)
+    assert try_parse_specific_date("৪ জুলাই বিক্রি", today) == date(2026, 7, 4)
+
+
 def test_is_conversational_turn():
     from api.services.brain.intents import is_conversational_turn
 

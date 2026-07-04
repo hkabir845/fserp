@@ -14,6 +14,8 @@ import { useBrainVoiceInput } from '@/hooks/useBrainVoiceInput'
 import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis'
 import type { SpeechVoiceLang } from '@/lib/voiceCapabilities'
 import { BrainMarkdown } from '@/components/brain/BrainMarkdown'
+import { BrainSuggestedQuestions } from '@/components/brain/BrainSuggestedQuestions'
+import { BrainInsightsPanel } from '@/components/brain/BrainInsightsPanel'
 
 export type BrainSource = {
   kind?: string
@@ -55,6 +57,11 @@ export type BrainUsage = {
   messages_remaining_today: number | null
   web_research_enabled: boolean
   llm_enabled: boolean
+  usage_month?: {
+    total_tokens?: number
+    estimated_cost_usd?: string
+    request_count?: number
+  }
 }
 
 const UI = {
@@ -299,9 +306,16 @@ function AssistantBubble({
 export type BrainChatPanelProps = {
   standalone?: boolean
   className?: string
+  queuedQuestion?: string | null
+  onQueuedQuestionHandled?: () => void
 }
 
-export function BrainChatPanel({ standalone = false, className = '' }: BrainChatPanelProps) {
+export function BrainChatPanel({
+  standalone = false,
+  className = '',
+  queuedQuestion = null,
+  onQueuedQuestionHandled,
+}: BrainChatPanelProps) {
   const toast = useToast()
   const searchParams = useSearchParams()
   const { language } = useCompanyLocale()
@@ -316,6 +330,8 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
 
   const [usage, setUsage] = useState<BrainUsage | null>(null)
   const [conversationId, setConversationId] = useState<number | null>(null)
+  const [conversations, setConversations] = useState<{ id: number; title: string; updated_at?: string }[]>([])
+  const [suggestedQuestions, setSuggestedQuestions] = useState<{ q: string; label_bn?: string; label_en?: string }[]>([])
   const [messages, setMessages] = useState<BrainMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -352,6 +368,36 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
     setUsage(res.data)
   }, [])
 
+  const loadConversations = useCallback(async () => {
+    try {
+      const res = await api.get<{ results: { id: number; title: string; updated_at?: string }[] }>(
+        '/brain/conversations/',
+      )
+      const rows = res.data.results || []
+      setConversations(rows)
+      return rows
+    } catch {
+      return []
+    }
+  }, [])
+
+  const loadSuggestedQuestions = useCallback(async () => {
+    try {
+      const res = await api.get<{ questions: { q: string; label_bn?: string; label_en?: string }[] }>(
+        '/brain/suggested-questions/',
+      )
+      setSuggestedQuestions(res.data.questions || [])
+    } catch {
+      /* optional */
+    }
+  }, [])
+
+  const loadConversation = useCallback(async (id: number) => {
+    const res = await api.get<{ id: number; messages: BrainMessage[] }>(`/brain/conversations/${id}/`)
+    setConversationId(res.data.id)
+    setMessages(res.data.messages || [])
+  }, [])
+
   const startConversation = useCallback(async () => {
     const body: Record<string, unknown> = {}
     if (contextType && contextIdRaw) {
@@ -365,8 +411,9 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
     const res = await api.post<{ id: number }>('/brain/conversations/', body)
     setConversationId(res.data.id)
     setMessages([])
+    void loadConversations()
     return res.data.id
-  }, [contextType, contextIdRaw, contextName])
+  }, [contextType, contextIdRaw, contextName, loadConversations])
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -438,8 +485,18 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
 
     ;(async () => {
       try {
-        await loadStatus()
-        await startConversation()
+        await Promise.all([loadStatus(), loadSuggestedQuestions()])
+        const rows = await loadConversations()
+        const hasContext = Boolean(contextType && contextIdRaw)
+        const shouldStartFresh = hasContext || Boolean(initialQ)
+
+        if (shouldStartFresh) {
+          await startConversation()
+        } else if (rows.length > 0) {
+          await loadConversation(rows[0].id)
+        } else {
+          await startConversation()
+        }
       } catch (e) {
         if (!isApiSessionError(e)) {
           toast.error(extractErrorMessage(e))
@@ -455,7 +512,12 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
       cancelled = true
       window.clearTimeout(timeoutId)
     }
-  }, [loadStatus, startConversation, toast])
+  }, [loadStatus, loadConversations, loadSuggestedQuestions, startConversation, loadConversation, contextType, contextIdRaw, initialQ, toast])
+
+  useEffect(() => {
+    if (!queuedQuestion || bootstrapping || loading) return
+    void sendMessage(queuedQuestion).then(() => onQueuedQuestionHandled?.())
+  }, [queuedQuestion, bootstrapping, loading, sendMessage, onQueuedQuestionHandled])
 
   useEffect(() => {
     if (bootstrapping || !conversationId || !initialQ || autoSentRef.current || loading) return
@@ -557,20 +619,43 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
                 {labels.messagesToday}: {usage.messages_used_today}
                 {usage.daily_message_limit != null ? ` / ${usage.daily_message_limit}` : ''}
               </span>
+              {usage.usage_month?.total_tokens ? (
+                <span title="Estimated AI tokens this month">
+                  Tokens: {usage.usage_month.total_tokens.toLocaleString()}
+                </span>
+              ) : null}
             </>
           )}
           {usage && !usage.llm_enabled && (
             <span className="text-warning-foreground">{labels.llmOff}</span>
           )}
         </div>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => void startConversation()}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-        >
-          {labels.newChat}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {conversations.length > 0 && (
+            <select
+              className="max-w-[10rem] rounded-lg border border-border px-2 py-1.5 text-xs"
+              value={conversationId ?? ''}
+              onChange={(e) => {
+                const id = parseInt(e.target.value, 10)
+                if (Number.isFinite(id)) void loadConversation(id)
+              }}
+            >
+              {conversations.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {(c.title || `#${c.id}`).slice(0, 40)}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void startConversation()}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+          >
+            {labels.newChat}
+          </button>
+        </div>
       </div>
 
       <div
@@ -583,9 +668,18 @@ export function BrainChatPanel({ standalone = false, className = '' }: BrainChat
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 && !loading ? (
-          <div className="mx-auto max-w-md py-8 text-center text-sm text-muted-foreground">
+          <div className="mx-auto max-w-md py-4 text-center text-sm text-muted-foreground">
             <Brain className="mx-auto mb-3 h-10 w-10 text-indigo-500" />
             <p>{labels.subtitle}</p>
+            {standalone ? <BrainInsightsPanel className="mt-4 text-left" /> : null}
+            <BrainSuggestedQuestions
+              language={language === 'bn' ? 'bn' : 'en'}
+              disabled={loading || atLimit || bootstrapping}
+              onSelect={(q) => {
+                setInput(q)
+                void sendMessage(q)
+              }}
+            />
           </div>
         ) : (
           messages.map((msg) => (

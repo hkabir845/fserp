@@ -506,8 +506,14 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
     sales = context.get("sales")
     if sales and ("sales" in intents or "sales_today" in intents):
         period = sales.get("period") or {}
+        p_start = period.get("start") or ""
+        p_end = period.get("end") or ""
+        if p_start and p_start == p_end:
+            period_label = f"**{p_start}**"
+        else:
+            period_label = f"**{p_start} – {p_end}**"
         parts.append(
-            f"**বিক্রি** ({period.get('start')} – {period.get('end')}): "
+            f"**বিক্রি** ({period_label}): "
             f"**৳{sales.get('total_sales_bdt', '0')}** ({sales.get('invoice_count', 0)} ইনভয়েস)।"
         )
         if wants_breakdown(question):

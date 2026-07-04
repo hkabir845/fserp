@@ -23,7 +23,7 @@ from api.models import (
     PayrollRunEmployeeAllocation,
     Station,
 )
-from api.services.aquaculture_feeding_advice_service import build_feeding_advice_payload
+from api.services.brain.date_parsing import resolve_question_period
 from api.services.aquaculture_medicine_catalog_seed import MEDICINE_CATALOG_ITEM_PREFIX
 from api.services.aquaculture_partial_harvest import compute_biomass_load_advice_dict, effective_biomass_kg_from_position_row
 from api.services.aquaculture_pond_display import pond_operational_display_name
@@ -223,7 +223,7 @@ def _employee_name(emp: Employee) -> str:
 
 def _period_for_question(message: str, today: date) -> tuple[date, date, str]:
     lower = (message or "").lower()
-    if any(k in lower for k in ("today", "আজ", "আজকের")):
+    if any(k in lower for k in ("today", "todays", "today's", "আজ", "আজকের", "ajker", "aajker", "ajke", "aajke")):
         return today, today, "today"
     if any(k in lower for k in ("yesterday", "গতকাল")):
         y = today - timedelta(days=1)
@@ -239,6 +239,12 @@ def _period_for_question(message: str, today: date) -> tuple[date, date, str]:
     month_start = today.replace(day=1)
     if any(k in lower for k in ("this month", "মাসে", "mtd", "month")):
         return month_start, today, "month_to_date"
+
+    # Specific calendar day or explicit range — e.g. "4th july sale", "1 to 5 july"
+    parsed = resolve_question_period(message, today)
+    if parsed:
+        return parsed
+
     return month_start, today, "month_to_date"
 
 

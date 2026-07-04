@@ -31,6 +31,12 @@ type BrainConfig = {
   active_key_paid_plan_source?: string
   active_key_paid_plan_masked?: string
   updated_at: string | null
+  platform_usage?: {
+    days: number
+    request_count: number
+    total_tokens: number
+    estimated_cost_usd: string
+  }
 }
 
 const EMPTY_FORM = {
@@ -177,6 +183,16 @@ function SaasBrainSettingsContent() {
                 </span>
               )}
             </div>
+            {config.platform_usage && (
+              <div className="mt-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
+                <p className="font-medium">Platform AI usage (last {config.platform_usage.days} days)</p>
+                <p className="mt-1 text-muted-foreground">
+                  {config.platform_usage.request_count} requests ·{' '}
+                  {config.platform_usage.total_tokens.toLocaleString()} tokens · ~$
+                  {config.platform_usage.estimated_cost_usd} USD (estimated)
+                </p>
+              </div>
+            )}
             {config.active_key_free_plan_masked && (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-950">
                 <p className="font-medium">Active key for Free-plan companies</p>

@@ -29,7 +29,10 @@ def admin_brain_config(request):
     if err_resp:
         return err_resp
     user = get_user_from_request(request)
-    brain_config.update_brain_config_from_admin(body or {}, user_id=user.id if user else None)
+    try:
+        brain_config.update_brain_config_from_admin(body or {}, user_id=user.id if user else None)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
     log_action(
         action_type="brain_config_update",
         description="Platform Brain config updated",

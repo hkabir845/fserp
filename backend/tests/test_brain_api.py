@@ -75,6 +75,26 @@ def test_brain_casual_chat_offline(api_client, auth_super_headers, company_maste
 
 
 @pytest.mark.django_db
+def test_brain_how_are_you_today(api_client, auth_super_headers, company_master, monkeypatch):
+    """Wellness small-talk must not fail — works offline without misrouting to sales."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}
+    create = api_client.post("/api/brain/conversations/", {}, content_type="application/json", **h)
+    conv_id = create.json()["id"]
+    for msg_text in ("How are you today?", "How are you todday?"):
+        msg = api_client.post(
+            f"/api/brain/conversations/{conv_id}/messages/",
+            {"message": msg_text},
+            content_type="application/json",
+            **h,
+        )
+        assert msg.status_code == 200, msg.content
+        body = msg.json()["assistant_message"]["content"]
+        assert body
+        assert "ভালো" in body or "ধন্যবাদ" in body or "Brain" in body or "ব্রেইন" in body
+
+
+@pytest.mark.django_db
 def test_brain_chat_offline(api_client, auth_super_headers, company_master, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     h = {**auth_super_headers, "HTTP_X_SELECTED_COMPANY_ID": str(company_master.id)}

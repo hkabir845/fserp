@@ -41,7 +41,7 @@ def default_model() -> str:
 
 
 def fallback_model() -> str:
-    return _env("OPENROUTER_FALLBACK_MODEL", "google/gemini-2.0-flash-001")
+    return _env("OPENROUTER_FALLBACK_MODEL", brain_config.DEFAULT_FREE_MODEL)
 
 
 def openrouter_configured(*, plan: str | None = None) -> bool:

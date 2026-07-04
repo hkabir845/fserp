@@ -42,8 +42,8 @@ type BrainConfig = {
 const EMPTY_FORM = {
   free_api_key: '',
   vendor_api_key: '',
-  free_model_reasoning: 'google/gemini-2.0-flash-001',
-  vendor_model_reasoning: 'anthropic/claude-3.5-sonnet',
+  free_model_reasoning: 'google/gemini-3.5-flash',
+  vendor_model_reasoning: 'anthropic/claude-sonnet-5',
   vendor_model_research: 'perplexity/sonar',
 }
 

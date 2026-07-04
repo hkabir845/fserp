@@ -19,7 +19,7 @@ def test_admin_brain_config_get_and_put(api_client, auth_super_headers):
         "/api/admin/brain-config/",
         {
             "free_api_key": "sk-or-test-free-key-abcdefghij",
-            "free_model_reasoning": "google/gemini-2.0-flash-001",
+            "free_model_reasoning": "google/gemini-3.5-flash",
         },
         content_type="application/json",
         **h,
@@ -32,6 +32,30 @@ def test_admin_brain_config_get_and_put(api_client, auth_super_headers):
 
     cfg = PlatformBrainConfig.objects.get(pk=1)
     assert cfg.free_api_key.startswith("sk-or-test")
+
+
+@pytest.mark.django_db
+def test_brain_config_rejects_api_key_in_model_field(api_client, auth_super_headers):
+    h = {**auth_super_headers}
+    put = api_client.put(
+        "/api/admin/brain-config/",
+        {"free_model_reasoning": "sk-or-v1-not-a-model-id"},
+        content_type="application/json",
+        **h,
+    )
+    assert put.status_code == 400
+
+
+@pytest.mark.django_db
+def test_models_for_plan_sanitizes_api_key_in_db():
+    from api.services.brain.config import DEFAULT_FREE_MODEL, get_platform_brain_config, models_for_plan
+
+    cfg = get_platform_brain_config()
+    cfg.free_model_reasoning = "sk-or-v1-accidentally-pasted-key"
+    cfg.save(update_fields=["free_model_reasoning"])
+
+    models = models_for_plan("free")
+    assert models["reasoning"] == DEFAULT_FREE_MODEL
 
 
 @pytest.mark.django_db

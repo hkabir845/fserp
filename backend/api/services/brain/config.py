@@ -9,7 +9,19 @@ from api.models import PlatformBrainConfig
 
 _PAID_BRAIN_PLANS = frozenset({"growth", "enterprise"})
 
+DEFAULT_FREE_MODEL = "google/gemini-3.5-flash"
+DEFAULT_VENDOR_MODEL = "anthropic/claude-sonnet-5"
+DEFAULT_RESEARCH_MODEL = "perplexity/sonar"
+
+# Retired OpenRouter slugs still present in older DB rows / env examples.
+_RETIRED_MODEL_SLUGS = frozenset({
+    "google/gemini-2.0-flash-001",
+    "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3.5-haiku",
+})
+
 _MASK_RE = re.compile(r"^[•*.\s]+$")
+_API_KEY_RE = re.compile(r"^sk-or-", re.IGNORECASE)
 
 
 def _env(name: str, default: str = "") -> str:
@@ -30,6 +42,19 @@ def _looks_like_mask(value: str) -> bool:
     return not v or "•" in v or _MASK_RE.match(v) is not None
 
 
+def _looks_like_api_key(value: str) -> bool:
+    v = (value or "").strip()
+    return bool(v) and bool(_API_KEY_RE.match(v))
+
+
+def _sanitize_model_id(value: str, default: str) -> str:
+    """Reject API keys / retired slugs accidentally stored in model fields."""
+    v = (value or "").strip()
+    if not v or _looks_like_api_key(v) or v in _RETIRED_MODEL_SLUGS:
+        return default
+    return v
+
+
 def get_platform_brain_config() -> PlatformBrainConfig | None:
     try:
         row, _ = PlatformBrainConfig.objects.get_or_create(pk=1)
@@ -47,9 +72,9 @@ def _cfg_or_defaults() -> PlatformBrainConfig:
         pk=1,
         free_api_key="",
         vendor_api_key="",
-        free_model_reasoning="google/gemini-2.0-flash-001",
-        vendor_model_reasoning="anthropic/claude-3.5-sonnet",
-        vendor_model_research="perplexity/sonar",
+        free_model_reasoning=DEFAULT_FREE_MODEL,
+        vendor_model_reasoning=DEFAULT_VENDOR_MODEL,
+        vendor_model_research=DEFAULT_RESEARCH_MODEL,
     )
 
 
@@ -103,18 +128,27 @@ def openrouter_configured(*, plan: str | None = None) -> bool:
 def models_for_plan(plan: str) -> dict[str, str]:
     cfg = _cfg_or_defaults()
     if plan in _PAID_BRAIN_PLANS:
-        reasoning = (cfg.vendor_model_reasoning or "").strip() or _env(
-            "BRAIN_MODEL_REASONING", "anthropic/claude-3.5-sonnet"
+        reasoning = _sanitize_model_id(
+            (cfg.vendor_model_reasoning or "").strip()
+            or _env("BRAIN_MODEL_REASONING", DEFAULT_VENDOR_MODEL),
+            DEFAULT_VENDOR_MODEL,
         )
-        research = (cfg.vendor_model_research or "").strip() or _env(
-            "BRAIN_MODEL_RESEARCH", "perplexity/sonar"
+        research = _sanitize_model_id(
+            (cfg.vendor_model_research or "").strip()
+            or _env("BRAIN_MODEL_RESEARCH", DEFAULT_RESEARCH_MODEL),
+            DEFAULT_RESEARCH_MODEL,
         )
     else:
-        reasoning = (cfg.free_model_reasoning or "").strip() or _env(
-            "BRAIN_MODEL_REASONING", "google/gemini-2.0-flash-001"
+        reasoning = _sanitize_model_id(
+            (cfg.free_model_reasoning or "").strip()
+            or _env("BRAIN_MODEL_REASONING", DEFAULT_FREE_MODEL),
+            DEFAULT_FREE_MODEL,
         )
-        research = _env("BRAIN_MODEL_RESEARCH", "perplexity/sonar")
-    fast = _env("BRAIN_MODEL_FAST", reasoning)
+        research = _sanitize_model_id(
+            _env("BRAIN_MODEL_RESEARCH", DEFAULT_RESEARCH_MODEL),
+            DEFAULT_RESEARCH_MODEL,
+        )
+    fast = _sanitize_model_id(_env("BRAIN_MODEL_FAST", reasoning), reasoning)
     return {"fast": fast, "reasoning": reasoning, "research": research}
 
 
@@ -127,9 +161,9 @@ def serialize_brain_config_for_admin() -> dict[str, Any]:
             "free_api_key_masked": "",
             "vendor_api_key_set": False,
             "vendor_api_key_masked": "",
-            "free_model_reasoning": "google/gemini-2.0-flash-001",
-            "vendor_model_reasoning": "anthropic/claude-3.5-sonnet",
-            "vendor_model_research": "perplexity/sonar",
+            "free_model_reasoning": DEFAULT_FREE_MODEL,
+            "vendor_model_reasoning": DEFAULT_VENDOR_MODEL,
+            "vendor_model_research": DEFAULT_RESEARCH_MODEL,
             "env_fallback_configured": bool(env_key),
             "env_fallback_masked": mask_api_key(env_key) if env_key else "",
             "llm_ready_free": bool(env_key),
@@ -147,9 +181,9 @@ def serialize_brain_config_for_admin() -> dict[str, Any]:
         "free_api_key_masked": mask_api_key(cfg.free_api_key) if free_set else "",
         "vendor_api_key_set": vendor_set,
         "vendor_api_key_masked": mask_api_key(cfg.vendor_api_key) if vendor_set else "",
-        "free_model_reasoning": cfg.free_model_reasoning or "google/gemini-2.0-flash-001",
-        "vendor_model_reasoning": cfg.vendor_model_reasoning or "anthropic/claude-3.5-sonnet",
-        "vendor_model_research": cfg.vendor_model_research or "perplexity/sonar",
+        "free_model_reasoning": _sanitize_model_id(cfg.free_model_reasoning, DEFAULT_FREE_MODEL),
+        "vendor_model_reasoning": _sanitize_model_id(cfg.vendor_model_reasoning, DEFAULT_VENDOR_MODEL),
+        "vendor_model_research": _sanitize_model_id(cfg.vendor_model_research, DEFAULT_RESEARCH_MODEL),
         "env_fallback_configured": bool(env_key),
         "env_fallback_masked": mask_api_key(env_key) if env_key else "",
         "llm_ready_free": free_set or bool(env_key) or vendor_set,
@@ -167,11 +201,18 @@ def update_brain_config_from_admin(body: dict[str, Any], *, user_id: int | None)
     if cfg is None:
         raise ValueError("platform_brain_config table missing — run migrations (0159)")
 
-    for field in ("free_model_reasoning", "vendor_model_reasoning", "vendor_model_research"):
+    model_defaults = {
+        "free_model_reasoning": DEFAULT_FREE_MODEL,
+        "vendor_model_reasoning": DEFAULT_VENDOR_MODEL,
+        "vendor_model_research": DEFAULT_RESEARCH_MODEL,
+    }
+    for field, default in model_defaults.items():
         if field in body:
             val = (str(body.get(field) or "")).strip()[:128]
-            if val:
+            if val and not _looks_like_api_key(val):
                 setattr(cfg, field, val)
+            elif val and _looks_like_api_key(val):
+                raise ValueError(f"{field} must be a model slug (e.g. {default}), not an API key")
 
     if "free_api_key" in body:
         raw = (body.get("free_api_key") or "").strip()

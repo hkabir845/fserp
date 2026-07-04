@@ -362,12 +362,22 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         stations = entities.get("stations_count", 0)
         ponds = entities.get("ponds_count", 0)
         staff = entities.get("employees_active", 0)
-        answer = (
-            f"নমস্কার! আমি **{name}**-এর কোম্পানি ব্রেইন। "
-            f"স্টেশন {stations}, পোন্ড {ponds}, সক্রিয় কর্মচারী {staff} জন। "
-            "বাংলা, বাংলিশ বা ইংরেজিতে যেকোনো প্রশ্ন করুন — আমি বাংলায় উত্তর দেব। "
-            "বিক্রি, লাভ, পোন্ড, কর্মচারী, সাধারণ কথোপকথন — সবই চলবে।"
-        )
+        q = (context.get("user_question") or "").lower()
+        if any(k in q for k in ("how are you", "how r u", "kemon", "todday")) and not any(
+            k in q for k in ("sale", "sales", "profit", "business", "bikri")
+        ):
+            answer = (
+                "আমি ভালো আছি, ধন্যবাদ! "
+                f"**{name}**-এর কোম্পানি ব্রেইন হিসেবে আপনার পাশে আছি। "
+                "আজ কী জানতে চান — ব্যবসার সংখ্যা, পরামর্শ, নাকি সাধারণ কথোপকথন?"
+            )
+        else:
+            answer = (
+                f"নমস্কার! আমি **{name}**-এর কোম্পানি ব্রেইন। "
+                f"স্টেশন {stations}, পোন্ড {ponds}, সক্রিয় কর্মচারী {staff} জন। "
+                "বাংলা, বাংলিশ বা ইংরেজিতে যেকোনো প্রশ্ন করুন — আমি বাংলায় উত্তর দেব। "
+                "বিক্রি, লাভ, পোন্ড, কর্মচারী, সাধারণ কথোপকথন — সবই চলবে।"
+            )
         return {
             "answer_bn": answer,
             "reasoning_steps_bn": ["সাধারণ অভিবাদন — ERP ওভারভিউ দিয়ে সংক্ষিপ্ত পরিচয়।"],
@@ -381,7 +391,15 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         company = context.get("company") or {}
         name = company.get("company_name") or "আপনার কোম্পানি"
         q = (context.get("user_question") or "").lower()
-        if any(k in q for k in ("thank", "thanks", "dhonnobad", "ধন্যবাদ", "thnx")):
+        if any(k in q for k in ("how are you", "how r u", "how's it going", "kemon acho", "kemon achen", "apni kemon", "tumi kemon")) and not any(
+            k in q for k in ("sale", "sales", "profit", "business", "bikri", "বিক্রি", "revenue")
+        ):
+            answer = (
+                "আমি ভালো আছি, ধন্যবাদ জিজ্ঞেস করার জন্য! "
+                f"আমি **{name}**-এর কোম্পানি ব্রেইন — আপনার AI সহকারী। "
+                "আপনি কেমন আছেন? ব্যবসা বা যেকোনো বিষয়ে প্রশ্ন করলেই বাংলায় উত্তর দেব।"
+            )
+        elif any(k in q for k in ("thank", "thanks", "dhonnobad", "ধন্যবাদ", "thnx")):
             answer = "আপনাকে স্বাগতম! আর কিছু জানতে চাইলে বলুন — ব্যবসা বা সাধারণ যেকোনো বিষয়ে।"
         elif any(k in q for k in ("who are you", "tumi ke", "apni ke", "তুমি কে", "আপনি কে", "ki jinis")):
             answer = (

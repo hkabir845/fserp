@@ -9,7 +9,7 @@ from api.services.brain.list_requests import detect_list_module, is_employee_lis
 def is_greeting_message(message: str) -> bool:
     """Short hellos / salutations — skip heavy ERP + LLM."""
     raw = (message or "").strip()
-    if not raw or len(raw) > 48:
+    if not raw or len(raw) > 64:
         return False
     lower = raw.lower()
     if re.fullmatch(r"(hello|hi|hey|hola|yo|salam|namaste|assalam)([!?.…]*)", lower):
@@ -30,6 +30,46 @@ def is_greeting_message(message: str) -> bool:
     if re.fullmatch(r"(good\s+(morning|afternoon|evening))[!?.…]*", lower):
         return True
     if re.fullmatch(r"(kemon\s+acho|ki\s+khobor|ki\s+obostha)[!?.…]*", lower):
+        return True
+    # English / Banglish wellness small-talk (not business "how is sales today")
+    if re.search(r"\bhow\s+are\s+you\b", lower) or re.search(r"\bhow\s+r\s+u\b", lower):
+        if not re.search(r"\b(sale|sales|profit|business|company|revenue|bikri|বিক্রি|লাভ)\b", lower):
+            return True
+    if re.fullmatch(r"(how\s+are\s+you(\s+tod+?ay)?|how\s+r\s+u)[!?.…]*", lower):
+        return True
+    return False
+
+
+def is_social_smalltalk(message: str) -> bool:
+    """Casual human check-in — not ERP analytics."""
+    if is_greeting_message(message):
+        return True
+    lower = (message or "").lower().strip()
+    if len(lower) > 80:
+        return False
+    social = (
+        "how are you",
+        "how r u",
+        "how's it going",
+        "how is it going",
+        "what's up",
+        "whats up",
+        "sup ",
+        "nice to meet",
+        "good to see",
+        "tumi kemon",
+        "apni kemon",
+        "kemon acho",
+        "kemon achen",
+        "ki khobor",
+        "শুভ সকাল",
+        "শুভ সন্ধ্যা",
+    )
+    if any(k in lower for k in social):
+        if re.search(r"\b(sale|sales|profit|business|revenue|invoice|bikri|বিক্রি)\s+.*\btoday\b", lower):
+            return False
+        if re.search(r"\btoday'?s?\s+(sale|sales|profit|revenue)", lower):
+            return False
         return True
     return False
 
@@ -255,6 +295,9 @@ def is_conversational_turn(intents: set[str]) -> bool:
 def detect_intents(message: str) -> set[str]:
     if is_greeting_message(message):
         return {"greeting"}
+
+    if is_social_smalltalk(message):
+        return {"chat"}
 
     lower = (message or "").lower()
     intents: set[str] = set()

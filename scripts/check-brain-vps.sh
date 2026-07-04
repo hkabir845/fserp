@@ -74,4 +74,8 @@ for c in Company.objects.filter(is_deleted=False).order_by("id")[:20]:
 PY
 
 echo ""
+echo "==> Live OpenRouter API test (minimal request)"
+python manage.py test_brain_openrouter
+
+echo ""
 echo "Done. Free-plan companies use free_api_key first; daily limits are per company Brain tier."

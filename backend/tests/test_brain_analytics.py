@@ -16,6 +16,12 @@ def test_detect_intents_fcr_and_density():
     assert "pond" in intents
 
 
+def test_detect_intents_biomass_and_market_value():
+    intents = detect_intents("সব পোন্ডের মোট বায়োমাস ও গড় বিক্রয় দরে আনুমানিক মূল্য কত?")
+    assert "biomass" in intents
+    assert "density" in intents or "pond" in intents
+
+
 def test_detect_intents_job_cut():
     intents = detect_intents("চাকরি কাটা উচিত কি? কাকে ছাড়ব?")
     assert "job_cut" in intents
@@ -151,10 +157,18 @@ def test_employee_list_direct_answer(company_master):
 
 @pytest.mark.django_db
 def test_gather_context_includes_full_snapshot(company_master):
-    ctx, refs = gather_context(company_master.id, "আমার ব্যবসা কেমন চলছে?")
+    ctx, refs = gather_context(company_master.id, "profit koto this month")
     assert "business_snapshot" in ctx
     assert ctx["business_snapshot"].get("financials_mtd")
     assert refs
+
+
+@pytest.mark.django_db
+def test_gather_context_general_uses_light_snapshot(company_master):
+    ctx, _ = gather_context(company_master.id, "আমার ব্যবসা কেমন চলছে?")
+    snap = ctx["business_snapshot"]
+    assert snap.get("light_mode") is True
+    assert "company" in ctx or ctx.get("company")
 
 
 @pytest.mark.django_db
@@ -239,6 +253,19 @@ def test_direct_answer_inventory_offline(company_master):
     assert "ইনভেন্টরি" in ans["answer_bn"] or "স্টক" in ans["answer_bn"]
 
 
+def test_is_conversational_turn():
+    from api.services.brain.intents import is_conversational_turn
+
+    assert is_conversational_turn({"chat"})
+    assert is_conversational_turn({"general"})
+    assert is_conversational_turn({"chat", "general"})
+    assert is_conversational_turn({"pond"})
+    assert not is_conversational_turn({"greeting"})
+    assert not is_conversational_turn({"profit"})
+    assert not is_conversational_turn({"chat", "profit"})
+    assert not is_conversational_turn({"sales"})
+
+
 def test_wants_breakdown():
     from api.services.brain.question_resolver import wants_breakdown
 
@@ -252,3 +279,92 @@ def test_is_help_or_howto():
     assert is_help_or_howto_question("FCR kivabe komabo?")
     assert is_help_or_howto_question("how to reduce pond density")
     assert not is_help_or_howto_question("profit koto")
+
+
+@pytest.mark.django_db
+def test_all_ponds_summary_includes_biomass_market_totals(company_tenant):
+    from datetime import date
+    from decimal import Decimal
+
+    from api.models import AquacultureFishSale, AquaculturePond
+    from api.services.brain.analytics import all_ponds_summary
+    from api.services.aquaculture_sale_reference_service import company_average_fish_sale_price_per_kg
+
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="BioPond", is_active=True)
+    AquacultureFishSale.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        fish_species="tilapia",
+        sale_date=date.today(),
+        weight_kg=Decimal("100"),
+        fish_count=5000,
+        total_amount=Decimal("25000"),
+        income_type="fish_harvest_sale",
+    )
+    avg = company_average_fish_sale_price_per_kg(company_tenant.id)
+    assert avg is not None
+    assert float(avg["price_per_kg"]) == pytest.approx(250.0)
+
+    summary = all_ponds_summary(company_tenant.id, lang="bn")
+    assert summary.get("company_average_sale_price_per_kg") == "250.00"
+    assert summary.get("totals", {}).get("pond_count", 0) >= 1
+    assert "total_biomass_kg" in summary.get("totals", {})
+
+
+@pytest.mark.django_db
+def test_direct_answer_biomass_all_ponds(company_tenant):
+    from datetime import date
+    from decimal import Decimal
+
+    from api.models import AquacultureFishSale, AquaculturePond
+
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="ValPond", is_active=True)
+    AquacultureFishSale.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        fish_species="tilapia",
+        sale_date=date.today(),
+        weight_kg=Decimal("50"),
+        fish_count=2000,
+        total_amount=Decimal("15000"),
+        income_type="fish_harvest_sale",
+    )
+    ctx, _ = gather_context(company_tenant.id, "সব পোন্ডের মোট বায়োমাস ও আনুমানিক বাজার মূল্য কত?")
+    ans = compose_direct_answer(ctx)
+    assert ans is not None
+    assert "বায়োমাস" in ans["answer_bn"] or "পোন্ড" in ans["answer_bn"]
+
+
+@pytest.mark.django_db
+def test_worldfish_gap_audit_missing_water_area(company_tenant):
+    from api.models import AquaculturePond
+    from api.services.brain.worldfish_gap_audit import build_worldfish_gap_audit, wants_worldfish_gap_audit
+
+    AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="NoArea",
+        is_active=True,
+        water_area_decimal=None,
+    )
+    assert wants_worldfish_gap_audit("WorldFish gap audit koro")
+    audit = build_worldfish_gap_audit(company_tenant.id)
+    assert audit.get("gap_count", 0) >= 1
+    codes = [g.get("code") for g in audit.get("gaps") or []]
+    assert "missing_water_area" in codes
+    fixes = audit.get("fixes") or []
+    assert any(f.get("erp_path") == "/aquaculture/ponds" for f in fixes)
+
+
+@pytest.mark.django_db
+def test_gather_context_worldfish_audit(company_tenant):
+    from api.models import AquaculturePond
+
+    AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="GapPond",
+        is_active=True,
+    )
+    ctx, _ = gather_context(company_tenant.id, "WorldFish standard onujayi gap gulo fix koro")
+    assert "worldfish_gap_audit" in ctx
+    assert ctx["worldfish_gap_audit"].get("gaps")
+    assert ctx.get("suggested_actions")

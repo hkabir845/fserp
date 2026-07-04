@@ -12,7 +12,7 @@ from api.services.brain import config as brain_config
 from api.services.brain import gateway, plans, tools
 from api.services.brain.direct_answer import compose_direct_answer
 from api.services.brain.list_requests import detect_list_module
-from api.services.brain.intents import is_greeting_message, wants_benchmark_or_decision_research
+from api.services.brain.intents import is_conversational_turn, is_greeting_message, wants_benchmark_or_decision_research
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +38,29 @@ LANGUAGE (critical):
 
 MODES:
 - Business questions: answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
+- Casual / general chat (ChatGPT mode): discuss ANY topic — world knowledge, tech, advice, writing, news
+  concepts, education, life, hobbies — naturally in Bangla. Do NOT force ERP data when the question is not
+  about this company. When the owner mixes general + company, answer both parts in one natural reply.
+- Company small-talk ("business kemon", "company er obostha"): use COMPANY overview lightly — friendly summary,
+  not a full report dump unless they ask for numbers or breakdowns.
 - Advisory / decision mode: when decision_brief is present, COMPARE the owner's ERP metrics to industry/world
   benchmarks (FCR, pond density, net margin, payroll ratio, overdue AR), explain gaps in plain Bangla,
   project likely month-end outcomes from projections, and recommend 2–4 prioritized actions from decision_options.
 - Predictions: use projections in decision_brief as estimates — state assumptions (run-rate, seasonality caveat).
   Supplement with WEB_RESEARCH_NOTE for latest global/regional standards, disease alerts, fuel/fish market prices.
-- Casual chat: reply naturally in Bangla; tie back to the business gently when relevant.
+- Casual chat: reply naturally in Bangla like ChatGPT; tie back to the business only when relevant.
 - Quote exact numbers (৳, kg, FCR, fish count, salaries) from JSON — never invent figures or names.
 
 BUSINESS RULES:
-1. For stocking: high load → partial harvest with kg/fish from stocking_recommendation; understocked → suggest increasing stocking.
-2. For disease: draft prescription (ঔষধ, ডোজ, প্রয়োগ) from medicine_catalog + symptoms; requires_approval true.
-3. For job cuts: release_candidates_advisory only — advisory, owner decides. Include disclaimer.
-4. If data is missing, say what you know and ask one clear follow-up (missing_inputs).
+1. Pond density (ঘনত্ব) = live biomass kg ÷ water area in decimal; load level shows if the pond is understocked,
+   comfortable, full, or high-risk. Always tie density to live fish count and average size (fish × avg weight = biomass).
+2. For harvest/sale planning: use ADG (g/fish/day) from pond_analytics to project biomass in 30–60 days,
+   projected density, and approximate sale value; combine with stocking_recommendation for partial harvest kg/heads.
+3. High load → partial harvest with kg/fish from stocking_recommendation; understocked → suggest increasing stocking.
+4. For disease: draft prescription (ঔষধ, ডোজ, প্রয়োগ) from medicine_catalog + symptoms; requires_approval true.
+5. For job cuts: release_candidates_advisory only — advisory, owner decides. Include disclaimer.
+6. worldfish_gap_audit — ERP data shortages + performance gaps vs WorldFish/FAO; fixes list erp_path modules to update.
+7. If data is missing, say what you know and ask one clear follow-up (missing_inputs).
 
 DATA SOURCES:
 1. business_snapshot — whole ERP state when present (not in light chat mode).
@@ -61,7 +71,8 @@ DATA SOURCES:
 6. WEB_RESEARCH_NOTE — supplement with current web knowledge (global standards, market prices, disease, regulations);
    cite URLs (kind=web). Compare web findings to decision_brief.comparisons.
 
-ADVISORY OUTPUT (when owner asks compare/predict/decide or decision_brief present):
+ADVISORY OUTPUT (when owner asks compare/predict/decide, WorldFish audit, or decision_brief present):
+- For WorldFish/gap/audit questions: use worldfish_gap_audit — list each gap, severity, and erp_path fix; populate suggested_actions from fixes.
 - reasoning_steps_bn must include: (১) ERP তথ্য, (২) বেঞ্চমার্ক তুলনা, (৩) পূর্বাভাস/ঝুঁকি, (৪) সিদ্ধান্ত বিকল্প।
 - suggested_actions: populate from decision_options; requires_approval true for operational changes.
 - Include decision_brief.disclaimer_bn at end of answer when giving predictions or strong recommendations.
@@ -78,9 +89,12 @@ Return ONLY a single JSON object (no markdown fences):
 - suggested_actions: array of {action, label_bn, requires_approval}"""
 
 CHAT_MODE_INSTRUCTION = (
-    "Conversational turn — reply naturally in Bangla like ChatGPT. "
-    "User may chat casually OR ask business questions; use ERP data only when the question needs it. "
-    "Answer only what was asked; do not dump MTD numbers or module summaries unless asked."
+    "Conversational ChatGPT-style turn in Bangla. "
+    "You may discuss anything: general knowledge, advice, explanations, creative writing, tech, news, life — "
+    "not only business. Use COMPANY JSON only when the question is about this company or its operations; "
+    "otherwise answer from general knowledge like ChatGPT. "
+    "If they mix general + company topics, answer both naturally in one reply. "
+    "Do not dump MTD totals or module lists unless they explicitly ask for numbers or a list."
 )
 
 
@@ -200,6 +214,16 @@ def _trim_context_for_llm(context: dict[str, Any]) -> dict[str, Any]:
     ml = context.get("module_list")
     if isinstance(ml, dict) and isinstance(ml.get("rows"), list) and len(ml["rows"]) > 80:
         trimmed["module_list"] = {**ml, "rows": ml["rows"][:80], "truncated_rows": True}
+    wf = context.get("worldfish_gap_audit")
+    if isinstance(wf, dict):
+        trimmed["worldfish_gap_audit"] = {
+            "summary_bn": wf.get("summary_bn"),
+            "source_bn": wf.get("source_bn"),
+            "gap_count": wf.get("gap_count"),
+            "fix_count": wf.get("fix_count"),
+            "gaps": (wf.get("gaps") or [])[:12],
+            "fixes": (wf.get("fixes") or [])[:10],
+        }
     return trimmed
 
 
@@ -331,8 +355,13 @@ def _build_messages(
             "COMPANY": context.get("company"),
             "USER_QUESTION": user_text,
             "TODAY": timezone.localdate().isoformat(),
+            "INTENTS": context.get("intents") or [],
             "INSTRUCTION": CHAT_MODE_INSTRUCTION,
         }
+        if context.get("pond_analytics"):
+            payload["pond_focus"] = context.get("pond_analytics")
+        if context.get("employees"):
+            payload["employees_focus"] = (context.get("employees") or [])[:5]
     else:
         payload = {
             "ERP_CONTEXT": _trim_context_for_llm(context),
@@ -436,7 +465,7 @@ def _generate_assistant_reply_inner(
         return structured, "erp-module-list"
 
     intents_set = set(context.get("intents") or [])
-    conversational = intents_set == {"chat"}
+    conversational = is_conversational_turn(intents_set)
 
     direct = compose_direct_answer(context, lang=company.language or "bn")
 

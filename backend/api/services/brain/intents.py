@@ -42,6 +42,13 @@ def wants_benchmark_or_decision_research(message: str) -> bool:
     """Questions that benefit from world standards, forecasts, or decision support."""
     lower = (message or "").lower()
     keywords = (
+        "worldfish",
+        "world fish",
+        "gap",
+        "shortage",
+        "audit",
+        "ঘাটতি",
+        "ওয়ার্ল্ডফিশ",
         "compare",
         "comparison",
         "benchmark",
@@ -125,8 +132,56 @@ def is_business_overview_question(message: str) -> bool:
 
 
 def is_light_context(intents: set[str]) -> bool:
-    """Greeting or casual chat — skip heavy ERP snapshot."""
-    return intents == {"greeting"} or intents == {"chat"}
+    """Greeting, casual chat, or high-level company talk — skip heavy ERP snapshot."""
+    if intents == {"greeting"} or intents == {"chat"}:
+        return True
+    if intents == {"general"}:
+        return True
+    return is_conversational_turn(intents)
+
+
+# Intents that need precise ERP numbers, lists, or analytics — not pure ChatGPT chat.
+ERP_DATA_INTENTS = frozenset(
+    {
+        "fcr",
+        "density",
+        "biomass",
+        "harvest",
+        "feeding",
+        "disease",
+        "sales",
+        "sales_today",
+        "profit",
+        "expense",
+        "hr",
+        "job_cut",
+        "customer_ar",
+        "vendor_ap",
+        "payments",
+        "inventory",
+        "fuel",
+        "accounting",
+        "loans",
+        "fixed_assets",
+        "aquaculture_ops",
+        "benchmark",
+        "decision",
+        "predict",
+        "module_list",
+    }
+)
+
+
+def is_conversational_turn(intents: set[str]) -> bool:
+    """
+    ChatGPT-style turn: general knowledge, casual chat, or company talk without
+    needing a full ERP data pull. Uses LLM + light company context.
+    """
+    if not intents or intents == {"greeting"}:
+        return False
+    if intents <= {"chat", "general", "pond", "station"}:
+        return True
+    return not bool(intents & ERP_DATA_INTENTS)
 
 
 def detect_intents(message: str) -> set[str]:
@@ -144,6 +199,11 @@ def detect_intents(message: str) -> set[str]:
     if hit(
         "density",
         "load",
+        "what is density",
+        "density means",
+        "density mane",
+        "ঘনত্ব কী",
+        "ঘনত্ব মane",
         "stocking",
         "population",
         "per decimal",
@@ -158,6 +218,23 @@ def detect_intents(message: str) -> set[str]:
         "stocking kora",
     ):
         intents.add("density")
+    if hit(
+        "biomass",
+        "bio mass",
+        "total biomass",
+        "market value",
+        "approximate value",
+        "average sale",
+        "avg sale",
+        "sale price",
+        "বায়োমাস",
+        "মোট বায়োমাস",
+        "বাজার মূল্য",
+        "আনুমানিক মূল্য",
+        "গড় বিক্রয়",
+        "বিক্রয় দর",
+    ):
+        intents.add("biomass")
     if hit(
         "harvest",
         "partial harvest",

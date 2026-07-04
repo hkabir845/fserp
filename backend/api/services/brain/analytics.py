@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.db.models import Count, Sum
@@ -28,6 +28,10 @@ from api.services.aquaculture_medicine_catalog_seed import MEDICINE_CATALOG_ITEM
 from api.services.aquaculture_partial_harvest import compute_biomass_load_advice_dict, effective_biomass_kg_from_position_row
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.aquaculture_pond_performance_service import build_pond_performance_report
+from api.services.aquaculture_sale_reference_service import (
+    company_average_fish_sale_price_per_kg,
+    last_fish_sale_reference_for_ledger,
+)
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 from api.services.brain.module_analytics import build_erp_module_summaries
 from api.services.reporting import _collect_all_entity_financial_rows, _entity_pl_row
@@ -45,6 +49,171 @@ def _d(val) -> Decimal:
         return Decimal(str(val or 0))
     except Exception:
         return Decimal("0")
+
+
+def _implied_market_value_bdt(biomass_kg: Decimal, price_per_kg: Decimal | None) -> str | None:
+    if price_per_kg is None or price_per_kg <= 0 or biomass_kg <= 0:
+        return None
+    return f"{(biomass_kg * price_per_kg).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):,.2f}"
+
+
+def _resolve_pond_sale_price(
+    company_id: int,
+    pond_id: int,
+    *,
+    species: str,
+    cycle_id: int | None,
+    company_avg: dict | None = None,
+) -> tuple[Decimal | None, str | None, dict | None]:
+    """Return (price_per_kg, price_basis, last_sale_ref)."""
+    last_sale = last_fish_sale_reference_for_ledger(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=cycle_id,
+        fish_species=species,
+    )
+    if last_sale and last_sale.get("price_per_kg"):
+        try:
+            ppk = Decimal(str(last_sale["price_per_kg"]))
+            if ppk > 0:
+                return ppk, "last_pond_sale", last_sale
+        except Exception:
+            pass
+
+    avg = company_avg or company_average_fish_sale_price_per_kg(company_id)
+    if avg and avg.get("price_per_kg"):
+        try:
+            ppk = Decimal(str(avg["price_per_kg"]))
+            if ppk > 0:
+                return ppk, "company_average_sale", None
+        except Exception:
+            pass
+    return None, None, last_sale
+
+
+def _market_value_block(
+    company_id: int,
+    pond_id: int,
+    biomass_kg: Decimal,
+    *,
+    species: str,
+    cycle_id: int | None,
+    company_avg: dict | None = None,
+) -> dict[str, Any]:
+    price, basis, last_sale = _resolve_pond_sale_price(
+        company_id,
+        pond_id,
+        species=species,
+        cycle_id=cycle_id,
+        company_avg=company_avg,
+    )
+    avg = company_avg or company_average_fish_sale_price_per_kg(company_id)
+    return {
+        "last_sale_price_per_kg": (
+            str(last_sale["price_per_kg"]) if last_sale and last_sale.get("price_per_kg") else None
+        ),
+        "valuation_price_per_kg": str(price) if price is not None else None,
+        "price_basis": basis,
+        "company_average_sale_price_per_kg": avg.get("price_per_kg") if avg else None,
+        "company_average_sale_count": avg.get("sale_count") if avg else None,
+        "implied_market_value_bdt": _implied_market_value_bdt(biomass_kg, price),
+        "last_sale_date": last_sale.get("sale_date") if last_sale else None,
+    }
+
+
+def _build_stock_profile(
+    biomass_kg: Decimal,
+    fish_count: int,
+    stock: dict[str, Any],
+    water_dec: Decimal | None,
+) -> dict[str, Any]:
+    """How live fish count and average size compose pond density (kg per decimal)."""
+    avg_weight_kg: Decimal | None = None
+    if stock.get("current_avg_weight_kg") not in (None, ""):
+        avg_weight_kg = _d(stock.get("current_avg_weight_kg"))
+    elif fish_count > 0 and biomass_kg > 0:
+        avg_weight_kg = (biomass_kg / Decimal(fish_count)).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
+
+    avg_weight_g: str | None = None
+    if avg_weight_kg is not None and avg_weight_kg > 0:
+        avg_weight_g = str((avg_weight_kg * Decimal("1000")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+    fish_per_kg = stock.get("current_fish_per_kg")
+    kpd: str | None = None
+    if water_dec and water_dec > 0 and biomass_kg > 0:
+        kpd = str((biomass_kg / water_dec).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+
+    return {
+        "fish_count": fish_count,
+        "biomass_kg": str(biomass_kg) if biomass_kg > 0 else "0",
+        "water_area_decimal": str(water_dec) if water_dec is not None else None,
+        "avg_weight_kg": str(avg_weight_kg) if avg_weight_kg is not None else None,
+        "avg_weight_g": avg_weight_g,
+        "fish_per_kg": fish_per_kg,
+        "density_kg_per_decimal": kpd,
+        "density_formula_bn": (
+            "ঘনত্ব (কেজি/ডেসিমাল) = মোট বায়োমাস (কেজি) ÷ জলের ক্ষেত্রফল (ডেসিমাল)"
+            if biomass_kg > 0 and water_dec and water_dec > 0
+            else None
+        ),
+    }
+
+
+def _build_growth_projection(
+    biomass_kg: Decimal,
+    fish_count: int,
+    *,
+    adg_g_per_fish_per_day: str | Decimal | None,
+    water_dec: Decimal | None,
+    comfort_kg_per_decimal: str | Decimal | None,
+    valuation_price_per_kg: Decimal | None,
+) -> dict[str, Any]:
+    """Project biomass and sale value from ADG for harvest planning."""
+    adg = _d(adg_g_per_fish_per_day)
+    if adg <= 0 or fish_count <= 0 or biomass_kg <= 0:
+        return {"available": False}
+
+    daily_gain_kg = (adg * Decimal(fish_count) / Decimal("1000")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    proj_30 = (biomass_kg + daily_gain_kg * 30).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    proj_60 = (biomass_kg + daily_gain_kg * 60).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    proj_kpd_30: str | None = None
+    days_to_comfort: int | None = None
+    comfort = _d(comfort_kg_per_decimal)
+    if water_dec and water_dec > 0 and comfort > 0:
+        current_kpd = biomass_kg / water_dec
+        proj_kpd_30 = str((proj_30 / water_dec).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
+        if daily_gain_kg > 0 and current_kpd < comfort:
+            gap_kg = (comfort * water_dec - biomass_kg).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if gap_kg > 0:
+                days_to_comfort = int((gap_kg / daily_gain_kg).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    def _proj_value(kg: Decimal) -> str | None:
+        if valuation_price_per_kg is None or valuation_price_per_kg <= 0:
+            return None
+        return _implied_market_value_bdt(kg, valuation_price_per_kg)
+
+    return {
+        "available": True,
+        "adg_g_per_fish_per_day": str(adg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "daily_biomass_gain_kg": str(daily_gain_kg),
+        "projected_biomass_kg_30d": str(proj_30),
+        "projected_biomass_kg_60d": str(proj_60),
+        "projected_density_kg_per_decimal_30d": proj_kpd_30,
+        "projected_market_value_bdt_30d": _proj_value(proj_30),
+        "projected_market_value_bdt_60d": _proj_value(proj_60),
+        "days_to_comfort_load": days_to_comfort,
+        "planning_note_bn": (
+            f"গড় {adg.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)} গ্রাম/মাছ/দিন বৃদ্ধি ধরে "
+            f"৩০ দিনে বায়োমাস ~{proj_30} কেজি হতে পারে"
+            + (f"; আরামদায়ক লোডে ~{days_to_comfort} দিন" if days_to_comfort else "")
+            + "।"
+        ),
+    }
 
 
 def _employee_name(emp: Employee) -> str:
@@ -124,6 +293,22 @@ def pond_deep_analytics(
         .first()
     )
 
+    market = _market_value_block(
+        company_id,
+        pond_id,
+        biomass,
+        species=(cycle.fish_species if cycle else "tilapia") or "tilapia",
+        cycle_id=cycle.id if cycle else None,
+    )
+    val_price: Decimal | None = None
+    if market.get("valuation_price_per_kg"):
+        val_price = _d(market["valuation_price_per_kg"])
+
+    comfort_kpd = load_advice.get("comfort_kg_per_decimal") or (
+        pond_row.get("comfort_kg_per_decimal") if pond_row else None
+    )
+    adg = pond_row.get("adg_g_per_fish_per_day")
+
     return {
         "pond_id": pond_id,
         "pond_name": name,
@@ -156,9 +341,19 @@ def pond_deep_analytics(
         },
         "feeding_today": feeding_block,
         "feeding_error": feed_err,
-        "adg_g_per_fish_per_day": pond_row.get("adg_g_per_fish_per_day"),
+        "adg_g_per_fish_per_day": adg,
         "latest_sample_date": pond_row.get("latest_sample_date"),
         "bioasset_value_bdt": pond_row.get("bioasset_value"),
+        "stock_profile": _build_stock_profile(biomass, fish_count, stock, water_dec),
+        "growth_projection": _build_growth_projection(
+            biomass,
+            fish_count,
+            adg_g_per_fish_per_day=adg,
+            water_dec=water_dec,
+            comfort_kg_per_decimal=comfort_kpd,
+            valuation_price_per_kg=val_price,
+        ),
+        "market_value": market,
     }
 
 
@@ -166,23 +361,95 @@ def all_ponds_summary(company_id: int, *, lang: str = "bn", days: int = 30) -> d
     today = timezone.localdate()
     start = today - timedelta(days=days)
     perf = build_pond_performance_report(company_id, start, today)
+    company_avg = company_average_fish_sale_price_per_kg(company_id)
+
+    stock_by_pond = {
+        int(r["pond_id"]): r
+        for r in compute_fish_stock_position_rows(company_id, include_inactive_ponds=False)
+    }
+
     rows = []
+    total_biomass = Decimal("0")
+    total_market_value = Decimal("0")
+    total_fish = 0
+    ponds_with_value = 0
+
     for p in perf.get("ponds") or []:
+        pid = p.get("pond_id")
+        stock = stock_by_pond.get(int(pid)) if pid is not None else {}
+        biomass = effective_biomass_kg_from_position_row(stock) if stock else _d(p.get("biomass_kg"))
+        fish_count = int(stock.get("implied_net_fish_count") or p.get("fish_count") or 0)
+        avg_weight_g: str | None = None
+        if fish_count > 0 and biomass > 0:
+            avg_weight_g = str(
+                ((biomass / Decimal(fish_count)) * Decimal("1000")).quantize(
+                    Decimal("0.1"), rounding=ROUND_HALF_UP
+                )
+            )
+        kpd = stock.get("stock_density_kg_per_decimal") or p.get("load_kg_per_decimal")
+        load_label = stock.get("load_level_label") or p.get("load_level_label")
+        load_level = stock.get("load_level") or p.get("load_level")
+
+        species = (stock.get("latest_sample_fish_species") or "tilapia") if stock else "tilapia"
+        cycle_id = stock.get("production_cycle_id")
+        if cycle_id is not None:
+            try:
+                cycle_id = int(cycle_id)
+            except Exception:
+                cycle_id = None
+
+        market = _market_value_block(
+            company_id,
+            int(pid),
+            biomass,
+            species=species,
+            cycle_id=cycle_id,
+            company_avg=company_avg,
+        ) if pid is not None else {}
+
+        total_biomass += biomass
+        total_fish += fish_count
+        if market.get("implied_market_value_bdt"):
+            try:
+                total_market_value += Decimal(str(market["implied_market_value_bdt"].replace(",", "")))
+                ponds_with_value += 1
+            except Exception:
+                pass
+
         rows.append(
             {
-                "pond_id": p.get("pond_id"),
+                "pond_id": pid,
                 "pond_name": p.get("pond_name"),
                 "fcr_biomass": p.get("fcr_biomass"),
-                "kg_per_decimal": p.get("load_kg_per_decimal"),
-                "load_level": p.get("load_level_label"),
-                "fish_count": p.get("fish_count"),
-                "biomass_kg": p.get("biomass_kg"),
-                "net_action_hint": _action_hint_from_load(p.get("load_level"), lang),
+                "kg_per_decimal": kpd,
+                "load_level": load_level,
+                "load_level_label": load_label,
+                "fish_count": fish_count,
+                "avg_weight_g": avg_weight_g,
+                "biomass_kg": str(biomass) if biomass > 0 else p.get("biomass_kg"),
+                "valuation_price_per_kg": market.get("valuation_price_per_kg"),
+                "price_basis": market.get("price_basis"),
+                "implied_market_value_bdt": market.get("implied_market_value_bdt"),
+                "net_action_hint": _action_hint_from_load(load_level, lang),
             }
         )
+
     return {
         "period": {"start": start.isoformat(), "end": today.isoformat()},
         "portfolio_summary": perf.get("summary") or {},
+        "company_average_sale_price_per_kg": company_avg.get("price_per_kg") if company_avg else None,
+        "company_average_sale_count": company_avg.get("sale_count") if company_avg else 0,
+        "totals": {
+            "pond_count": len(rows),
+            "total_fish_count": total_fish,
+            "total_biomass_kg": str(total_biomass.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+            "total_implied_market_value_bdt": (
+                f"{total_market_value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):,.2f}"
+                if total_market_value > 0
+                else None
+            ),
+            "ponds_with_market_value": ponds_with_value,
+        },
         "ponds": rows,
     }
 

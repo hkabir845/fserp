@@ -26,7 +26,12 @@ export type BrainStructured = {
   confidence?: string
   sources?: BrainSource[]
   missing_inputs?: { key?: string; prompt_bn?: string }[]
-  suggested_actions?: { action?: string; label_bn?: string; requires_approval?: boolean }[]
+  suggested_actions?: {
+    action?: string
+    label_bn?: string
+    requires_approval?: boolean
+    erp_path?: string
+  }[]
 }
 
 export type BrainMessage = {
@@ -190,6 +195,14 @@ function AssistantBubble({
                 className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-950"
               >
                 {action.label_bn || action.action}
+                {action.erp_path ? (
+                  <Link
+                    href={action.erp_path}
+                    className="mt-0.5 block text-[10px] font-medium text-indigo-700 hover:underline"
+                  >
+                    {action.erp_path}
+                  </Link>
+                ) : null}
                 {action.requires_approval ? (
                   <span className="mt-0.5 block text-[10px] font-medium text-indigo-700">
                     {labels.requiresApproval}

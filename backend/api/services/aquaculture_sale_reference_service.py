@@ -1,7 +1,10 @@
 """Look up prior fish sales to suggest stock-ledger book values."""
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
+
+from django.utils import timezone
 
 from api.models import AquacultureFishSale
 from api.services.aquaculture_constants import fish_species_display_label, normalize_fish_species
@@ -70,6 +73,52 @@ def last_fish_sale_reference_for_ledger(
         "total_amount": str(sale.total_amount),
         "price_per_kg": str(ppk.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "buyer_name": (sale.buyer_name or "").strip(),
+    }
+
+
+def company_average_fish_sale_price_per_kg(
+    company_id: int,
+    *,
+    days: int = 365,
+    pond_id: int | None = None,
+) -> dict | None:
+    """
+    Weighted average BDT/kg from biological fish sales in the lookback window.
+    Used for approximate live-biomass market value when a pond has no recent sale.
+    """
+    cutoff = timezone.localdate() - timedelta(days=max(1, days))
+    qs = AquacultureFishSale.objects.filter(company_id=company_id, sale_date__gte=cutoff)
+    if pond_id is not None:
+        qs = qs.filter(pond_id=pond_id)
+
+    total_weight = Decimal("0")
+    total_amount = Decimal("0")
+    sale_count = 0
+    for sale in qs.only("weight_kg", "total_amount", "income_type"):
+        if income_type_is_non_biological_for_company(company_id, sale.income_type or ""):
+            continue
+        try:
+            w = Decimal(str(sale.weight_kg or 0))
+            t = Decimal(str(sale.total_amount or 0))
+        except Exception:
+            continue
+        if w <= 0 or t < 0:
+            continue
+        total_weight += w
+        total_amount += t
+        sale_count += 1
+
+    if sale_count == 0 or total_weight <= 0:
+        return None
+
+    avg = (total_amount / total_weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return {
+        "price_per_kg": str(avg),
+        "sale_count": sale_count,
+        "total_weight_kg": str(total_weight.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+        "total_amount_bdt": str(total_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "lookback_days": days,
+        "pond_id": pond_id,
     }
 
 

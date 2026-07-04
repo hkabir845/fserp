@@ -30,6 +30,7 @@ from api.services.brain.intents import (
     wants_benchmark_or_decision_research,
 )
 from api.services.brain.decision_intelligence import build_decision_brief
+from api.services.brain.worldfish_gap_audit import build_worldfish_gap_audit, wants_worldfish_gap_audit
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.module_lists import fetch_module_list
 from api.services.brain.plans import brain_plan_for_company
@@ -284,8 +285,8 @@ def gather_context(
     station_id = context_entity_id if context_entity_type == "station" else _extract_station_id(message, company_id)
     employee_id = context_entity_id if context_entity_type == "employee" else None
 
-    need_pond = pond_id or {"fcr", "density", "harvest", "feeding", "disease", "pond"} & intents
-    need_all_ponds = not pond_id and {"fcr", "density", "harvest"} & intents
+    need_pond = pond_id or {"fcr", "density", "biomass", "harvest", "feeding", "disease", "pond"} & intents
+    need_all_ponds = not pond_id and {"fcr", "density", "biomass", "harvest"} & intents
 
     if pond_id:
         pa = _safe_block("pond_analytics", analytics.pond_deep_analytics, company_id, pond_id, lang=lang)
@@ -435,6 +436,36 @@ def gather_context(
 
     if "feeding" in intents and not pond_id:
         missing_inputs.append({"key": "feeding_pond", "prompt_bn": "কোন পোন্ডের জন্য ফিড সুপারিশ চান?"})
+
+    aquaculture_intents = {"fcr", "density", "biomass", "harvest", "feeding", "pond", "aquaculture_ops"}
+    need_wf_audit = wants_worldfish_gap_audit(message) or (
+        "benchmark" in intents and bool(aquaculture_intents & intents)
+    )
+    if need_wf_audit:
+        wf_audit = _safe_block("worldfish_gap_audit", build_worldfish_gap_audit, company_id, lang=lang)
+        if wf_audit:
+            context["worldfish_gap_audit"] = wf_audit
+            context["advisory_mode"] = True
+            for fix in (wf_audit.get("fixes") or [])[:12]:
+                suggested_actions.append(
+                    {
+                        "action": fix.get("action", "worldfish_fix"),
+                        "label_bn": fix.get("label_bn", ""),
+                        "erp_path": fix.get("erp_path"),
+                        "pond_id": fix.get("pond_id"),
+                        "requires_approval": bool(fix.get("requires_approval")),
+                        "source": "worldfish_gap_audit",
+                    }
+                )
+            all_refs.append(
+                _ref(
+                    kind="erp",
+                    type_="worldfish_audit",
+                    id_=0,
+                    label="WorldFish gap audit",
+                    path="/aquaculture",
+                )
+            )
 
     brief = context.get("decision_brief") or {}
     for opt in (brief.get("decision_options") or [])[:6]:

@@ -7,12 +7,102 @@ from typing import Any
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.module_lists import format_module_list_answer
 from api.services.brain.question_resolver import wants_breakdown
+from api.services.brain.worldfish_gap_audit import wants_worldfish_gap_audit
 
 
 def _erp_modules(context: dict[str, Any]) -> dict[str, Any]:
     snap = context.get("business_snapshot") or {}
     mods = snap.get("erp_modules")
     return mods if isinstance(mods, dict) else {}
+
+
+def _market_value_basis_label(basis: str | None) -> str:
+    if basis == "last_pond_sale":
+        return "সর্বশেষ পোন্ড বিক্রয় দর"
+    if basis == "company_average_sale":
+        return "কোম্পানির গড় বিক্রয় দর (গত ১২ মাস)"
+    return "বিক্রয় দর"
+
+
+def _format_all_ponds_portfolio_header(all_ponds: dict[str, Any]) -> str | None:
+    totals = all_ponds.get("totals") or {}
+    biomass = totals.get("total_biomass_kg")
+    market = totals.get("total_implied_market_value_bdt")
+    if not biomass:
+        return None
+    avg = all_ponds.get("company_average_sale_price_per_kg")
+    header = (
+        f"**সব পোন্ড মিলিয়ে:** বায়োমাস **{biomass}** কেজি, "
+        f"মাছ **{totals.get('total_fish_count', 0):,}** মাথা"
+    )
+    if market:
+        header += f", আনুমানিক বাজার মূল্য **৳{market}**"
+    if avg:
+        header += f" (গড় বিক্রয় দর ৳{avg}/কেজি)"
+    return header + "।"
+
+
+def _format_density_planning_block(pname: str, pond: dict[str, Any]) -> list[str]:
+    """
+    Explain density = kg biomass per decimal, which fish make it, and growth-based harvest outlook.
+    """
+    lines: list[str] = []
+    density = pond.get("density") or {}
+    profile = pond.get("stock_profile") or {}
+    growth = pond.get("growth_projection") or {}
+    rec = pond.get("stocking_recommendation") or {}
+
+    kpd = density.get("kg_per_decimal") or profile.get("density_kg_per_decimal") or "—"
+    lvl = density.get("load_level_label") or density.get("load_level") or "—"
+    biomass = profile.get("biomass_kg") or pond.get("biomass_kg") or "0"
+    fish = profile.get("fish_count") or pond.get("fish_count") or 0
+    water = profile.get("water_area_decimal") or pond.get("water_area_decimal") or "—"
+    avg_g = profile.get("avg_weight_g")
+
+    lines.append(
+        f"**{pname} — ঘনত্ব/লোড:** **{kpd}** কেজি/ডেসিমাল ({lvl})। "
+        f"সূত্র: **{biomass}** কেজি বায়োমাস ÷ **{water}** ডেসিমাল জল।"
+    )
+    if fish:
+        size_part = f", গড় ~**{avg_g}** গ্রাম/মাথা" if avg_g else ""
+        lines.append(
+            f"এই ঘনত্ব **{fish:,}** মাথা জীব মাছ থেকে{size_part} — "
+            f"মাছের সংখ্যা × গড় ওজন = মোট বায়োমাস, তাই হারভেস্ট পরিকল্পনায় দুটোই দেখতে হয়।"
+        )
+
+    if growth.get("available"):
+        lines.append(
+            f"**বৃদ্ধির হার (ADG):** **{growth.get('adg_g_per_fish_per_day')}** গ্রাম/মাছ/দিন → "
+            f"প্রতিদিন ~**{growth.get('daily_biomass_gain_kg')}** কেজি বায়োমাস বাড়তে পারে। "
+            f"৩০ দিনে ~**{growth.get('projected_biomass_kg_30d')}** কেজি"
+            + (
+                f", ঘনত্ব ~**{growth.get('projected_density_kg_per_decimal_30d')}** কেজি/ডেসিমাল"
+                if growth.get("projected_density_kg_per_decimal_30d")
+                else ""
+            )
+            + "।"
+        )
+        if growth.get("projected_market_value_bdt_30d"):
+            lines.append(
+                f"৩০ দিন পর আনুমানিক বিক্রয় মূল্য ~**৳{growth.get('projected_market_value_bdt_30d')}** "
+                f"(৬০ দিন: ~৳{growth.get('projected_market_value_bdt_60d') or '—'})।"
+            )
+        if growth.get("days_to_comfort_load"):
+            lines.append(
+                f"বর্তমান বৃদ্ধি ধরে আরামদায়ক লোডে পৌঁছাতে ~**{growth.get('days_to_comfort_load')}** দিন লাগতে পারে।"
+            )
+
+    if rec.get("partial_harvest_suggested_kg"):
+        heads = rec.get("partial_harvest_suggested_fish_count")
+        head_txt = f" (~{heads:,} মাথা)" if heads else ""
+        lines.append(
+            f"**হারভেস্ট পরামর্শ:** লোড বেশি — **{rec['partial_harvest_suggested_kg']}** কেজি{head_txt} "
+            f"তুলে ঘনত্ব কমানোর কথা বিবেচনা করুন।"
+        )
+    elif rec.get("summary"):
+        lines.append(f"**পরামর্শ:** {rec['summary']}")
+
+    return lines
 
 
 def _append_erp_module_answers(
@@ -193,7 +283,7 @@ def _append_erp_module_answers(
                 parts.append("\n".join(lines))
             steps.append("stations_sites — স্টেশন তালিকা।")
 
-    if "aquaculture_ops" in intents and not {"fcr", "density", "harvest", "feeding", "pond"} & intents:
+    if "aquaculture_ops" in intents and not {"fcr", "density", "biomass", "harvest", "feeding", "pond"} & intents:
         aq = mods.get("aquaculture_ops") or {}
         ext = mods.get("aquaculture_extended") or {}
         if aq and not aq.get("unavailable"):
@@ -268,15 +358,16 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         elif any(k in q for k in ("help", "ki korte paro", "korte paro", "কী করতে পার", "সাহায্য")):
             answer = (
                 "আমি পারি:\n"
+                "• যেকোনো বিষয় — ChatGPT-এর মতো ব্যাখ্যা, পরামর্শ, লেখা, ধারণা (বাংলায়)\n"
                 "• ব্যবসার প্রশ্ন — বিক্রি, লাভ, খরচ, পোন্ড FCR, কর্মচারী\n"
-                "• পরামর্শ — ঝুঁকি, উন্নতি, হারভেস্ট, ফিডিং\n"
-                "• সাধারণ কথোপকথন — ব্যাখ্যা, আলোচনা, ধারণা\n\n"
+                "• পরামর্শ — ঝুঁকি, উন্নতি, হারভেস্ট, ফিডিং\n\n"
                 "বাংলিশে লিখলেও চলবে, যেমন: *ajker sales kemon* বা *profit koto*।"
             )
         else:
             answer = (
-                f"বুঝেছি। আমি **{name}**-এর ব্রেইন — ব্যবসা বা যেকোনো বিষয়ে কথা বলতে পারি। "
-                "নির্দিষ্ট সংখ্যা চাইলে বলুন কী দেখতে চান (যেমন আজকের বিক্রি, পোন্ড FCR, মাসের লাভ)।"
+                f"বুঝেছি। আমি **{name}**-এর ব্রেইন — ব্যবসা, কোম্পানি, বা যেকোনো বিষয়ে ChatGPT-এর মতো কথা বলতে পারি। "
+                "নির্দিষ্ট সংখ্যা চাইলে বলুন (যেমন আজকের বিক্রি, পোন্ড FCR, মাসের লাভ); "
+                "সাধারণ প্রশ্ন, পরামর্শ, ব্যাখ্যা — সবই বাংলায়।"
             )
         return {
             "answer_bn": answer,
@@ -315,13 +406,14 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         }
 
     pond = context.get("pond_analytics")
-    pond_intents = {"fcr", "density", "harvest", "feeding", "pond"} & intents
+    pond_intents = {"fcr", "density", "biomass", "harvest", "feeding", "pond"} & intents
     if pond and pond_intents:
         pname = pond.get("pond_name", "")
         fcr = pond.get("fcr") or {}
         density = pond.get("density") or {}
         rec = pond.get("stocking_recommendation") or {}
         feed = pond.get("feeding_today") or {}
+        market = pond.get("market_value") or {}
 
         if "fcr" in intents:
             fb = fcr.get("fcr_biomass") or "তথ্য নেই"
@@ -329,29 +421,23 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
             steps.append("গত ৩০ দিনের FCR ও ফিড ডেটা ERP থেকে নেওয়া হয়েছে।")
 
         if "density" in intents:
-            kpd = density.get("kg_per_decimal") or "—"
-            lvl = density.get("load_level_label") or density.get("load_level") or "—"
-            parts.append(
-                f"**{pname}** — ঘনত্ব: **{kpd} কেজি/ডেসিমাল** ({lvl})। মাছ **{pond.get('fish_count', 0):,}** মাথা, বায়োমাস **{pond.get('biomass_kg', '0')}** কেজি।"
+            parts.extend(_format_density_planning_block(pname, pond))
+            steps.append(
+                "ঘনত্ব = বায়োমাস ÷ ডেসিমাল; মাছের সংখ্যা ও ADG দিয়ে হারভেস্ট/বিক্রয় পরিকল্পনা।"
             )
-            steps.append("লোড/ঘনত্ব = বায়োমাস ÷ জলের ক্ষেত্রফল (ডেসিমাল)।")
+
+        if "biomass" in intents:
+            parts.extend(_format_density_planning_block(pname, pond))
+            parts.append(_format_pond_market_value_line(pname, pond, market))
+            if pond.get("bioasset_value_bdt"):
+                parts.append(f"বই মূল্য (বায়ো-অ্যাসেট): **৳{pond.get('bioasset_value_bdt')}**।")
+            steps.append("বায়োমাস + ঘনত্ব + ADG + বিক্রয় দর = হারভেস্ট ও বিক্রয় পরিকল্পনা।")
 
         if "harvest" in intents:
-            if rec.get("summary"):
-                parts.append(f"**{pname}** — সুপারিশ: {rec['summary']}")
-            if rec.get("partial_harvest_suggested_kg"):
-                parts.append(
-                    f"আংশিক হারভেস্ট প্রস্তাব: **{rec['partial_harvest_suggested_kg']}** কেজি"
-                    + (
-                        f" (~{rec['partial_harvest_suggested_fish_count']} মাথা)"
-                        if rec.get("partial_harvest_suggested_fish_count")
-                        else ""
-                    )
-                )
-            if "harvest" in intents and not rec.get("summary") and not rec.get("partial_harvest_suggested_kg"):
-                kpd = density.get("kg_per_decimal") or "—"
-                parts.append(f"**{pname}** — বর্তমান ঘনত্ব **{kpd} কেজি/ডেসিমাল**; হারভেস্ট সিদ্ধান্তের জন্য লোড স্তর দেখুন।")
-            steps.append("হারভেস্ট সুপারিশ = স্টকিং রেকমেন্ডেশন ERP।")
+            if not ({"density", "biomass"} & intents):
+                parts.extend(_format_density_planning_block(pname, pond))
+            parts.append(_format_pond_market_value_line(pname, pond, market))
+            steps.append("হারভেস্ট পরিকল্পনা = ঘনত্ব/লোড + জীব মাছ + ADG + আনুমানিক বিক্রয় মূল্য।")
 
         if "feeding" in intents and feed:
             skg = feed.get("suggested_feed_kg_today") or "—"
@@ -360,7 +446,7 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
                 parts.append(feed["advice_text"][:600])
             steps.append("ফিডিং হিউরিস্টিক: WorldFish-স্টাইল + স্টক পজিশন।")
 
-        if "pond" in intents and not ({"fcr", "density", "harvest", "feeding"} & intents):
+        if "pond" in intents and not ({"fcr", "density", "biomass", "harvest", "feeding"} & intents):
             fb = fcr.get("fcr_biomass") or "—"
             kpd = density.get("kg_per_decimal") or "—"
             parts.append(
@@ -369,16 +455,32 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
             steps.append("পোন্ড সারাংশ ERP থেকে।")
 
     all_ponds = context.get("all_ponds_summary")
-    if all_ponds and ("fcr" in intents or "density" in intents) and not pond:
+    if all_ponds and ({"fcr", "density", "biomass"} & intents) and not pond:
+        header = _format_all_ponds_portfolio_header(all_ponds)
+        if header:
+            parts.append(header)
         lines = []
         for p in (all_ponds.get("ponds") or [])[:12]:
-            lines.append(
-                f"• {p.get('pond_name')}: FCR={p.get('fcr_biomass') or '—'}, "
-                f"ঘনত্ব={p.get('kg_per_decimal') or '—'} কেজি/ডেসিমাল — {p.get('net_action_hint')}"
+            line = (
+                f"• {p.get('pond_name')}: বায়োমাস={p.get('biomass_kg') or '—'} কেজি, "
+                f"মাছ={p.get('fish_count') or '—'} মাথা"
             )
+            if p.get("avg_weight_g"):
+                line += f" (~{p.get('avg_weight_g')} গ্রাম/মাথা)"
+            line += f", ঘনত্ব={p.get('kg_per_decimal') or '—'} কেজি/ডেসিমাল"
+            load = p.get("load_level_label") or p.get("load_level")
+            if load:
+                line += f" ({load})"
+            if p.get("implied_market_value_bdt"):
+                line += f", আনুমানিক মূল্য ৳{p.get('implied_market_value_bdt')}"
+            if "fcr" in intents:
+                line += f", FCR={p.get('fcr_biomass') or '—'}"
+            if p.get("net_action_hint"):
+                line += f" — {p.get('net_action_hint')}"
+            lines.append(line)
         if lines:
-            parts.append("**সব পোন্ড সারাংশ:**\n" + "\n".join(lines))
-            steps.append("প্রতিটি সক্রিয় পোন্ডের পারফরম্যান্স রিপোর্ট থেকে।")
+            parts.append("**পোন্ড অনুযায়ী:**\n" + "\n".join(lines))
+            steps.append("প্রতিটি সক্রিয় পোন্ড — স্টক পজিশন, ঘনত্ব/লোড, গড় বিক্রয় দরে আনুমানিক মূল্য।")
 
     sales = context.get("sales")
     if sales and ("sales" in intents or "sales_today" in intents):
@@ -475,6 +577,30 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
 
     snapshot = context.get("business_snapshot")
     brief = context.get("decision_brief")
+    wf_audit = context.get("worldfish_gap_audit")
+    if wf_audit and (
+        wants_worldfish_gap_audit(question)
+        or {"benchmark", "aquaculture_ops", "fcr", "density", "biomass", "harvest"} & intents
+        or context.get("advisory_mode")
+    ):
+        parts.append(wf_audit.get("summary_bn", ""))
+        gap_lines = []
+        for g in (wf_audit.get("gaps") or [])[:10]:
+            line = f"• [{g.get('severity', '?')}] {g.get('message_bn', '')}"
+            if g.get("fix_bn"):
+                line += f" → **ঠিক করুন:** {g['fix_bn']}"
+            gap_lines.append(line)
+        if gap_lines:
+            parts.append("**WorldFish/FAO গ্যাপ ও ঘাটতি:**\n" + "\n".join(gap_lines))
+        fix_lines = [
+            f"• {f.get('label_bn')}" + (f" → `{f.get('erp_path')}`" if f.get("erp_path") else "")
+            for f in (wf_audit.get("fixes") or [])[:8]
+            if f.get("label_bn")
+        ]
+        if fix_lines:
+            parts.append("**ERP-তে ঠিক করার পদক্ষেপ:**\n" + "\n".join(fix_lines))
+        steps.append("worldfish_gap_audit — WorldFish/FAO বনাম ERP ডেটা ও পারফরম্যান্স যাচাই।")
+
     if brief and ({"benchmark", "decision", "predict"} & intents or context.get("advisory_mode")):
         comp_lines = [
             c.get("insight_bn") for c in (brief.get("comparisons") or [])[:6] if c.get("insight_bn")
@@ -516,9 +642,20 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
             f"পোন্ড {counts.get('active_ponds', 0)}, কর্মচারী {counts.get('active_employees', 0)}।"
         )
         pond_rows = (ponds_block.get("ponds") or [])[:6]
+        totals = ponds_block.get("totals") or {}
+        if totals.get("total_biomass_kg"):
+            parts.append(
+                f"**মৎস্য পোর্টফোলিও:** বায়োমাস **{totals.get('total_biomass_kg')}** কেজি"
+                + (
+                    f", আনুমানিক বাজার মূল্য **৳{totals.get('total_implied_market_value_bdt')}**"
+                    if totals.get("total_implied_market_value_bdt")
+                    else ""
+                )
+                + "।"
+            )
         if pond_rows:
             lines = [
-                f"• {p.get('pond_name')}: FCR={p.get('fcr_biomass') or '—'}, "
+                f"• {p.get('pond_name')}: বায়োমাস={p.get('biomass_kg') or '—'} কেজি, "
                 f"ঘনত্ব={p.get('kg_per_decimal') or '—'} — {p.get('net_action_hint', '')}"
                 for p in pond_rows
             ]

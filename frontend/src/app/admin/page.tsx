@@ -2387,7 +2387,8 @@ function SuperAdminPageContent() {
                         ))}
                       </select>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Used for subscription ledger, invoicing, and tenant analytics. You can change it anytime.
+                        Also controls <strong>Company Brain</strong> daily limits: Free = 15 msgs/day, Growth = 200,
+                        Enterprise = unlimited. Setting Growth here unlocks Brain immediately after save + refresh.
                       </p>
                     </div>
 

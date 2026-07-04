@@ -28,6 +28,19 @@ from api.services.tenant_release import get_target_release, provision_new_tenant
 logger = logging.getLogger(__name__)
 
 
+def _sync_brain_plan_from_billing(company: Company) -> None:
+    """Keep brain_plan aligned when SaaS billing tier changes (Brain daily message limits)."""
+    from api.services.brain.plans import PLAN_ENTERPRISE, PLAN_FREE, PLAN_GROWTH
+
+    bill = (getattr(company, "billing_plan_code", None) or "").strip().lower()
+    if bill == "growth":
+        company.brain_plan = PLAN_GROWTH
+    elif bill in ("enterprise", "platform", "custom"):
+        company.brain_plan = PLAN_ENTERPRISE
+    elif bill in ("starter", ""):
+        company.brain_plan = PLAN_FREE
+
+
 def _company_station_api_context(request, company: Company) -> dict:
     user = getattr(request, "api_user", None) or get_user_from_request(request)
     is_super = bool(user and user_is_super_admin(user))
@@ -280,6 +293,7 @@ def _company_to_json(c: Company) -> dict:
         "payment_end_date": _date_iso("payment_end_date"),
         "payment_amount": _decimal_str("payment_amount"),
         "billing_plan_code": (getattr(c, "billing_plan_code", None) or "").strip().lower(),
+        "brain_plan": (getattr(c, "brain_plan", None) or "free").strip().lower(),
         "date_format": _coerce_date_format(getattr(c, "date_format", None)),
         "time_format": _coerce_time_format(getattr(c, "time_format", None)),
         "time_zone": (getattr(c, "time_zone", None) or "Asia/Dhaka")[:64],
@@ -490,6 +504,7 @@ def companies_list_or_create(request):
                     pass
             if "billing_plan_code" in body:
                 c.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+                _sync_brain_plan_from_billing(c)
             sm_create, sm_err = _parse_station_mode_value(body, "station_mode")
             if sm_err:
                 return JsonResponse({"detail": sm_err}, status=400)
@@ -695,6 +710,11 @@ def company_detail(request, company_id: int):
                     company.payment_amount = None
             if "billing_plan_code" in body:
                 company.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+                _sync_brain_plan_from_billing(company)
+            if "brain_plan" in body and is_super:
+                from api.services.brain.plans import normalize_brain_plan
+
+                company.brain_plan = normalize_brain_plan(body.get("brain_plan"))[:16]
             sm, sm_err = _parse_station_mode_value(body, "station_mode")
             if sm_err:
                 return JsonResponse({"detail": sm_err}, status=400)
@@ -982,6 +1002,7 @@ def company_group_entity_create(request):
                     pass
             if "billing_plan_code" in body:
                 c.billing_plan_code = (str(body.get("billing_plan_code") or "").strip().lower())[:32]
+                _sync_brain_plan_from_billing(c)
             sm_create, sm_err = _parse_station_mode_value(body, "station_mode")
             if sm_err:
                 return JsonResponse({"detail": sm_err}, status=400)

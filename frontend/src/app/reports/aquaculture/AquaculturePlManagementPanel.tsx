@@ -132,7 +132,10 @@ interface PlResponse {
     other_operating_expenses?: string
     payroll_allocated: string
     total_costs: string
+    total_costs_and_expenses?: string
+    total_income?: string
     profit: string
+    net_profit?: string
   }
 }
 

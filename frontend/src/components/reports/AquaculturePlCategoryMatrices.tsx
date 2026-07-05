@@ -1,6 +1,10 @@
 'use client'
 
-import { MoneyBdt } from '@/components/reports/ReportAmountCell'
+import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+
+function MoneyBdt(amount: unknown) {
+  return <ReportAmountCell amount={Number(amount ?? 0)} currency="BDT" plain />
+}
 
 export interface PlCategoryRow {
   category: string
@@ -263,9 +267,6 @@ function CombinedIncomeExpenseMatrix({
 
   const incomeColTotal = (key: string) =>
     (incomeByPond ?? []).reduce((s, g) => s + Number(amountMap(g.categories).get(key) || 0), 0)
-  const expenseColTotal = (key: string) =>
-    (expensesByPond ?? []).reduce((s, g) => s + Number(amountMap(g.categories).get(key) || 0), 0)
-
   const expenseColTotal = (key: string) => {
     if (key === 'fish_transfer_cost_out') {
       return -(expensesByPond ?? []).reduce(

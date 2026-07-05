@@ -16,6 +16,7 @@ import {
   buildAquaculturePlManagementCsv,
   buildAquaculturePlManagementPrintHtml,
 } from '@/utils/reportExportHelpers'
+import { AquaculturePlCategoryMatrices } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   COA_AQ_PROFIT_CLEARING,
   COA_BANK_OP,
@@ -43,13 +44,27 @@ interface PondRow {
   pond_id: number
   pond_name: string
   revenue: string
+  revenue_fish_sales?: string
+  revenue_empty_sack_sales?: string
+  revenue_other_income?: string
   revenue_by_income_type?: IncomeSlice[]
   direct_operating_expenses?: string
   shared_operating_expenses?: string
+  feed_consumption_cost?: string
+  medicine_consumption_cost?: string
+  fry_fingerling_cost?: string
+  lease_cost?: string
+  salaries_and_payroll_cost?: string
+  pond_care_products_cost?: string
+  equipment_cost?: string
+  other_operating_expenses?: string
   fish_transfer_cost_in?: string
   fish_transfer_cost_out?: string
   operating_expenses: string
   payroll_allocated: string
+  income_total?: string
+  expense_total?: string
+  net_profit?: string
   total_costs: string
   profit: string
 }
@@ -87,10 +102,34 @@ interface PlResponse {
   ponds: PondRow[]
   expenses_by_pond?: PondExpenseGroup[]
   expenses_by_category: { category: string; label: string; amount: string }[]
+  income_by_pond?: PondExpenseGroup[]
+  income_by_category?: { category: string; label: string; amount: string }[]
+  pl_show_full_catalog?: boolean
+  pl_income_columns?: { code: string; label: string }[]
+  pl_expense_columns?: { code: string; label: string }[]
+  pl_formula_note?: string
+  pl_grand_totals?: {
+    total_income: string
+    total_costs_and_expenses: string
+    net_profit: string
+  }
   pond_cycle_segments?: PondCycleSegment[]
   totals: {
     revenue: string
+    revenue_fish_sales?: string
+    revenue_empty_sack_sales?: string
+    revenue_other_income?: string
     operating_expenses: string
+    direct_operating_expenses?: string
+    shared_operating_expenses?: string
+    feed_consumption_cost?: string
+    medicine_consumption_cost?: string
+    fry_fingerling_cost?: string
+    lease_cost?: string
+    salaries_and_payroll_cost?: string
+    pond_care_products_cost?: string
+    equipment_cost?: string
+    other_operating_expenses?: string
     payroll_allocated: string
     total_costs: string
     profit: string
@@ -457,6 +496,8 @@ export function AquaculturePlManagementPanel({
 
   const expensesByPond = data?.expenses_by_pond ?? []
   const expensesByCategory = data?.expenses_by_category ?? []
+  const incomeByPond = data?.income_by_pond ?? []
+  const incomeByCategory = data?.income_by_category ?? []
 
   const exportPayload = useMemo(
     () => ({
@@ -465,10 +506,15 @@ export function AquaculturePlManagementPanel({
       end: plScope === 'ponds' ? end : fuelData?.period?.end_date ?? end,
       ponds: data?.ponds as unknown as Record<string, unknown>[] | undefined,
       totals: data?.totals as unknown as Record<string, unknown> | undefined,
+      incomeByPond: incomeByPond as unknown as Record<string, unknown>[],
+      incomeByCategory: incomeByCategory as unknown as Record<string, unknown>[],
+      expensesByPond: expensesByPond as unknown as Record<string, unknown>[],
       expensesByCategory: expensesByCategory as unknown as Record<string, unknown>[],
+      incomeColumns: data?.pl_income_columns,
+      expenseColumns: data?.pl_expense_columns,
       fuelIncomeStatement: plScope === 'fuel_site' ? (fuelData as unknown as Record<string, unknown>) : null,
     }),
-    [plScope, start, end, data, expensesByCategory, fuelData],
+    [plScope, start, end, data, incomeByPond, incomeByCategory, expensesByPond, expensesByCategory, fuelData],
   )
 
   const downloadPlManagement = useCallback(
@@ -1065,13 +1111,14 @@ export function AquaculturePlManagementPanel({
               {data.inter_pond_fish_transfer_note}
             </div>
           )}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
             {[
-              ['Revenue', data.totals.revenue],
-              ['Operating expenses', data.totals.operating_expenses],
-              ['Payroll allocated', data.totals.payroll_allocated],
-              ['Total costs', data.totals.total_costs],
-              ['Net profit', data.totals.profit],
+              ['Fish sales', data.totals.revenue_fish_sales ?? '0'],
+              ['Empty sacks', data.totals.revenue_empty_sack_sales ?? '0'],
+              ['Other income', data.totals.revenue_other_income ?? '0'],
+              ['Total revenue', data.totals.revenue],
+              ['Total costs & expenses', data.totals.total_costs_and_expenses ?? data.totals.total_costs],
+              ['Net profit', data.totals.net_profit ?? data.totals.profit],
             ].map(([label, val]) => (
               <div key={label} className="rounded-xl border border-border bg-white p-4 shadow-sm">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
@@ -1084,104 +1131,38 @@ export function AquaculturePlManagementPanel({
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-foreground">By pond</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Revenue includes all income types in scope. Operating expenses are direct pond lines plus your allocated
-              share of company-wide shared expenses, adjusted by inter-pond fish transfers (cost in − cost out). Expand
-              income mix per pond below the figures.
-            </p>
-            <div className="mt-3 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
-              <table className="min-w-full text-left text-sm">
-                <caption className="sr-only">Profit and loss by pond for the selected period</caption>
-                <thead className="border-b border-border bg-muted/40">
-                  <tr>
-                    <th scope="col" className="px-3 py-2">
-                      Pond
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Revenue
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Direct opex
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Shared opex
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Fish xfer in
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Fish xfer out
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Total opex
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Payroll
-                    </th>
-                    <th scope="col" className="px-3 py-2 text-right">
-                      Net
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.ponds.map((r) => (
-                    <Fragment key={r.pond_id}>
-                      <tr className="border-b border-border/70">
-                        <td className="px-3 py-2 font-medium">{r.pond_name}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {sym}
-                          {formatNumber(Number(r.revenue))}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
-                          {sym}
-                          {formatNumber(Number(r.direct_operating_expenses ?? r.operating_expenses))}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
-                          {sym}
-                          {formatNumber(Number(r.shared_operating_expenses ?? 0))}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
-                          {sym}
-                          {formatNumber(Number(r.fish_transfer_cost_in ?? 0))}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-foreground/85">
-                          {sym}
-                          {formatNumber(Number(r.fish_transfer_cost_out ?? 0))}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {sym}
-                          {formatNumber(Number(r.operating_expenses))}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {sym}
-                          {formatNumber(Number(r.payroll_allocated))}
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums text-primary">
-                          {sym}
-                          {formatNumber(Number(r.profit))}
-                        </td>
-                      </tr>
-                      {(r.revenue_by_income_type?.length ?? 0) > 0 && (
-                        <tr className="border-b border-border/70 bg-muted/40/60">
-                          <td colSpan={9} className="px-3 py-2 text-xs text-muted-foreground">
-                            <span className="font-medium text-foreground/85">Income mix: </span>
-                            {(r.revenue_by_income_type ?? []).map((x) => (
-                              <span key={x.income_type} className="mr-3 whitespace-nowrap">
-                                {x.label}{' '}
-                                <span className="font-mono tabular-nums text-foreground">
-                                  {sym}
-                                  {formatNumber(Number(x.amount))}
-                                </span>
-                              </span>
-                            ))}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
+            <h2 className="text-lg font-semibold text-foreground">P&amp;L — every income &amp; expense</h2>
+            <div className="mt-3">
+              <AquaculturePlCategoryMatrices
+                incomeByPond={incomeByPond}
+                incomeByCategory={incomeByCategory}
+                expensesByPond={expensesByPond}
+                expensesByCategory={expensesByCategory}
+                incomeColumns={data.pl_income_columns}
+                expenseColumns={data.pl_expense_columns}
+                showFullCatalog
+                combinedMode
+                rowTotalsByPond={data.ponds.map((p) => ({
+                  pond_id: p.pond_id,
+                  income_total: p.income_total ?? p.revenue,
+                  expense_total: p.expense_total ?? p.total_costs,
+                  net_profit: p.net_profit ?? p.profit,
+                }))}
+                grandTotals={
+                  data.pl_grand_totals ?? {
+                    total_income: data.totals.revenue,
+                    total_costs_and_expenses:
+                      data.totals.total_costs_and_expenses ?? data.totals.total_costs,
+                    net_profit: data.totals.net_profit ?? data.totals.profit,
+                  }
+                }
+                formulaNote={data.pl_formula_note}
+                pondScopeLabel={
+                  pondId
+                    ? data.ponds.find((p) => String(p.pond_id) === pondId)?.pond_name ?? `Pond #${pondId}`
+                    : 'All ponds'
+                }
+              />
             </div>
           </div>
 
@@ -1243,57 +1224,6 @@ export function AquaculturePlManagementPanel({
             </div>
           )}
 
-          {expensesByPond.some((g) => g.categories.length > 0) && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Operating expenses by pond</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Includes direct expenses for that pond plus the portion of shared expenses attributed to that pond, by
-                category.
-              </p>
-              <div className="mt-3 space-y-4">
-                {expensesByPond.map(
-                  (g) =>
-                    g.categories.length > 0 && (
-                      <div key={g.pond_id} className="rounded-xl border border-border bg-white shadow-sm">
-                        <h3 className="border-b border-border/70 bg-muted/40 px-4 py-2 text-sm font-semibold text-foreground">
-                          {g.pond_name}
-                        </h3>
-                        <ul className="divide-y divide-border/70">
-                          {g.categories.map((c) => (
-                            <li key={`${g.pond_id}-${c.category}`} className="flex justify-between px-4 py-2 text-sm">
-                              <span>{c.label}</span>
-                              <span className="tabular-nums font-medium">
-                                {sym}
-                                {formatNumber(Number(c.amount))}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ),
-                )}
-              </div>
-            </div>
-          )}
-
-          {expensesByCategory.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">
-                {pondId ? 'Expenses by category (selected pond)' : 'Expenses by category (combined for scope)'}
-              </h2>
-              <ul className="mt-3 divide-y divide-border rounded-xl border border-border bg-white shadow-sm">
-                {expensesByCategory.map((c) => (
-                  <li key={c.category} className="flex justify-between px-4 py-2 text-sm">
-                    <span>{c.label}</span>
-                    <span className="tabular-nums font-medium">
-                      {sym}
-                      {formatNumber(Number(c.amount))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
       )}
         </>

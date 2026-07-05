@@ -404,18 +404,30 @@ export function buildAquaculturePrintHtml(
     const ponds = data.ponds as Record<string, unknown>[]
     const headers = [
       'Pond',
-      'Revenue (right)',
-      'Direct exp (right)',
-      'Shared exp (right)',
+      'Fish sales (right)',
+      'Empty sacks (right)',
+      'Other income (right)',
+      'Total revenue (right)',
+      'Feed consumed (right)',
+      'Medicine consumed (right)',
+      'Fry/fingerling (right)',
+      'Lease (right)',
+      'Other expenses (right)',
       'Payroll (right)',
       'Total costs (right)',
-      'Profit (right)',
+      'Net profit (right)',
     ]
     const rows = ponds.map((p) => [
       String(p.pond_name ?? ''),
+      fmtMoney(p.revenue_fish_sales),
+      fmtMoney(p.revenue_empty_sack_sales),
+      fmtMoney(p.revenue_other_income),
       fmtMoney(p.revenue),
-      fmtMoney(p.direct_operating_expenses),
-      fmtMoney(p.shared_operating_expenses),
+      fmtMoney(p.feed_consumption_cost),
+      fmtMoney(p.medicine_consumption_cost),
+      fmtMoney(p.fry_fingerling_cost),
+      fmtMoney(p.lease_cost),
+      fmtMoney(p.other_operating_expenses),
       fmtMoney(p.payroll_allocated),
       fmtMoney(p.total_costs),
       fmtMoney(p.profit),
@@ -423,7 +435,15 @@ export function buildAquaculturePrintHtml(
     let html = htmlTable('Pond P&L', headers, rows)
     const totals = (data.totals as Record<string, unknown>) ?? {}
     if (Object.keys(totals).length) {
-      html += `<div class="summary"><p><strong>Total revenue:</strong> ${fmtMoney(totals.revenue)}</p>`
+      html += `<div class="summary"><p><strong>Total fish sales:</strong> ${fmtMoney(totals.revenue_fish_sales)}</p>`
+      html += `<p><strong>Total empty sacks:</strong> ${fmtMoney(totals.revenue_empty_sack_sales)}</p>`
+      html += `<p><strong>Total other income:</strong> ${fmtMoney(totals.revenue_other_income)}</p>`
+      html += `<p><strong>Total revenue:</strong> ${fmtMoney(totals.revenue)}</p>`
+      html += `<p><strong>Total feed consumption:</strong> ${fmtMoney(totals.feed_consumption_cost)}</p>`
+      html += `<p><strong>Total medicine consumption:</strong> ${fmtMoney(totals.medicine_consumption_cost)}</p>`
+      html += `<p><strong>Total fry/fingerling:</strong> ${fmtMoney(totals.fry_fingerling_cost)}</p>`
+      html += `<p><strong>Total lease:</strong> ${fmtMoney(totals.lease_cost)}</p>`
+      html += `<p><strong>Total other expenses:</strong> ${fmtMoney(totals.other_operating_expenses)}</p>`
       html += `<p><strong>Total costs:</strong> ${fmtMoney(totals.total_costs)}</p>`
       html += `<p><strong>Total profit:</strong> ${fmtMoney(totals.profit)}</p></div>`
     }
@@ -490,23 +510,112 @@ export function buildGenericPrintHtml(data: Record<string, unknown>): string | n
 }
 
 /** CSV export for aquaculture management P&L panel (ponds tab + optional fuel site tab). */
+function matrixAmountForPond(
+  group: Record<string, unknown> | undefined,
+  code: string,
+): string {
+  const cats = group?.categories as { category?: string; amount?: string }[] | undefined
+  const hit = cats?.find((c) => c.category === code)
+  return String(hit?.amount ?? '0')
+}
+
+function appendIncomeExpenseMatrixCsv(
+  out: string,
+  payload: {
+    incomeByPond?: Record<string, unknown>[]
+    incomeByCategory?: Record<string, unknown>[]
+    expensesByPond?: Record<string, unknown>[]
+    expensesByCategory?: Record<string, unknown>[]
+    incomeColumns?: { code: string; label: string }[]
+    expenseColumns?: { code: string; label: string }[]
+    ponds?: Record<string, unknown>[]
+    totals?: Record<string, unknown>
+  },
+): string {
+  const incomeCols = payload.incomeColumns ?? []
+  const expenseCols = payload.expenseColumns ?? []
+  if (!incomeCols.length && !expenseCols.length) return out
+  const incomeByPond = payload.incomeByPond ?? []
+  const expensesByPond = payload.expensesByPond ?? []
+  const incomeMap = new Map(incomeByPond.map((g) => [Number(g.pond_id), g]))
+  const expenseMap = new Map(expensesByPond.map((g) => [Number(g.pond_id), g]))
+  const ponds = payload.ponds ?? []
+  out += '\nIncome and expense matrix\nPond'
+  incomeCols.forEach((c) => {
+    out += `,${escapeCsvValue(c.label)}`
+  })
+  if (incomeCols.length) out += ',Income total'
+  expenseCols.forEach((c) => {
+    out += `,${escapeCsvValue(c.label)}`
+  })
+  if (expenseCols.length) out += ',Expense total'
+  out += ',Net profit\n'
+  ponds.forEach((p) => {
+    const pid = Number(p.pond_id)
+    const incGroup = incomeMap.get(pid)
+    const expGroup = expenseMap.get(pid)
+    let incSum = 0
+    let expSum = 0
+    out += escapeCsvValue(p.pond_name)
+    incomeCols.forEach((c) => {
+      const amt = matrixAmountForPond(incGroup, c.code)
+      incSum += Number(amt) || 0
+      out += `,${amt}`
+    })
+    if (incomeCols.length) out += `,${incSum.toFixed(2)}`
+    expenseCols.forEach((c) => {
+      const amt = matrixAmountForPond(expGroup, c.code)
+      expSum += Number(amt) || 0
+      out += `,${amt}`
+    })
+    if (expenseCols.length) out += `,${expSum.toFixed(2)}`
+    out += `,${p.profit ?? (incSum - expSum).toFixed(2)}\n`
+  })
+  out += 'Grand total'
+  let grandInc = 0
+  let grandExp = 0
+  incomeCols.forEach((c) => {
+    const hit = (payload.incomeByCategory ?? []).find((r) => r.category === c.code)
+    const amt = Number(hit?.amount ?? 0)
+    grandInc += amt
+    out += `,${hit?.amount ?? '0'}`
+  })
+  if (incomeCols.length) out += `,${grandInc.toFixed(2)}`
+  expenseCols.forEach((c) => {
+    const hit = (payload.expensesByCategory ?? []).find((r) => r.category === c.code)
+    const amt = Number(hit?.amount ?? 0)
+    grandExp += amt
+    out += `,${hit?.amount ?? '0'}`
+  })
+  if (expenseCols.length) out += `,${grandExp.toFixed(2)}`
+  out += `,${payload.totals?.profit ?? (grandInc - grandExp).toFixed(2)}\n`
+  return out
+}
+
 export function buildAquaculturePlManagementCsv(payload: {
   start: string
   end: string
   plScope: string
   ponds?: Record<string, unknown>[]
   totals?: Record<string, unknown>
+  incomeByPond?: Record<string, unknown>[]
+  incomeByCategory?: Record<string, unknown>[]
+  expensesByPond?: Record<string, unknown>[]
   expensesByCategory?: Record<string, unknown>[]
+  incomeColumns?: { code: string; label: string }[]
+  expenseColumns?: { code: string; label: string }[]
   fuelIncomeStatement?: Record<string, unknown> | null
 }): string {
   let out = `Aquaculture P&L management\nPeriod,${payload.start},${payload.end}\nScope,${payload.plScope}\n\n`
   if (payload.ponds?.length) {
-    out += 'Pond,Revenue,Direct exp,Shared exp,Payroll,Total costs,Profit\n'
+    out += 'Pond,Revenue,Feed consumption,Medicine consumption,Other expenses,Shared exp,Payroll,Total costs,Profit\n'
     payload.ponds.forEach((p) => {
       out += [
         escapeCsvValue(p.pond_name),
         p.revenue ?? '',
-        p.direct_operating_expenses ?? '',
+        p.feed_consumption_cost ?? '',
+        p.medicine_consumption_cost ?? '',
+        p.other_operating_expenses ?? '',
         p.shared_operating_expenses ?? '',
         p.payroll_allocated ?? '',
         p.total_costs ?? '',
@@ -515,8 +624,20 @@ export function buildAquaculturePlManagementCsv(payload: {
       out += '\n'
     })
     const t = payload.totals ?? {}
-    out += `Total,,,,,${t.total_costs ?? ''},${t.profit ?? ''}\n`
+    out += [
+      'Total',
+      t.revenue ?? '',
+      t.feed_consumption_cost ?? '',
+      t.medicine_consumption_cost ?? '',
+      t.other_operating_expenses ?? t.operating_expenses ?? '',
+      t.shared_operating_expenses ?? '',
+      t.payroll_allocated ?? '',
+      t.total_costs ?? '',
+      t.profit ?? '',
+    ].join(',')
+    out += '\n'
   }
+  out = appendIncomeExpenseMatrixCsv(out, payload)
   if (payload.expensesByCategory?.length) {
     out += '\nExpenses by category\nCategory,Label,Amount\n'
     payload.expensesByCategory.forEach((r) => {
@@ -547,7 +668,12 @@ export function buildAquaculturePlManagementPrintHtml(payload: {
   end: string
   ponds?: Record<string, unknown>[]
   totals?: Record<string, unknown>
+  incomeByPond?: Record<string, unknown>[]
+  incomeByCategory?: Record<string, unknown>[]
+  expensesByPond?: Record<string, unknown>[]
   expensesByCategory?: Record<string, unknown>[]
+  incomeColumns?: { code: string; label: string }[]
+  expenseColumns?: { code: string; label: string }[]
   fuelIncomeStatement?: Record<string, unknown> | null
 }): string {
   let html = `<p><strong>Scope:</strong> ${escapeHtml(payload.plScope)}</p>`
@@ -555,17 +681,66 @@ export function buildAquaculturePlManagementPrintHtml(payload: {
   if (payload.ponds?.length) {
     html += htmlTable(
       'Pond P&L',
-      ['Pond', 'Revenue (right)', 'Direct exp (right)', 'Shared exp (right)', 'Payroll (right)', 'Total costs (right)', 'Profit (right)'],
+      [
+        'Pond',
+        'Revenue (right)',
+        'Feed (right)',
+        'Medicine (right)',
+        'Other exp (right)',
+        'Shared exp (right)',
+        'Payroll (right)',
+        'Total costs (right)',
+        'Profit (right)',
+      ],
       payload.ponds.map((p) => [
         String(p.pond_name ?? ''),
         fmtMoney(p.revenue),
-        fmtMoney(p.direct_operating_expenses),
+        fmtMoney(p.feed_consumption_cost),
+        fmtMoney(p.medicine_consumption_cost),
+        fmtMoney(p.other_operating_expenses),
         fmtMoney(p.shared_operating_expenses),
         fmtMoney(p.payroll_allocated),
         fmtMoney(p.total_costs),
         fmtMoney(p.profit),
       ]),
     )
+  }
+  const incomeCols = payload.incomeColumns ?? []
+  const expenseCols = payload.expenseColumns ?? []
+  if ((incomeCols.length || expenseCols.length) && payload.ponds?.length) {
+    const headers = [
+      'Pond',
+      ...incomeCols.map((c) => `${c.label} (right)`),
+      ...(incomeCols.length ? ['Income total (right)'] : []),
+      ...expenseCols.map((c) => `${c.label} (right)`),
+      ...(expenseCols.length ? ['Expense total (right)'] : []),
+      'Net profit (right)',
+    ]
+    const incomeMap = new Map((payload.incomeByPond ?? []).map((g) => [Number(g.pond_id), g]))
+    const expenseMap = new Map((payload.expensesByPond ?? []).map((g) => [Number(g.pond_id), g]))
+    const rows = (payload.ponds ?? []).map((p) => {
+      const pid = Number(p.pond_id)
+      const incGroup = incomeMap.get(pid)
+      const expGroup = expenseMap.get(pid)
+      let incSum = 0
+      let expSum = 0
+      const row: string[] = [String(p.pond_name ?? '')]
+      incomeCols.forEach((c) => {
+        const amt = matrixAmountForPond(incGroup, c.code)
+        incSum += Number(amt) || 0
+        row.push(fmtMoney(amt))
+      })
+      if (incomeCols.length) row.push(fmtMoney(incSum))
+      expenseCols.forEach((c) => {
+        const amt = matrixAmountForPond(expGroup, c.code)
+        expSum += Number(amt) || 0
+        row.push(fmtMoney(amt))
+      })
+      if (expenseCols.length) row.push(fmtMoney(expSum))
+      row.push(fmtMoney(p.profit ?? incSum - expSum))
+      return row
+    })
+    html += htmlTable('Income and expense matrix', headers, rows)
   }
   if (payload.expensesByCategory?.length) {
     html += htmlTable(

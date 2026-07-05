@@ -40,6 +40,9 @@ from api.services.aquaculture_biological_asset_service import (
 )
 from api.services.aquaculture_fish_biomass_ledger_service import compute_fish_biomass_ledger_rows
 from api.services.aquaculture_growth_service import build_fish_growth_report
+from api.services.aquaculture_pond_consumption_ledger_service import (
+    compute_pond_warehouse_consumption_rows,
+)
 from api.services.aquaculture_pond_performance_service import build_pond_performance_report
 from api.services.aquaculture_pond_stock_service import pond_warehouse_stock_matrix
 from api.services.aquaculture_stock_service import (
@@ -57,6 +60,7 @@ from api.services.report_i18n import (
     note_expenses_station_scope,
     note_fish_biomass_movements,
     note_fish_stock_adjustments,
+    note_feed_medicine_consumption,
     note_fish_stock_breakdown,
     note_fish_stock_position,
     note_pond_sales_comprehensive,
@@ -170,6 +174,8 @@ def build_aquaculture_report(
         payload = _report_pond_sales_comprehensive(company_id, start, end, request)
     elif report_id == "aquaculture-expenses":
         payload = _report_expenses(company_id, start, end, request)
+    elif report_id == "aquaculture-feed-medicine-consumption":
+        payload = _report_feed_medicine_consumption(company_id, start, end, request)
     elif report_id == "aquaculture-sampling":
         payload = _report_sampling(company_id, start, end, request)
     elif report_id == "aquaculture-production-cycles":
@@ -220,6 +226,7 @@ def build_aquaculture_report(
             "aquaculture-fish-sales",
             "aquaculture-pond-sales-comprehensive",
             "aquaculture-expenses",
+            "aquaculture-feed-medicine-consumption",
             "aquaculture-sampling",
             "aquaculture-production-cycles",
             "aquaculture-profit-transfers",
@@ -1209,6 +1216,95 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
     elif station_filter_id is not None:
         out["filter_station_id"] = station_filter_id
         out["accounting_note"] = note_expenses_station_scope(company_id)
+    return out
+
+
+def _report_feed_medicine_consumption(
+    company_id: int, start: date, end: date, request: HttpRequest
+) -> dict[str, Any] | JsonResponse:
+    pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
+    if perr:
+        return perr
+
+    rows = compute_pond_warehouse_consumption_rows(
+        company_id,
+        pond_id=pond_filter_id,
+        date_from=start,
+        date_to=end,
+        limit=10000,
+    )
+
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    pond_names: dict[int, str] = {}
+    grand_feed = Decimal("0")
+    grand_med = Decimal("0")
+    grand_feed_kg = Decimal("0")
+
+    for r in rows:
+        pid = int(r["pond_id"])
+        pond_names[pid] = r.get("pond_name") or f"Pond #{pid}"
+        by_pond[pid].append(r)
+        amt = _decimal(r["amount"])
+        if r.get("kind") == "feed":
+            grand_feed += amt
+            if r.get("feed_weight_kg"):
+                grand_feed_kg += _decimal(r["feed_weight_kg"])
+        else:
+            grand_med += amt
+
+    groups: list[dict[str, Any]] = []
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+        lines = sorted(by_pond[pid], key=lambda ln: (ln.get("entry_date") or "", ln.get("id") or 0))
+        sub_feed = Decimal("0")
+        sub_med = Decimal("0")
+        sub_feed_kg = Decimal("0")
+        for ln in lines:
+            amt = _decimal(ln["amount"])
+            if ln.get("kind") == "feed":
+                sub_feed += amt
+                if ln.get("feed_weight_kg"):
+                    sub_feed_kg += _decimal(ln["feed_weight_kg"])
+            else:
+                sub_med += amt
+        sub_total = _money_q(sub_feed + sub_med)
+        groups.append(
+            {
+                "pond_id": pid,
+                "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "lines": lines,
+                "subtotal_feed_amount": str(_money_q(sub_feed)),
+                "subtotal_medicine_amount": str(_money_q(sub_med)),
+                "subtotal_amount": str(sub_total),
+                "subtotal_feed_kg": str(_money_q(sub_feed_kg)),
+                "line_count": len(lines),
+            }
+        )
+
+    grand_total = _money_q(grand_feed + grand_med)
+    summary = {
+        "line_count": len(rows),
+        "pond_group_count": len(groups),
+        "total_feed_amount_bdt": float(_money_q(grand_feed)),
+        "total_medicine_amount_bdt": float(_money_q(grand_med)),
+        "total_amount_bdt": float(grand_total),
+        "total_feed_kg": float(_money_q(grand_feed_kg)),
+    }
+    out: dict[str, Any] = {
+        "period": _period_block(start, end),
+        "currency_code": BDT,
+        "summary": summary,
+        "groups": groups,
+        "totals": {
+            "line_count": len(rows),
+            "total_feed_amount": str(_money_q(grand_feed)),
+            "total_medicine_amount": str(_money_q(grand_med)),
+            "total_amount": str(grand_total),
+            "total_feed_kg": str(_money_q(grand_feed_kg)),
+        },
+        "accounting_note": note_feed_medicine_consumption(company_id),
+    }
+    if pond_filter_id is not None:
+        out["filter_pond_id"] = pond_filter_id
     return out
 
 

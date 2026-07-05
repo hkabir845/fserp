@@ -116,3 +116,13 @@ def note_fish_stock_adjustments(company_id: int) -> str:
         "স্টক লেজার থেকে মৃত্যু ও ম্যানুয়াল সংখ্যা/ওজন সমন্বয়। "
         "ঐচ্ছিক GL পোস্টিং বায়ো-অ্যাসেট অ্যাকাউন্ট ব্যবহার করে।",
     )
+
+
+def note_feed_medicine_consumption(company_id: int) -> str:
+    return pick_for_company(
+        company_id,
+        "Feed and medicine consumed from each pond warehouse (manual consumption or feeding advice apply). "
+        "Cost amounts reflect inventory value at consumption (COGS / inventory relief).",
+        "প্রতিটি পুকুর গুদাম থেকে ব্যবহৃত খাবার ও ঔষধ (ম্যানুয়াল বা ফিডিং অ্যাডভাইস প্রয়োগ)। "
+        "খরচের পরিমাণ ব্যবহারের সময় ইনভেন্টরি মূল্য (COGS / ইনভেন্টরি রিলিফ)।",
+    )

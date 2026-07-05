@@ -203,6 +203,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "group": "Reports — Aquaculture",
     },
     {
+        "report_id": "aquaculture-feed-medicine-consumption",
+        "label": "Aquaculture — Feed & medicine consumption",
+        "group": "Reports — Aquaculture",
+    },
+    {
         "report_id": "aquaculture-sampling",
         "label": "Aquaculture — Biomass sampling",
         "group": "Reports — Aquaculture",

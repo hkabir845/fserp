@@ -71,6 +71,7 @@ import {
   type ReportDrillTarget,
 } from '@/components/reports/ReportDrillContext'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+import { AquaculturePlCategoryMatrices } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   accountsTotalRow,
   agingBucketTotalRow,
@@ -190,6 +191,7 @@ type ReportType =
   | 'aquaculture-fish-sales'
   | 'aquaculture-pond-sales-comprehensive'
   | 'aquaculture-expenses'
+  | 'aquaculture-feed-medicine-consumption'
   | 'aquaculture-sampling'
   | 'aquaculture-production-cycles'
   | 'aquaculture-profit-transfers'
@@ -660,6 +662,14 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
+    id: 'aquaculture-feed-medicine-consumption',
+    title: 'Aquaculture — Feed & medicine consumption',
+    description:
+      'Feed and medicine used from pond warehouses in the period — quantities, cost per entry, and totals by pond (BDT)',
+    icon: Package,
+    category: 'aquaculture',
+  },
+  {
     id: 'aquaculture-production-cycles',
     title: 'Aquaculture — Production cycles',
     description: 'Production batches overlapping the period, grouped by pond with sub-totals',
@@ -765,6 +775,7 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-expenses',
+  'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
@@ -818,6 +829,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-pond-pl',
   'aquaculture-expenses',
+  'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
@@ -967,6 +979,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-expenses',
+  'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
@@ -8593,6 +8606,9 @@ function renderReportTable(
   if (reportType === 'aquaculture-pond-pl' && data) {
     const ponds: any[] = Array.isArray(data.ponds) ? data.ponds : []
     const byCat: any[] = Array.isArray(data.expenses_by_category) ? data.expenses_by_category : []
+    const incomeByPond: any[] = Array.isArray(data.income_by_pond) ? data.income_by_pond : []
+    const incomeByCat: any[] = Array.isArray(data.income_by_category) ? data.income_by_category : []
+    const expensesByPond: any[] = Array.isArray(data.expenses_by_pond) ? data.expenses_by_pond : []
     const segments: any[] = Array.isArray(data.pond_cycle_segments) ? data.pond_cycle_segments : []
     const t = data.totals || {}
     const period = data.period || {}
@@ -8616,80 +8632,50 @@ function renderReportTable(
           </div>
         ) : null}
         <div>
-          <h4 className="font-semibold text-foreground mb-2">Pond P&amp;L</h4>
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="min-w-full divide-y divide-border text-sm">
-              <thead className="bg-muted/40">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Pond</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Revenue</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Direct exp.</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Shared exp.</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Payroll</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Total costs</th>
-                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Net profit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/70 bg-white">
-                {ponds.map((p: any) => (
-                  <tr key={p.pond_id}>
-                    <td className="px-3 py-2 font-medium text-foreground">{p.pond_name}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.revenue, p, "revenue")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.direct_operating_expenses, p, "direct_operating_expenses")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.shared_operating_expenses, p, "shared_operating_expenses")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.payroll_allocated, p, "payroll_allocated")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(p.total_costs, p, "total_costs")}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{MoneyBdt(p.profit, p, "profit")}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-muted">
-                <tr>
-                  <td className="px-3 py-2 font-bold text-foreground">
-                    {pondTotal(ponds.length === 1 ? ponds[0]?.pond_name : null)}
-                  </td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(t.revenue, scopedPlTotalRow(ponds, "Pond P&L total revenue", "revenue"), "revenue")}</td>
-                  <td className="px-3 py-2 text-right text-muted-foreground">—</td>
-                  <td className="px-3 py-2 text-right text-muted-foreground">—</td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(t.payroll_allocated, scopedPlTotalRow(ponds, "Pond P&L total payroll_allocated", "payroll_allocated"), "payroll_allocated")}</td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(t.total_costs, scopedPlTotalRow(ponds, "Pond P&L total total_costs", "total_costs"), "total_costs")}</td>
-                  <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(t.profit, scopedPlTotalRow(ponds, "Pond P&L total profit", "profit"), "profit")}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <AquaculturePlCategoryMatrices
+            incomeByPond={incomeByPond}
+            incomeByCategory={incomeByCat}
+            expensesByPond={expensesByPond}
+            expensesByCategory={byCat}
+            incomeColumns={
+              Array.isArray(data.pl_income_columns)
+                ? (data.pl_income_columns as { code: string; label: string }[])
+                : undefined
+            }
+            expenseColumns={
+              Array.isArray(data.pl_expense_columns)
+                ? (data.pl_expense_columns as { code: string; label: string }[])
+                : undefined
+            }
+            showFullCatalog
+            combinedMode
+            rowTotalsByPond={ponds.map((p: any) => ({
+              pond_id: p.pond_id,
+              income_total: p.income_total ?? p.revenue,
+              expense_total: p.expense_total ?? p.total_costs,
+              net_profit: p.net_profit ?? p.profit,
+            }))}
+            grandTotals={
+              (data.pl_grand_totals as {
+                total_income: string
+                total_costs_and_expenses: string
+                net_profit: string
+              } | undefined) ?? {
+                total_income: String(t.revenue ?? '0'),
+                total_costs_and_expenses: String(t.total_costs_and_expenses ?? t.total_costs ?? '0'),
+                net_profit: String(t.net_profit ?? t.profit ?? '0'),
+              }
+            }
+            formulaNote={typeof data.pl_formula_note === 'string' ? data.pl_formula_note : undefined}
+            pondScopeLabel={
+              ponds.length === 1
+                ? ponds[0]?.pond_name
+                : data.pond_scope_id
+                  ? `Pond #${data.pond_scope_id}`
+                  : 'All ponds'
+            }
+          />
         </div>
-        {byCat.length > 0 ? (
-          <div>
-            <h4 className="font-semibold text-foreground mb-2">Expenses by category (company scope)</h4>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="min-w-full divide-y divide-border text-sm">
-                <thead className="bg-muted/40">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Category</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount (BDT)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/70 bg-white">
-                  {byCat.map((r: any) => (
-                    <tr key={r.category}>
-                      <td className="px-3 py-2">{r.label}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(r.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-muted">
-                  <tr>
-                    <td className="px-3 py-2 font-bold text-foreground">Sub-total — categories shown</td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">
-                      {MoneyBdt(byCat.reduce((s: number, r: any) => s + Number(r.amount || 0), 0))}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        ) : null}
         {segments.length > 0 ? (
           <div>
             <h4 className="font-semibold text-foreground mb-2">Cycle segments (revenue &amp; direct costs)</h4>
@@ -8934,6 +8920,115 @@ function renderReportTable(
             </div>
           ) : null}
         </div>
+      </div>
+    )
+  }
+
+  if (
+    reportType === 'aquaculture-feed-medicine-consumption' &&
+    data &&
+    Array.isArray(data.groups)
+  ) {
+    const period = data.period || {}
+    const groups: any[] = data.groups
+    const totals = data.totals || {}
+    const summary = data.summary || {}
+    return (
+      <div className="space-y-8">
+        {hasPeriod &&
+          renderPeriodFilter(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Consumption date within this range. Use Pond filter for one pond or leave empty for all ponds.'
+          )}
+        <p className="text-sm font-medium text-foreground/85">
+          Feed and medicine consumed from pond warehouses — costs in <strong>BDT</strong> at inventory value when
+          used.
+        </p>
+        {data.accounting_note ? (
+          <p className="text-xs text-muted-foreground">{data.accounting_note}</p>
+        ) : null}
+        {groups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No feed or medicine consumption in this period.</p>
+        ) : (
+          groups.map((g: any) => (
+            <div
+              key={`fmc-${g.pond_id}`}
+              className="rounded-lg border border-border bg-white shadow-sm"
+            >
+              <div className="border-b border-border/70 bg-cyan-50/80 px-4 py-2">
+                <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
+              </div>
+              <div className="overflow-x-auto p-2">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="px-2 py-1">Date</th>
+                      <th className="px-2 py-1">Type</th>
+                      <th className="px-2 py-1">Item</th>
+                      <th className="px-2 py-1 text-right">Qty</th>
+                      <th className="px-2 py-1 text-right">Feed (kg)</th>
+                      <th className="px-2 py-1 text-right">Cost (BDT)</th>
+                      <th className="px-2 py-1">Source / memo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/70">
+                    {(g.lines || []).map((ln: any) => (
+                      <tr key={ln.id}>
+                        <td className="px-2 py-1.5 whitespace-nowrap">{ln.entry_date}</td>
+                        <td className="px-2 py-1.5">{ln.kind_label || ln.kind}</td>
+                        <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {ln.quantity != null ? `${ln.quantity}${ln.unit ? ` ${ln.unit}` : ''}` : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          {ln.feed_weight_kg ? Number(ln.feed_weight_kg).toLocaleString() : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
+                        <td className="px-2 py-1.5 text-muted-foreground">
+                          {ln.source_doc || ln.memo || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/40">
+                    <tr>
+                      <td colSpan={5} className="px-2 py-2 text-right text-xs font-semibold text-foreground">
+                        Sub-total — {g.pond_name}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-foreground">
+                        {MoneyBdt(g.subtotal_amount)}
+                      </td>
+                      <td className="px-2 py-2 text-right text-xs text-muted-foreground">
+                        Feed {MoneyBdt(g.subtotal_feed_amount)} · Medicine {MoneyBdt(g.subtotal_medicine_amount)}
+                        {g.subtotal_feed_kg && Number(g.subtotal_feed_kg) > 0
+                          ? ` · ${Number(g.subtotal_feed_kg).toLocaleString()} kg feed`
+                          : ''}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          ))
+        )}
+        <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3 space-y-2">
+          <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-foreground">
+            <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
+            <span className="tabular-nums">{MoneyBdt(totals.total_amount)}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+            <span>Feed: {MoneyBdt(totals.total_feed_amount)}</span>
+            <span>Medicine: {MoneyBdt(totals.total_medicine_amount)}</span>
+            {totals.total_feed_kg && Number(totals.total_feed_kg) > 0 ? (
+              <span>Feed weight: {Number(totals.total_feed_kg).toLocaleString()} kg</span>
+            ) : null}
+            <span>{summary.line_count ?? totals.line_count ?? 0} consumption line(s)</span>
+          </div>
+        </div>
+        {renderAquacultureFcrBlock(data)}
       </div>
     )
   }

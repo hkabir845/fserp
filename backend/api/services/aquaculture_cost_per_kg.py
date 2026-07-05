@@ -82,6 +82,32 @@ def vendor_bill_pond_operating_total(
     return _money_q(Decimal(str(t or 0)))
 
 
+def pond_warehouse_consumption_cogs_journal_total(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+) -> Decimal:
+    """AUTO-AQ-POND-{expense_id}-COGS debits already included in vendor_bill_pond_operating_total."""
+    t = (
+        vendor_bill_pond_expense_lines_qs(
+            company_id=company_id,
+            pond_id=pond_id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+        )
+        .filter(
+            journal_entry__entry_number__startswith="AUTO-AQ-POND-",
+            journal_entry__entry_number__endswith="-COGS",
+        )
+        .aggregate(s=Sum("debit"))["s"]
+    )
+    return _money_q(Decimal(str(t or 0)))
+
+
 def vendor_bill_pond_operating_total_company(
     *,
     company_id: int,

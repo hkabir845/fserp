@@ -35,7 +35,7 @@ SHARED_OPERATING_COST_RULE = (
 # Stable keys stored in DB; labels can be shown in UI from this map.
 AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("lease", "Lease money"),
-    ("worker_salary", "Labor & wages"),
+    ("worker_salary", "Salaries & wages"),
     ("soilcut", "Soil cut"),
     ("pond_preparation", "Pond preparation cost"),
     ("pond_care_products", "Pond care products"),
@@ -51,7 +51,7 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("electricity", "Electricity"),
     ("generator_fuel", "Generator diesel & fuel (ponds)"),
     ("water", "Water & tube-well / irrigation"),
-    ("equipment", "Equipment (aerators, nets, etc.)"),
+    ("equipment", "Pond equipment (aerators, nets, etc.)"),
     ("repair_maintenance", "Repair & maintenance"),
     ("depreciation", "Depreciation (pond equipment)"),
     ("fisherman", "Fisherman bills"),
@@ -71,7 +71,7 @@ AQUACULTURE_EXPENSE_CATEGORY_CHOICES: tuple[tuple[str, str], ...] = (
     ("professional_fees", "Professional & accounting fees"),
     ("communication", "Phone & internet (pond site)"),
     ("mortality", "Mortality, predation & shrinkage"),
-    ("other", "Miscellaneous"),
+    ("other", "Other expenses"),
 )
 
 EXPENSE_CATEGORY_CODES: frozenset[str] = frozenset(c for c, _ in AQUACULTURE_EXPENSE_CATEGORY_CHOICES)

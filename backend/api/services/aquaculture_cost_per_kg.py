@@ -82,6 +82,35 @@ def vendor_bill_pond_operating_total(
     return _money_q(Decimal(str(t or 0)))
 
 
+def vendor_bill_only_pond_operating_total(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+) -> Decimal:
+    """
+    Pond-tagged vendor bills and POS COGS — excludes shop issues and pond-warehouse consumption
+    journals (those are categorized via AquacultureExpense rows).
+    """
+    qs = vendor_bill_pond_expense_lines_qs(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        uncycled_bill_lines_only=uncycled_bill_lines_only,
+    ).exclude(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
+    qs = qs.exclude(
+        journal_entry__entry_number__startswith="AUTO-AQ-POND-",
+        journal_entry__entry_number__endswith="-COGS",
+    )
+    t = qs.aggregate(s=Sum("debit"))["s"]
+    return _money_q(Decimal(str(t or 0)))
+
+
 def pond_warehouse_consumption_cogs_journal_total(
     *,
     company_id: int,
@@ -280,6 +309,35 @@ def pond_fry_stocking_capitalized_journal_total(
     return _money_q(total)
 
 
+def vendor_bill_only_pond_bucket_additions(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+) -> dict[str, Decimal]:
+    """Vendor bills and POS COGS — excludes shop issues and pond-warehouse consumption journals."""
+    out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    qs = vendor_bill_pond_expense_lines_qs(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        uncycled_bill_lines_only=uncycled_bill_lines_only,
+    ).exclude(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
+    qs = qs.exclude(
+        journal_entry__entry_number__startswith="AUTO-AQ-POND-",
+        journal_entry__entry_number__endswith="-COGS",
+    )
+    for row in qs.values("aquaculture_cost_bucket").annotate(s=Sum("debit")):
+        b = (row["aquaculture_cost_bucket"] or "").strip() or "ancillary"
+        out[b] += _money_q(Decimal(str(row["s"] or 0)))
+    return dict(out)
+
+
 def vendor_bill_pond_bucket_additions(
     *,
     company_id: int,
@@ -372,6 +430,32 @@ def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int |
     if c == "other":
         return "miscellaneous"
     return "ancillary"
+
+
+def cost_bucket_to_pl_expense_category(bucket: str) -> str:
+    """Map journal-line aquaculture_cost_bucket to a P&L expense_category code."""
+    b = (bucket or "").strip() or "ancillary"
+    _MAP: dict[str, str] = {
+        "fry_stocking": "fry_stocking",
+        "pond_preparation": "pond_preparation",
+        "feed": "feed_purchase",
+        "medicine": "medicine_purchase",
+        "labor": "worker_salary",
+        "electricity": "electricity",
+        "equipment": "equipment",
+        "repair_maintenance": "repair_maintenance",
+        "lease": "lease",
+        "transportation": "transportation",
+        "fisherman": "fisherman",
+        "day_labor": "day_labor",
+        "shop_supplies": "shop_supplies",
+        "miscellaneous": "vendor_bill_pond",
+        "ancillary": "vendor_bill_pond",
+        "fish_transfer_in": "fish_transfer_cost_in",
+        "fish_transfer_out": "fish_transfer_cost_out",
+        "biological_writeoff": "biological_write_offs",
+    }
+    return _MAP.get(b, "vendor_bill_pond")
 
 
 def item_shop_issue_cost_bucket(item) -> str:
@@ -477,7 +561,10 @@ def pond_bucket_amounts_for_period(
         b = aquaculture_expense_category_to_cost_bucket(category, company_id=company_id)
         out[b] += _money_q(amount)
 
-    from api.services.aquaculture_pl_expense_sum import aquaculture_expenses_for_pl_direct_sum
+    from api.services.aquaculture_pl_expense_sum import (
+        aquaculture_expenses_for_pl_direct_sum,
+        pond_consumption_amounts_by_category,
+    )
 
     q = AquacultureExpense.objects.filter(
         company_id=company_id,
@@ -512,7 +599,17 @@ def pond_bucket_amounts_for_period(
     if payroll_allocated != 0:
         out["labor"] += _money_q(payroll_allocated)
 
-    for bkey, bamt in vendor_bill_pond_bucket_additions(
+    for code, amt in pond_consumption_amounts_by_category(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    ).items():
+        if amt != 0:
+            add_from_expense_row(_money_q(amt), code)
+
+    for bkey, bamt in vendor_bill_only_pond_bucket_additions(
         company_id=company_id,
         pond_id=pond_id,
         start=start,

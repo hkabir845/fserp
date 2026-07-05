@@ -16,7 +16,11 @@ import {
   buildAquaculturePlManagementCsv,
   buildAquaculturePlManagementPrintHtml,
 } from '@/utils/reportExportHelpers'
-import { AquaculturePlCategoryMatrices } from '@/components/reports/AquaculturePlCategoryMatrices'
+import {
+  AquaculturePlCategoryMatrices,
+  AquaculturePlExpenseKpiGrid,
+  PlActiveExpenseCategoriesList,
+} from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   COA_AQ_PROFIT_CLEARING,
   COA_BANK_OP,
@@ -1132,6 +1136,9 @@ export function AquaculturePlManagementPanel({
               </div>
             ))}
           </div>
+
+          <AquaculturePlExpenseKpiGrid totals={data.totals} />
+          <PlActiveExpenseCategoriesList categories={expensesByCategory} />
 
           <div>
             <h2 className="text-lg font-semibold text-foreground">P&amp;L — every income &amp; expense</h2>

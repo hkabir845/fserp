@@ -1124,6 +1124,8 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         if st_err:
             return st_err
         station_filter_id = st_id
+    from django.db.models import Q
+
     qs = (
         AquacultureExpense.objects.filter(
             company_id=company_id,
@@ -1135,12 +1137,25 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         .order_by("pond_id", "expense_date", "id")
     )
     if pond_filter_id is not None:
-        qs = qs.filter(pond_id=pond_filter_id)
+        qs = qs.filter(
+            Q(pond_id=pond_filter_id)
+            | Q(pond_id__isnull=True, pond_shares__pond_id=pond_filter_id)
+        ).distinct()
     elif station_filter_id is not None:
         qs = qs.filter(source_station_id=station_filter_id)
     rows: list[AquacultureExpense] = list(qs)
 
+    filtered_pond_name: str | None = None
+    if pond_filter_id is not None:
+        filtered_pond_name = (
+            AquaculturePond.objects.filter(pk=pond_filter_id, company_id=company_id)
+            .values_list("name", flat=True)
+            .first()
+        )
+
     def sort_key(e: AquacultureExpense):
+        if pond_filter_id is not None and e.pond_id is None:
+            return (pond_filter_id, e.expense_date, e.id)
         pid = e.pond_id if e.pond_id is not None else -1
         return (pid, e.expense_date, e.id)
 
@@ -1150,25 +1165,43 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
     pond_names: dict[int | None, str] = {}
 
     for e in rows:
+        shares_out = []
+        line_amount = _money_q(e.amount)
         if e.pond_id is None:
-            pname = "Shared (allocated to ponds)"
-            pid: int | None = None
+            if pond_filter_id is not None:
+                share = next(
+                    (sh for sh in e.pond_shares.all() if sh.pond_id == pond_filter_id),
+                    None,
+                )
+                if share is None:
+                    continue
+                pid = pond_filter_id
+                pname = (filtered_pond_name or "").strip() or f"Pond #{pond_filter_id}"
+                line_amount = _money_q(share.amount)
+                shares_out = [
+                    {
+                        "pond_id": pond_filter_id,
+                        "pond_name": pname,
+                        "amount": str(line_amount),
+                    }
+                ]
+            else:
+                pname = "Shared (allocated to ponds)"
+                pid = None
+                for sh in e.pond_shares.all():
+                    pn = (sh.pond.name or "").strip() if getattr(sh, "pond", None) else f"Pond #{sh.pond_id}"
+                    shares_out.append({"pond_id": sh.pond_id, "pond_name": pn, "amount": str(sh.amount)})
         else:
             pid = e.pond_id
             pname = (e.pond.name or "").strip() if e.pond else f"Pond #{e.pond_id}"
         pond_names[pid] = pname
-        shares_out = []
-        if e.pond_id is None:
-            for sh in e.pond_shares.all():
-                pn = (sh.pond.name or "").strip() if getattr(sh, "pond", None) else f"Pond #{sh.pond_id}"
-                shares_out.append({"pond_id": sh.pond_id, "pond_name": pn, "amount": str(sh.amount)})
         by_pond[pid].append(
             {
                 "id": e.id,
                 "expense_date": e.expense_date.isoformat(),
                 "expense_category": e.expense_category,
                 "expense_category_label": aquaculture_expense_label(company_id, e.expense_category),
-                "amount": str(e.amount),
+                "amount": str(line_amount),
                 "vendor_name": e.vendor_name or "",
                 "memo": (e.memo or "")[:200],
                 "production_cycle_name": (e.production_cycle.name or "").strip() if e.production_cycle_id else "",

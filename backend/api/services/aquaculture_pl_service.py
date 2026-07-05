@@ -28,12 +28,15 @@ from api.services.aquaculture_constants import (
 from api.services.tenant_reporting_categories import aquaculture_expense_label, aquaculture_income_label
 from api.services.aquaculture_cost_per_kg import (
     build_pond_cost_per_kg_block,
+    cost_bucket_to_pl_expense_category,
     fry_stocking_capitalized_manual_expense_ids,
     landlord_lease_payment_pond_operating_total,
     pond_fry_stocking_capitalized_journal_total,
     pond_warehouse_consumption_cogs_journal_total,
+    vendor_bill_only_pond_bucket_additions,
     vendor_bill_pond_operating_total,
 )
+from api.services.aquaculture_pl_expense_sum import pond_consumption_amounts_by_category
 from api.services.aquaculture_pond_pl_opening import pl_opening_totals_for_pond
 
 
@@ -100,6 +103,10 @@ PL_EQUIPMENT_EXPENSE_CODES: frozenset[str] = frozenset(
     {"equipment", "repair_maintenance", "netting_gear", "depreciation"}
 )
 
+PL_OTHER_CONSUMPTION_CODES: frozenset[str] = frozenset(
+    {"pond_care_products", "shop_supplies", "pond_preparation"}
+)
+
 
 def _pl_expense_label(company_id: int, code: str) -> str:
     if code == "__consumption_cogs_adjustment":
@@ -164,8 +171,6 @@ def _pond_expense_amounts_dict(
     cycle_filter_id: int | None,
     *,
     shared_expenses: list,
-    feed_cost: Decimal,
-    med_cost: Decimal,
     landlord_lease: Decimal,
     transfer_in: Decimal,
     transfer_out: Decimal,
@@ -178,15 +183,28 @@ def _pond_expense_amounts_dict(
     out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for row in dexp_q_fn(pond_id).values("expense_category").annotate(s=Sum("amount")):
         out[str(row["expense_category"] or "")] += _money_q(row["s"] or Decimal("0"))
-    out["feed_consumed"] += feed_cost
-    out["medicine_consumed"] += med_cost
-    out["vendor_bill_pond"] += vendor_bill_pond_operating_total(
+    consumption_by_cat = pond_consumption_amounts_by_category(
         company_id=company_id,
         pond_id=pond_id,
         start=start,
         end=end,
         cycle_filter_id=cycle_filter_id,
     )
+    for code, amt in consumption_by_cat.items():
+        out[code] += _money_q(amt)
+    for bkey, bamt in vendor_bill_only_pond_bucket_additions(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    ).items():
+        if bkey == "fry_stocking":
+            # Fry vendor bills are included via pond_fry_stocking_capitalized_journal_total (1581 + legacy 6715).
+            continue
+        if bamt == 0:
+            continue
+        out[cost_bucket_to_pl_expense_category(bkey)] += _money_q(bamt)
     out["lease"] += landlord_lease
     out["fry_stocking"] += pond_fry_stocking_capitalized_journal_total(
         company_id=company_id,
@@ -210,7 +228,7 @@ def _pond_expense_amounts_dict(
 
 
 def _pond_income_total(merged_rev: dict[str, Decimal]) -> Decimal:
-    return _money_q(sum(_money_q(v) for v in merged_rev.values()))
+    return _money_q(sum((_money_q(v) for v in merged_rev.values()), Decimal("0")))
 
 
 def _pond_expense_matrix_total(pond_exp: dict[str, Decimal]) -> Decimal:
@@ -316,9 +334,11 @@ def compute_aquaculture_pl_summary_dict(
     """Returns the same JSON-shaped dict as the legacy aquaculture_pl_summary view."""
     cid = company_id
 
-    ponds_qs = AquaculturePond.objects.filter(company_id=cid, is_active=True).order_by("sort_order", "id")
+    ponds_qs = AquaculturePond.objects.filter(company_id=cid).order_by("sort_order", "id")
     if pond_filter_id is not None:
         ponds_qs = ponds_qs.filter(pk=pond_filter_id)
+    else:
+        ponds_qs = ponds_qs.filter(is_active=True)
 
     shared_expenses = list(
         AquacultureExpense.objects.filter(
@@ -431,6 +451,7 @@ def compute_aquaculture_pl_summary_dict(
     total_salaries_payroll = Decimal("0")
     total_pond_care = Decimal("0")
     total_equipment = Decimal("0")
+    total_other_consumption = Decimal("0")
 
     pond_income_amounts: list[tuple[int, str, dict[str, Decimal]]] = []
     pond_expense_amounts: list[tuple[int, str, dict[str, Decimal]]] = []
@@ -525,9 +546,6 @@ def compute_aquaculture_pl_summary_dict(
         lease_cost = _lease_cost_for_pond(
             cid, pond.id, start, end, cycle_filter_id, exp_landlord_lease
         )
-        other_opex = _money_q(exp_total - feed_cost - med_cost - fry_cost - lease_cost)
-        if other_opex < 0:
-            other_opex = Decimal("0")
 
         rev_by_type: list[dict] = []
         for code, tq in merged_rev.items():
@@ -554,8 +572,6 @@ def compute_aquaculture_pl_summary_dict(
             end,
             cycle_filter_id,
             shared_expenses=shared_expenses,
-            feed_cost=feed_cost,
-            med_cost=med_cost,
             landlord_lease=exp_landlord_lease,
             transfer_in=t_in,
             transfer_out=t_out,
@@ -564,8 +580,6 @@ def compute_aquaculture_pl_summary_dict(
             prior_expense_by=prior_expense_by,
             dexp_q_fn=_dexp_q,
         )
-        if consumption_journals != 0:
-            pond_exp["__consumption_cogs_adjustment"] = _money_q(-consumption_journals)
         pond_expense_amounts.append((pond.id, pond.name, pond_exp))
         for code, amt in pond_exp.items():
             signed = _money_q(amt)
@@ -580,6 +594,14 @@ def compute_aquaculture_pl_summary_dict(
         )
         pond_care_cost = _money_q(pond_exp.get("pond_care_products", Decimal("0")))
         equipment_cost = _sum_expense_codes(pond_exp, PL_EQUIPMENT_EXPENSE_CODES)
+        feed_consumption_total = _money_q(pond_exp.get("feed_consumed", Decimal("0")))
+        medicine_consumption_total = _money_q(pond_exp.get("medicine_consumed", Decimal("0")))
+        other_consumption_total = _sum_expense_codes(pond_exp, PL_OTHER_CONSUMPTION_CODES)
+        other_opex = _money_q(
+            exp_total - feed_consumption_total - medicine_consumption_total - fry_cost - lease_cost
+        )
+        if other_opex < 0:
+            other_opex = Decimal("0")
         income_total = _pond_income_total(pond_income)
         expense_total = _pond_expense_matrix_total(pond_exp)
         net_profit = _money_q(income_total - expense_total)
@@ -600,8 +622,9 @@ def compute_aquaculture_pl_summary_dict(
                 "revenue_by_income_type": rev_by_type,
                 "direct_operating_expenses": str(exp_direct),
                 "shared_operating_expenses": str(exp_shared),
-                "feed_consumption_cost": str(feed_cost),
-                "medicine_consumption_cost": str(med_cost),
+                "feed_consumption_cost": str(feed_consumption_total),
+                "medicine_consumption_cost": str(medicine_consumption_total),
+                "other_consumption_cost": str(other_consumption_total),
                 "fry_fingerling_cost": str(fry_cost),
                 "lease_cost": str(lease_cost),
                 "salaries_and_payroll_cost": str(salaries_payroll_cost),
@@ -635,8 +658,6 @@ def compute_aquaculture_pl_summary_dict(
         total_rev += rev
         total_exp += exp_total
         total_pay += pay
-        total_feed += feed_cost
-        total_med += med_cost
         total_fry += fry_cost
         total_lease += lease_cost
         total_rev_fish += rev_fish
@@ -648,6 +669,9 @@ def compute_aquaculture_pl_summary_dict(
         total_salaries_payroll += salaries_payroll_cost
         total_pond_care += pond_care_cost
         total_equipment += equipment_cost
+        total_other_consumption += other_consumption_total
+        total_feed += feed_consumption_total
+        total_med += medicine_consumption_total
 
     total_profit = _money_q(total_rev - total_exp - total_pay)
 
@@ -668,9 +692,6 @@ def compute_aquaculture_pl_summary_dict(
             show_full_catalog=show_full_catalog,
         )
     )
-    if company_expense_dec.get("__consumption_cogs_adjustment", Decimal("0")) != 0:
-        if "__consumption_cogs_adjustment" not in expense_column_keys:
-            expense_column_keys = expense_column_keys + ["__consumption_cogs_adjustment"]
 
     income_by_pond = [
         {
@@ -846,7 +867,8 @@ def compute_aquaculture_pl_summary_dict(
         "pl_formula_note": (
             "Net profit = Total income − Total costs & expenses. "
             "Every registered income type and expense category is listed; zeros where none in the period. "
-            "Inter-pond transfer out reduces expenses; warehouse COGS dedup avoids double-counting vendor bills."
+            "Feed, medicine, and shop-issued consumption appear in their own columns; "
+            "inter-pond transfer out reduces expenses."
         ),
         "pl_grand_totals": {
             "total_income": str(_money_q(total_rev)),
@@ -879,6 +901,7 @@ def compute_aquaculture_pl_summary_dict(
             "salaries_and_payroll_cost": str(_money_q(total_salaries_payroll)),
             "pond_care_products_cost": str(_money_q(total_pond_care)),
             "equipment_cost": str(_money_q(total_equipment)),
+            "other_consumption_cost": str(_money_q(total_other_consumption)),
             "other_operating_expenses": str(_money_q(total_other)),
             "payroll_allocated": str(_money_q(total_pay)),
             "total_costs": str(_money_q(total_exp + total_pay)),

@@ -71,7 +71,11 @@ import {
   type ReportDrillTarget,
 } from '@/components/reports/ReportDrillContext'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
-import { AquaculturePlCategoryMatrices } from '@/components/reports/AquaculturePlCategoryMatrices'
+import {
+  AquaculturePlCategoryMatrices,
+  AquaculturePlExpenseKpiGrid,
+  PlActiveExpenseCategoriesList,
+} from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   accountsTotalRow,
   agingBucketTotalRow,
@@ -2213,6 +2217,31 @@ export default function ReportsPage() {
   )
 
   const deepLinkReportKeyRef = useRef<string | null>(null)
+  const aquacultureFilterSigRef = useRef<string>('')
+
+  useEffect(() => {
+    aquacultureFilterSigRef.current = ''
+  }, [selectedReport])
+
+  useEffect(() => {
+    if (!selectedReport || !String(selectedReport).startsWith('aquaculture-')) return
+    if (selectedReport === 'aquaculture-pl-management') return
+    const sig = `${effectiveAquaculturePondId}|${aquacultureCycleId}|${aquacultureIncludeCycleBreakdown ? '1' : '0'}`
+    if (aquacultureFilterSigRef.current === '') {
+      aquacultureFilterSigRef.current = sig
+      return
+    }
+    if (aquacultureFilterSigRef.current === sig) return
+    aquacultureFilterSigRef.current = sig
+    void fetchReport(selectedReport)
+  }, [
+    effectiveAquaculturePondId,
+    aquacultureCycleId,
+    aquacultureIncludeCycleBreakdown,
+    selectedReport,
+    fetchReport,
+  ])
+
   useEffect(() => {
     if (!reportRbacHydrated) return
     const reportParam = searchParams.get('report')
@@ -8631,6 +8660,8 @@ function renderReportTable(
             {String(data.cycle_scope_note)}
           </div>
         ) : null}
+        <AquaculturePlExpenseKpiGrid totals={t} />
+        <PlActiveExpenseCategoriesList categories={byCat} />
         <div>
           <AquaculturePlCategoryMatrices
             incomeByPond={incomeByPond}

@@ -597,14 +597,22 @@ def compute_aquaculture_pl_summary_dict(
         feed_consumption_total = _money_q(pond_exp.get("feed_consumed", Decimal("0")))
         medicine_consumption_total = _money_q(pond_exp.get("medicine_consumed", Decimal("0")))
         other_consumption_total = _sum_expense_codes(pond_exp, PL_OTHER_CONSUMPTION_CODES)
-        other_opex = _money_q(
-            exp_total - feed_consumption_total - medicine_consumption_total - fry_cost - lease_cost
-        )
-        if other_opex < 0:
-            other_opex = Decimal("0")
         income_total = _pond_income_total(pond_income)
         expense_total = _pond_expense_matrix_total(pond_exp)
         net_profit = _money_q(income_total - expense_total)
+        other_opex = _money_q(
+            expense_total
+            - feed_consumption_total
+            - medicine_consumption_total
+            - other_consumption_total
+            - fry_cost
+            - lease_cost
+            - salaries_payroll_cost
+            - pond_care_cost
+            - equipment_cost
+        )
+        if other_opex < 0:
+            other_opex = Decimal("0")
 
         rows.append(
             {
@@ -645,9 +653,9 @@ def compute_aquaculture_pl_summary_dict(
                     start=start,
                     end=end,
                     cycle_filter_id=cycle_filter_id,
-                    operating_expenses_total=exp_total,
+                    operating_expenses_total=expense_total,
                     payroll_allocated=pay,
-                    total_costs=_money_q(exp_total + pay),
+                    total_costs=expense_total,
                     shared_expenses=shared_expenses,
                     transfer_in=t_in,
                     transfer_out=t_out,
@@ -656,7 +664,7 @@ def compute_aquaculture_pl_summary_dict(
             }
         )
         total_rev += rev
-        total_exp += exp_total
+        total_exp += expense_total
         total_pay += pay
         total_fry += fry_cost
         total_lease += lease_cost
@@ -673,7 +681,7 @@ def compute_aquaculture_pl_summary_dict(
         total_feed += feed_consumption_total
         total_med += medicine_consumption_total
 
-    total_profit = _money_q(total_rev - total_exp - total_pay)
+    total_profit = _money_q(total_rev - total_exp)
 
     # Always expose the full income/expense catalog as matrix columns (zeros where no activity).
     show_full_catalog = True
@@ -872,7 +880,7 @@ def compute_aquaculture_pl_summary_dict(
         ),
         "pl_grand_totals": {
             "total_income": str(_money_q(total_rev)),
-            "total_costs_and_expenses": str(_money_q(total_exp + total_pay)),
+            "total_costs_and_expenses": str(_money_q(total_exp)),
             "net_profit": str(total_profit),
         },
         "pl_income_columns": [
@@ -904,9 +912,12 @@ def compute_aquaculture_pl_summary_dict(
             "other_consumption_cost": str(_money_q(total_other_consumption)),
             "other_operating_expenses": str(_money_q(total_other)),
             "payroll_allocated": str(_money_q(total_pay)),
-            "total_costs": str(_money_q(total_exp + total_pay)),
+            "total_costs": str(_money_q(total_exp)),
             "total_income": str(_money_q(total_rev)),
-            "total_costs_and_expenses": str(_money_q(total_exp + total_pay)),
+            "total_costs_and_expenses": str(_money_q(total_exp)),
+            "consumption_expenses_total": str(
+                _money_q(total_feed + total_med + total_other_consumption)
+            ),
             "profit": str(total_profit),
             "net_profit": str(total_profit),
         },

@@ -640,6 +640,51 @@ export function AquaculturePlExpenseKpiGrid({ totals }: { totals: PlTotalsLike }
   )
 }
 
+/** Consumption costs always listed as operating expenses (feed, medicine, pond-care / supplies). */
+export function PlConsumptionCostsExpenses({ totals }: { totals: PlTotalsLike }) {
+  const rows: [string, string | undefined][] = [
+    ['Feed consumption cost', totals.feed_consumption_cost],
+    ['Medicine consumption cost', totals.medicine_consumption_cost],
+    ['Other consumption cost', totals.other_consumption_cost],
+  ]
+  const total =
+    Number(totals.feed_consumption_cost ?? 0) +
+    Number(totals.medicine_consumption_cost ?? 0) +
+    Number(totals.other_consumption_cost ?? 0)
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 shadow-sm">
+      <h4 className="font-semibold text-rose-950">Consumption costs (included in total expenses)</h4>
+      <p className="mt-1 mb-3 text-xs text-rose-900/80">
+        Feed and medicine used from pond warehouses, plus shop issues and pond-care products — counted as operating expenses below.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-rose-200/80 bg-white">
+        <table className="min-w-full text-sm">
+          <thead className="bg-rose-50/80">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-rose-900/80">Expense</th>
+              <th className="px-3 py-2 text-right font-medium text-rose-900/80">Amount (BDT)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-rose-100">
+            {rows.map(([label, val]) => (
+              <tr key={label}>
+                <td className="px-3 py-2 text-foreground">{label}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{MoneyBdt(val ?? '0')}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-rose-50/90">
+            <tr>
+              <td className="px-3 py-2 font-bold text-rose-950">Total consumption costs</td>
+              <td className="px-3 py-2 text-right font-bold tabular-nums text-rose-950">{MoneyBdt(String(total))}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 /** Compact list of every expense category with activity in the period. */
 export function PlActiveExpenseCategoriesList({
   categories,

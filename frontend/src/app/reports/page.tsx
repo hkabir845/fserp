@@ -75,6 +75,7 @@ import {
   AquaculturePlCategoryMatrices,
   AquaculturePlExpenseKpiGrid,
   PlActiveExpenseCategoriesList,
+  PlConsumptionCostsExpenses,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   accountsTotalRow,
@@ -8660,6 +8661,7 @@ function renderReportTable(
             {String(data.cycle_scope_note)}
           </div>
         ) : null}
+        <PlConsumptionCostsExpenses totals={t} />
         <AquaculturePlExpenseKpiGrid totals={t} />
         <PlActiveExpenseCategoriesList categories={byCat} />
         <div>

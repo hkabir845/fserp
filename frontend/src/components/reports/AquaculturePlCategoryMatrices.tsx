@@ -735,3 +735,205 @@ export function PlActiveExpenseCategoriesList({
     </div>
   )
 }
+
+export interface PlPondRowLike {
+  pond_id?: number
+  pond_name?: string
+  revenue?: string
+  feed_consumption_cost?: string
+  medicine_consumption_cost?: string
+  other_consumption_cost?: string
+  fry_fingerling_cost?: string
+  lease_cost?: string
+  salaries_and_payroll_cost?: string
+  other_operating_expenses?: string
+  total_costs?: string
+  expense_total?: string
+  profit?: string
+  net_profit?: string
+}
+
+/** Per-pond summary: consumption costs and all other operating expenses. */
+export function PlPondByPondExpenseTable({
+  ponds,
+  totals,
+}: {
+  ponds?: PlPondRowLike[]
+  totals?: PlTotalsLike
+}) {
+  const rows = ponds ?? []
+  if (rows.length === 0) return null
+
+  const columns: { key: keyof PlPondRowLike; label: string; totalKey?: keyof PlTotalsLike }[] = [
+    { key: 'revenue', label: 'Revenue', totalKey: 'revenue' },
+    { key: 'feed_consumption_cost', label: 'Feed consumption', totalKey: 'feed_consumption_cost' },
+    { key: 'medicine_consumption_cost', label: 'Medicine consumption', totalKey: 'medicine_consumption_cost' },
+    { key: 'other_consumption_cost', label: 'Other consumption', totalKey: 'other_consumption_cost' },
+    { key: 'fry_fingerling_cost', label: 'Fry / fingerling', totalKey: 'fry_fingerling_cost' },
+    { key: 'lease_cost', label: 'Lease', totalKey: 'lease_cost' },
+    { key: 'salaries_and_payroll_cost', label: 'Salaries & payroll', totalKey: 'salaries_and_payroll_cost' },
+    { key: 'other_operating_expenses', label: 'Other operating', totalKey: 'other_operating_expenses' },
+    { key: 'total_costs', label: 'Total costs & expenses', totalKey: 'total_costs_and_expenses' },
+    { key: 'net_profit', label: 'Net profit', totalKey: 'net_profit' },
+  ]
+
+  const cellVal = (p: PlPondRowLike, key: keyof PlPondRowLike) => {
+    if (key === 'total_costs') return p.total_costs ?? p.expense_total ?? '0'
+    if (key === 'net_profit') return p.net_profit ?? p.profit ?? '0'
+    return p[key] ?? '0'
+  }
+
+  return (
+    <div>
+      <h4 className="font-semibold text-foreground mb-1">Pond P&amp;L — consumption &amp; all expenses</h4>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Each pond row includes feed and medicine consumption plus every other operating expense in the period.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left font-medium text-muted-foreground">
+                Pond
+              </th>
+              {columns.map((c) => (
+                <th key={c.key} className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/70 bg-white">
+            {rows.map((p) => (
+              <tr key={p.pond_id ?? p.pond_name}>
+                <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-foreground">{p.pond_name}</td>
+                {columns.map((c) => (
+                  <td key={`${p.pond_id}-${c.key}`} className="px-3 py-2 text-right tabular-nums">
+                    {MoneyBdt(cellVal(p, c.key))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+          {totals ? (
+            <tfoot className="bg-muted">
+              <tr>
+                <td className="sticky left-0 z-10 bg-muted px-3 py-2 font-bold text-foreground">Total</td>
+                {columns.map((c) => {
+                  let val = '0'
+                  if (c.totalKey && totals[c.totalKey] != null) val = String(totals[c.totalKey])
+                  else if (c.key === 'total_costs')
+                    val = String(totals.total_costs_and_expenses ?? totals.total_costs ?? '0')
+                  else if (c.key === 'net_profit') val = String(totals.net_profit ?? totals.profit ?? '0')
+                  else if (c.totalKey) val = String(totals[c.totalKey] ?? '0')
+                  return (
+                    <td key={`tot-${c.key}`} className="px-3 py-2 text-right font-bold tabular-nums text-foreground">
+                      {MoneyBdt(val)}
+                    </td>
+                  )
+                })}
+              </tr>
+            </tfoot>
+          ) : null}
+        </table>
+      </div>
+    </div>
+  )
+}
+
+export interface PlMgmtSnapshot {
+  totals?: PlTotalsLike
+  ponds?: PlPondRowLike[]
+  expenses_by_category?: PlCategoryRow[]
+}
+
+function sumEntityMgmtField(rows: Record<string, unknown>[], field: string): string {
+  const total = rows.reduce((s, r) => s + Number(r[field] ?? 0), 0)
+  return String(total)
+}
+
+/** Build aquaculture management snapshot from GL entity rows (fallback when API omits aquaculture_management). */
+export function plMgmtFromEntityRows(rows: Record<string, unknown>[]): PlMgmtSnapshot | null {
+  const pondRows = rows.filter(
+    (r) =>
+      r.management_feed_consumption_bdt != null ||
+      r.management_medicine_consumption_bdt != null ||
+      r.management_other_consumption_bdt != null,
+  )
+  if (pondRows.length === 0) return null
+
+  const ponds: PlPondRowLike[] = pondRows.map((r) => ({
+    pond_id: Number(r.pond_id ?? r.entity_id ?? 0),
+    pond_name: String(r.pond_name ?? r.entity_name ?? ''),
+    revenue: String(r.management_revenue_bdt ?? '0'),
+    feed_consumption_cost: String(r.management_feed_consumption_bdt ?? '0'),
+    medicine_consumption_cost: String(r.management_medicine_consumption_bdt ?? '0'),
+    other_consumption_cost: String(r.management_other_consumption_bdt ?? '0'),
+    other_operating_expenses: String(r.management_other_operating_bdt ?? '0'),
+    total_costs: String(r.management_total_costs_bdt ?? '0'),
+    net_profit: String(r.management_profit_bdt ?? '0'),
+  }))
+
+  return {
+    ponds,
+    totals: {
+      revenue: sumEntityMgmtField(pondRows, 'management_revenue_bdt'),
+      feed_consumption_cost: sumEntityMgmtField(pondRows, 'management_feed_consumption_bdt'),
+      medicine_consumption_cost: sumEntityMgmtField(pondRows, 'management_medicine_consumption_bdt'),
+      other_consumption_cost: sumEntityMgmtField(pondRows, 'management_other_consumption_bdt'),
+      other_operating_expenses: sumEntityMgmtField(pondRows, 'management_other_operating_bdt'),
+      total_costs_and_expenses: sumEntityMgmtField(pondRows, 'management_total_costs_bdt'),
+      net_profit: sumEntityMgmtField(pondRows, 'management_profit_bdt'),
+    },
+  }
+}
+
+export function resolvePlMgmtSnapshot(
+  data: Record<string, unknown> | null | undefined,
+  pondRows?: Record<string, unknown>[],
+): PlMgmtSnapshot | null {
+  const direct = data?.aquaculture_management as PlMgmtSnapshot | undefined
+  if (direct?.totals) return direct
+  const rows = pondRows ?? (data?.ponds as Record<string, unknown>[]) ?? (data?.by_pond as Record<string, unknown>[])
+  return rows?.length ? plMgmtFromEntityRows(rows) : null
+}
+
+/** Same consumption & expense blocks as Aquaculture — Pond P&L, for GL entity reports. */
+export function AquaculturePlConsumptionSection({
+  management,
+  showKpiGrid = true,
+  showCategoryList = true,
+  title,
+}: {
+  management?: PlMgmtSnapshot | null
+  showKpiGrid?: boolean
+  showCategoryList?: boolean
+  title?: string
+}) {
+  if (!management?.totals) return null
+  const totals = management.totals
+  const hasConsumption =
+    Number(totals.feed_consumption_cost ?? 0) !== 0 ||
+    Number(totals.medicine_consumption_cost ?? 0) !== 0 ||
+    Number(totals.other_consumption_cost ?? 0) !== 0
+
+  return (
+    <div className="space-y-6 rounded-xl border border-teal-200 bg-teal-50/30 p-4">
+      {title ? (
+        <div>
+          <h3 className="text-base font-semibold text-teal-950">{title}</h3>
+          <p className="mt-1 text-xs text-teal-900/80">
+            Aquaculture register totals — feed and medicine consumption from pond warehouses, vendor bills, payroll,
+            lease, and all other pond expenses. Same basis as Aquaculture — Pond P&L (may differ from GL above).
+          </p>
+        </div>
+      ) : null}
+      {hasConsumption ? <PlConsumptionCostsExpenses totals={totals} /> : null}
+      <PlPondByPondExpenseTable ponds={management.ponds} totals={totals} />
+      {showKpiGrid ? <AquaculturePlExpenseKpiGrid totals={totals} /> : null}
+      {showCategoryList && (management.expenses_by_category?.length ?? 0) > 0 ? (
+        <PlActiveExpenseCategoriesList categories={management.expenses_by_category} />
+      ) : null}
+    </div>
+  )
+}

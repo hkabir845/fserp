@@ -10,6 +10,10 @@ import {
   type ReportDrillTarget,
 } from '@/components/reports/ReportDrillContext'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+import {
+  AquaculturePlConsumptionSection,
+  resolvePlMgmtSnapshot,
+} from '@/components/reports/AquaculturePlCategoryMatrices'
 import { agingBucketTotalRow } from '@/components/reports/reportDrillAggregate'
 
 type ReportType =
@@ -125,6 +129,16 @@ function entityPlTable(
                         AR {formatCurrency(Number(r.pond_open_ar_bdt ?? 0))} · AP{' '}
                         {formatCurrency(Number(r.pond_open_ap_bdt ?? 0))} · Stock{' '}
                         {formatCurrency(Number(r.pond_warehouse_inventory_value_bdt ?? 0))}
+                      </div>
+                    ) : null}
+                    {entityKind === 'pond' &&
+                    (r.management_feed_consumption_bdt != null ||
+                      r.management_medicine_consumption_bdt != null) ? (
+                      <div className="mt-1 text-xs text-primary">
+                        Mgmt P&amp;L — feed {formatCurrency(Number(r.management_feed_consumption_bdt ?? 0))} · med{' '}
+                        {formatCurrency(Number(r.management_medicine_consumption_bdt ?? 0))} · other cons.{' '}
+                        {formatCurrency(Number(r.management_other_consumption_bdt ?? 0))} · total costs{' '}
+                        {formatCurrency(Number(r.management_total_costs_bdt ?? 0))}
                       </div>
                     ) : null}
                   </td>
@@ -314,6 +328,7 @@ function renderEntitySectionTables(
     stationId?: number | null
     pondId?: number | null
   },
+  reportData?: Record<string, unknown>,
 ) {
   const {
     byFuelStation,
@@ -377,6 +392,12 @@ function renderEntitySectionTables(
         pondsTotal,
         'Total — all ponds',
       )}
+      {kind === 'pl' && byPond.length > 0 ? (
+        <AquaculturePlConsumptionSection
+          management={resolvePlMgmtSnapshot(reportData, byPond)}
+          title="Pond consumption & operating expenses (aquaculture register)"
+        />
+      ) : null}
       {unscoped ? renderSection(`${label} — head office / unassigned`, [unscoped]) : null}
     </>
   )
@@ -749,11 +770,11 @@ export function renderExtraFinancialReport(
         )}
         {isCombined ? (
           <>
-            {renderEntitySectionTables('pl', sections, ctx.onViewEntityPl, ctx.drillScope)}
-            {renderEntitySectionTables('bs', sections, ctx.onViewEntityPl, ctx.drillScope)}
+            {renderEntitySectionTables('pl', sections, ctx.onViewEntityPl, ctx.drillScope, data)}
+            {renderEntitySectionTables('bs', sections, ctx.onViewEntityPl, ctx.drillScope, data)}
           </>
         ) : (
-          renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections, ctx.onViewEntityPl, ctx.drillScope)
+          renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections, ctx.onViewEntityPl, ctx.drillScope, data)
         )}
         {kind === 'pl' && data.segment_totals ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -879,6 +900,12 @@ export function renderExtraFinancialReport(
             {entityPlTable('Shop hubs (no fuel)', shopRows, 'station', ctx.onViewEntityPl, ctx.drillScope)}
           </>
         )}
+        {isPond ? (
+          <AquaculturePlConsumptionSection
+            management={resolvePlMgmtSnapshot(data, rows)}
+            title="Pond consumption & operating expenses (aquaculture register)"
+          />
+        ) : null}
         {segmentPlTotalsCard(
           isPond
             ? 'Total — all ponds'

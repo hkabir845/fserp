@@ -21,6 +21,7 @@ import {
   AquaculturePlExpenseKpiGrid,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
+  PlPondByPondExpenseTable,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   COA_AQ_PROFIT_CLEARING,
@@ -1139,6 +1140,7 @@ export function AquaculturePlManagementPanel({
           </div>
 
           <PlConsumptionCostsExpenses totals={data.totals} />
+          <PlPondByPondExpenseTable ponds={data.ponds} totals={data.totals} />
           <AquaculturePlExpenseKpiGrid totals={data.totals} />
           <PlActiveExpenseCategoriesList categories={expensesByCategory} />
 

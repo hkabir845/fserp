@@ -73,9 +73,12 @@ import {
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import {
   AquaculturePlCategoryMatrices,
+  AquaculturePlConsumptionSection,
   AquaculturePlExpenseKpiGrid,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
+  PlPondByPondExpenseTable,
+  resolvePlMgmtSnapshot,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   accountsTotalRow,
@@ -3187,21 +3190,39 @@ export default function ReportsPage() {
           })
         }
         if (selectedReport === 'aquaculture-pond-pl' && Array.isArray(reportData.ponds)) {
-          csvContent += '\nPond,Revenue,Direct exp,Shared exp,Payroll,Total costs,Profit\n'
+          csvContent +=
+            '\nPond,Revenue,Feed consumption,Medicine consumption,Other consumption,Fry/fingerling,Lease,Salaries & payroll,Other operating,Total costs,Net profit\n'
           ;(reportData.ponds as any[]).forEach((p: any) => {
             csvContent += [
               escapeCsv(p.pond_name),
               p.revenue,
-              p.direct_operating_expenses,
-              p.shared_operating_expenses,
-              p.payroll_allocated,
-              p.total_costs,
-              p.profit,
+              p.feed_consumption_cost ?? '',
+              p.medicine_consumption_cost ?? '',
+              p.other_consumption_cost ?? '',
+              p.fry_fingerling_cost ?? '',
+              p.lease_cost ?? '',
+              p.salaries_and_payroll_cost ?? '',
+              p.other_operating_expenses ?? '',
+              p.total_costs ?? p.expense_total ?? '',
+              p.net_profit ?? p.profit ?? '',
             ].join(',')
             csvContent += '\n'
           })
           const tt = reportData.totals || {}
-          csvContent += `Total,,,,,${tt.total_costs ?? ''},${tt.profit ?? ''}\n`
+          csvContent += [
+            'Total',
+            tt.revenue ?? '',
+            tt.feed_consumption_cost ?? '',
+            tt.medicine_consumption_cost ?? '',
+            tt.other_consumption_cost ?? '',
+            tt.fry_fingerling_cost ?? '',
+            tt.lease_cost ?? '',
+            tt.salaries_and_payroll_cost ?? '',
+            tt.other_operating_expenses ?? '',
+            tt.total_costs_and_expenses ?? tt.total_costs ?? '',
+            tt.net_profit ?? tt.profit ?? '',
+          ].join(',')
+          csvContent += '\n'
         }
         const groupsCsv = buildAquacultureGroupsCsv(reportData as Record<string, unknown>)
         if (groupsCsv) csvContent += `\n${groupsCsv}`
@@ -5165,6 +5186,17 @@ function renderReportTable(
             </p>
           </div>
         )}
+
+        {data.filter_pond_id != null ? (
+          <AquaculturePlConsumptionSection
+            management={resolvePlMgmtSnapshot(data as Record<string, unknown>)}
+            title={
+              data.filter_pond_name
+                ? `Pond consumption & expenses — ${String(data.filter_pond_name)}`
+                : 'Pond consumption & operating expenses (aquaculture register)'
+            }
+          />
+        ) : null}
 
         <div className="space-y-6">
           {blocks.map(({ title, payload, accent }) => (
@@ -8662,6 +8694,7 @@ function renderReportTable(
           </div>
         ) : null}
         <PlConsumptionCostsExpenses totals={t} />
+        <PlPondByPondExpenseTable ponds={ponds} totals={t} />
         <AquaculturePlExpenseKpiGrid totals={t} />
         <PlActiveExpenseCategoriesList categories={byCat} />
         <div>

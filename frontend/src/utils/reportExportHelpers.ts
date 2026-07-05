@@ -410,6 +410,7 @@ export function buildAquaculturePrintHtml(
       'Total revenue (right)',
       'Feed consumed (right)',
       'Medicine consumed (right)',
+      'Other consumption (right)',
       'Fry/fingerling (right)',
       'Lease (right)',
       'Other expenses (right)',
@@ -425,6 +426,7 @@ export function buildAquaculturePrintHtml(
       fmtMoney(p.revenue),
       fmtMoney(p.feed_consumption_cost),
       fmtMoney(p.medicine_consumption_cost),
+      fmtMoney(p.other_consumption_cost),
       fmtMoney(p.fry_fingerling_cost),
       fmtMoney(p.lease_cost),
       fmtMoney(p.other_operating_expenses),
@@ -441,6 +443,7 @@ export function buildAquaculturePrintHtml(
       html += `<p><strong>Total revenue:</strong> ${fmtMoney(totals.revenue)}</p>`
       html += `<p><strong>Total feed consumption:</strong> ${fmtMoney(totals.feed_consumption_cost)}</p>`
       html += `<p><strong>Total medicine consumption:</strong> ${fmtMoney(totals.medicine_consumption_cost)}</p>`
+      html += `<p><strong>Total other consumption:</strong> ${fmtMoney(totals.other_consumption_cost)}</p>`
       html += `<p><strong>Total fry/fingerling:</strong> ${fmtMoney(totals.fry_fingerling_cost)}</p>`
       html += `<p><strong>Total lease:</strong> ${fmtMoney(totals.lease_cost)}</p>`
       html += `<p><strong>Total other expenses:</strong> ${fmtMoney(totals.other_operating_expenses)}</p>`
@@ -608,13 +611,14 @@ export function buildAquaculturePlManagementCsv(payload: {
 }): string {
   let out = `Aquaculture P&L management\nPeriod,${payload.start},${payload.end}\nScope,${payload.plScope}\n\n`
   if (payload.ponds?.length) {
-    out += 'Pond,Revenue,Feed consumption,Medicine consumption,Other expenses,Shared exp,Payroll,Total costs,Profit\n'
+    out += 'Pond,Revenue,Feed consumption,Medicine consumption,Other consumption,Other expenses,Shared exp,Payroll,Total costs,Profit\n'
     payload.ponds.forEach((p) => {
       out += [
         escapeCsvValue(p.pond_name),
         p.revenue ?? '',
         p.feed_consumption_cost ?? '',
         p.medicine_consumption_cost ?? '',
+        p.other_consumption_cost ?? '',
         p.other_operating_expenses ?? '',
         p.shared_operating_expenses ?? '',
         p.payroll_allocated ?? '',
@@ -629,6 +633,7 @@ export function buildAquaculturePlManagementCsv(payload: {
       t.revenue ?? '',
       t.feed_consumption_cost ?? '',
       t.medicine_consumption_cost ?? '',
+      t.other_consumption_cost ?? '',
       t.other_operating_expenses ?? t.operating_expenses ?? '',
       t.shared_operating_expenses ?? '',
       t.payroll_allocated ?? '',

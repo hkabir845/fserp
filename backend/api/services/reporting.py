@@ -1258,6 +1258,9 @@ def report_income_statement(
         out_is["filter_pond_id"] = pond_id
         if pond_name:
             out_is["filter_pond_name"] = pond_name
+        out_is["aquaculture_management"] = _aquaculture_management_snapshot(
+            company_id, start, end, pond_id
+        )
     elif station_id is not None:
         out_is["filter_station_id"] = station_id
     return out_is
@@ -2340,6 +2343,11 @@ def _entity_financial_summary_row(
             p0 = ponds[0]
             row["management_revenue_bdt"] = _f(_d(p0.get("revenue")))
             row["management_profit_bdt"] = _f(_d(p0.get("profit")))
+            row["management_total_costs_bdt"] = _f(_d(p0.get("total_costs")))
+            row["management_feed_consumption_bdt"] = _f(_d(p0.get("feed_consumption_cost")))
+            row["management_medicine_consumption_bdt"] = _f(_d(p0.get("medicine_consumption_cost")))
+            row["management_other_consumption_bdt"] = _f(_d(p0.get("other_consumption_cost")))
+            row["management_other_operating_bdt"] = _f(_d(p0.get("other_operating_expenses")))
     return row
 
 
@@ -2608,6 +2616,11 @@ def _entity_pl_row(row: dict[str, Any]) -> dict[str, Any]:
         if "management_profit_bdt" in row:
             out["management_profit_bdt"] = row["management_profit_bdt"]
         for key in (
+            "management_total_costs_bdt",
+            "management_feed_consumption_bdt",
+            "management_medicine_consumption_bdt",
+            "management_other_consumption_bdt",
+            "management_other_operating_bdt",
             "pond_warehouse_inventory_value_bdt",
             "pond_open_ar_bdt",
             "pond_open_ap_bdt",
@@ -2730,6 +2743,9 @@ def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[
     )
     payload["fuel_stations"] = payload["by_fuel_station"]
     payload["shop_hubs"] = payload["by_shop_hub"]
+    payload["aquaculture_management"] = _aquaculture_management_snapshot(
+        company_id, start, end
+    )
     return payload
 
 
@@ -2811,10 +2827,34 @@ _STATION_PL_EXTRA_KEYS: tuple[str, ...] = (
 _POND_PL_EXTRA_KEYS: tuple[str, ...] = (
     "management_revenue_bdt",
     "management_profit_bdt",
+    "management_total_costs_bdt",
+    "management_feed_consumption_bdt",
+    "management_medicine_consumption_bdt",
+    "management_other_consumption_bdt",
+    "management_other_operating_bdt",
     "pond_warehouse_inventory_value_bdt",
     "pond_open_ar_bdt",
     "pond_open_ap_bdt",
 )
+
+
+def _aquaculture_management_snapshot(
+    company_id: int,
+    start: date,
+    end: date,
+    pond_id: int | None = None,
+) -> dict[str, Any]:
+    """Aquaculture register totals (feed/medicine consumption, vendor bills, payroll, etc.)."""
+    from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+
+    mgmt = compute_aquaculture_pl_summary_dict(
+        company_id, start, end, pond_id, None, None, False
+    )
+    return {
+        "totals": mgmt.get("totals") or {},
+        "ponds": mgmt.get("ponds") or [],
+        "expenses_by_category": mgmt.get("expenses_by_category") or [],
+    }
 
 
 def _station_pl_summary_row(r: dict[str, Any]) -> dict[str, Any]:
@@ -2961,9 +3001,12 @@ def report_ponds_pl_summary(company_id: int, start: date, end: date) -> dict[str
             "Ponds total sums all pond rows; company total is all GL (includes stations and head office). "
             "pond_open_ar_bdt / pond_open_ap_bdt are open balances for the pond POS customer and pond-tagged "
             "vendor bills. pond_warehouse_inventory_value_bdt is feed/medicine/supplies on hand at the pond. "
-            "Management revenue/profit columns are aquaculture register totals in BDT and may differ from GL. "
-            "Use Profit & Loss with Site scope set to a pond for account detail; station P&L is All Stations — P&L Summary."
+            "Management revenue/profit/cost columns are aquaculture register totals in BDT (includes feed and medicine "
+            "consumption, vendor bills, payroll, lease, and all other pond expenses) and may differ from GL. "
+            "The consumption & expense section below matches Aquaculture — Pond P&L. "
+            "Use GL P&L with Site scope = pond for account-level journal lines."
         ),
+        "aquaculture_management": full.get("aquaculture_management"),
     }
 
 
@@ -5954,6 +5997,11 @@ def _financial_analytics_entity_row(
             p0 = ponds[0]
             row["management_revenue_bdt"] = _f(_d(p0.get("revenue")))
             row["management_profit_bdt"] = _f(_d(p0.get("profit")))
+            row["management_total_costs_bdt"] = _f(_d(p0.get("total_costs")))
+            row["management_feed_consumption_bdt"] = _f(_d(p0.get("feed_consumption_cost")))
+            row["management_medicine_consumption_bdt"] = _f(_d(p0.get("medicine_consumption_cost")))
+            row["management_other_consumption_bdt"] = _f(_d(p0.get("other_consumption_cost")))
+            row["management_other_operating_bdt"] = _f(_d(p0.get("other_operating_expenses")))
     else:
         row["station_id"] = station_id
         row["station_name"] = entity_name

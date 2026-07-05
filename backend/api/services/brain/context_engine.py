@@ -9,6 +9,7 @@ from api.services.brain import tools
 from api.services.brain.forecasting import build_forecast_pack
 from api.services.brain.external_knowledge import build_external_comparison_context
 from api.services.brain.global_business_gaps import build_global_business_gap_analysis
+from api.services.brain.handover import build_onboarding_context
 
 
 def build_company_context(
@@ -20,6 +21,8 @@ def build_company_context(
     include_forecast: bool = False,
     include_external: bool = False,
     include_global_gaps: bool = False,
+    include_onboarding: bool = False,
+    brain_user=None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """
     Collect structured business context — delegates to tools.gather_context
@@ -42,6 +45,11 @@ def build_company_context(
         )
     if include_global_gaps:
         context["global_business_gaps"] = build_global_business_gap_analysis(context)
+        context["advisory_mode"] = True
+    if include_onboarding:
+        context["onboarding_pack"] = build_onboarding_context(
+            company_id, question, user=brain_user
+        )
         context["advisory_mode"] = True
     context["analysis_at"] = timezone.now().isoformat()
     return context, refs

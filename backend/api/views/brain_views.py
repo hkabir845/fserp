@@ -8,9 +8,22 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
-from api.models import BrainConversation, BrainInsight, BrainMessage, BrainPrediction, BrainUsageLog, Company
+from api.models import (
+    BrainCompanyDocument,
+    BrainConversation,
+    BrainInsight,
+    BrainMessage,
+    BrainPrediction,
+    BrainUsageLog,
+    Company,
+    Employee,
+    EmployeeHandoverProfile,
+)
 from api.services.brain import chat as brain_chat
 from api.services.brain import plans as brain_plans
+from api.services.brain.audit import log_action
+from api.services.brain.company_documents import list_company_documents, save_company_document
+from api.services.brain.handover import generate_handover_profile, serialize_handover
 from api.services.brain.forecasting import build_forecast_pack, persist_predictions
 from api.services.brain.insights_engine import generate_insights, list_active_insights
 from api.services.brain.security import (
@@ -90,6 +103,8 @@ SUGGESTED_QUESTIONS = [
     {"q": "how will collection follow-up solve my cash problem?", "label_bn": "সমাধান ব্যাখ্যা", "label_en": "How will this solve it?"},
     {"q": "management ekhon ki korbe?", "label_bn": "ম্যানেজমেন্ট কী করবে?", "label_en": "What should management do?"},
     {"q": "purbabhash dio — business continue hole ki hobe", "label_bn": "পূর্বাভাস", "label_en": "Forecast if trend continues"},
+    {"q": "I am worried about my business", "label_bn": "ব্যবসায় চিন্তা", "label_en": "Worried about business"},
+    {"q": "I am new in this role — catch me up", "label_bn": "নতুন পদে হ্যান্ডওভার", "label_en": "New role handover"},
 ]
 
 
@@ -461,3 +476,169 @@ def brain_usage_logs(request):
             ],
         }
     )
+
+
+@csrf_exempt
+@auth_required
+@require_http_methods(["GET", "POST"])
+def brain_documents(request):
+    """GET/POST /api/brain/documents/ — company SOP / process files for Brain."""
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
+    cid = get_company_id(request)
+    err = company_context_error_response(request)
+    if err:
+        return err
+    company_id = int(cid)
+    disabled = _require_brain_enabled(company_id)
+    if disabled:
+        return disabled
+
+    if request.method == "GET":
+        return JsonResponse({"results": list_company_documents(company_id)})
+
+    upload = request.FILES.get("file")
+    if not upload:
+        return JsonResponse({"detail": "file is required."}, status=400)
+    title = (request.POST.get("title") or upload.name or "Document").strip()
+    description = (request.POST.get("description") or "").strip()
+    department = (request.POST.get("department") or "").strip()
+    raw_tags = (request.POST.get("role_tags") or "").strip()
+    role_tags = [t.strip() for t in raw_tags.replace(";", ",").split(",") if t.strip()]
+    user = get_user_from_request(request)
+    try:
+        doc = save_company_document(
+            company_id=company_id,
+            title=title,
+            file_obj=upload,
+            description=description,
+            department=department,
+            role_tags=role_tags,
+            uploaded_by=user,
+        )
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+
+    log_action(
+        action_type="brain_document_upload",
+        description=f"Uploaded Brain document: {doc.title}",
+        company_id=company_id,
+        user_id=user.id if user else None,
+        metadata={"document_id": doc.id},
+    )
+    return JsonResponse(
+        {
+            "id": doc.id,
+            "title": doc.title,
+            "download_url": f"/media/{doc.file_path}",
+        },
+        status=201,
+    )
+
+
+@csrf_exempt
+@auth_required
+@require_http_methods(["DELETE"])
+def brain_document_delete(request, document_id: int):
+    """DELETE /api/brain/documents/<id>/ — soft-delete a company document."""
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
+    cid = get_company_id(request)
+    err = company_context_error_response(request)
+    if err:
+        return err
+    company_id = int(cid)
+    doc = BrainCompanyDocument.objects.filter(pk=document_id, company_id=company_id).first()
+    if not doc:
+        return JsonResponse({"detail": "Document not found."}, status=404)
+    doc.is_active = False
+    doc.save(update_fields=["is_active", "updated_at"])
+    return JsonResponse({"ok": True})
+
+
+@csrf_exempt
+@auth_required
+@require_http_methods(["GET", "POST"])
+def brain_handover_profiles(request):
+    """GET list / POST generate employee handover profiles."""
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
+    cid = get_company_id(request)
+    err = company_context_error_response(request)
+    if err:
+        return err
+    company_id = int(cid)
+    disabled = _require_brain_enabled(company_id)
+    if disabled:
+        return disabled
+
+    if request.method == "GET":
+        qs = (
+            EmployeeHandoverProfile.objects.filter(company_id=company_id)
+            .select_related("employee", "predecessor")
+            .order_by("-updated_at")[:50]
+        )
+        return JsonResponse({"results": [serialize_handover(p) for p in qs]})
+
+    body, err_resp = parse_json_body(request)
+    if err_resp:
+        return err_resp
+    employee_id = body.get("employee_id")
+    if not employee_id:
+        return JsonResponse({"detail": "employee_id is required."}, status=400)
+    employee = Employee.objects.filter(pk=int(employee_id), company_id=company_id).first()
+    if not employee:
+        return JsonResponse({"detail": "Employee not found."}, status=404)
+
+    predecessor = None
+    pred_id = body.get("predecessor_id")
+    if pred_id:
+        predecessor = Employee.objects.filter(pk=int(pred_id), company_id=company_id).first()
+
+    contacts = body.get("contacts_and_channels")
+    if contacts is not None and not isinstance(contacts, list):
+        return JsonResponse({"detail": "contacts_and_channels must be a list."}, status=400)
+
+    user = get_user_from_request(request)
+    profile = generate_handover_profile(
+        employee,
+        predecessor=predecessor,
+        handover_notes_bn=(body.get("handover_notes_bn") or "")[:8000],
+        handover_notes_en=(body.get("handover_notes_en") or "")[:8000],
+        contacts_and_channels=contacts if isinstance(contacts, list) else None,
+        generated_by=user,
+        publish=body.get("publish", True) is not False,
+    )
+    log_action(
+        action_type="handover_generated",
+        description=f"Handover profile for employee {employee.id}",
+        company_id=company_id,
+        user_id=user.id if user else None,
+        metadata={"handover_id": profile.id, "employee_id": employee.id},
+    )
+    return JsonResponse(serialize_handover(profile), status=201)
+
+
+@csrf_exempt
+@auth_required
+@require_GET
+def brain_handover_detail(request, handover_id: int):
+    """GET /api/brain/handover/<id>/"""
+    denied = _brain_access_denied(request)
+    if denied:
+        return denied
+    cid = get_company_id(request)
+    err = company_context_error_response(request)
+    if err:
+        return err
+    profile = (
+        EmployeeHandoverProfile.objects.filter(pk=handover_id, company_id=int(cid))
+        .select_related("employee", "predecessor")
+        .first()
+    )
+    if not profile:
+        return JsonResponse({"detail": "Handover profile not found."}, status=404)
+    return JsonResponse(serialize_handover(profile))

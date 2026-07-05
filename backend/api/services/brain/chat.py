@@ -16,7 +16,7 @@ from api.services.brain.direct_answer import compose_direct_answer
 from api.services.brain.list_requests import detect_list_module
 from api.services.brain.intents import is_conversational_turn, is_greeting_message, wants_benchmark_or_decision_research
 from api.services.brain.question_resolver import is_help_or_howto_question
-from api.services.brain.question_router import route_question, route_to_dict
+from api.services.brain.question_router import TYPE_ONBOARDING, route_question, route_to_dict
 from api.services.brain import prompts as brain_prompts
 from api.services.brain.prompts import get_risky_question_addon
 from api.services.brain import forecasting as brain_forecasting
@@ -383,9 +383,12 @@ def _build_messages(
     conversational: bool = False,
     advisor_mode: str = "manager",
     include_advisory: bool = False,
+    onboarding: bool = False,
     risk_flag: bool = False,
 ) -> list[dict[str, str]]:
-    system = brain_prompts.get_system_prompt(mode=advisor_mode, include_advisory=include_advisory)
+    system = brain_prompts.get_system_prompt(
+        mode=advisor_mode, include_advisory=include_advisory, onboarding=onboarding
+    )
     system += f"\n\n{SYSTEM_PROMPT}"
     if risk_flag:
         system += f"\n\n{brain_prompts.get_risky_question_addon()}"
@@ -437,6 +440,8 @@ def _build_messages(
             payload["EXTERNAL_KNOWLEDGE"] = context["external_knowledge"]
         if context.get("global_business_gaps"):
             payload["GLOBAL_BUSINESS_GAPS"] = context["global_business_gaps"]
+        if context.get("onboarding_pack"):
+            payload["ONBOARDING_PACK"] = context["onboarding_pack"]
     history.append(
         {
             "role": "user",
@@ -540,14 +545,17 @@ def _generate_assistant_reply_inner(
 ) -> tuple[dict[str, Any], str]:
     plan = plans.brain_plan_for_company(company)
     qroute = route_question(user_text, plan=plan)
+    include_onboarding = qroute.question_type == TYPE_ONBOARDING
     context, refs = build_company_context(
         int(company.id),
         user_text,
         context_entity_type=conversation.context_entity_type or "",
         context_entity_id=conversation.context_entity_id,
         include_forecast=qroute.include_forecast,
-        include_external=qroute.include_external,
+        include_external=qroute.include_external or include_onboarding,
         include_global_gaps=qroute.include_global_gaps,
+        include_onboarding=include_onboarding,
+        brain_user=conversation.user,
     )
     context["user_question"] = user_text
     context["question_route"] = route_to_dict(qroute)
@@ -638,6 +646,13 @@ def _generate_assistant_reply_inner(
             "List gaps clearly. If owner asks how something solves their problem — explain step-by-step with "
             "reference/examples. Cite web URLs (kind=web). Never invent ERP numbers."
         )
+    elif qroute.question_type == TYPE_ONBOARDING:
+        web_note = (
+            "ONBOARDING/HANDOVER: Use ONBOARDING_PACK (handover profiles + company SOP documents) "
+            "and ERP_CONTEXT. Help the new/replacement employee catch up like a patient senior colleague. "
+            "Week-one plan, open items, contacts. Ask clarifying questions in missing_inputs. "
+            "Slack/WhatsApp/email are NOT live-connected — only handover contacts_and_channels."
+        )
     elif use_web:
         web_note = (
             "Use live web knowledge to compare the owner's ERP metrics with CURRENT global/regional standards "
@@ -675,7 +690,8 @@ def _generate_assistant_reply_inner(
         context,
         web_note=web_note,
         advisor_mode=qroute.advisor_mode,
-        include_advisory=qroute.include_advisory or qroute.include_global_gaps,
+        include_advisory=qroute.include_advisory or qroute.include_global_gaps or include_onboarding,
+        onboarding=include_onboarding,
         risk_flag=qroute.risk_flag,
     )
     max_tokens = 8192 if use_web else 6144

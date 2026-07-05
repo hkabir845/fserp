@@ -27,6 +27,8 @@ from api.services.brain.intents import (
     is_employee_list_request,
     is_greeting_message,
     is_light_context,
+    is_new_in_role_question,
+    is_owner_concern_question,
     wants_advisory_extras,
     wants_benchmark_or_decision_research,
     wants_execution_actions,
@@ -235,7 +237,9 @@ def gather_context(
     overview, refs = _safe_block("company_overview", company_overview, company_id) or ({}, [])
     if not overview and company:
         overview = {"company_name": company.name, "language": lang}
-    light_context = is_light_context(intents)
+    light_context = is_light_context(intents) and not is_new_in_role_question(
+        message
+    ) and not is_owner_concern_question(message)
 
     business_snapshot: dict[str, Any]
     if light_context:

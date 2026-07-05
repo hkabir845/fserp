@@ -3678,3 +3678,93 @@ class BrainActionLog(models.Model):
         indexes = [
             models.Index(fields=["company", "-created_at"]),
         ]
+
+
+class BrainCompanyDocument(models.Model):
+    """Company SOP / process files for Brain onboarding and role handover."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="brain_documents")
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    department = models.CharField(max_length=120, blank=True, default="")
+    role_tags = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Lowercase role keywords e.g. accountant, pond supervisor.",
+    )
+    file_path = models.CharField(max_length=512)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    content_type = models.CharField(max_length=128, blank=True, default="")
+    file_size = models.PositiveIntegerField(default=0)
+    text_excerpt = models.TextField(blank=True, default="")
+    uploaded_by = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="brain_documents_uploaded",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "brain_company_document"
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["company", "is_active", "-updated_at"]),
+        ]
+
+
+class EmployeeHandoverProfile(models.Model):
+    """Knowledge pack when an employee leaves — helps replacements catch up via Brain."""
+
+    STATUS_DRAFT = "draft"
+    STATUS_PUBLISHED = "published"
+    STATUS_CHOICES = ((STATUS_DRAFT, "Draft"), (STATUS_PUBLISHED, "Published"))
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="employee_handover_profiles")
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="handover_profiles")
+    predecessor = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="successor_handover_profiles",
+        help_text="Employee this role replaced (optional).",
+    )
+    job_title_snapshot = models.CharField(max_length=200, blank=True, default="")
+    department_snapshot = models.CharField(max_length=200, blank=True, default="")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    erp_activity_summary = models.JSONField(default=dict, blank=True)
+    open_items = models.JSONField(default=list, blank=True)
+    week_one_plan_bn = models.JSONField(default=list, blank=True)
+    contacts_and_channels = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='e.g. [{"type":"whatsapp","label":"Pond ops","value":"..."}]',
+    )
+    handover_notes_bn = models.TextField(blank=True, default="")
+    handover_notes_en = models.TextField(blank=True, default="")
+    is_current_for_role = models.BooleanField(
+        default=True,
+        help_text="Latest published handover for this job title (when set).",
+    )
+    generated_by = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="handover_profiles_generated",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "employee_handover_profile"
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["company", "status", "-updated_at"]),
+            models.Index(fields=["company", "employee"]),
+            models.Index(fields=["company", "job_title_snapshot"]),
+        ]

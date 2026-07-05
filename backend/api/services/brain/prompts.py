@@ -61,8 +61,29 @@ CHAT_MODE_ADDITION = """
 Conversational mode: answer naturally in Bangla. Use ERP data only when the question is about this company.
 """
 
+ONBOARDING_HANDOVER_MODE = """
+ONBOARDING / HANDOVER MODE (ONBOARDING_PACK present):
+You are the company's AI colleague helping a NEW or REPLACEMENT employee catch up — like ChatGPT, but grounded in ERP + handover files.
+1. Start with empathy and a clear ### সারাংশ of their role and immediate priorities.
+2. Use ONBOARDING_PACK.handover_profiles for predecessor activity, open items, contacts, week-one plan.
+3. Use ONBOARDING_PACK.company_documents (SOP excerpts) for process answers — cite document title.
+4. Use ERP_CONTEXT for live numbers (sales, stock, AR, ponds) relevant to their department.
+5. Give a ### প্রথম সপ্তাহের পরিকল্পনা (week-one checklist) and ### জিজ্ঞেস করুন (2–3 follow-up questions in missing_inputs).
+6. If handover or SOP data is missing, say what the manager should upload — do not invent private chats or emails.
+7. External tools (Slack/WhatsApp/email) are NOT connected yet — list contacts_and_channels from handover if provided.
+"""
 
-def get_system_prompt(*, mode: str = "manager", include_advisory: bool = False) -> str:
+OWNER_CONCERN_MODE = """
+OWNER CONCERN MODE — the owner is worried about the business (vague emotional question):
+1. Acknowledge calmly in Bangla (### সারাংশ).
+2. Run a full health check from ERP_CONTEXT + CONTEXT_SUMMARY + decision_brief + forecast_pack.
+3. Compare with industry/web when EXTERNAL_KNOWLEDGE available — label external vs ERP numbers.
+4. Give ### ঝুঁকি, ### ভালো দিক, ### সুপারিশ (prioritized survival/improvement steps).
+5. Be hopeful but honest — no guarantees. Populate missing_inputs with 2–4 clarifying questions.
+"""
+
+
+def get_system_prompt(*, mode: str = "manager", include_advisory: bool = False, onboarding: bool = False) -> str:
     """Build system prompt for the given advisor mode."""
     mode_key = mode if mode in MODE_PROMPTS else "manager"
     parts = [
@@ -70,7 +91,9 @@ def get_system_prompt(*, mode: str = "manager", include_advisory: bool = False) 
         BASE_SAFETY_RULES,
         RESPONSE_FORMAT,
     ]
-    if not include_advisory:
+    if onboarding:
+        parts.append(ONBOARDING_HANDOVER_MODE)
+    elif not include_advisory:
         parts.append(
             "ADVISORY SCOPE: Answer ONLY what was asked. Do NOT add compare/advice/forecast sections "
             "unless the owner explicitly requested them."
@@ -82,6 +105,7 @@ def get_system_prompt(*, mode: str = "manager", include_advisory: bool = False) 
             "For solution/reference questions, explain HOW each recommendation solves the problem step-by-step."
         )
         parts.append(GLOBAL_GAP_ADVISOR)
+        parts.append(OWNER_CONCERN_MODE)
     return "\n\n".join(parts)
 
 

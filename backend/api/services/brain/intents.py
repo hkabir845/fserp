@@ -239,6 +239,82 @@ def is_business_overview_question(message: str) -> bool:
     return any(k in lower for k in keywords)
 
 
+def is_new_in_role_question(message: str) -> bool:
+    """Replacement / onboarding — needs handover pack + company documents."""
+    lower = (message or "").lower()
+    keywords = (
+        "new in role",
+        "new in this role",
+        "new to the role",
+        "new employee",
+        "new hire",
+        "just joined",
+        "just started",
+        "replace",
+        "replacing",
+        "replaced",
+        "catch me up",
+        "catch up",
+        "cop up",
+        "handover",
+        "hand over",
+        "previous person",
+        "who left",
+        "successor",
+        "onboarding",
+        "orientation",
+        "নতুন কর্মী",
+        "নতুন পদে",
+        "নতুন চাকরি",
+        "হ্যান্ডওভার",
+        "হ্যাণ্ডওভার",
+        "আগের",
+        "পূর্বসূরী",
+        "replace kor",
+        "position e new",
+        "role e new",
+        "ki korbo ekhon",
+        "kivabe shuru",
+    )
+    return any(k in lower for k in keywords)
+
+
+def is_owner_concern_question(message: str) -> bool:
+    """Vague worry about business — full diagnostic + advice + follow-up questions."""
+    lower = (message or "").lower()
+    keywords = (
+        "worried",
+        "worry",
+        "anxious",
+        "stressed",
+        "struggling",
+        "survive",
+        "survival",
+        "bachate",
+        "bachano",
+        "banchbe",
+        "going to fail",
+        "business failing",
+        "save my business",
+        "chinta",
+        "chintay",
+        "u das",
+        "dukkhito",
+        "bhoy",
+        "আমি চিন্তিত",
+        "চিন্তায়",
+        "চিন্তিত",
+        "উদ্বিগ্ন",
+        "ব্যবসা বাঁচ",
+        "টিকে থাক",
+        "সমস্যায়",
+        "কষ্টে",
+        "obostha kharap",
+        "business kharap",
+    )
+    return any(k in lower for k in keywords)
+
+
 def is_light_context(intents: set[str]) -> bool:
     """Greeting, casual chat, or high-level company talk — skip heavy ERP snapshot."""
     if intents == {"greeting"} or intents == {"chat"}:

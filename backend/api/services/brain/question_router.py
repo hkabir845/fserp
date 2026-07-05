@@ -9,6 +9,8 @@ from api.services.brain.intents import (
     detect_intents,
     is_conversational_turn,
     is_greeting_message,
+    is_new_in_role_question,
+    is_owner_concern_question,
     wants_advisory_extras,
     wants_benchmark_or_decision_research,
 )
@@ -29,6 +31,7 @@ TYPE_RISKY = "risky"
 TYPE_CONVERSATIONAL = "conversational"
 TYPE_GREETING = "greeting"
 TYPE_LIST = "list"
+TYPE_ONBOARDING = "onboarding"
 
 _FORECAST_RE = re.compile(
     r"(forecast|predict|projection|purbabhash|পূর্বাভাস|ভবিষ্য|what\s+may\s+happen|"
@@ -110,6 +113,11 @@ def classify_question(text: str, *, intents: list[str] | None = None) -> str:
         return TYPE_LIST
 
     intent_set = set(intents or detect_intents(q))
+
+    if is_new_in_role_question(q):
+        return TYPE_ONBOARDING
+    if is_owner_concern_question(q):
+        return TYPE_ADVISORY
 
     if is_conversational_turn(intent_set) and not intent_set - {"chat", "greeting", "help"}:
         return TYPE_CONVERSATIONAL
@@ -193,6 +201,21 @@ def route_question(
             risk_flag=False,
         )
 
+    if qtype == TYPE_ONBOARDING:
+        use_research = plan in ("growth", "enterprise")
+        return QuestionRoute(
+            question_type=qtype,
+            advisor_mode="hr" if mode == "manager" else mode,
+            use_llm=True,
+            model_role="research" if use_research else "reasoning",
+            include_forecast=False,
+            include_external=True,
+            include_advisory=True,
+            include_global_gaps=False,
+            direct_answer_first=False,
+            risk_flag=False,
+        )
+
     if qtype == TYPE_RISKY:
         return QuestionRoute(
             question_type=qtype,
@@ -214,7 +237,7 @@ def route_question(
         TYPE_ADVISORY,
         TYPE_FORECASTING,
         TYPE_REPORT,
-    ) or wants_global_gap_analysis(q) or wants_solution_explanation(q)
+    ) or wants_global_gap_analysis(q) or wants_solution_explanation(q) or is_owner_concern_question(q)
 
     use_research = qtype in (
         TYPE_EXTERNAL_COMPARE,
@@ -231,12 +254,14 @@ def route_question(
         advisor_mode=mode,
         use_llm=True,
         model_role=model_role,
-        include_forecast=qtype in (TYPE_FORECASTING, TYPE_ADVISORY, TYPE_REPORT, TYPE_GAP_ANALYSIS),
+        include_forecast=qtype in (TYPE_FORECASTING, TYPE_ADVISORY, TYPE_REPORT, TYPE_GAP_ANALYSIS)
+        or is_owner_concern_question(q),
         include_external=needs_global,
         include_advisory=qtype
         in (TYPE_ADVISORY, TYPE_ACTION, TYPE_FORECASTING, TYPE_REPORT, TYPE_GAP_ANALYSIS, TYPE_SOLUTION_EXPLAIN, TYPE_EXTERNAL_COMPARE)
         or wants_advisory_extras(q)
-        or wants_solution_explanation(q),
+        or wants_solution_explanation(q)
+        or is_owner_concern_question(q),
         include_global_gaps=needs_global,
         direct_answer_first=qtype in (TYPE_SIMPLE_DATA, TYPE_ANALYTICAL) and not wants_solution_explanation(q),
         risk_flag=qtype == TYPE_RISKY,

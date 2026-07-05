@@ -18,7 +18,7 @@ import {
   getCurrentUserPermissions,
   hasPermission,
 } from '@/utils/rbac'
-import api from '@/lib/api'
+import api, { getApiBaseUrl } from '@/lib/api'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
 import { formatAmountPlain, formatCurrency, formatNumber } from '@/utils/formatting'
 import { escapeHtml, printDocument } from '@/utils/printDocument'
@@ -74,7 +74,7 @@ import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import {
   AquaculturePlCategoryMatrices,
   AquaculturePlConsumptionSection,
-  AquaculturePlExpenseKpiGrid,
+  AquaculturePlNetSummary,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
   PlPondByPondExpenseTable,
@@ -92,12 +92,13 @@ import {
 import {
   buildAquacultureGroupsCsv,
   buildAquaculturePrintHtml,
+  buildFeedMedicineConsumptionCsv,
   buildExtraFinancialPrintHtml,
   buildExtraFinancialReportCsv,
   buildGenericPrintHtml,
   buildGenericTabularCsv,
 } from '@/utils/reportExportHelpers'
-import { getApiBaseUrl } from '@/lib/api'
+import { AquacultureFeedMedicineConsumptionPanel } from '@/app/reports/aquaculture/AquacultureFeedMedicineConsumptionPanel'
 import { extractErrorMessage } from '@/utils/errorHandler'
 
 const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>(['sales-report', 'purchase-report'])
@@ -663,18 +664,18 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
-    id: 'aquaculture-expenses',
-    title: 'Aquaculture — Expense register',
-    description: 'Operating expenses by pond and shared allocations with sub-totals (BDT)',
-    icon: Fish,
-    category: 'aquaculture',
-  },
-  {
     id: 'aquaculture-feed-medicine-consumption',
     title: 'Aquaculture — Feed & medicine consumption',
     description:
       'Feed and medicine used from pond warehouses in the period — quantities, cost per entry, and totals by pond (BDT)',
     icon: Package,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-expenses',
+    title: 'Aquaculture — Expense register',
+    description: 'Operating expenses by pond and shared allocations with sub-totals (BDT)',
+    icon: Fish,
     category: 'aquaculture',
   },
   {
@@ -3224,7 +3225,10 @@ export default function ReportsPage() {
           ].join(',')
           csvContent += '\n'
         }
-        const groupsCsv = buildAquacultureGroupsCsv(reportData as Record<string, unknown>)
+        const groupsCsv =
+          selectedReport === 'aquaculture-feed-medicine-consumption'
+            ? buildFeedMedicineConsumptionCsv(reportData as Record<string, unknown>)
+            : buildAquacultureGroupsCsv(reportData as Record<string, unknown>)
         if (groupsCsv) csvContent += `\n${groupsCsv}`
         if (selectedReport === 'aquaculture-pond-sales-comprehensive' && reportData && typeof reportData === 'object') {
           const rd = reportData as Record<string, unknown>
@@ -5189,11 +5193,13 @@ function renderReportTable(
 
         {data.filter_pond_id != null ? (
           <AquaculturePlConsumptionSection
-            management={resolvePlMgmtSnapshot(data as Record<string, unknown>)}
-            title={
-              data.filter_pond_name
-                ? `Pond consumption & expenses — ${String(data.filter_pond_name)}`
-                : 'Pond consumption & operating expenses (aquaculture register)'
+            management={resolvePlMgmtSnapshot(
+              data as Record<string, unknown>,
+              undefined,
+              Number(data.filter_pond_id),
+            )}
+            entityName={
+              typeof data.filter_pond_name === 'string' ? String(data.filter_pond_name) : undefined
             }
           />
         ) : null}
@@ -8693,9 +8699,22 @@ function renderReportTable(
             {String(data.cycle_scope_note)}
           </div>
         ) : null}
+        <AquaculturePlNetSummary
+          totals={t}
+          entityName={
+            ponds.length === 1
+              ? ponds[0]?.pond_name
+              : data.pond_scope_id
+                ? scopeLabels?.ponds?.find((p) => p.id === Number(data.pond_scope_id))?.name ??
+                  `Pond #${data.pond_scope_id}`
+                : scopeLabels?.aquaculturePondId
+                  ? scopeLabels.ponds?.find((p) => p.id === Number(scopeLabels.aquaculturePondId))?.name ??
+                    null
+                  : null
+          }
+        />
         <PlConsumptionCostsExpenses totals={t} />
-        <PlPondByPondExpenseTable ponds={ponds} totals={t} />
-        <AquaculturePlExpenseKpiGrid totals={t} />
+        {ponds.length !== 1 ? <PlPondByPondExpenseTable ponds={ponds} totals={t} /> : null}
         <PlActiveExpenseCategoriesList categories={byCat} />
         <div>
           <AquaculturePlCategoryMatrices
@@ -8995,107 +9014,28 @@ function renderReportTable(
     data &&
     Array.isArray(data.groups)
   ) {
-    const period = data.period || {}
-    const groups: any[] = data.groups
-    const totals = data.totals || {}
-    const summary = data.summary || {}
+    const pondName =
+      data.filter_pond_id != null
+        ? scopeLabels?.ponds?.find((p) => p.id === Number(data.filter_pond_id))?.name ??
+          (typeof data.filter_pond_name === 'string' ? data.filter_pond_name : null)
+        : null
     return (
-      <div className="space-y-8">
-        {hasPeriod &&
+      <AquacultureFeedMedicineConsumptionPanel
+        data={data as Record<string, unknown>}
+        hasPeriod={hasPeriod}
+        renderPeriodFilter={(props) =>
           renderPeriodFilter(
-            period,
-            dateRange,
-            reportType,
+            props.period,
+            props.dateRange,
+            props.reportType as ReportType,
             handleReportDateChange,
-            'Consumption date within this range. Use Pond filter for one pond or leave empty for all ponds.'
-          )}
-        <p className="text-sm font-medium text-foreground/85">
-          Feed and medicine consumed from pond warehouses — costs in <strong>BDT</strong> at inventory value when
-          used.
-        </p>
-        {data.accounting_note ? (
-          <p className="text-xs text-muted-foreground">{data.accounting_note}</p>
-        ) : null}
-        {groups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No feed or medicine consumption in this period.</p>
-        ) : (
-          groups.map((g: any) => (
-            <div
-              key={`fmc-${g.pond_id}`}
-              className="rounded-lg border border-border bg-white shadow-sm"
-            >
-              <div className="border-b border-border/70 bg-cyan-50/80 px-4 py-2">
-                <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
-              </div>
-              <div className="overflow-x-auto p-2">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-xs text-muted-foreground">
-                      <th className="px-2 py-1">Date</th>
-                      <th className="px-2 py-1">Type</th>
-                      <th className="px-2 py-1">Item</th>
-                      <th className="px-2 py-1 text-right">Qty</th>
-                      <th className="px-2 py-1 text-right">Feed (kg)</th>
-                      <th className="px-2 py-1 text-right">Cost (BDT)</th>
-                      <th className="px-2 py-1">Source / memo</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/70">
-                    {(g.lines || []).map((ln: any) => (
-                      <tr key={ln.id}>
-                        <td className="px-2 py-1.5 whitespace-nowrap">{ln.entry_date}</td>
-                        <td className="px-2 py-1.5">{ln.kind_label || ln.kind}</td>
-                        <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          {ln.quantity != null ? `${ln.quantity}${ln.unit ? ` ${ln.unit}` : ''}` : '—'}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          {ln.feed_weight_kg ? Number(ln.feed_weight_kg).toLocaleString() : '—'}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
-                        <td className="px-2 py-1.5 text-muted-foreground">
-                          {ln.source_doc || ln.memo || '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-muted/40">
-                    <tr>
-                      <td colSpan={5} className="px-2 py-2 text-right text-xs font-semibold text-foreground">
-                        Sub-total — {g.pond_name}
-                      </td>
-                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-foreground">
-                        {MoneyBdt(g.subtotal_amount)}
-                      </td>
-                      <td className="px-2 py-2 text-right text-xs text-muted-foreground">
-                        Feed {MoneyBdt(g.subtotal_feed_amount)} · Medicine {MoneyBdt(g.subtotal_medicine_amount)}
-                        {g.subtotal_feed_kg && Number(g.subtotal_feed_kg) > 0
-                          ? ` · ${Number(g.subtotal_feed_kg).toLocaleString()} kg feed`
-                          : ''}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          ))
-        )}
-        <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3 space-y-2">
-          <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-foreground">
-            <span>{pondTotal(groups.length === 1 ? groups[0]?.pond_name : null)}</span>
-            <span className="tabular-nums">{MoneyBdt(totals.total_amount)}</span>
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-            <span>Feed: {MoneyBdt(totals.total_feed_amount)}</span>
-            <span>Medicine: {MoneyBdt(totals.total_medicine_amount)}</span>
-            {totals.total_feed_kg && Number(totals.total_feed_kg) > 0 ? (
-              <span>Feed weight: {Number(totals.total_feed_kg).toLocaleString()} kg</span>
-            ) : null}
-            <span>{summary.line_count ?? totals.line_count ?? 0} consumption line(s)</span>
-          </div>
-        </div>
-        {renderAquacultureFcrBlock(data)}
-      </div>
+            props.hint,
+          )
+        }
+        reportType={reportType}
+        dateRange={dateRange}
+        pondScopeLabel={pondName}
+      />
     )
   }
 

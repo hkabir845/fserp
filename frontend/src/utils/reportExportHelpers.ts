@@ -291,6 +291,41 @@ function lineToCsvCells(line: Record<string, unknown>): string[] {
   return cells
 }
 
+/** Feed & medicine consumption report — one row per consumption line. */
+export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): string {
+  const groups = Array.isArray(data.groups) ? (data.groups as Record<string, unknown>[]) : []
+  if (!groups.length) return ''
+  let out =
+    'Pond,Date,Type,Item,Quantity,Unit,Feed kg,Cost BDT,Source,Memo\n'
+  groups.forEach((g) => {
+    const pond = String(g.pond_name ?? '')
+    const lines = Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []
+    lines.forEach((ln) => {
+      out += [
+        escapeCsvValue(pond),
+        escapeCsvValue(ln.entry_date),
+        escapeCsvValue(ln.kind_label ?? ln.kind),
+        escapeCsvValue(ln.item_name),
+        escapeCsvValue(ln.quantity),
+        escapeCsvValue(ln.unit),
+        escapeCsvValue(ln.feed_weight_kg),
+        escapeCsvValue(ln.amount),
+        escapeCsvValue(ln.source_doc),
+        escapeCsvValue(ln.memo),
+      ].join(',')
+      out += '\n'
+    })
+    if (g.subtotal_amount != null) {
+      out += `${escapeCsvValue(pond)},,,,,,Subtotal,${g.subtotal_amount},Feed ${g.subtotal_feed_amount ?? ''} · Med ${g.subtotal_medicine_amount ?? ''},\n`
+    }
+  })
+  const totals = (data.totals as Record<string, unknown>) ?? {}
+  if (totals.total_amount != null) {
+    out += `\nGrand total,,,,,,,${totals.total_amount},Feed ${totals.total_feed_amount ?? ''} · Med ${totals.total_medicine_amount ?? ''},\n`
+  }
+  return out
+}
+
 /** Flatten aquaculture `groups[].lines[]` into readable CSV (not JSON blobs). */
 export function buildAquacultureGroupsCsv(data: Record<string, unknown>): string {
   const groups = Array.isArray(data.groups) ? (data.groups as Record<string, unknown>[]) : []
@@ -451,6 +486,39 @@ export function buildAquaculturePrintHtml(
       html += `<p><strong>Total profit:</strong> ${fmtMoney(totals.profit)}</p></div>`
     }
     return html
+  }
+
+  if (reportId === 'aquaculture-feed-medicine-consumption' && Array.isArray(data.groups)) {
+    const groups = data.groups as Record<string, unknown>[]
+    const headers = ['Date', 'Type', 'Item', 'Qty', 'Feed kg', 'Cost BDT', 'Source / memo']
+    let html = ''
+    groups.forEach((g) => {
+      const pond = String(g.pond_name ?? '')
+      const lines = Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []
+      const rows = lines.map((ln) => [
+        String(ln.entry_date ?? ''),
+        String(ln.kind_label ?? ln.kind ?? ''),
+        String(ln.item_name ?? ''),
+        ln.quantity != null ? `${ln.quantity}${ln.unit ? ` ${ln.unit}` : ''}` : '',
+        String(ln.feed_weight_kg ?? ''),
+        fmtMoney(ln.amount),
+        String(ln.source_doc ?? ln.memo ?? ''),
+      ])
+      html += htmlTable(`Feed & medicine — ${pond}`, headers, rows)
+      if (g.subtotal_amount != null) {
+        html += `<p><strong>Subtotal:</strong> ${fmtMoney(g.subtotal_amount)} (Feed ${fmtMoney(g.subtotal_feed_amount)} · Medicine ${fmtMoney(g.subtotal_medicine_amount)})</p>`
+      }
+    })
+    const totals = (data.totals as Record<string, unknown>) ?? {}
+    if (totals.total_amount != null) {
+      html += `<div class="summary"><p><strong>Grand total:</strong> ${fmtMoney(totals.total_amount)}</p>`
+      html += `<p>Feed: ${fmtMoney(totals.total_feed_amount)} · Medicine: ${fmtMoney(totals.total_medicine_amount)}`
+      if (totals.total_feed_kg != null) {
+        html += ` · Feed weight: ${escapeHtml(String(totals.total_feed_kg))} kg`
+      }
+      html += '</p></div>'
+    }
+    return html || null
   }
 
   if (Array.isArray(data.groups)) {

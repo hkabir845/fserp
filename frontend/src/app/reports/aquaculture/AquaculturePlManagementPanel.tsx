@@ -18,7 +18,7 @@ import {
 } from '@/utils/reportExportHelpers'
 import {
   AquaculturePlCategoryMatrices,
-  AquaculturePlExpenseKpiGrid,
+  AquaculturePlNetSummary,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
   PlPondByPondExpenseTable,
@@ -1120,28 +1120,21 @@ export function AquaculturePlManagementPanel({
               {data.inter_pond_fish_transfer_note}
             </div>
           )}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-            {[
-              ['Fish sales', data.totals.revenue_fish_sales ?? '0'],
-              ['Empty sacks', data.totals.revenue_empty_sack_sales ?? '0'],
-              ['Other income', data.totals.revenue_other_income ?? '0'],
-              ['Total revenue', data.totals.revenue],
-              ['Total costs & expenses', data.totals.total_costs_and_expenses ?? data.totals.total_costs],
-              ['Net profit', data.totals.net_profit ?? data.totals.profit],
-            ].map(([label, val]) => (
-              <div key={label} className="rounded-xl border border-border bg-white p-4 shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
-                  {sym}
-                  {formatNumber(Number(val))}
-                </p>
-              </div>
-            ))}
-          </div>
+          <AquaculturePlNetSummary
+            totals={data.totals}
+            entityName={
+              pondId
+                ? data.ponds.find((p) => String(p.pond_id) === pondId)?.pond_name ?? `Pond #${pondId}`
+                : data.ponds.length === 1
+                  ? data.ponds[0]?.pond_name
+                  : null
+            }
+          />
 
           <PlConsumptionCostsExpenses totals={data.totals} />
-          <PlPondByPondExpenseTable ponds={data.ponds} totals={data.totals} />
-          <AquaculturePlExpenseKpiGrid totals={data.totals} />
+          {data.ponds.length !== 1 ? (
+            <PlPondByPondExpenseTable ponds={data.ponds} totals={data.totals} />
+          ) : null}
           <PlActiveExpenseCategoriesList categories={expensesByCategory} />
 
           <div>

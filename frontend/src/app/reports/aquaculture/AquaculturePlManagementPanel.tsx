@@ -18,11 +18,13 @@ import {
   buildAquaculturePlManagementPrintHtml,
 } from '@/utils/reportExportHelpers'
 import {
+  AquaculturePlBottomLine,
   AquaculturePlCategoryMatrices,
   AquaculturePlNetSummary,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
   PlPondByPondExpenseTable,
+  resolveAquaculturePlFigures,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
   COA_AQ_PROFIT_CLEARING,
@@ -1230,6 +1232,12 @@ export function AquaculturePlManagementPanel({
               />
             </div>
           </div>
+
+          {data.totals ? (
+            <AquaculturePlBottomLine
+              {...resolveAquaculturePlFigures(data.totals, expensesByCategory)}
+            />
+          ) : null}
 
           {(data.pond_cycle_segments?.length ?? 0) > 0 && (
             <div>

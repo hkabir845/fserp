@@ -661,6 +661,26 @@ export function resolveAquaculturePlFigures(
   return { income, expenses, netProfit: income - expenses }
 }
 
+/** Footer: Total income − Total expenses = Net profit */
+export function AquaculturePlBottomLine({
+  income,
+  expenses,
+  netProfit,
+}: {
+  income: number
+  expenses: number
+  netProfit: number
+}) {
+  return (
+    <div className="rounded-lg border-2 border-primary/30 bg-primary/5 px-4 py-4 text-center">
+      <p className="text-sm font-semibold text-foreground tabular-nums">
+        Total income ({MoneyBdt(income)}) − Total expenses ({MoneyBdt(expenses)}) = Net profit (
+        <span className={netProfit >= 0 ? 'text-primary' : 'text-destructive'}>{MoneyBdt(netProfit)}</span>)
+      </p>
+    </div>
+  )
+}
+
 /** Simple P&L summary: Income − Expenses = Net profit (expenses include feed, medicine, and all costs). */
 export function AquaculturePlNetSummary({
   totals,
@@ -1327,6 +1347,11 @@ export function AquaculturePlConsumptionSection({
           }
         />
       ) : null}
+      <AquaculturePlBottomLine
+        income={plFigures.income}
+        expenses={plFigures.expenses}
+        netProfit={plFigures.netProfit}
+      />
     </div>
   )
 }

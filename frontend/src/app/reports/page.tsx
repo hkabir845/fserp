@@ -74,12 +74,14 @@ import {
 } from '@/components/reports/ReportDrillContext'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import {
+  AquaculturePlBottomLine,
   AquaculturePlCategoryMatrices,
   AquaculturePlNetSummary,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
   PlPondByPondExpenseTable,
   PondScopedAquaculturePlBlock,
+  resolveAquaculturePlFigures,
   resolveEffectiveReportPondScope,
   resolvePlMgmtSnapshot,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
@@ -101,6 +103,15 @@ import {
   buildGenericPrintHtml,
   buildGenericTabularCsv,
 } from '@/utils/reportExportHelpers'
+import {
+  buildAquaculturePlRegisterCsv,
+  buildAquaculturePlRegisterPrintHtml,
+  buildAquaculturePlBottomLineCsv,
+  buildGlIncomeStatementBottomLine,
+  enrichReportDataForExport,
+  getAquaculturePlExportFigures,
+  pondRowNetProfit,
+} from '@/utils/aquaculturePlExport'
 import { AquacultureFeedMedicineConsumptionPanel } from '@/app/reports/aquaculture/AquacultureFeedMedicineConsumptionPanel'
 import { extractErrorMessage } from '@/utils/errorHandler'
 
@@ -1403,6 +1414,16 @@ function getReportScopeForExport(
   return site ? { ...site, prefix: 'Site scope' } : null
 }
 
+function getReportExportPondScope(
+  reportData: Record<string, unknown> | null | undefined,
+  reportStationId: string,
+  ponds: { id: number; name: string }[],
+): { pondId: number | null; pondName: string | null } {
+  const site = parseReportSiteScopeKey(reportStationId)
+  const sitePondId = site.kind === 'pond' ? site.id : null
+  return resolveEffectiveReportPondScope(reportData, sitePondId, ponds)
+}
+
 export default function ReportsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -2412,21 +2433,40 @@ export default function ReportsPage() {
         }
       })
     } else if (selectedReport === 'income-statement') {
-      const sections = [
-        { title: 'Income', data: reportData.income },
-        { title: 'Cost of Goods Sold', data: reportData.cost_of_goods_sold },
-        { title: 'Expenses', data: reportData.expenses }
-      ]
-      sections.forEach(section => {
-        if (section.data?.accounts?.length > 0) {
-          contentHTML += `<h2>${section.title}</h2><p><strong>Total: ${formatCurrency(section.data.total || 0)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
-          section.data.accounts.forEach((acc: any) => {
-            contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
-          })
-          contentHTML += `<tfoot><tr><td colspan="2"><strong>Sub-total — ${section.title}</strong></td><td style="text-align:right"><strong>${formatCurrency(section.data.total || 0)}</strong></td></tr></tfoot></tbody></table>`
-        }
-      })
-      contentHTML += `<div class="summary"><h2>Summary</h2><p><strong>Gross Profit:</strong> ${formatCurrency(reportData.gross_profit || 0)}</p><p><strong>Net Income:</strong> ${formatCurrency(reportData.net_income || 0)}</p></div>`
+      const { pondId, pondName } = getReportExportPondScope(
+        reportData as Record<string, unknown>,
+        reportStationId,
+        aquaculturePonds,
+      )
+      const aqFigures = getAquaculturePlExportFigures(
+        reportData as Record<string, unknown>,
+        pondId,
+        undefined,
+        pondName,
+      )
+      if (aqFigures && pondId != null) {
+        contentHTML += buildAquaculturePlRegisterPrintHtml(aqFigures)
+      } else {
+        const sections = [
+          { title: 'Income', data: reportData.income },
+          { title: 'Cost of Goods Sold', data: reportData.cost_of_goods_sold },
+          { title: 'Expenses', data: reportData.expenses },
+        ]
+        sections.forEach((section) => {
+          if (section.data?.accounts?.length > 0) {
+            contentHTML += `<h2>${section.title}</h2><p><strong>Total: ${formatCurrency(section.data.total || 0)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
+            section.data.accounts.forEach((acc: any) => {
+              contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
+            })
+            contentHTML += `<tfoot><tr><td colspan="2"><strong>Sub-total — ${section.title}</strong></td><td style="text-align:right"><strong>${formatCurrency(section.data.total || 0)}</strong></td></tr></tfoot></tbody></table>`
+          }
+        })
+        const income = Number(reportData.income?.total ?? 0)
+        const cogs = Number(reportData.cost_of_goods_sold?.total ?? 0)
+        const opExp = Number(reportData.expenses?.total ?? 0)
+        const net = Number(reportData.net_income ?? income - cogs - opExp)
+        contentHTML += buildGlIncomeStatementBottomLine(income, cogs, opExp, net).printHtml
+      }
     } else if (selectedReport === 'liabilities-detail' && reportData.accounts) {
       contentHTML +=
         '<h2>Liabilities (GL)</h2><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th style="text-align:right">Balance</th><th>Account id</th></tr></thead><tbody>'
@@ -2776,7 +2816,18 @@ export default function ReportsPage() {
     }`
     
     if (format === 'json') {
-      const dataStr = JSON.stringify(reportData, null, 2)
+      const { pondId, pondName } = getReportExportPondScope(
+        reportData as Record<string, unknown>,
+        reportStationId,
+        aquaculturePonds,
+      )
+      const enriched = enrichReportDataForExport(
+        selectedReport,
+        reportData as Record<string, unknown>,
+        pondId,
+        pondName,
+      )
+      const dataStr = JSON.stringify(enriched, null, 2)
       const dataBlob = new Blob([dataStr], { type: 'application/json' })
       const url = URL.createObjectURL(dataBlob)
       const link = document.createElement('a')
@@ -3101,24 +3152,42 @@ export default function ReportsPage() {
           })
         }
       } else if (selectedReport === 'income-statement') {
-        csvContent += 'Section,Account Code,Account Name,Balance\n'
-        if (reportData.income?.accounts) {
-          reportData.income.accounts.forEach((acc: any) => {
-            csvContent += `Income,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
-          })
+        const { pondId, pondName } = getReportExportPondScope(
+          reportData as Record<string, unknown>,
+          reportStationId,
+          aquaculturePonds,
+        )
+        const aqFigures = getAquaculturePlExportFigures(
+          reportData as Record<string, unknown>,
+          pondId,
+          undefined,
+          pondName,
+        )
+        if (aqFigures && pondId != null) {
+          csvContent += buildAquaculturePlRegisterCsv(aqFigures)
+        } else {
+          csvContent += 'Section,Account Code,Account Name,Balance\n'
+          if (reportData.income?.accounts) {
+            reportData.income.accounts.forEach((acc: any) => {
+              csvContent += `Income,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
+            })
+          }
+          if (reportData.cost_of_goods_sold?.accounts) {
+            reportData.cost_of_goods_sold.accounts.forEach((acc: any) => {
+              csvContent += `Cost of Goods Sold,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
+            })
+          }
+          if (reportData.expenses?.accounts) {
+            reportData.expenses.accounts.forEach((acc: any) => {
+              csvContent += `Expenses,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
+            })
+          }
+          const income = Number(reportData.income?.total ?? 0)
+          const cogs = Number(reportData.cost_of_goods_sold?.total ?? 0)
+          const opExp = Number(reportData.expenses?.total ?? 0)
+          const net = Number(reportData.net_income ?? income - cogs - opExp)
+          csvContent += buildGlIncomeStatementBottomLine(income, cogs, opExp, net).csv
         }
-        if (reportData.cost_of_goods_sold?.accounts) {
-          reportData.cost_of_goods_sold.accounts.forEach((acc: any) => {
-            csvContent += `Cost of Goods Sold,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
-          })
-        }
-        if (reportData.expenses?.accounts) {
-          reportData.expenses.accounts.forEach((acc: any) => {
-            csvContent += `Expenses,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
-          })
-        }
-        csvContent += `\nGross Profit,${reportData.gross_profit || 0}\n`
-        csvContent += `Net Income,${reportData.net_income || 0}\n`
       } else if (selectedReport === 'liabilities-detail' && reportData.accounts) {
         csvContent += 'Account id,Code,Name,Type,Balance\n'
         reportData.accounts.forEach((acc: any) => {
@@ -3190,9 +3259,10 @@ export default function ReportsPage() {
           csvContent +=
             '\nPond,Revenue,Feed consumption,Medicine consumption,Other consumption,Fry/fingerling,Lease,Salaries & payroll,Other operating,Total costs,Net profit\n'
           ;(reportData.ponds as any[]).forEach((p: any) => {
+            const net = pondRowNetProfit(p)
             csvContent += [
               escapeCsv(p.pond_name),
-              p.revenue,
+              p.income_total ?? p.revenue,
               p.feed_consumption_cost ?? '',
               p.medicine_consumption_cost ?? '',
               p.other_consumption_cost ?? '',
@@ -3201,14 +3271,18 @@ export default function ReportsPage() {
               p.salaries_and_payroll_cost ?? '',
               p.other_operating_expenses ?? '',
               p.total_costs ?? p.expense_total ?? '',
-              p.net_profit ?? p.profit ?? '',
+              net,
             ].join(',')
             csvContent += '\n'
           })
           const tt = reportData.totals || {}
+          const aqTotals = getAquaculturePlExportFigures(reportData as Record<string, unknown>)
+          const totalIncome = aqTotals?.totalIncome ?? Number(tt.total_income ?? tt.revenue ?? 0)
+          const totalExpenses = aqTotals?.totalExpenses ?? Number(tt.total_costs_and_expenses ?? tt.total_costs ?? 0)
+          const totalNet = aqTotals?.netProfit ?? totalIncome - totalExpenses
           csvContent += [
             'Total',
-            tt.revenue ?? '',
+            totalIncome,
             tt.feed_consumption_cost ?? '',
             tt.medicine_consumption_cost ?? '',
             tt.other_consumption_cost ?? '',
@@ -3216,10 +3290,13 @@ export default function ReportsPage() {
             tt.lease_cost ?? '',
             tt.salaries_and_payroll_cost ?? '',
             tt.other_operating_expenses ?? '',
-            tt.total_costs_and_expenses ?? tt.total_costs ?? '',
-            tt.net_profit ?? tt.profit ?? '',
+            totalExpenses,
+            totalNet,
           ].join(',')
           csvContent += '\n'
+          if (aqTotals) {
+            csvContent += buildAquaculturePlBottomLineCsv(aqTotals)
+          }
         }
         const groupsCsv =
           selectedReport === 'aquaculture-feed-medicine-consumption'
@@ -5378,6 +5455,12 @@ function renderReportTable(
                   </div>
                 </div>
               </div>
+
+              <AquaculturePlBottomLine
+                income={incomeTotal}
+                expenses={cogsTotal + expenseTotal}
+                netProfit={Number(data.net_income ?? incomeTotal - cogsTotal - expenseTotal)}
+              />
             </div>
           )
         })()}
@@ -8780,6 +8863,7 @@ function renderReportTable(
             }
           />
         </div>
+        <AquaculturePlBottomLine {...resolveAquaculturePlFigures(t, byCat)} />
         {segments.length > 0 ? (
           <div>
             <h4 className="font-semibold text-foreground mb-2">Cycle segments (revenue &amp; direct costs)</h4>

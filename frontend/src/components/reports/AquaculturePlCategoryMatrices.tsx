@@ -743,16 +743,18 @@ export function PlConsumptionCostsExpenses({ totals }: { totals: PlTotalsLike })
 export function PlActiveExpenseCategoriesList({
   categories,
   title = 'All pond expenses in this period',
+  emptyMessage = 'No pond expenses recorded in this period.',
 }: {
   categories?: PlCategoryRow[]
   title?: string
+  emptyMessage?: string
 }) {
   const active = (categories ?? [])
     .filter((c) => Number(c.amount ?? 0) !== 0)
     .sort((a, b) => Number(b.amount) - Number(a.amount))
   if (active.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">No pond expenses recorded in this period.</p>
+      <p className="text-sm text-muted-foreground">{emptyMessage}</p>
     )
   }
   const total = active.reduce((s, c) => s + Number(c.amount || 0), 0)
@@ -781,6 +783,57 @@ export function PlActiveExpenseCategoriesList({
           <tfoot className="bg-muted">
             <tr>
               <td className="px-3 py-2 font-bold text-foreground">Total — listed categories</td>
+              <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(String(total))}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/** Compact list of every income type with activity in the period. */
+export function PlActiveIncomeCategoriesList({
+  categories,
+  title = 'All pond income in this period',
+  emptyMessage = 'No pond income recorded in this period.',
+}: {
+  categories?: PlCategoryRow[]
+  title?: string
+  emptyMessage?: string
+}) {
+  const active = (categories ?? [])
+    .filter((c) => Number(c.amount ?? 0) !== 0)
+    .sort((a, b) => Number(b.amount) - Number(a.amount))
+  if (active.length === 0) {
+    return <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+  }
+  const total = active.reduce((s, c) => s + Number(c.amount || 0), 0)
+  return (
+    <div>
+      <h4 className="font-semibold text-foreground mb-1">{title}</h4>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Every registered income type with activity in this period.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted/40">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Income type</th>
+              <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount (BDT)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/70 bg-white">
+            {active.map((c) => (
+              <tr key={c.category}>
+                <td className="px-3 py-2 text-foreground">{c.label || c.category.replace(/_/g, ' ')}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{MoneyBdt(c.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-muted">
+            <tr>
+              <td className="px-3 py-2 font-bold text-foreground">Total — listed income types</td>
               <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(String(total))}</td>
             </tr>
           </tfoot>
@@ -900,6 +953,39 @@ export interface PlMgmtSnapshot {
   totals?: PlTotalsLike
   ponds?: PlPondRowLike[]
   expenses_by_category?: PlCategoryRow[]
+  expenses_by_pond?: { pond_id: number; pond_name?: string; categories?: PlCategoryRow[] }[]
+  income_by_pond?: { pond_id: number; pond_name?: string; categories?: PlCategoryRow[] }[]
+  income_by_category?: PlCategoryRow[]
+}
+
+function pondCategoryRows(
+  groups: { pond_id: number; categories?: PlCategoryRow[] }[] | undefined,
+  pondId: number,
+): PlCategoryRow[] | undefined {
+  const group = (groups ?? []).find((g) => Number(g.pond_id) === pondId)
+  return group?.categories
+}
+
+export function resolveEffectiveReportPondScope(
+  data: Record<string, unknown> | null | undefined,
+  siteScopePondId?: number | null,
+  ponds: { id: number; name: string }[] = [],
+): { pondId: number | null; pondName: string | null } {
+  const rawApi = data?.filter_pond_id
+  const apiId =
+    typeof rawApi === 'number' && rawApi > 0
+      ? rawApi
+      : typeof rawApi === 'string' && /^\d+$/.test(rawApi)
+        ? Number(rawApi)
+        : null
+  const scopeId =
+    siteScopePondId != null && siteScopePondId > 0 ? siteScopePondId : null
+  const pondId = apiId ?? scopeId
+  if (pondId == null) return { pondId: null, pondName: null }
+  const fromApi =
+    typeof data?.filter_pond_name === 'string' ? String(data.filter_pond_name).trim() : ''
+  const fromList = ponds.find((p) => p.id === pondId)?.name?.trim() ?? ''
+  return { pondId, pondName: fromApi || fromList || null }
 }
 
 function sumEntityMgmtField(rows: Record<string, unknown>[], field: string): string {
@@ -951,9 +1037,22 @@ export function filterPlMgmtSnapshot(
   if (pondId == null || pondId <= 0) return mgmt
   const ponds = (mgmt.ponds ?? []).filter((p) => Number(p.pond_id) === pondId)
   if (ponds.length === 0) return mgmt
+
+  const scopedExpenses =
+    pondCategoryRows(mgmt.expenses_by_pond, pondId) ??
+    ((mgmt.ponds ?? []).length <= 1 ? mgmt.expenses_by_category : undefined)
+  const scopedIncome =
+    pondCategoryRows(mgmt.income_by_pond, pondId) ??
+    ((mgmt.ponds ?? []).length <= 1 ? mgmt.income_by_category : undefined)
+
   // Backend already pond-scoped (e.g. income-statement ?pond_id=) — use totals as-is.
   if ((mgmt.ponds ?? []).length <= 1) {
-    return { ...mgmt, ponds }
+    return {
+      ...mgmt,
+      ponds,
+      expenses_by_category: scopedExpenses ?? mgmt.expenses_by_category,
+      income_by_category: scopedIncome ?? mgmt.income_by_category,
+    }
   }
   const p = ponds[0]
   return {
@@ -975,7 +1074,10 @@ export function filterPlMgmtSnapshot(
       net_profit: p.net_profit ?? p.profit ?? mgmt.totals.net_profit,
       profit: p.profit ?? p.net_profit ?? mgmt.totals.profit,
     },
-    expenses_by_category: mgmt.expenses_by_category,
+    expenses_by_category: scopedExpenses ?? [],
+    income_by_category: scopedIncome ?? [],
+    expenses_by_pond: mgmt.expenses_by_pond,
+    income_by_pond: mgmt.income_by_pond,
   }
 }
 
@@ -999,39 +1101,93 @@ export function resolvePlMgmtSnapshot(
 export function AquaculturePlConsumptionSection({
   management,
   showCategoryList = true,
+  showIncomeList = true,
   title,
   entityName,
 }: {
   management?: PlMgmtSnapshot | null
   showCategoryList?: boolean
+  showIncomeList?: boolean
   title?: string
   entityName?: string | null
 }) {
   if (!management?.totals) return null
   const totals = management.totals
+  const scopedName = entityName?.trim() || management.ponds?.[0]?.pond_name?.trim() || null
   const hasConsumption =
     Number(totals.feed_consumption_cost ?? 0) !== 0 ||
     Number(totals.medicine_consumption_cost ?? 0) !== 0 ||
     Number(totals.other_consumption_cost ?? 0) !== 0
   const singlePond = (management.ponds ?? []).length === 1
+  const incomeTitle = scopedName
+    ? `${scopedName} — income in this period`
+    : 'All pond income in this period'
+  const expenseTitle = scopedName
+    ? `${scopedName} — expenses in this period`
+    : 'All pond expenses in this period'
+  const sectionTitle =
+    title ??
+    (scopedName
+      ? `${scopedName} — income & expenses (aquaculture register)`
+      : 'Pond consumption & operating expenses (aquaculture register)')
 
   return (
     <div className="space-y-6 rounded-xl border border-teal-200 bg-teal-50/30 p-4">
-      {title ? (
-        <div>
-          <h3 className="text-base font-semibold text-teal-950">{title}</h3>
-          <p className="mt-1 text-xs text-teal-900/80">
-            Aquaculture register totals — feed and medicine consumption from pond warehouses, vendor bills, payroll,
-            lease, and all other pond expenses. Same basis as Aquaculture — Pond P&L (may differ from GL above).
-          </p>
-        </div>
-      ) : null}
-      <AquaculturePlNetSummary totals={totals} entityName={entityName} />
+      <div>
+        <h3 className="text-base font-semibold text-teal-950">{sectionTitle}</h3>
+        <p className="mt-1 text-xs text-teal-900/80">
+          {scopedName
+            ? `Register totals for ${scopedName} only — feed and medicine consumption, vendor bills, payroll, lease, and all other pond costs. May differ from GL above.`
+            : 'Aquaculture register totals — feed and medicine consumption from pond warehouses, vendor bills, payroll, lease, and all other pond expenses. Same basis as Aquaculture — Pond P&L (may differ from GL above).'}
+        </p>
+      </div>
+      <AquaculturePlNetSummary totals={totals} entityName={scopedName} />
       {hasConsumption ? <PlConsumptionCostsExpenses totals={totals} /> : null}
       {!singlePond ? <PlPondByPondExpenseTable ponds={management.ponds} totals={totals} /> : null}
+      {showIncomeList && (management.income_by_category?.length ?? 0) > 0 ? (
+        <PlActiveIncomeCategoriesList
+          categories={management.income_by_category}
+          title={incomeTitle}
+          emptyMessage={
+            scopedName
+              ? `No income recorded for ${scopedName} in this period.`
+              : 'No pond income recorded in this period.'
+          }
+        />
+      ) : null}
       {showCategoryList && (management.expenses_by_category?.length ?? 0) > 0 ? (
-        <PlActiveExpenseCategoriesList categories={management.expenses_by_category} />
+        <PlActiveExpenseCategoriesList
+          categories={management.expenses_by_category}
+          title={expenseTitle}
+          emptyMessage={
+            scopedName
+              ? `No expenses recorded for ${scopedName} in this period.`
+              : 'No pond expenses recorded in this period.'
+          }
+        />
       ) : null}
     </div>
   )
+}
+
+export function PondScopedAquaculturePlBlock({
+  data,
+  pondId,
+  pondName,
+  pondRows,
+}: {
+  data?: Record<string, unknown> | null
+  pondId?: number | null
+  pondName?: string | null
+  pondRows?: Record<string, unknown>[]
+}) {
+  if (pondId == null || pondId <= 0) return null
+  const mgmt = resolvePlMgmtSnapshot(data, pondRows, pondId)
+  if (!mgmt?.totals) return null
+  const name =
+    pondName?.trim() ||
+    mgmt.ponds?.find((p) => Number(p.pond_id) === pondId)?.pond_name?.trim() ||
+    mgmt.ponds?.[0]?.pond_name?.trim() ||
+    null
+  return <AquaculturePlConsumptionSection management={mgmt} entityName={name} />
 }

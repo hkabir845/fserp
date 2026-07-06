@@ -44,6 +44,7 @@ import {
   resolveReportTotalLabel,
   resolveEffectiveAquaculturePondId,
   isPondLockedBySiteScope,
+  applySiteScopeToReportParams,
 } from './reportSiteScope'
 import {
   inferSegmentFromHomeStation,
@@ -74,11 +75,12 @@ import {
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import {
   AquaculturePlCategoryMatrices,
-  AquaculturePlConsumptionSection,
   AquaculturePlNetSummary,
   PlActiveExpenseCategoriesList,
   PlConsumptionCostsExpenses,
   PlPondByPondExpenseTable,
+  PondScopedAquaculturePlBlock,
+  resolveEffectiveReportPondScope,
   resolvePlMgmtSnapshot,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import {
@@ -1085,6 +1087,14 @@ function getReportSiteScopeDisplay(
         : 'Site scope filter.',
     }
   }
+  if (scope.kind === 'head_office') {
+    return {
+      headline: 'Head office / unassigned',
+      detail: gl
+        ? 'GL lines with no station or pond tag only.'
+        : 'Head office / company-wide untagged activity.',
+    }
+  }
   return {
     headline: 'All sites',
     detail: gl
@@ -1996,27 +2006,12 @@ export default function ReportsPage() {
         params.business_segment = segmentForFetch
       }
     } else if (REPORTS_STATION_SCOPED.has(reportId)) {
-      let homeId: number | null = null
-      try {
-        const u = JSON.parse(localStorage.getItem('user') || '{}') as { home_station_id?: unknown }
-        if (u?.home_station_id != null && String(u.home_station_id).trim() !== '') {
-          homeId = Number(u.home_station_id)
-        }
-      } catch {
-        /* ignore */
-      }
       const scopeKey = (opts?.siteScopeKey ?? reportStationId).trim()
-      if (homeId == null && scopeKey) {
-        const scope = parseReportSiteScopeKey(scopeKey)
-        if (scope.kind === 'station') {
-          params.station_id = String(scope.id)
-        } else if (
-          scope.kind === 'pond' &&
-          (REPORTS_GL_POND_SCOPED.has(reportId) || REPORTS_SUBLEDGER_POND_SCOPED.has(reportId))
-        ) {
-          params.pond_id = String(scope.id)
-        }
-      }
+      applySiteScopeToReportParams(scopeKey, params, {
+        pond: REPORTS_GL_POND_SCOPED.has(reportId) || REPORTS_SUBLEDGER_POND_SCOPED.has(reportId),
+        station: true,
+        headOffice: REPORTS_GL_STATION_SCOPED.has(reportId),
+      })
     }
 
     if (reportId === 'loans-borrow-and-lent') {
@@ -4354,6 +4349,7 @@ function renderReportTable(
       endDate: period.end_date || dateRange?.endDate,
       stationId: site.kind === 'station' ? site.id : null,
       pondId: site.kind === 'pond' ? site.id : null,
+      headOffice: site.kind === 'head_office',
       reportType,
     }
   }
@@ -5198,18 +5194,20 @@ function renderReportTable(
           </div>
         )}
 
-        {data.filter_pond_id != null ? (
-          <AquaculturePlConsumptionSection
-            management={resolvePlMgmtSnapshot(
-              data as Record<string, unknown>,
-              undefined,
-              Number(data.filter_pond_id),
-            )}
-            entityName={
-              typeof data.filter_pond_name === 'string' ? String(data.filter_pond_name) : undefined
-            }
-          />
-        ) : null}
+        {(() => {
+          const { pondId, pondName } = resolveEffectiveReportPondScope(
+            data as Record<string, unknown>,
+            reportDrillScope().pondId,
+            scopeLabels?.ponds ?? [],
+          )
+          return pondId != null ? (
+            <PondScopedAquaculturePlBlock
+              data={data as Record<string, unknown>}
+              pondId={pondId}
+              pondName={pondName}
+            />
+          ) : null
+        })()}
 
         <div className="space-y-6">
           {blocks.map(({ title, payload, accent }) => (

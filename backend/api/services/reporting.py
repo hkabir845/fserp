@@ -227,10 +227,14 @@ def _je_lines_pl_scope(
     company_id: int,
     station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ):
-    """Posted journal lines for P&L / GL entity scope (station or pond; not both)."""
+    """Posted journal lines for P&L / GL entity scope (pond, head office, station, or company)."""
     if pond_id is not None:
         return _je_lines_pond(company_id, pond_id)
+    if unscoped_dims:
+        return _je_lines_unscoped_dims(company_id)
     return _je_lines_base(company_id, station_id)
 
 
@@ -258,6 +262,8 @@ def report_trial_balance(
     end: date,
     station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     """
     Period activity trial balance: sums posted journal lines with entry_date in [start, end].
@@ -269,7 +275,11 @@ def report_trial_balance(
     """
     if pond_id is not None:
         station_id = None
+        unscoped_dims = False
         base_lines = _je_lines_pond(company_id, pond_id)
+    elif unscoped_dims:
+        station_id = None
+        base_lines = _je_lines_unscoped_dims(company_id)
     else:
         base_lines = _je_lines_base(company_id, station_id)
     period_lines = base_lines.filter(
@@ -352,6 +362,12 @@ def report_trial_balance(
         out["accounting_note"] = (
             out["accounting_note"]
             + " Site filter: only journal lines for this station (line tag or journal header) are included."
+        )
+    elif unscoped_dims:
+        out["filter_head_office"] = True
+        out["accounting_note"] = (
+            out["accounting_note"]
+            + " Head office filter: only journal lines with no station or pond tag are included."
         )
     return out
 
@@ -537,17 +553,45 @@ def _balance_sheet_bucket_for_coa(coa: ChartOfAccount) -> str | None:
     return "equity"
 
 
+def _balance_sheet_balance_from_line_qs(
+    coa: ChartOfAccount, company_id: int, as_of: date, line_qs
+) -> Decimal:
+    """BS balance from a filtered journal-line queryset (pond or head-office slice)."""
+    bucket = _balance_sheet_bucket_for_coa(coa)
+    if not bucket:
+        return Decimal("0")
+    agg = line_qs.filter(
+        account_id=coa.id,
+        journal_entry__entry_date__lte=as_of,
+    ).aggregate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    d, c = agg["td"], agg["tc"]
+    if bucket == "asset":
+        return d - c
+    return c - d
+
+
 def report_balance_sheet(
     company_id: int,
     start: date,
     end: date,
     station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     _ = start
-    # station_id and pond_id are mutually exclusive; pond scope wins if both arrive.
+    # station_id, pond_id, and unscoped_dims are mutually exclusive; pond scope wins if set.
     if pond_id is not None:
         station_id = None
+        unscoped_dims = False
+    elif unscoped_dims:
+        station_id = None
+    unscoped_lines = (
+        _je_lines_unscoped_dims(company_id) if unscoped_dims else None
+    )
     assets: list[dict[str, Any]] = []
     liabilities: list[dict[str, Any]] = []
     equity: list[dict[str, Any]] = []
@@ -561,6 +605,8 @@ def report_balance_sheet(
             continue
         if pond_id is not None:
             bal = _balance_sheet_balance_from_pond_activity(coa, company_id, end, pond_id)
+        elif unscoped_dims and unscoped_lines is not None:
+            bal = _balance_sheet_balance_from_line_qs(coa, company_id, end, unscoped_lines)
         elif station_id is not None:
             bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
         else:
@@ -608,6 +654,8 @@ def report_balance_sheet(
 
     if pond_id is not None:
         ni_cum = _cumulative_net_income_pond_through(company_id, end, pond_id)
+    elif unscoped_dims and unscoped_lines is not None:
+        ni_cum = _cumulative_net_income_lines_through(company_id, end, unscoped_lines)
     elif station_id is not None:
         ni_cum = _cumulative_net_income_site_through(company_id, end, station_id)
     else:
@@ -655,6 +703,11 @@ def report_balance_sheet(
             note
             + " Site filter: balances use only posted journal lines with this station_id (chart opening balances are excluded); Σ-P&L uses the same site-tagged activity."
         )
+    elif unscoped_dims:
+        note = (
+            note
+            + " Head office filter: balances use only posted journal lines with no station or pond tag (chart opening balances are excluded)."
+        )
     out_bs: dict[str, Any] = {
         "report_id": "balance-sheet",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -676,6 +729,8 @@ def report_balance_sheet(
         out_bs["filter_station_id"] = station_id
     if pond_id is not None:
         out_bs["filter_pond_id"] = pond_id
+    if unscoped_dims:
+        out_bs["filter_head_office"] = True
     return out_bs
 
 
@@ -1137,13 +1192,22 @@ def _iter_month_periods_in_range(start: date, end: date) -> list[tuple[date, dat
 
 
 def _pl_scope_accounting_note(
-    station_id: int | None, pond_id: int | None, *, pond_name: str | None = None
+    station_id: int | None,
+    pond_id: int | None,
+    *,
+    pond_name: str | None = None,
+    unscoped_dims: bool = False,
 ) -> str:
     if pond_id is not None:
         label = (pond_name or "").strip() or f"Pond #{pond_id}"
         return (
             f" Pond filter ({label}): amounts use only posted journal lines tagged to this pond. "
             "Company-wide or other-pond lines are excluded."
+        )
+    if unscoped_dims:
+        return (
+            " Head office filter: amounts use only posted journal lines with no station or pond tag. "
+            "Site-tagged and pond-tagged lines are excluded."
         )
     if station_id is not None:
         return (
@@ -1161,12 +1225,21 @@ def report_income_statement(
     end: date,
     station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     income_rows: list[dict[str, Any]] = []
     cogs_rows: list[dict[str, Any]] = []
     exp_rows: list[dict[str, Any]] = []
     ti = tcogs = te = Decimal("0")
-    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    if pond_id is not None:
+        station_id = None
+        unscoped_dims = False
+    elif unscoped_dims:
+        station_id = None
+    line_qs = _je_lines_pl_scope(
+        company_id, station_id, pond_id, unscoped_dims=unscoped_dims
+    )
     pond_name: str | None = None
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
@@ -1234,7 +1307,9 @@ def report_income_statement(
         "Gross profit = income − COGS; net income = gross profit − expenses. "
         "Cumulative change vs net income flags unusual opening-balance or dating issues."
     )
-    note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
+    note += _pl_scope_accounting_note(
+        station_id, pond_id, pond_name=pond_name, unscoped_dims=unscoped_dims
+    )
     if tcogs <= 0 and est_cogs > 0:
         note += (
             f" Inventory sales in this period imply about {_f(est_cogs)} in cost (qty × item cost) "
@@ -1263,6 +1338,8 @@ def report_income_statement(
         )
     elif station_id is not None:
         out_is["filter_station_id"] = station_id
+    if unscoped_dims:
+        out_is["filter_head_office"] = True
     return out_is
 
 
@@ -1651,11 +1728,20 @@ def report_expense_detail(
     end: date,
     station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     """Operating and other expense accounts from posted GL activity (P&L expense section only)."""
     exp_rows: list[dict[str, Any]] = []
     te = Decimal("0")
-    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    if pond_id is not None:
+        station_id = None
+        unscoped_dims = False
+    elif unscoped_dims:
+        station_id = None
+    line_qs = _je_lines_pl_scope(
+        company_id, station_id, pond_id, unscoped_dims=unscoped_dims
+    )
     pond_name: str | None = None
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
@@ -1686,7 +1772,9 @@ def report_expense_detail(
         "Cost of goods sold (e.g. fuel 5100, shop 5120) is on Profit & Loss under "
         "Cost of Goods Sold, not in this report."
     )
-    note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
+    note += _pl_scope_accounting_note(
+        station_id, pond_id, pond_name=pond_name, unscoped_dims=unscoped_dims
+    )
     out: dict[str, Any] = {
         "report_id": "expense-detail",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1697,8 +1785,13 @@ def report_expense_detail(
         out["filter_pond_id"] = pond_id
         if pond_name:
             out["filter_pond_name"] = pond_name
+        out["aquaculture_management"] = _aquaculture_management_snapshot(
+            company_id, start, end, pond_id
+        )
     elif station_id is not None:
         out["filter_station_id"] = station_id
+    if unscoped_dims:
+        out["filter_head_office"] = True
     return out
 
 
@@ -1708,11 +1801,20 @@ def report_income_detail(
     end: date,
     station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     """Income accounts from posted GL activity (P&L income section only)."""
     income_rows: list[dict[str, Any]] = []
     ti = Decimal("0")
-    line_qs = _je_lines_pl_scope(company_id, station_id, pond_id)
+    if pond_id is not None:
+        station_id = None
+        unscoped_dims = False
+    elif unscoped_dims:
+        station_id = None
+    line_qs = _je_lines_pl_scope(
+        company_id, station_id, pond_id, unscoped_dims=unscoped_dims
+    )
     pond_name: str | None = None
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
@@ -1742,7 +1844,9 @@ def report_income_detail(
         "(same basis as the Income Statement income section). "
         "Cost of goods sold and operating expenses are on Profit & Loss, not in this report."
     )
-    note += _pl_scope_accounting_note(station_id, pond_id, pond_name=pond_name)
+    note += _pl_scope_accounting_note(
+        station_id, pond_id, pond_name=pond_name, unscoped_dims=unscoped_dims
+    )
     out: dict[str, Any] = {
         "report_id": "income-detail",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
@@ -1753,8 +1857,13 @@ def report_income_detail(
         out["filter_pond_id"] = pond_id
         if pond_name:
             out["filter_pond_name"] = pond_name
+        out["aquaculture_management"] = _aquaculture_management_snapshot(
+            company_id, start, end, pond_id
+        )
     elif station_id is not None:
         out["filter_station_id"] = station_id
+    if unscoped_dims:
+        out["filter_head_office"] = True
     return out
 
 
@@ -1978,6 +2087,8 @@ def _cash_flow_entity_row(
 def report_cash_flow(
     company_id: int, start: date, end: date, station_id: int | None = None,
     pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     """
     Cash flow summary: bank register activity, customer/vendor payments, and P&L net income.
@@ -1989,7 +2100,11 @@ def report_cash_flow(
     """
     if pond_id is not None:
         station_id = None
+        unscoped_dims = False
+    elif unscoped_dims:
+        station_id = None
     pond_lines = _je_lines_pond(company_id, pond_id) if pond_id is not None else None
+    unscoped_lines = _je_lines_unscoped_dims(company_id) if unscoped_dims else None
     if pond_id is not None:
         pl = _period_pl_totals_from_line_qs(company_id, start, end, pond_lines)
         pay_recv = _d(
@@ -2001,6 +2116,26 @@ def report_cash_flow(
             ).aggregate(t=Coalesce(Sum("total_amount"), Decimal("0")))["t"]
         )
         pay_made = Decimal("0")
+    elif unscoped_dims and unscoped_lines is not None:
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, unscoped_lines)
+        pay_recv = _d(
+            Payment.objects.filter(
+                company_id=company_id,
+                payment_type=Payment.PAYMENT_TYPE_RECEIVED,
+                payment_date__gte=start,
+                payment_date__lte=end,
+                station_id__isnull=True,
+            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+        )
+        pay_made = _d(
+            Payment.objects.filter(
+                company_id=company_id,
+                payment_type=Payment.PAYMENT_TYPE_MADE,
+                payment_date__gte=start,
+                payment_date__lte=end,
+                station_id__isnull=True,
+            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
+        )
     else:
         pl = _period_income_statement_totals(company_id, start, end, station_id)
         pay_recv = _d(
@@ -2027,6 +2162,10 @@ def report_cash_flow(
             continue
         if pond_id is not None:
             b0, dep, wit, bend = _bank_period_flow_lines(coa, company_id, start, end, pond_lines)
+        elif unscoped_dims and unscoped_lines is not None:
+            b0, dep, wit, bend = _bank_period_flow_lines(
+                coa, company_id, start, end, unscoped_lines
+            )
         else:
             b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
         if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
@@ -2089,6 +2228,12 @@ def report_cash_flow(
         out_cf["accounting_note"] = (
             out_cf["accounting_note"]
             + " Site filter: company header and bank detail for this station only."
+        )
+    elif unscoped_dims:
+        out_cf["filter_head_office"] = True
+        out_cf["accounting_note"] = (
+            out_cf["accounting_note"]
+            + " Head office filter: GL and payments without a station or pond tag only."
         )
     else:
         by_station: list[dict[str, Any]] = []
@@ -2854,6 +2999,9 @@ def _aquaculture_management_snapshot(
         "totals": mgmt.get("totals") or {},
         "ponds": mgmt.get("ponds") or [],
         "expenses_by_category": mgmt.get("expenses_by_category") or [],
+        "expenses_by_pond": mgmt.get("expenses_by_pond") or [],
+        "income_by_pond": mgmt.get("income_by_pond") or [],
+        "income_by_category": mgmt.get("income_by_category") or [],
     }
 
 

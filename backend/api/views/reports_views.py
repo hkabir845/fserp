@@ -210,6 +210,67 @@ def _parse_report_pond_id(request, company_id: int):
     return pond_id, None
 
 
+def _parse_explicit_station_id(request, company_id: int) -> int | None:
+    from api.models import Station
+
+    raw = (request.GET.get("station_id") or "").strip()
+    if not raw or raw.lower() in ("0", "all", "none"):
+        return None
+    try:
+        station_id = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if station_id <= 0:
+        return None
+    if not Station.objects.filter(
+        pk=station_id, company_id=company_id, is_active=True
+    ).exists():
+        return None
+    return station_id
+
+
+def _parse_head_office_scope(request) -> bool:
+    raw = (request.GET.get("head_office") or "").strip().lower()
+    return raw in ("1", "true", "yes")
+
+
+def _parse_gl_entity_scope(request, company_id: int):
+    """
+    Resolve GL entity filter: pond_id, head_office, explicit station_id, or home station default.
+    Returns (station_id, pond_id, unscoped_dims, error_response).
+    """
+    pond_id, pond_err = _parse_report_pond_id(request, company_id)
+    if pond_err:
+        return None, None, False, pond_err
+    if pond_id is not None:
+        return None, pond_id, False, None
+    if _parse_head_office_scope(request):
+        return None, None, True, None
+    explicit_st = _parse_explicit_station_id(request, company_id)
+    if explicit_st is not None:
+        return explicit_st, None, False, None
+    st_id, st_err = effective_report_station_id(request, company_id)
+    if st_err:
+        return None, None, False, st_err
+    return st_id, None, False, None
+
+
+def _parse_subledger_entity_scope(request, company_id: int):
+    """AR/AP scope: pond_id, explicit station_id, or home station default."""
+    pond_id, pond_err = _parse_report_pond_id(request, company_id)
+    if pond_err:
+        return None, None, pond_err
+    if pond_id is not None:
+        return None, pond_id, None
+    explicit_st = _parse_explicit_station_id(request, company_id)
+    if explicit_st is not None:
+        return explicit_st, None, None
+    st_id, st_err = effective_report_station_id(request, company_id)
+    if st_err:
+        return None, None, st_err
+    return st_id, None, None
+
+
 AQUACULTURE_REPORT_IDS = frozenset(
     {
         "aquaculture-pond-pl",
@@ -405,28 +466,18 @@ def report_by_id(request, report_id: str):
             return st_err
         payload = handler(cid, start, end, st_id)
     elif report_id in SUBLEDGER_STATION_AWARE_REPORTS:
-        pond_id, pond_err = _parse_report_pond_id(request, cid)
-        if pond_err:
-            return pond_err
-        if pond_id is None:
-            st_id, st_err = effective_report_station_id(request, cid)
-            if st_err:
-                return st_err
-        else:
-            st_id = None
+        st_id, pond_id, scope_err = _parse_subledger_entity_scope(request, cid)
+        if scope_err:
+            return scope_err
         payload = handler(cid, start, end, station_id=st_id, pond_id=pond_id)
     elif report_id in GL_STATION_AWARE_REPORTS:
-        pond_id, pond_err = _parse_report_pond_id(request, cid)
-        if pond_err:
-            return pond_err
-        if pond_id is None:
-            st_id, st_err = effective_report_station_id(request, cid)
-            if st_err:
-                return st_err
-        else:
-            st_id = None
+        st_id, pond_id, unscoped_dims, scope_err = _parse_gl_entity_scope(request, cid)
+        if scope_err:
+            return scope_err
         if report_id in GL_POND_AWARE_REPORTS:
-            payload = handler(cid, start, end, st_id, pond_id=pond_id)
+            payload = handler(
+                cid, start, end, st_id, pond_id=pond_id, unscoped_dims=unscoped_dims
+            )
         elif report_id == "loans-borrow-and-lent":
             strict = (request.GET.get("strict_site") or "").strip().lower() in (
                 "1",

@@ -11,8 +11,7 @@ import {
 } from '@/components/reports/ReportDrillContext'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import {
-  AquaculturePlConsumptionSection,
-  resolvePlMgmtSnapshot,
+  PondScopedAquaculturePlBlock,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import { agingBucketTotalRow } from '@/components/reports/reportDrillAggregate'
 
@@ -37,6 +36,23 @@ function filterPondEntityRows(
 ): Record<string, unknown>[] {
   if (pondId == null || pondId <= 0) return rows
   return rows.filter((r) => Number(r.pond_id ?? r.entity_id ?? 0) === pondId)
+}
+
+function filterStationEntityRows(
+  rows: Record<string, unknown>[],
+  stationId?: number | null,
+): Record<string, unknown>[] {
+  if (stationId == null || stationId <= 0) return rows
+  return rows.filter((r) => Number(r.station_id ?? r.entity_id ?? 0) === stationId)
+}
+
+function stationEntityName(
+  rows: Record<string, unknown>[],
+  stationId?: number | null,
+): string | null {
+  if (stationId == null || stationId <= 0) return null
+  const row = rows.find((r) => Number(r.station_id ?? r.entity_id ?? 0) === stationId)
+  return row ? String(row.station_name ?? row.entity_name ?? `Station #${stationId}`) : null
 }
 
 function pondEntityName(
@@ -344,6 +360,7 @@ function renderEntitySectionTables(
     endDate?: string
     stationId?: number | null
     pondId?: number | null
+    headOffice?: boolean
   },
   reportData?: Record<string, unknown>,
 ) {
@@ -359,9 +376,25 @@ function renderEntitySectionTables(
     pondsTotal,
   } = sections
   const pondScopeId = drillScope?.pondId ?? null
+  const stationScopeId = drillScope?.stationId ?? null
+  const headOfficeScope = drillScope?.headOffice === true
   const scopedByPond = filterPondEntityRows(byPond, pondScopeId)
+  const scopedPondGlTotal =
+    pondScopeId && scopedByPond.length === 1
+      ? (scopedByPond[0] as Record<string, unknown>)
+      : pondsTotal
   const fuelStations = byFuelStation.length ? byFuelStation : byStation.filter((r) => r.business_kind !== 'shop_hub')
   const shopHubs = byShopHub.length ? byShopHub : byStation.filter((r) => r.business_kind === 'shop_hub')
+  const scopedFuel = stationScopeId ? filterStationEntityRows(fuelStations, stationScopeId) : fuelStations
+  const scopedShop = stationScopeId ? filterStationEntityRows(shopHubs, stationScopeId) : shopHubs
+  const scopedFuelTotal =
+    stationScopeId && scopedFuel.length === 1
+      ? (scopedFuel[0] as Record<string, unknown>)
+      : fuelStationsTotal
+  const scopedShopTotal =
+    stationScopeId && scopedShop.length === 1
+      ? (scopedShop[0] as Record<string, unknown>)
+      : shopHubsTotal
   const label =
     kind === 'pl' ? 'Profit & Loss' : kind === 'bs' ? 'Balance Sheet' : 'Trial Balance'
 
@@ -388,9 +421,25 @@ function renderEntitySectionTables(
     )
   }
 
+  if (headOfficeScope) {
+    return unscoped ? (
+      <>
+        {renderSection(
+          `${label} — head office / unassigned`,
+          [unscoped],
+          undefined,
+          unscoped as Record<string, unknown>,
+          'Head office / unassigned',
+        )}
+      </>
+    ) : (
+      <p className="text-sm text-muted-foreground">No head office / unassigned activity in this period.</p>
+    )
+  }
+
   return (
     <>
-      {!pondScopeId
+      {!pondScopeId && !stationScopeId
         ? renderSection(
             `${label} — fuel filling stations`,
             fuelStations,
@@ -399,7 +448,16 @@ function renderEntitySectionTables(
             'Total — all fuel filling stations',
           )
         : null}
-      {!pondScopeId
+      {stationScopeId && scopedFuel.length > 0
+        ? renderSection(
+            `${label} — ${stationEntityName(fuelStations, stationScopeId) ?? 'fuel station'}`,
+            scopedFuel,
+            'station',
+            scopedFuelTotal,
+            stationEntityName(fuelStations, stationScopeId) ?? 'Total — station',
+          )
+        : null}
+      {!pondScopeId && !stationScopeId
         ? renderSection(
             `${label} — shop hubs (no fuel)`,
             shopHubs,
@@ -408,22 +466,35 @@ function renderEntitySectionTables(
             'Total — all shop hubs (no fuel)',
           )
         : null}
-      {renderSection(
-        `${label} — ponds (aquaculture, GL-tagged)`,
-        scopedByPond,
-        'pond',
-        pondsTotal,
-        pondScopeId ? pondEntityName(byPond, pondScopeId) ?? 'Total — pond' : 'Total — all ponds',
-      )}
-      {kind === 'pl' && scopedByPond.length > 0 ? (
-        <AquaculturePlConsumptionSection
-          management={resolvePlMgmtSnapshot(reportData, scopedByPond, pondScopeId)}
-          title={
+      {stationScopeId && scopedShop.length > 0
+        ? renderSection(
+            `${label} — ${stationEntityName(shopHubs, stationScopeId) ?? 'shop hub'}`,
+            scopedShop,
+            'station',
+            scopedShopTotal,
+            stationEntityName(shopHubs, stationScopeId) ?? 'Total — station',
+          )
+        : null}
+      {!stationScopeId
+        ? renderSection(
             pondScopeId
-              ? undefined
-              : 'Pond consumption & operating expenses (aquaculture register)'
+              ? `${label} — ${pondEntityName(byPond, pondScopeId) ?? 'pond'} (aquaculture, GL-tagged)`
+              : `${label} — ponds (aquaculture, GL-tagged)`,
+            scopedByPond,
+            'pond',
+            scopedPondGlTotal,
+            pondScopeId ? pondEntityName(byPond, pondScopeId) ?? 'Total — pond' : 'Total — all ponds',
+          )
+        : null}
+      {kind === 'pl' && !stationScopeId && scopedByPond.length > 0 ? (
+        <PondScopedAquaculturePlBlock
+          data={reportData}
+          pondId={pondScopeId ?? (scopedByPond.length === 1 ? Number(scopedByPond[0]?.pond_id ?? scopedByPond[0]?.entity_id ?? 0) : null)}
+          pondName={
+            pondEntityName(byPond, pondScopeId) ??
+            (scopedByPond.length === 1 ? String(scopedByPond[0]?.pond_name ?? scopedByPond[0]?.entity_name ?? '') : null)
           }
-          entityName={pondEntityName(byPond, pondScopeId) ?? (scopedByPond.length === 1 ? String(scopedByPond[0]?.pond_name ?? scopedByPond[0]?.entity_name ?? '') : null)}
+          pondRows={scopedByPond}
         />
       ) : null}
       {!pondScopeId && unscoped ? renderSection(`${label} — head office / unassigned`, [unscoped]) : null}
@@ -454,6 +525,7 @@ export function renderExtraFinancialReport(
       endDate?: string
       stationId?: number | null
       pondId?: number | null
+      headOffice?: boolean
     }
   },
 ): ReactNode | null {
@@ -539,6 +611,15 @@ export function renderExtraFinancialReport(
             )}
           </div>
         </div>
+        <PondScopedAquaculturePlBlock
+          data={data}
+          pondId={ctx.drillScope?.pondId}
+          pondName={
+            typeof data.filter_pond_name === 'string'
+              ? String(data.filter_pond_name)
+              : null
+          }
+        />
       </div>
     )
   }
@@ -612,6 +693,15 @@ export function renderExtraFinancialReport(
             )}
           </div>
         </div>
+        <PondScopedAquaculturePlBlock
+          data={data}
+          pondId={ctx.drillScope?.pondId}
+          pondName={
+            typeof data.filter_pond_name === 'string'
+              ? String(data.filter_pond_name)
+              : null
+          }
+        />
       </div>
     )
   }
@@ -775,6 +865,18 @@ export function renderExtraFinancialReport(
   if (entityReportIds.includes(reportType as (typeof entityReportIds)[number])) {
     const sections = entitySections(data)
     const co = sections.companyTotal
+    const pondScopeId = ctx.drillScope?.pondId ?? null
+    const stationScopeId = ctx.drillScope?.stationId ?? null
+    const headOfficeScope = ctx.drillScope?.headOffice === true
+    const scopedPondRow =
+      pondScopeId != null
+        ? filterPondEntityRows(sections.byPond, pondScopeId)[0]
+        : undefined
+    const allStations = [...sections.byFuelStation, ...sections.byShopHub, ...sections.byStation]
+    const scopedStationRow =
+      stationScopeId != null
+        ? filterStationEntityRows(allStations, stationScopeId)[0]
+        : undefined
     const isCombined = reportType === 'entities-financial-summary'
     const kind = isCombined
       ? 'combined'
@@ -804,7 +906,7 @@ export function renderExtraFinancialReport(
         ) : (
           renderEntitySectionTables(kind as 'pl' | 'bs' | 'tb', sections, ctx.onViewEntityPl, ctx.drillScope, data)
         )}
-        {kind === 'pl' && data.segment_totals ? (
+        {kind === 'pl' && data.segment_totals && !pondScopeId && !stationScopeId && !headOfficeScope ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {segmentPlTotalsCard('Total — fuel filling stations', (data.segment_totals as Record<string, unknown>).fuel_stations as Record<string, unknown>, ctx.drillScope)}
             {segmentPlTotalsCard('Total — shop hubs (no fuel)', (data.segment_totals as Record<string, unknown>).shop_hubs as Record<string, unknown>, ctx.drillScope)}
@@ -812,6 +914,28 @@ export function renderExtraFinancialReport(
             {segmentPlTotalsCard('Total — all ponds', (data.segment_totals as Record<string, unknown>).ponds as Record<string, unknown>, ctx.drillScope)}
           </div>
         ) : null}
+        {pondScopeId && scopedPondRow && (kind === 'pl' || isCombined) ? (
+          segmentPlTotalsCard(
+            pondEntityName(sections.byPond, pondScopeId) ?? 'Selected pond',
+            scopedPondRow as Record<string, unknown>,
+            ctx.drillScope,
+          )
+        ) : null}
+        {stationScopeId && scopedStationRow && (kind === 'pl' || isCombined) ? (
+          segmentPlTotalsCard(
+            stationEntityName(allStations, stationScopeId) ?? 'Selected site',
+            scopedStationRow as Record<string, unknown>,
+            ctx.drillScope,
+          )
+        ) : null}
+        {headOfficeScope && sections.unscoped && (kind === 'pl' || isCombined) ? (
+          segmentPlTotalsCard(
+            'Head office / unassigned',
+            sections.unscoped as Record<string, unknown>,
+            ctx.drillScope,
+          )
+        ) : null}
+        {!pondScopeId && !stationScopeId && !headOfficeScope ? (
         <div className="rounded-lg border-2 border-border bg-muted/40 p-4">
           <h3 className="text-sm font-semibold text-foreground">Company total (all GL)</h3>
           {kind === 'pl' || isCombined ? (
@@ -874,6 +998,7 @@ export function renderExtraFinancialReport(
             </div>
           ) : null}
         </div>
+        ) : null}
       </div>
     )
   }
@@ -888,6 +1013,7 @@ export function renderExtraFinancialReport(
     const isFuelOnly = reportType === 'fuel-stations-pl-summary'
     const isShopOnly = reportType === 'shop-hubs-pl-summary'
     const pondScopeId = ctx.drillScope?.pondId ?? null
+    const stationScopeId = ctx.drillScope?.stationId ?? null
     const allPondRows = (isPond
       ? (data.ponds as Record<string, unknown>[])
       : isFuelOnly
@@ -895,7 +1021,11 @@ export function renderExtraFinancialReport(
         : isShopOnly
           ? (data.shop_hubs as Record<string, unknown>[])
           : (data.stations as Record<string, unknown>[])) ?? []
-    const rows = isPond ? filterPondEntityRows(allPondRows, pondScopeId) : allPondRows
+    const rows = isPond
+      ? filterPondEntityRows(allPondRows, pondScopeId)
+      : stationScopeId
+        ? filterStationEntityRows(allPondRows, stationScopeId)
+        : allPondRows
     const fuelRows = (data.fuel_stations as Record<string, unknown>[]) ?? []
     const shopRows = (data.shop_hubs as Record<string, unknown>[]) ?? []
     const segmentTotals = (data.segment_totals as Record<string, Record<string, unknown>>) ?? {}
@@ -939,13 +1069,14 @@ export function renderExtraFinancialReport(
           </>
         )}
         {isPond ? (
-          <AquaculturePlConsumptionSection
-            management={resolvePlMgmtSnapshot(data, allPondRows, pondScopeId)}
-            title={pondScopeId ? undefined : 'Pond consumption & operating expenses (aquaculture register)'}
-            entityName={
+          <PondScopedAquaculturePlBlock
+            data={data}
+            pondId={pondScopeId ?? (rows.length === 1 ? Number(rows[0]?.pond_id ?? rows[0]?.entity_id ?? 0) : null)}
+            pondName={
               pondEntityName(allPondRows, pondScopeId) ??
               (rows.length === 1 ? String(rows[0]?.pond_name ?? rows[0]?.entity_name ?? '') : null)
             }
+            pondRows={rows}
           />
         ) : null}
         {segmentPlTotalsCard(
@@ -967,6 +1098,7 @@ export function renderExtraFinancialReport(
             {segmentPlTotalsCard('Total — shop hubs (no fuel)', segmentTotals.shop_hubs, ctx.drillScope)}
           </div>
         ) : null}
+        {!pondScopeId && !stationScopeId ? (
         <div className="rounded-lg border-2 border-border bg-muted/40 p-4">
           <h3 className="text-sm font-semibold text-foreground">Company total (all GL)</h3>
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
@@ -992,6 +1124,7 @@ export function renderExtraFinancialReport(
             </div>
           </div>
         </div>
+        ) : null}
       </div>
     )
   }

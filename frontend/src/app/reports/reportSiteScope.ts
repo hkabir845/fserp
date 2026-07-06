@@ -40,6 +40,48 @@ export function reportScopeQueryParams(scopeKey: string): {
   return {}
 }
 
+export type SiteScopeReportCapabilities = {
+  /** GL / operational reports that accept pond_id */
+  pond?: boolean
+  /** Reports that accept station_id */
+  station?: boolean
+  /** GL reports that accept head_office=1 (unscoped journal lines) */
+  headOffice?: boolean
+}
+
+/**
+ * Apply Reports → Site scope to API query params.
+ * Explicit entity selection always wins over home-station defaults on the server.
+ * Empty scope = all entities (company-wide where the API allows).
+ */
+export function applySiteScopeToReportParams(
+  scopeKey: string,
+  params: Record<string, string>,
+  caps: SiteScopeReportCapabilities,
+): Record<string, string> {
+  const scope = parseReportSiteScopeKey(scopeKey.trim())
+  const out = { ...params }
+  if (scope.kind === 'pond' && caps.pond) {
+    out.pond_id = String(scope.id)
+    delete out.station_id
+    delete out.head_office
+    return out
+  }
+  if (scope.kind === 'head_office' && caps.headOffice) {
+    out.head_office = '1'
+    delete out.station_id
+    delete out.pond_id
+    return out
+  }
+  if (scope.kind === 'station' && caps.station) {
+    out.station_id = String(scope.id)
+    delete out.pond_id
+    delete out.head_office
+    return out
+  }
+  return out
+}
+
 export function formatPondScopeKey(pondId: number): string {
   return `p:${pondId}`
 }

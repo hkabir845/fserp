@@ -74,6 +74,7 @@ export default function ContactLedgerPage({
   const [searchQ, setSearchQ] = useState('')
   const debouncedSearch = useDebouncedValue(searchQ.trim())
   const [data, setData] = useState<LedgerPayload | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [initialLoading, setInitialLoading] = useState(true)
   const [refetching, setRefetching] = useState(false)
   const [entryForm, setEntryForm] = useState({
@@ -114,6 +115,7 @@ export default function ContactLedgerPage({
       const url = q ? `${ledgerPath}?${q}` : ledgerPath
       const res = await api.get<LedgerPayload>(url)
       setData(res.data)
+      setLoadError(null)
     } catch (e: unknown) {
       if (isApiSessionError(e)) return
       console.error(e)
@@ -129,13 +131,17 @@ export default function ContactLedgerPage({
         'detail' in e.response.data
           ? String((e.response.data as { detail?: unknown }).detail ?? '')
           : ''
-      toast.error(detail || 'Failed to load ledger')
+      const message = detail || 'Failed to load ledger'
+      setLoadError(message)
       setData(null)
+      if (initialLoading) {
+        toast.error(message)
+      }
     } finally {
       setInitialLoading(false)
       setRefetching(false)
     }
-  }, [entity, entityId, startDate, endDate, debouncedSearch, hasTextSearch, ledgerPath, toast])
+  }, [entity, entityId, startDate, endDate, debouncedSearch, hasTextSearch, ledgerPath, toast, initialLoading])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -565,6 +571,21 @@ export default function ContactLedgerPage({
                 </table>
               </div>
             </>
+          ) : loadError ? (
+            <div className="rounded-lg bg-white p-8 shadow text-center">
+              <p className="text-destructive font-medium">{loadError}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                The ledger could not be loaded. Try again or contact support if this continues.
+              </p>
+              <button
+                type="button"
+                onClick={() => load()}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm text-white hover:bg-primary/90"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </button>
+            </div>
           ) : (
             <p className="text-muted-foreground">No data.</p>
           )}

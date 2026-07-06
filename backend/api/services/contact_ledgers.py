@@ -1,6 +1,7 @@
 """Subledger-style activity for customers (AR) and vendors (AP) from invoices/bills and payments."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -20,6 +21,8 @@ from api.models import (
     Vendor,
 )
 from api.services.gl_posting import _is_walkin_customer, invoice_sale_used_ar
+
+logger = logging.getLogger(__name__)
 
 
 def _d(val) -> Decimal:
@@ -400,7 +403,14 @@ def build_employee_ledger(
         backfill_missing_payroll_subledger_lines_for_employee,
     )
 
-    backfill_missing_payroll_subledger_lines_for_employee(company_id, employee_id)
+    try:
+        backfill_missing_payroll_subledger_lines_for_employee(company_id, employee_id)
+    except Exception:
+        logger.exception(
+            "employee payroll subledger backfill skipped company=%s employee=%s",
+            company_id,
+            employee_id,
+        )
     emp.refresh_from_db()
 
     rows: list[_Row] = []

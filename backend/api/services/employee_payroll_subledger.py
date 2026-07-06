@@ -6,9 +6,12 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from api.models import Employee, EmployeeLedgerEntry, PayrollRun
+from api.models import Employee, EmployeeLedgerEntry, PayrollRun, PayrollRunEmployeeAllocation
 
 logger = logging.getLogger(__name__)
+
+# Cap heuristic backfill on ledger GET (legacy runs without stored wage rows).
+_LEGACY_BACKFILL_SCAN_LIMIT = 40
 
 
 def _q(v: Decimal) -> Decimal:
@@ -53,29 +56,62 @@ def backfill_missing_payroll_subledger_lines(company_id: int) -> None:
         _sync_payroll_run_safe(company_id, pr)
 
 
+def _posted_payroll_run_ids_for_employee(company_id: int, employee_id: int) -> set[int]:
+    """Posted payroll runs explicitly tied to one employee (stored wage rows or subledger link)."""
+    ids: set[int] = set()
+    ids.update(
+        PayrollRun.objects.filter(
+            company_id=company_id,
+            salary_journal_id__isnull=False,
+            subledger_employee_id=employee_id,
+        ).values_list("pk", flat=True)
+    )
+    ids.update(
+        PayrollRunEmployeeAllocation.objects.filter(
+            employee_id=employee_id,
+            payroll_run__company_id=company_id,
+            payroll_run__salary_journal_id__isnull=False,
+        ).values_list("payroll_run_id", flat=True)
+    )
+    return ids
+
+
 def backfill_missing_payroll_subledger_lines_for_employee(
     company_id: int, employee_id: int
 ) -> None:
     """
     Re-sync posted payroll runs that affect one employee (used on ledger GET).
 
-    Avoids re-processing every payroll run in the company, which could timeout the API.
+    Uses stored wage allocations and subledger_employee — never scans every payroll run
+    in the company (that caused API timeouts on production).
     """
     posted = PayrollRun.objects.filter(
         company_id=company_id, salary_journal_id__isnull=False
-    ).order_by("id")
+    )
     linked_run_ids = set(
         EmployeeLedgerEntry.objects.filter(
             employee_id=employee_id, payroll_run_id__isnull=False
         ).values_list("payroll_run_id", flat=True)
     )
-    if linked_run_ids:
-        for pr in posted.filter(pk__in=linked_run_ids):
-            _sync_payroll_run_safe(company_id, pr)
-        return
-    for pr in posted:
-        if _payroll_run_touches_employee(company_id, pr, employee_id):
-            _sync_payroll_run_safe(company_id, pr)
+    candidate_ids = _posted_payroll_run_ids_for_employee(company_id, employee_id)
+    candidate_ids.update(linked_run_ids)
+
+    to_sync: set[int] = set(candidate_ids)
+    if not EmployeeLedgerEntry.objects.filter(
+        employee_id=employee_id, payroll_run_id__isnull=False
+    ).exists():
+        scanned = 0
+        for pr in posted.order_by("-id"):
+            if pr.pk in candidate_ids:
+                continue
+            if scanned >= _LEGACY_BACKFILL_SCAN_LIMIT:
+                break
+            scanned += 1
+            if _payroll_run_touches_employee(company_id, pr, employee_id):
+                to_sync.add(int(pr.pk))
+
+    for pr in posted.filter(pk__in=to_sync).order_by("id"):
+        _sync_payroll_run_safe(company_id, pr)
 
 
 def refresh_employee_balance(employee_id: int) -> None:

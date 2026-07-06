@@ -396,9 +396,11 @@ def build_employee_ledger(
     if not emp:
         return {"detail": "Employee not found"}
 
-    from api.services.employee_payroll_subledger import backfill_missing_payroll_subledger_lines
+    from api.services.employee_payroll_subledger import (
+        backfill_missing_payroll_subledger_lines_for_employee,
+    )
 
-    backfill_missing_payroll_subledger_lines(company_id)
+    backfill_missing_payroll_subledger_lines_for_employee(company_id, employee_id)
     emp.refresh_from_db()
 
     rows: list[_Row] = []

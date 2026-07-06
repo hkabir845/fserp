@@ -432,9 +432,20 @@ def employee_detail(request, employee_id: int):
 @require_company_id
 def employee_ledger(request, employee_id: int):
     start_d, end_d, q = ledger_dates_and_search(request)
-    data = build_employee_ledger(
-        request.company_id, employee_id, start_date=start_d, end_date=end_d
-    )
+    try:
+        data = build_employee_ledger(
+            request.company_id, employee_id, start_date=start_d, end_date=end_d
+        )
+    except Exception:
+        logger.exception(
+            "employee_ledger failed company=%s employee=%s",
+            request.company_id,
+            employee_id,
+        )
+        return JsonResponse(
+            {"detail": "Could not build employee ledger. Check server logs."},
+            status=500,
+        )
     if data.get("detail") == "Employee not found":
         return JsonResponse(data, status=404)
     if q:

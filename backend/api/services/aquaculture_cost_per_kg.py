@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from django.db.models import Q, Sum
 
-from api.models import AquacultureExpense, AquacultureFishSale, JournalEntry, JournalEntryLine
+from api.models import AquacultureExpense, AquacultureFishSale, BillLine, JournalEntry, JournalEntryLine
 
 
 # Journal lines from posted vendor bills: debit accounts in these types count toward pond operating P&L.
@@ -27,6 +27,114 @@ _POND_PL_JOURNAL_Q = (
     | Q(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
     | Q(journal_entry__entry_number__startswith="AUTO-AQ-POND-")
 )
+
+
+_POSTED_BILL_STATUSES = frozenset({"open", "paid", "partial", "overdue"})
+
+
+def _bill_eligible_for_pl(bill) -> bool:
+    if not bill:
+        return False
+    total = bill.total if bill.total is not None else Decimal("0")
+    if total <= 0:
+        return False
+    return (bill.status or "").strip().lower() in _POSTED_BILL_STATUSES
+
+
+def _auto_bill_id_from_entry_number(entry_number: str) -> int | None:
+    if not (entry_number or "").startswith("AUTO-BILL-"):
+        return None
+    suffix = entry_number[len("AUTO-BILL-") :]
+    try:
+        return int(suffix)
+    except ValueError:
+        return None
+
+
+def _posted_vendor_bill_ids(company_id: int) -> set[int]:
+    out: set[int] = set()
+    for en in JournalEntry.objects.filter(
+        company_id=company_id,
+        is_posted=True,
+        entry_number__startswith="AUTO-BILL-",
+    ).values_list("entry_number", flat=True):
+        bid = _auto_bill_id_from_entry_number(en)
+        if bid is not None:
+            out.add(bid)
+    return out
+
+
+def resolve_bill_line_cost_bucket(company_id: int, line: BillLine) -> str:
+    """Stable P&L cost bucket for a pond-tagged vendor bill line (matches GL posting metadata)."""
+    bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
+    if bucket:
+        return bucket[:40]
+    item = getattr(line, "item", None)
+    if item:
+        from api.services.gl_posting import _is_fish_item
+
+        if _is_fish_item(item):
+            return "fry_stocking"
+        return item_shop_issue_cost_bucket(item)
+    return "equipment"
+
+
+def bill_line_counts_in_pond_pl_operating(company_id: int, line: BillLine) -> bool:
+    """
+    True when a posted vendor bill line should add to pond operating P&L.
+    Inventory / bio-asset debits are excluded (feed/medicine cost is recognized on consumption).
+    """
+    item = getattr(line, "item", None)
+    if not item:
+        return True
+    from api.services.gl_posting import _inventory_account_for_item, _item_receives_physical_stock
+
+    if not _item_receives_physical_stock(item):
+        return True
+    from api.services.aquaculture_pond_bio_capitalization import (
+        company_capitalizes_pond_production,
+        pond_cost_bucket_capitalizes_to_bio,
+    )
+
+    bucket = resolve_bill_line_cost_bucket(company_id, line)
+    if company_capitalizes_pond_production(company_id) and pond_cost_bucket_capitalizes_to_bio(bucket):
+        return False
+    return _inventory_account_for_item(company_id, item) is None
+
+
+def posted_pond_vendor_bill_lines_qs(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+):
+    """Posted vendor bill lines tagged to one pond, filtered by bill date (not journal date)."""
+    posted_ids = _posted_vendor_bill_ids(company_id)
+    if not posted_ids:
+        return BillLine.objects.none()
+    qs = (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            bill_id__in=posted_ids,
+            aquaculture_pond_id=pond_id,
+            bill__bill_date__gte=start,
+            bill__bill_date__lte=end,
+        )
+        .exclude(bill__status__iexact="void")
+        .exclude(bill__status__iexact="draft")
+        .select_related("item", "bill")
+    )
+    if uncycled_bill_lines_only:
+        qs = qs.filter(aquaculture_production_cycle_id__isnull=True)
+    elif cycle_filter_id is not None:
+        qs = qs.filter(
+            Q(aquaculture_production_cycle_id=cycle_filter_id)
+            | Q(aquaculture_production_cycle_id__isnull=True)
+        )
+    return qs
 
 
 def vendor_bill_pond_expense_lines_qs(
@@ -95,20 +203,15 @@ def vendor_bill_only_pond_operating_total(
     Pond-tagged vendor bills and POS COGS — excludes shop issues and pond-warehouse consumption
     journals (those are categorized via AquacultureExpense rows).
     """
-    qs = vendor_bill_pond_expense_lines_qs(
+    additions = vendor_bill_only_pond_bucket_additions(
         company_id=company_id,
         pond_id=pond_id,
         start=start,
         end=end,
         cycle_filter_id=cycle_filter_id,
         uncycled_bill_lines_only=uncycled_bill_lines_only,
-    ).exclude(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
-    qs = qs.exclude(
-        journal_entry__entry_number__startswith="AUTO-AQ-POND-",
-        journal_entry__entry_number__endswith="-COGS",
     )
-    t = qs.aggregate(s=Sum("debit"))["s"]
-    return _money_q(Decimal(str(t or 0)))
+    return _money_q(sum((amt for amt in additions.values()), Decimal("0")))
 
 
 def pond_warehouse_consumption_cogs_journal_total(
@@ -318,21 +421,53 @@ def vendor_bill_only_pond_bucket_additions(
     cycle_filter_id: int | None,
     uncycled_bill_lines_only: bool = False,
 ) -> dict[str, Decimal]:
-    """Vendor bills and POS COGS — excludes shop issues and pond-warehouse consumption journals."""
+    """Vendor bills (bill lines by bill date) and POS COGS — excludes shop issues and pond consumption."""
     out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    qs = vendor_bill_pond_expense_lines_qs(
+    bill_line_bill_ids: set[int] = set()
+
+    for line in posted_pond_vendor_bill_lines_qs(
         company_id=company_id,
         pond_id=pond_id,
         start=start,
         end=end,
         cycle_filter_id=cycle_filter_id,
         uncycled_bill_lines_only=uncycled_bill_lines_only,
-    ).exclude(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
-    qs = qs.exclude(
-        journal_entry__entry_number__startswith="AUTO-AQ-POND-",
-        journal_entry__entry_number__endswith="-COGS",
+    ):
+        if not _bill_eligible_for_pl(line.bill):
+            continue
+        if not bill_line_counts_in_pond_pl_operating(company_id, line):
+            continue
+        bucket = resolve_bill_line_cost_bucket(company_id, line)
+        if bucket == "fry_stocking":
+            continue
+        amt = line.amount if line.amount is not None else Decimal("0")
+        if amt <= 0:
+            continue
+        bill_line_bill_ids.add(int(line.bill_id))
+        out[bucket] += _money_q(amt)
+
+    qs = (
+        vendor_bill_pond_expense_lines_qs(
+            company_id=company_id,
+            pond_id=pond_id,
+            start=start,
+            end=end,
+            cycle_filter_id=cycle_filter_id,
+            uncycled_bill_lines_only=uncycled_bill_lines_only,
+        )
+        .exclude(journal_entry__entry_number__startswith="AUTO-AQ-SHOP-")
+        .exclude(
+            journal_entry__entry_number__startswith="AUTO-AQ-POND-",
+            journal_entry__entry_number__endswith="-COGS",
+        )
     )
-    for row in qs.values("aquaculture_cost_bucket").annotate(s=Sum("debit")):
+    for row in qs.values("journal_entry__entry_number", "aquaculture_cost_bucket").annotate(
+        s=Sum("debit")
+    ):
+        en = row.get("journal_entry__entry_number") or ""
+        bid = _auto_bill_id_from_entry_number(en)
+        if bid is not None and bid in bill_line_bill_ids:
+            continue
         b = (row["aquaculture_cost_bucket"] or "").strip() or "ancillary"
         out[b] += _money_q(Decimal(str(row["s"] or 0)))
     return dict(out)

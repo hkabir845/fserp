@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
-import { CompanyProvider } from '@/contexts/CompanyContext'
-import api from '@/lib/api'
+import api, { isApiSessionError } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDate } from '@/utils/date'
 import { printLedgerStatement, buildLedgerStatementCsv } from '@/utils/printDocument'
@@ -116,8 +115,21 @@ export default function ContactLedgerPage({
       const res = await api.get<LedgerPayload>(url)
       setData(res.data)
     } catch (e: unknown) {
+      if (isApiSessionError(e)) return
       console.error(e)
-      toast.error('Failed to load ledger')
+      const detail =
+        e &&
+        typeof e === 'object' &&
+        'response' in e &&
+        e.response &&
+        typeof e.response === 'object' &&
+        'data' in e.response &&
+        e.response.data &&
+        typeof e.response.data === 'object' &&
+        'detail' in e.response.data
+          ? String((e.response.data as { detail?: unknown }).detail ?? '')
+          : ''
+      toast.error(detail || 'Failed to load ledger')
       setData(null)
     } finally {
       setInitialLoading(false)
@@ -234,10 +246,9 @@ export default function ContactLedgerPage({
   }
 
   return (
-    <CompanyProvider>
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-auto app-scroll-pad">
+    <div className="flex h-screen page-with-sidebar">
+      <Sidebar />
+      <div className="flex-1 overflow-auto app-scroll-pad">
           <div className="mb-6 flex flex-wrap items-center gap-4">
             <Link
               href={backHref}
@@ -559,6 +570,5 @@ export default function ContactLedgerPage({
           )}
         </div>
       </div>
-    </CompanyProvider>
   )
 }

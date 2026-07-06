@@ -1,15 +1,43 @@
 """Sync employee HR subledger when a payroll run is posted to the general ledger."""
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from django.db.models import Sum
 
 from api.models import Employee, EmployeeLedgerEntry, PayrollRun
 
+logger = logging.getLogger(__name__)
+
 
 def _q(v: Decimal) -> Decimal:
     return (v or Decimal("0")).quantize(Decimal("0.01"))
+
+
+def _payroll_run_touches_employee(company_id: int, pr: PayrollRun, employee_id: int) -> bool:
+    """True when this posted run should create or refresh subledger lines for ``employee_id``."""
+    from api.services.employee_payroll_allocations import stored_employee_allocations_for_subledger
+
+    sub_eid = getattr(pr, "subledger_employee_id", None)
+    if sub_eid and int(sub_eid) == int(employee_id):
+        return True
+    stored = stored_employee_allocations_for_subledger(int(pr.pk))
+    if any(int(emp.id) == int(employee_id) for emp, _ in stored):
+        return True
+    emps, _weights = _resolve_subledger_employees(company_id, pr)
+    return any(int(emp.id) == int(employee_id) for emp in emps)
+
+
+def _sync_payroll_run_safe(company_id: int, pr: PayrollRun) -> None:
+    try:
+        sync_payroll_run_to_employee_ledgers(company_id, pr)
+    except Exception:
+        logger.exception(
+            "employee subledger sync failed company=%s payroll=%s",
+            company_id,
+            pr.pk,
+        )
 
 
 def backfill_missing_payroll_subledger_lines(company_id: int) -> None:
@@ -22,7 +50,32 @@ def backfill_missing_payroll_subledger_lines(company_id: int) -> None:
     for pr in PayrollRun.objects.filter(
         company_id=company_id, salary_journal_id__isnull=False
     ).order_by("id"):
-        sync_payroll_run_to_employee_ledgers(company_id, pr)
+        _sync_payroll_run_safe(company_id, pr)
+
+
+def backfill_missing_payroll_subledger_lines_for_employee(
+    company_id: int, employee_id: int
+) -> None:
+    """
+    Re-sync posted payroll runs that affect one employee (used on ledger GET).
+
+    Avoids re-processing every payroll run in the company, which could timeout the API.
+    """
+    posted = PayrollRun.objects.filter(
+        company_id=company_id, salary_journal_id__isnull=False
+    ).order_by("id")
+    linked_run_ids = set(
+        EmployeeLedgerEntry.objects.filter(
+            employee_id=employee_id, payroll_run_id__isnull=False
+        ).values_list("payroll_run_id", flat=True)
+    )
+    if linked_run_ids:
+        for pr in posted.filter(pk__in=linked_run_ids):
+            _sync_payroll_run_safe(company_id, pr)
+        return
+    for pr in posted:
+        if _payroll_run_touches_employee(company_id, pr, employee_id):
+            _sync_payroll_run_safe(company_id, pr)
 
 
 def refresh_employee_balance(employee_id: int) -> None:

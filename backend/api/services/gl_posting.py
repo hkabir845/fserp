@@ -3090,6 +3090,9 @@ def resync_posted_bill_journal_from_lines(company_id: int, bill_id: int) -> bool
     je = JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
     if not je:
         return False
+    if je.entry_date != bill.bill_date:
+        JournalEntry.objects.filter(pk=je.pk).update(entry_date=bill.bill_date)
+        je.entry_date = bill.bill_date
     built = _build_bill_journal_lines(company_id, bill)
     if not built:
         return False

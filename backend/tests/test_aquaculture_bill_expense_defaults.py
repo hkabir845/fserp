@@ -198,3 +198,117 @@ def test_expense_register_includes_vendor_bill_lines(
     assert all(
         r.get("expense_date", "").startswith("2026-06-01") for r in fpayload["rows"] if r.get("source") == "bill"
     )
+
+
+@pytest.mark.django_db
+def test_aquaculture_expenses_report_includes_vendor_bill_lines(
+    api_client, company_tenant, auth_admin_headers
+):
+    Company.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    ensure_aquaculture_chart_accounts(company_tenant.id)
+    pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="Report Pond", is_active=True)
+    vendor = Vendor.objects.create(
+        company_id=company_tenant.id,
+        company_name="Transport Co",
+        display_name="Transport Co",
+        vendor_number="V-TR-1",
+        is_active=True,
+    )
+    bill = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor.id,
+                "bill_date": "2026-02-18",
+                "status": "paid",
+                "lines": [
+                    {
+                        "description": "Pond transport",
+                        "quantity": 1,
+                        "unit_cost": "24750.00",
+                        "amount": "24750.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_expense_category": "transportation",
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert bill.status_code == 201, bill.content.decode()
+
+    r = api_client.get(
+        "/api/reports/aquaculture-expenses/",
+        {
+            "start_date": "2026-02-18",
+            "end_date": "2026-02-18",
+            "pond_id": str(pond.id),
+        },
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    payload = json.loads(r.content.decode())
+    flat = [ln for g in payload.get("groups", []) for ln in g.get("lines", [])]
+    hit = next((x for x in flat if x.get("source") == "bill"), None)
+    assert hit is not None
+    assert Decimal(hit["amount"]) == Decimal("24750.00")
+    assert hit.get("vendor_name") == "Transport Co"
+
+
+@pytest.mark.django_db
+def test_pl_vendor_bill_lines_used_when_journal_missing_pond_tags(company_tenant_with_gl):
+    from datetime import date
+
+    from api.models import Bill, BillLine, JournalEntry, JournalEntryLine, Vendor
+    from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+    from api.services.gl_posting import post_bill_journal
+
+    Company.objects.filter(pk=company_tenant_with_gl.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    cid = company_tenant_with_gl.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Untagged JE Pond", is_active=True)
+    vendor = Vendor.objects.create(
+        company_id=cid,
+        company_name="General Vendor",
+        vendor_number="V-GEN-PL",
+        is_active=True,
+    )
+    bill = Bill.objects.create(
+        company_id=cid,
+        vendor=vendor,
+        bill_number="BILL-PL-TEST",
+        bill_date=date(2026, 2, 18),
+        status="paid",
+        total=Decimal("5600.00"),
+    )
+    BillLine.objects.create(
+        bill=bill,
+        description="Misc pond cost",
+        quantity=Decimal("1"),
+        unit_price=Decimal("5600.00"),
+        amount=Decimal("5600.00"),
+        aquaculture_pond_id=pond.id,
+        aquaculture_cost_bucket="miscellaneous",
+    )
+    assert post_bill_journal(cid, bill) is True
+    JournalEntryLine.objects.filter(
+        journal_entry__company_id=cid,
+        journal_entry__entry_number=f"AUTO-BILL-{bill.id}",
+        debit__gt=0,
+    ).update(aquaculture_pond_id=None, aquaculture_cost_bucket="")
+
+    payload = compute_aquaculture_pl_summary_dict(
+        cid,
+        date(2026, 2, 18),
+        date(2026, 2, 18),
+        pond_filter_id=pond.id,
+        cycle_filter_id=None,
+        scoped_cycle=None,
+        include_cycle_breakdown=False,
+    )
+    exp_cats = {c["category"]: c["amount"] for c in payload["expenses_by_category"]}
+    assert Decimal(exp_cats.get("vendor_bill_pond", "0")) >= Decimal("5600.00")

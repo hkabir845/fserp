@@ -20,6 +20,7 @@ from api.models import (
     AquaculturePond,
     AquaculturePondProfitTransfer,
     AquacultureProductionCycle,
+    BillLine,
     Company,
     Invoice,
     InvoiceLine,
@@ -1198,6 +1199,7 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         by_pond[pid].append(
             {
                 "id": e.id,
+                "source": "expense",
                 "expense_date": e.expense_date.isoformat(),
                 "expense_category": e.expense_category,
                 "expense_category_label": aquaculture_expense_label(company_id, e.expense_category),
@@ -1213,6 +1215,63 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
                 else "",
             }
         )
+
+    from api.services.aquaculture_expense_register import expense_row_from_bill_line
+    from api.services.gl_posting import bill_eligible_for_posting
+
+    bill_qs = (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            aquaculture_pond_id__isnull=False,
+            bill__bill_date__gte=start,
+            bill__bill_date__lte=end,
+        )
+        .exclude(bill__status__iexact="void")
+        .exclude(bill__status__iexact="draft")
+        .select_related(
+            "bill",
+            "bill__vendor",
+            "aquaculture_pond",
+            "aquaculture_production_cycle",
+            "tenant_reporting_category",
+        )
+    )
+    if pond_filter_id is not None:
+        bill_qs = bill_qs.filter(aquaculture_pond_id=pond_filter_id)
+    elif station_filter_id is not None:
+        bill_qs = bill_qs.filter(
+            Q(receipt_station_id=station_filter_id) | Q(bill__receipt_station_id=station_filter_id)
+        )
+
+    for line in bill_qs:
+        if not bill_eligible_for_posting(line.bill):
+            continue
+        brow = expense_row_from_bill_line(company_id=company_id, line=line)
+        pid = line.aquaculture_pond_id
+        pname = (brow.get("pond_name") or "").strip() or f"Pond #{pid}"
+        pond_names[pid] = pname
+        by_pond[pid].append(
+            {
+                "id": line.id,
+                "source": "bill",
+                "bill_id": brow.get("bill_id"),
+                "bill_number": brow.get("bill_number") or "",
+                "expense_date": brow["expense_date"],
+                "expense_category": brow["expense_category"],
+                "expense_category_label": brow["expense_category_label"],
+                "amount": brow["amount"],
+                "vendor_name": brow.get("vendor_name") or "",
+                "memo": (brow.get("memo") or "")[:200],
+                "production_cycle_name": brow.get("production_cycle_name") or "",
+                "is_shared_header": False,
+                "pond_allocations": [],
+                "source_station_id": None,
+                "source_station_name": "",
+            }
+        )
+
+    for pid in by_pond:
+        by_pond[pid].sort(key=lambda ln: (ln["expense_date"], ln.get("source") or "", ln["id"]))
 
     groups: list[dict[str, Any]] = []
     grand = Decimal("0")

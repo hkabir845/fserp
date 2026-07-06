@@ -1029,6 +1029,35 @@ function getReportSiteScopeDisplay(
 ): { headline: string; detail: string } | null {
   if (!reportId || !REPORTS_STATION_SCOPED.has(reportId)) return null
   const gl = REPORTS_GL_STATION_SCOPED.has(reportId)
+
+  // User's Site dropdown selection wins over API defaults (e.g. home station).
+  const uiScope = parseReportSiteScopeKey(reportStationId)
+  if (uiScope.kind === 'pond') {
+    const name = ponds.find((p) => p.id === uiScope.id)?.name?.trim() || `Pond #${uiScope.id}`
+    return {
+      headline: `Pond: ${name}`,
+      detail: gl ? 'Pond scope · posted GL for this pond only.' : 'Pond scope filter.',
+    }
+  }
+  if (uiScope.kind === 'station') {
+    const name =
+      stations.find((s) => s.id === uiScope.id)?.station_name?.trim() || `Station #${uiScope.id}`
+    return {
+      headline: `Site: ${name}`,
+      detail: gl
+        ? 'Site scope · income, COGS, and expenses for this site only.'
+        : 'Site scope filter.',
+    }
+  }
+  if (uiScope.kind === 'head_office') {
+    return {
+      headline: 'Head office / unassigned',
+      detail: gl
+        ? 'GL lines with no station or pond tag only.'
+        : 'Head office / company-wide untagged activity.',
+    }
+  }
+
   const rawPondFid =
     reportData && typeof reportData === 'object' && 'filter_pond_id' in reportData
       ? (reportData as { filter_pond_id?: unknown }).filter_pond_id
@@ -1067,32 +1096,6 @@ function getReportSiteScopeDisplay(
     return {
       headline: `Site: ${name}`,
       detail: gl ? 'Limited to your assigned site (GL).' : 'Limited to your assigned site.',
-    }
-  }
-  const scope = parseReportSiteScopeKey(reportStationId)
-  if (scope.kind === 'pond') {
-    const name = ponds.find((p) => p.id === scope.id)?.name?.trim() || `Pond #${scope.id}`
-    return {
-      headline: `Pond: ${name}`,
-      detail: gl ? 'Pond scope · posted GL for this pond only.' : 'Pond scope filter.',
-    }
-  }
-  if (scope.kind === 'station') {
-    const name =
-      stations.find((s) => s.id === scope.id)?.station_name?.trim() || `Station #${scope.id}`
-    return {
-      headline: `Site: ${name}`,
-      detail: gl
-        ? 'Site scope · income, COGS, and expenses for this site only.'
-        : 'Site scope filter.',
-    }
-  }
-  if (scope.kind === 'head_office') {
-    return {
-      headline: 'Head office / unassigned',
-      detail: gl
-        ? 'GL lines with no station or pond tag only.'
-        : 'Head office / company-wide untagged activity.',
     }
   }
   return {
@@ -2307,10 +2310,7 @@ export default function ReportsPage() {
         setReportData({ _aquaculturePlManagement: true as const })
         return
       }
-      if (
-        REPORTS_STATION_SCOPED.has(selectedReport) ||
-        String(selectedReport).startsWith('aquaculture-')
-      ) {
+      if (isApiBackedReportId(selectedReport)) {
         void fetchReport(selectedReport, { siteScopeKey: v })
       }
     },

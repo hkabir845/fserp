@@ -50,7 +50,7 @@ export type SiteScopeReportCapabilities = {
 }
 
 /**
- * Apply Reports → Site scope to API query params.
+ * Apply Reports → Site scope to API query params (mutates `params` in place).
  * Explicit entity selection always wins over home-station defaults on the server.
  * Empty scope = all entities (company-wide where the API allows).
  */
@@ -58,28 +58,22 @@ export function applySiteScopeToReportParams(
   scopeKey: string,
   params: Record<string, string>,
   caps: SiteScopeReportCapabilities,
-): Record<string, string> {
+): void {
   const scope = parseReportSiteScopeKey(scopeKey.trim())
-  const out = { ...params }
+  delete params.station_id
+  delete params.pond_id
+  delete params.head_office
   if (scope.kind === 'pond' && caps.pond) {
-    out.pond_id = String(scope.id)
-    delete out.station_id
-    delete out.head_office
-    return out
+    params.pond_id = String(scope.id)
+    return
   }
   if (scope.kind === 'head_office' && caps.headOffice) {
-    out.head_office = '1'
-    delete out.station_id
-    delete out.pond_id
-    return out
+    params.head_office = '1'
+    return
   }
   if (scope.kind === 'station' && caps.station) {
-    out.station_id = String(scope.id)
-    delete out.pond_id
-    delete out.head_office
-    return out
+    params.station_id = String(scope.id)
   }
-  return out
 }
 
 export function formatPondScopeKey(pondId: number): string {

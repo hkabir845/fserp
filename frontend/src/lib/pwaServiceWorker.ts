@@ -1,8 +1,8 @@
 /** Bump ?v= when sw.js behavior changes so browsers pick up the new worker. */
-export const SERVICE_WORKER_URL = '/sw.js?v=5'
+export const SERVICE_WORKER_URL = '/sw.js?v=6'
 
 /** Brain PWA — scoped to /brain-app/ (separate install from full ERP). */
-export const BRAIN_SERVICE_WORKER_URL = '/brain-app/sw.js?v=2'
+export const BRAIN_SERVICE_WORKER_URL = '/brain-app/sw.js?v=3'
 
 function isSecureContext(): boolean {
   if (typeof window === 'undefined') return false
@@ -29,6 +29,7 @@ async function clearDevServiceWorkers(): Promise<void> {
 
 async function unregisterStaleRootWorkers(): Promise<void> {
   try {
+    const current = SERVICE_WORKER_URL.split('?')[1] || ''
     const regs = await navigator.serviceWorker.getRegistrations()
     await Promise.all(
       regs.map((reg) => {
@@ -37,10 +38,13 @@ async function unregisterStaleRootWorkers(): Promise<void> {
           reg.waiting?.scriptURL ||
           reg.active?.scriptURL ||
           ''
-        if (u.includes('/sw.js') && !u.includes('/brain-app/') && !u.includes('sw.js?v=')) {
-          return reg.unregister()
+        if (!u.includes('/sw.js') || u.includes('/brain-app/')) {
+          return Promise.resolve()
         }
-        return Promise.resolve()
+        if (current && u.includes(current)) {
+          return Promise.resolve()
+        }
+        return reg.unregister()
       }),
     )
   } catch {

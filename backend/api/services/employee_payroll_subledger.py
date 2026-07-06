@@ -80,35 +80,33 @@ def backfill_missing_payroll_subledger_lines_for_employee(
     company_id: int, employee_id: int
 ) -> None:
     """
-    Re-sync posted payroll runs that affect one employee (used on ledger GET).
+    Create missing subledger lines for one employee (ledger GET).
 
-    Uses stored wage allocations and subledger_employee — never scans every payroll run
-    in the company (that caused API timeouts on production).
+    Only syncs posted runs that have no EmployeeLedgerEntry rows yet for this person.
+    Does not re-process runs that already have lines (re-syncing every linked run on
+    each page load caused 30s+ API timeouts on production).
     """
     posted = PayrollRun.objects.filter(
         company_id=company_id, salary_journal_id__isnull=False
     )
-    linked_run_ids = set(
+    existing_run_ids = set(
         EmployeeLedgerEntry.objects.filter(
             employee_id=employee_id, payroll_run_id__isnull=False
         ).values_list("payroll_run_id", flat=True)
     )
-    candidate_ids = _posted_payroll_run_ids_for_employee(company_id, employee_id)
-    candidate_ids.update(linked_run_ids)
+    to_sync = _posted_payroll_run_ids_for_employee(company_id, employee_id) - existing_run_ids
 
-    to_sync: set[int] = set(candidate_ids)
-    if not EmployeeLedgerEntry.objects.filter(
-        employee_id=employee_id, payroll_run_id__isnull=False
-    ).exists():
+    if not existing_run_ids and not to_sync:
         scanned = 0
         for pr in posted.order_by("-id"):
-            if pr.pk in candidate_ids:
-                continue
             if scanned >= _LEGACY_BACKFILL_SCAN_LIMIT:
                 break
             scanned += 1
             if _payroll_run_touches_employee(company_id, pr, employee_id):
                 to_sync.add(int(pr.pk))
+
+    if not to_sync:
+        return
 
     for pr in posted.filter(pk__in=to_sync).order_by("id"):
         _sync_payroll_run_safe(company_id, pr)

@@ -1,6 +1,7 @@
 'use client'
 
 import { CalendarRange } from 'lucide-react'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { localDateISO, toDateInputValue } from '@/utils/date'
 import {
   SALES_PURCHASE_PERIOD_PRESETS,
@@ -63,21 +64,19 @@ export function SalesPurchasePeriodFilter({
         {showCustomInputs ? (
           <div className="flex flex-wrap items-center gap-2 border-t border-blue-100 pt-3">
             <label className="text-sm font-medium text-primary">From</label>
-            <input
-              type="date"
+            <CompanyDateInput
               value={currentStartDate}
-              onChange={(e) => onDateChange('startDate', e.target.value)}
-              max={currentEndDate}
-              className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/30"
+              max={currentEndDate || undefined}
+              onChange={(iso) => onDateChange('startDate', iso)}
+              className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/30 min-w-[9.5rem]"
             />
             <span className="text-sm font-medium text-primary">to</span>
-            <input
-              type="date"
+            <CompanyDateInput
               value={currentEndDate}
-              onChange={(e) => onDateChange('endDate', e.target.value)}
-              min={currentStartDate}
+              min={currentStartDate || undefined}
               max={localDateISO()}
-              className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/30"
+              onChange={(iso) => onDateChange('endDate', iso)}
+              className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/30 min-w-[9.5rem]"
             />
           </div>
         ) : (

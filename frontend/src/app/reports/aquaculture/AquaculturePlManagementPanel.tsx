@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { parseArchivePlSearchParams } from '@/lib/aquacultureDataBankArchive'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
@@ -31,6 +32,8 @@ import {
   templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
 import { parseReportSiteScopeKey } from '../reportSiteScope'
+
+const AQ_REPORT_DATE_INPUT_CLS = 'mt-1 rounded-lg border border-border px-2 py-1.5 min-w-[9.5rem]'
 
 interface Pond {
   id: number
@@ -748,22 +751,20 @@ export function AquaculturePlManagementPanel({
           <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
             <label className="text-sm text-foreground/85">
               <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">From</span>
-              <input
-                type="date"
-                className="mt-1 rounded-lg border border-border px-2 py-1.5"
+              <CompanyDateInput
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
-                aria-label="Fuel P and L start date"
+                max={end || undefined}
+                onChange={setStart}
+                className={AQ_REPORT_DATE_INPUT_CLS}
               />
             </label>
             <label className="text-sm text-foreground/85">
               <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">To</span>
-              <input
-                type="date"
-                className="mt-1 rounded-lg border border-border px-2 py-1.5"
+              <CompanyDateInput
                 value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                aria-label="Fuel P and L end date"
+                min={start || undefined}
+                onChange={setEnd}
+                className={AQ_REPORT_DATE_INPUT_CLS}
               />
             </label>
             <button
@@ -822,22 +823,20 @@ export function AquaculturePlManagementPanel({
       <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
         <label className="text-sm text-foreground/85">
           <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">From</span>
-          <input
-            type="date"
-            className="mt-1 rounded-lg border border-border px-2 py-1.5"
+          <CompanyDateInput
             value={start}
-            onChange={(e) => setStart(e.target.value)}
-            aria-label="Report start date"
+            max={end || undefined}
+            onChange={setStart}
+            className={AQ_REPORT_DATE_INPUT_CLS}
           />
         </label>
         <label className="text-sm text-foreground/85">
           <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">To</span>
-          <input
-            type="date"
-            className="mt-1 rounded-lg border border-border px-2 py-1.5"
+          <CompanyDateInput
             value={end}
-            onChange={(e) => setEnd(e.target.value)}
-            aria-label="Report end date"
+            min={start || undefined}
+            onChange={setEnd}
+            className={AQ_REPORT_DATE_INPUT_CLS}
           />
         </label>
         <label className="text-sm text-foreground/85">
@@ -953,11 +952,10 @@ export function AquaculturePlManagementPanel({
             </label>
             <label className="block text-sm font-medium text-foreground/85">
               Transfer date
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm"
+              <CompanyDateInput
                 value={xferForm.transfer_date}
-                onChange={(e) => setXferForm((f) => ({ ...f, transfer_date: e.target.value }))}
+                onChange={(iso) => setXferForm((f) => ({ ...f, transfer_date: iso }))}
+                className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm min-w-[9.5rem]"
               />
             </label>
             <label className="block text-sm font-medium text-foreground/85">

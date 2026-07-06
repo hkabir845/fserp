@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'rea
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useCompany } from '@/contexts/CompanyContext'
 import { 
   FileText, TrendingUp, DollarSign, Users, Package, 
@@ -4028,6 +4029,9 @@ function renderAquacultureFcrBlock(data: Record<string, unknown> | null | undefi
   )
 }
 
+const REPORT_PERIOD_DATE_INPUT_CLS =
+  'px-3 py-1.5 border border-blue-300 rounded-md text-sm text-foreground/85 focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 bg-white shadow-sm min-w-[9.5rem]'
+
 function PeriodFilter({
   startDate,
   endDate,
@@ -4092,27 +4096,25 @@ function PeriodFilter({
         </div>
         <div className="flex items-center justify-between flex-wrap gap-4 border-t border-blue-100 pt-3">
           <div className="flex items-center space-x-2 flex-wrap">
-            <input
-              type="date"
+            <CompanyDateInput
               value={startDate}
-              onChange={(e) => {
+              max={endDate || undefined}
+              onChange={(iso) => {
                 setExplicitCustom(true)
-                onDateChange?.('startDate', e.target.value, reportType)
+                onDateChange?.('startDate', iso, reportType)
               }}
-              max={endDate}
-              className="px-3 py-1.5 border border-blue-300 rounded-md text-sm text-foreground/85 focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 bg-white shadow-sm"
+              className={REPORT_PERIOD_DATE_INPUT_CLS}
             />
             <span className="text-sm text-primary font-medium">to</span>
-            <input
-              type="date"
+            <CompanyDateInput
               value={endDate}
-              onChange={(e) => {
-                setExplicitCustom(true)
-                onDateChange?.('endDate', e.target.value, reportType)
-              }}
-              min={startDate}
+              min={startDate || undefined}
               max={localDateISO()}
-              className="px-3 py-1.5 border border-blue-300 rounded-md text-sm text-foreground/85 focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 bg-white shadow-sm"
+              onChange={(iso) => {
+                setExplicitCustom(true)
+                onDateChange?.('endDate', iso, reportType)
+              }}
+              className={REPORT_PERIOD_DATE_INPUT_CLS}
             />
           </div>
           <p className="text-xs text-primary mt-2 md:mt-0">
@@ -4152,12 +4154,11 @@ function renderDateFilter(
             {displayLabel}
           </label>
           <div className="flex items-center space-x-2">
-            <input
-              type="date"
+            <CompanyDateInput
               value={currentDate}
-              onChange={(e) => onDateChange?.('endDate', e.target.value, reportType)}
               max={localDateISO()}
-              className="px-3 py-1.5 border border-blue-300 rounded-md text-sm text-foreground/85 focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 bg-white shadow-sm"
+              onChange={(iso) => onDateChange?.('endDate', iso, reportType)}
+              className={REPORT_PERIOD_DATE_INPUT_CLS}
             />
           </div>
         </div>

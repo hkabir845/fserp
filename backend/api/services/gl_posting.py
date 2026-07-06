@@ -2576,6 +2576,36 @@ def _bill_line_expense_debit_account(
     return office_exp
 
 
+def _bill_remainder_gl_tags(
+    debit_rows: list[tuple],
+    company_id: int,
+    bill: Bill,
+) -> tuple[Optional[dict], Optional[int]]:
+    """
+    Tag tax/rounding remainder debits so entity P&L validation passes when the bill
+    is effectively single-entity (one pond or one station across cost lines).
+    """
+    hdr_st = _gl_station_id(company_id, bill.receipt_station_id)
+    metas = [row[3] for row in debit_rows if len(row) > 3 and row[3]]
+    pond_ids = {int(m["pond_id"]) for m in metas if m.get("pond_id")}
+    if len(pond_ids) == 1:
+        pid = next(iter(pond_ids))
+        meta: dict[str, Any] = {"pond_id": pid}
+        cycle_ids = {
+            int(m["production_cycle_id"])
+            for m in metas
+            if m.get("pond_id") == pid and m.get("production_cycle_id")
+        }
+        if len(cycle_ids) == 1:
+            meta["production_cycle_id"] = next(iter(cycle_ids))
+        return meta, None
+
+    line_stations = {row[4] for row in debit_rows if len(row) > 4 and row[4] is not None}
+    if len(line_stations) == 1:
+        return None, next(iter(line_stations))
+    return None, hdr_st
+
+
 def _build_bill_journal_lines(
     company_id: int, bill: Bill
 ) -> Optional[tuple[list[tuple], list[Optional[dict]]]]:
@@ -2660,8 +2690,10 @@ def _build_bill_journal_lines(
 
     sum_lines = sum(am for row in debit_rows if (am := row[1]) > 0)
     if sum_lines < total:
-        hdr_st = _gl_station_id(company_id, bill.receipt_station_id)
-        debit_rows.append((exp, (total - sum_lines).quantize(Decimal("0.01")), memo_ap, None, hdr_st))
+        rem_meta, rem_st = _bill_remainder_gl_tags(debit_rows, company_id, bill)
+        debit_rows.append(
+            (exp, (total - sum_lines).quantize(Decimal("0.01")), memo_ap, rem_meta, rem_st)
+        )
         sum_lines = total
     elif sum_lines > total:
         positive_rows = [row for row in debit_rows if row[1] > 0]
@@ -2714,14 +2746,23 @@ def _build_bill_journal_lines(
     # liability (otherwise the pond shows the asset/expense but not the payable). Mixed-pond or
     # partially-tagged bills leave A/P untagged (company-level liability).
     ap_meta: Optional[dict] = None
-    costed = [m for m in aq_costing if m and m.get("pond_id")]
-    if costed and len(costed) == len(aq_costing):
-        pond_ids = {m.get("pond_id") for m in costed}
-        if len(pond_ids) == 1:
-            only = costed[0]
-            ap_meta = {"pond_id": only.get("pond_id")}
-            if only.get("production_cycle_id"):
-                ap_meta["production_cycle_id"] = only.get("production_cycle_id")
+    pond_ids_on_debits = {
+        int(m["pond_id"]) for m in aq_costing if m and m.get("pond_id")
+    }
+    if len(pond_ids_on_debits) == 1 and aq_costing:
+        only_pid = next(iter(pond_ids_on_debits))
+        all_debits_same_pond = all(
+            m and int(m.get("pond_id") or 0) == only_pid for m in aq_costing
+        )
+        if all_debits_same_pond:
+            ap_meta = {"pond_id": only_pid}
+            cycle_ids = {
+                int(m["production_cycle_id"])
+                for m in aq_costing
+                if m and m.get("pond_id") == only_pid and m.get("production_cycle_id")
+            }
+            if len(cycle_ids) == 1:
+                ap_meta["production_cycle_id"] = next(iter(cycle_ids))
     je_lines.append((ap, Decimal("0"), total, memo_ap))
     aq_costing.append(ap_meta)
 

@@ -16,6 +16,10 @@ type CompanyDateInputProps = {
   id?: string
   disabled?: boolean
   required?: boolean
+  /** Inclusive minimum calendar day (`YYYY-MM-DD`). */
+  min?: string
+  /** Inclusive maximum calendar day (`YYYY-MM-DD`). */
+  max?: string
 }
 
 export type CompanyDateInputHandle = {
@@ -30,7 +34,7 @@ export type CompanyDateInputHandle = {
  */
 export const CompanyDateInput = forwardRef<CompanyDateInputHandle, CompanyDateInputProps>(
   function CompanyDateInput(
-    { value, onChange, className, id, disabled, required },
+    { value, onChange, className, id, disabled, required, min, max },
     ref
   ) {
     const { dateFormat } = useCompanyLocale()
@@ -60,12 +64,20 @@ export const CompanyDateInput = forwardRef<CompanyDateInputHandle, CompanyDateIn
           setInvalid(true)
           return false
         }
+        if (min && iso < min) {
+          setInvalid(true)
+          return false
+        }
+        if (max && iso > max) {
+          setInvalid(true)
+          return false
+        }
         setInvalid(false)
         onChange(iso)
         setText(formatCompanyDate(iso, dateFormat))
         return true
       },
-      [text, dateFormat, onChange, required]
+      [text, dateFormat, onChange, required, min, max]
     )
 
     useImperativeHandle(ref, () => ({ commit: () => commit() }), [commit])
@@ -92,7 +104,13 @@ export const CompanyDateInput = forwardRef<CompanyDateInputHandle, CompanyDateIn
         disabled={disabled}
         required={required}
         aria-invalid={invalid || undefined}
-        title={invalid ? `Enter a valid date as ${placeholder}` : undefined}
+        title={
+          invalid
+            ? min || max
+              ? `Enter a valid date as ${placeholder}${min ? ` (from ${formatCompanyDate(min, dateFormat)})` : ''}${max ? ` (through ${formatCompanyDate(max, dateFormat)})` : ''}`
+              : `Enter a valid date as ${placeholder}`
+            : undefined
+        }
         className={`${invalid ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/30' : ''} ${className || ''}`}
       />
     )

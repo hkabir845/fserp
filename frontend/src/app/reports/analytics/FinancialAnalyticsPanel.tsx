@@ -6,6 +6,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import api from '@/lib/api'
 import { formatCurrency, formatPercentage } from '@/utils/formatting'
 import { formatDate, formatDateOnly, toDateInputValue } from '@/utils/date'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import {
   BarChart3,
   Box,
@@ -759,20 +760,18 @@ export function FinancialAnalyticsPanel({
                         <label className="whitespace-nowrap text-sm font-medium text-primary">
                           Report Period:
                         </label>
-                        <input
-                          type="date"
+                        <CompanyDateInput
                           value={startDate}
-                          max={endDate}
-                          onChange={(e) => onStartChange(e.target.value)}
-                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground/85 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring"
+                          max={endDate || undefined}
+                          onChange={onStartChange}
+                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground/85 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring min-w-[9.5rem]"
                         />
                         <span className="text-sm font-medium text-primary">to</span>
-                        <input
-                          type="date"
+                        <CompanyDateInput
                           value={endDate}
                           max={toDateInputValue(new Date())}
-                          onChange={(e) => onEndChange(e.target.value)}
-                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground/85 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring"
+                          onChange={onEndChange}
+                          className="rounded-md border border-blue-300 bg-white px-3 py-1.5 text-sm text-foreground/85 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring min-w-[9.5rem]"
                         />
                         <button
                           type="button"

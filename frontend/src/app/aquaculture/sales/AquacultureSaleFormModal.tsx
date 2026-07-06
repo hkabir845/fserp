@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Copy, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -575,12 +577,7 @@ export function AquacultureSaleFormModal({
                 <span className={labelCls}>
                   Sale date <span className="text-destructive">*</span>
                 </span>
-                <input
-                  type="date"
-                  className={`${inputCls} mt-1.5`}
-                  value={header.sale_date}
-                  onChange={(e) => setHeader((h) => ({ ...h, sale_date: e.target.value }))}
-                />
+                <CompanyDateInput value={header.sale_date} onChange={(iso) => setHeader((h) => ({ ...h, sale_date: iso }))} className={`${inputCls} mt-1.5`} />
               </label>
               <label className="block sm:col-span-2 lg:col-span-2">
                 <span className={labelCls}>Buyer / customer</span>

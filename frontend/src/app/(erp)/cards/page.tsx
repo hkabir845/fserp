@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { getCurrentUser } from '@/lib/auth'
@@ -371,12 +373,7 @@ export default function BusinessCardsPage() {
           )}
           <div>
             <label className="text-xs font-medium text-muted-foreground">Join date</label>
-            <input
-              type="date"
-              value={form.join_date ? form.join_date.slice(0, 10) : ''}
-              onChange={(e) => setForm((f) => ({ ...f, join_date: e.target.value ? `${e.target.value}T00:00:00` : null }))}
-              className="mt-1 rounded-md border border-border px-3 py-2 text-sm"
-            />
+            <CompanyDateInput value={form.join_date ? form.join_date.slice(0, 10) : ''} onChange={(iso) => setForm((f) => ({ ...f, join_date: iso ? `${iso}T00:00:00` : null }))} className="mt-1 rounded-md border border-border px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">Profile notes (skills, certifications)</label>

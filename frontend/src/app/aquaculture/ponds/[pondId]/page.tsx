@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { PondPhaseWorkflowPanel } from '@/components/aquaculture/PondPhaseWorkflowPanel'
 import { useParams } from 'next/navigation'
@@ -841,21 +843,11 @@ export default function PondDetailViewPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <label className="text-muted-foreground">
               From
-              <input
-                type="date"
-                className="ml-1 rounded border border-border px-2 py-1"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-              />
+              <CompanyDateInput value={customStart} onChange={setCustomStart} className="ml-1 rounded border border-border px-2 py-1" />
             </label>
             <label className="text-muted-foreground">
               To
-              <input
-                type="date"
-                className="ml-1 rounded border border-border px-2 py-1"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-              />
+              <CompanyDateInput value={customEnd} onChange={setCustomEnd} className="ml-1 rounded border border-border px-2 py-1" />
             </label>
           </div>
         ) : null}

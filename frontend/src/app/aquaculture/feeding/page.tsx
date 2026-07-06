@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -929,12 +931,7 @@ export default function AquacultureFeedingPage() {
               ) : null}
               <label className="block text-xs font-medium text-muted-foreground">
                 Date
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm"
-                  value={genDate}
-                  onChange={(e) => setGenDate(e.target.value)}
-                />
+                <CompanyDateInput value={genDate} onChange={setGenDate} className="mt-1 w-full rounded-lg border border-border bg-muted/50 px-2 py-2 text-sm" />
               </label>
               <label className="block text-xs font-medium text-muted-foreground">
                 Sack size

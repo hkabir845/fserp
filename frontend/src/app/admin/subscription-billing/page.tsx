@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -1264,25 +1266,13 @@ function SubscriptionBillingContent() {
                         <div className="grid grid-cols-2 gap-2">
                           <label className="block">
                             <span className="text-xs font-semibold text-muted-foreground">Period start</span>
-                            <input
-                              type="date"
-                              value={billingForm.payment_start_date}
-                              onChange={(e) =>
-                                setBillingForm({ ...billingForm, payment_start_date: e.target.value })
-                              }
-                              className="mt-1.5 w-full rounded-xl border border-border px-2 py-2.5 text-sm"
-                            />
+                            <CompanyDateInput value={billingForm.payment_start_date} onChange={(iso) =>
+                                setBillingForm({ ...billingForm, payment_start_date: iso })} className="mt-1.5 w-full rounded-xl border border-border px-2 py-2.5 text-sm" />
                           </label>
                           <label className="block">
                             <span className="text-xs font-semibold text-muted-foreground">Period end</span>
-                            <input
-                              type="date"
-                              value={billingForm.payment_end_date}
-                              onChange={(e) =>
-                                setBillingForm({ ...billingForm, payment_end_date: e.target.value })
-                              }
-                              className="mt-1.5 w-full rounded-xl border border-border px-2 py-2.5 text-sm"
-                            />
+                            <CompanyDateInput value={billingForm.payment_end_date} onChange={(iso) =>
+                                setBillingForm({ ...billingForm, payment_end_date: iso })} className="mt-1.5 w-full rounded-xl border border-border px-2 py-2.5 text-sm" />
                           </label>
                         </div>
                         <label className="block">
@@ -1319,12 +1309,7 @@ function SubscriptionBillingContent() {
                       <div className="flex flex-wrap gap-2 items-end">
                         <label className="flex-1 min-w-[10rem]">
                           <span className="text-xs font-semibold text-foreground/85">New end date</span>
-                          <input
-                            type="date"
-                            value={extendDate}
-                            onChange={(e) => setExtendDate(e.target.value)}
-                            className="mt-1.5 w-full rounded-xl border border-primary/25 bg-white px-2 py-2.5 text-sm"
-                          />
+                          <CompanyDateInput value={extendDate} onChange={setExtendDate} className="mt-1.5 w-full rounded-xl border border-primary/25 bg-white px-2 py-2.5 text-sm" />
                         </label>
                         <button
                           type="button"
@@ -1403,34 +1388,10 @@ function SubscriptionBillingContent() {
                               onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
                               className="rounded-lg border border-border px-2 py-2 text-sm"
                             />
-                            <input
-                              type="date"
-                              title="Period start"
-                              value={invoiceForm.period_start}
-                              onChange={(e) => setInvoiceForm({ ...invoiceForm, period_start: e.target.value })}
-                              className="rounded-lg border border-border px-2 py-2 text-sm"
-                            />
-                            <input
-                              type="date"
-                              title="Period end"
-                              value={invoiceForm.period_end}
-                              onChange={(e) => setInvoiceForm({ ...invoiceForm, period_end: e.target.value })}
-                              className="rounded-lg border border-border px-2 py-2 text-sm"
-                            />
-                            <input
-                              type="date"
-                              title="Invoice date"
-                              value={invoiceForm.invoice_date}
-                              onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_date: e.target.value })}
-                              className="rounded-lg border border-border px-2 py-2 text-sm"
-                            />
-                            <input
-                              type="date"
-                              title="Due date"
-                              value={invoiceForm.due_date}
-                              onChange={(e) => setInvoiceForm({ ...invoiceForm, due_date: e.target.value })}
-                              className="rounded-lg border border-border px-2 py-2 text-sm"
-                            />
+                            <CompanyDateInput value={invoiceForm.period_start} onChange={(iso) => setInvoiceForm({ ...invoiceForm, period_start: iso })} className="rounded-lg border border-border px-2 py-2 text-sm" />
+                            <CompanyDateInput value={invoiceForm.period_end} onChange={(iso) => setInvoiceForm({ ...invoiceForm, period_end: iso })} className="rounded-lg border border-border px-2 py-2 text-sm" />
+                            <CompanyDateInput value={invoiceForm.invoice_date} onChange={(iso) => setInvoiceForm({ ...invoiceForm, invoice_date: iso })} className="rounded-lg border border-border px-2 py-2 text-sm" />
+                            <CompanyDateInput value={invoiceForm.due_date} onChange={(iso) => setInvoiceForm({ ...invoiceForm, due_date: iso })} className="rounded-lg border border-border px-2 py-2 text-sm" />
                             <select
                               value={invoiceForm.status}
                               onChange={(e) => setInvoiceForm({ ...invoiceForm, status: e.target.value })}
@@ -1688,21 +1649,11 @@ function SubscriptionBillingContent() {
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
                   <span className="text-xs font-semibold text-muted-foreground">Invoice date</span>
-                  <input
-                    type="date"
-                    value={(editingInvoice.invoice_date || '').split('T')[0]}
-                    onChange={(e) => setEditingInvoice({ ...editingInvoice, invoice_date: e.target.value })}
-                    className="mt-1 w-full border border-border rounded-xl px-2 py-2"
-                  />
+                  <CompanyDateInput value={(editingInvoice.invoice_date || '').split('T')[0]} onChange={(iso) => setEditingInvoice({ ...editingInvoice, invoice_date: iso })} className="mt-1 w-full border border-border rounded-xl px-2 py-2" />
                 </label>
                 <label className="block">
                   <span className="text-xs font-semibold text-muted-foreground">Due date</span>
-                  <input
-                    type="date"
-                    value={(editingInvoice.due_date || '').split('T')[0]}
-                    onChange={(e) => setEditingInvoice({ ...editingInvoice, due_date: e.target.value || '' })}
-                    className="mt-1 w-full border border-border rounded-xl px-2 py-2"
-                  />
+                  <CompanyDateInput value={(editingInvoice.due_date || '').split('T')[0]} onChange={(iso) => setEditingInvoice({ ...editingInvoice, due_date: iso || '' })} className="mt-1 w-full border border-border rounded-xl px-2 py-2" />
                 </label>
               </div>
               <label className="block">

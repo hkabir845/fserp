@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -632,29 +634,19 @@ export default function AquacultureExpensesPage() {
           </label>
           <label className="text-xs font-medium text-teal-100">
             {aquacultureT('fromDate', lang)}
-            <input
-              type="date"
-              className={AQ_HERO_SELECT_BLOCK}
-              value={filterDateFrom}
-              onChange={(e) => {
-                const v = e.target.value
+            <CompanyDateInput value={filterDateFrom} onChange={(iso) => {
+                const v = iso
                 setFilterDateFrom(v)
                 pushFilterUrl({ pond: filterPond, from: v, to: filterDateTo })
-              }}
-            />
+              }} className={AQ_HERO_SELECT_BLOCK} />
           </label>
           <label className="text-xs font-medium text-teal-100">
             {aquacultureT('toDate', lang)}
-            <input
-              type="date"
-              className={AQ_HERO_SELECT_BLOCK}
-              value={filterDateTo}
-              onChange={(e) => {
-                const v = e.target.value
+            <CompanyDateInput value={filterDateTo} onChange={(iso) => {
+                const v = iso
                 setFilterDateTo(v)
                 pushFilterUrl({ pond: filterPond, from: filterDateFrom, to: v })
-              }}
-            />
+              }} className={AQ_HERO_SELECT_BLOCK} />
           </label>
           {(filterDateFrom || filterDateTo) && (
             <button
@@ -873,12 +865,7 @@ export default function AquacultureExpensesPage() {
             ) : null}
             <label className="block text-xs font-medium text-foreground/85">
               Date
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm"
-                value={shopDate}
-                onChange={(e) => setShopDate(e.target.value)}
-              />
+              <CompanyDateInput value={shopDate} onChange={setShopDate} className="mt-1 w-full rounded-lg border border-border bg-white px-2 py-1.5 text-sm" />
             </label>
             <label className="block text-xs font-medium text-foreground/85">
               Vendor (optional)
@@ -1290,12 +1277,7 @@ export default function AquacultureExpensesPage() {
               })()}
               <label className="block text-sm font-medium text-foreground/85">
                 Date
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  value={form.expense_date}
-                  onChange={(e) => setForm((f) => ({ ...f, expense_date: e.target.value }))}
-                />
+                <CompanyDateInput value={form.expense_date} onChange={(iso) => setForm((f) => ({ ...f, expense_date: iso }))} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
               </label>
               <label className="block text-sm font-medium text-foreground/85">
                 Amount ({sym})

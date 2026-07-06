@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -207,12 +209,7 @@ export default function LCDetailPage() {
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Effective date</label>
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
-                  value={amendForm.effective_date}
-                  onChange={(e) => setAmendForm({ ...amendForm, effective_date: e.target.value })}
-                />
+                <CompanyDateInput value={amendForm.effective_date} onChange={(iso) => setAmendForm({ ...amendForm, effective_date: iso })} className="mt-1 w-full rounded border border-border px-3 py-2 text-sm" />
               </div>
               <div className="sm:col-span-2">
                 <label className="text-xs font-medium text-muted-foreground">Summary *</label>

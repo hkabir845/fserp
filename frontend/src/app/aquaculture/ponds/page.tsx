@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -1755,21 +1757,11 @@ export default function AquaculturePondsPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-foreground/85">
                   Contract start
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                    value={form.lease_contract_start}
-                    onChange={(e) => setForm((f) => ({ ...f, lease_contract_start: e.target.value }))}
-                  />
+                  <CompanyDateInput value={form.lease_contract_start} onChange={(iso) => setForm((f) => ({ ...f, lease_contract_start: iso }))} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
                 </label>
                 <label className="block text-sm font-medium text-foreground/85">
                   Contract end
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                    value={form.lease_contract_end}
-                    onChange={(e) => setForm((f) => ({ ...f, lease_contract_end: e.target.value }))}
-                  />
+                  <CompanyDateInput value={form.lease_contract_end} onChange={(iso) => setForm((f) => ({ ...f, lease_contract_end: iso }))} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
                 </label>
               </div>
               <label className="block text-sm font-medium text-foreground/85">

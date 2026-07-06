@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState } from 'react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -522,22 +524,12 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
           
           <div>
             <label className="block text-sm font-medium text-foreground/85 mb-1">Start Date</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-            />
+            <CompanyDateInput value={startDate} onChange={setStartDate} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
           </div>
           
           <div>
             <label className="block text-sm font-medium text-foreground/85 mb-1">End Date</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-            />
+            <CompanyDateInput value={endDate} onChange={setEndDate} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
           </div>
           
           <div>
@@ -814,37 +806,21 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Period Start <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={invoiceFormData.period_start}
-                      onChange={(e) => handlePeriodStartChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                    />
+                    <CompanyDateInput value={invoiceFormData.period_start} onChange={handlePeriodStartChange} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" required={true} />
                   </div>
 
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Period End
                     </label>
-                    <input
-                      type="date"
-                      value={invoiceFormData.period_end}
-                      onChange={(e) => setInvoiceFormData({ ...invoiceFormData, period_end: e.target.value })}
-                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                    />
+                    <CompanyDateInput value={invoiceFormData.period_end} onChange={(iso) => setInvoiceFormData({ ...invoiceFormData, period_end: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
                   </div>
 
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
-                    <input
-                      type="date"
-                      value={invoiceFormData.due_date}
-                      onChange={(e) => setInvoiceFormData({ ...invoiceFormData, due_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                    />
+                    <CompanyDateInput value={invoiceFormData.due_date} onChange={(iso) => setInvoiceFormData({ ...invoiceFormData, due_date: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
                   </div>
                 </div>
 
@@ -1003,41 +979,21 @@ export default function SubscriptionLedger({ initialCompanyId }: SubscriptionLed
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Due date</label>
-                  <input
-                    type="date"
-                    value={editFormData.due_date ? editFormData.due_date.split('T')[0] : ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, due_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg"
-                  />
+                  <CompanyDateInput value={editFormData.due_date ? editFormData.due_date.split('T')[0] : ''} onChange={(iso) => setEditFormData({ ...editFormData, due_date: iso })} className="w-full px-3 py-2 border border-border rounded-lg" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Paid date</label>
-                  <input
-                    type="date"
-                    value={editFormData.paid_date ? editFormData.paid_date.split('T')[0] : ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, paid_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg"
-                  />
+                  <CompanyDateInput value={editFormData.paid_date ? editFormData.paid_date.split('T')[0] : ''} onChange={(iso) => setEditFormData({ ...editFormData, paid_date: iso })} className="w-full px-3 py-2 border border-border rounded-lg" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Period start</label>
-                  <input
-                    type="date"
-                    value={editFormData.period_start}
-                    onChange={(e) => setEditFormData({ ...editFormData, period_start: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg"
-                  />
+                  <CompanyDateInput value={editFormData.period_start} onChange={(iso) => setEditFormData({ ...editFormData, period_start: iso })} className="w-full px-3 py-2 border border-border rounded-lg" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Period end</label>
-                  <input
-                    type="date"
-                    value={editFormData.period_end}
-                    onChange={(e) => setEditFormData({ ...editFormData, period_end: e.target.value })}
-                    className="w-full px-3 py-2 border border-border rounded-lg"
-                  />
+                  <CompanyDateInput value={editFormData.period_end} onChange={(iso) => setEditFormData({ ...editFormData, period_end: iso })} className="w-full px-3 py-2 border border-border rounded-lg" />
                 </div>
               </div>
               <div>

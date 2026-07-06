@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Printer, Calendar, DollarSign, AlertCircle, FileText } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -471,13 +473,7 @@ export default function ContractManagement() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Contract Date *
                     </label>
-                    <input
-                      type="date"
-                      value={formData.contract_date}
-                      onChange={(e) => setFormData({ ...formData, contract_date: e.target.value })}
-                      className="w-full border border-border rounded-md px-3 py-2"
-                      required
-                    />
+                    <CompanyDateInput value={formData.contract_date} onChange={(iso) => setFormData({ ...formData, contract_date: iso })} className="w-full border border-border rounded-md px-3 py-2" required={true} />
                   </div>
 
                   {/* Expiry Date */}
@@ -485,13 +481,7 @@ export default function ContractManagement() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Expiry Date *
                     </label>
-                    <input
-                      type="date"
-                      value={formData.expiry_date}
-                      onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
-                      className="w-full border border-border rounded-md px-3 py-2"
-                      required
-                    />
+                    <CompanyDateInput value={formData.expiry_date} onChange={(iso) => setFormData({ ...formData, expiry_date: iso })} className="w-full border border-border rounded-md px-3 py-2" required={true} />
                   </div>
 
                   {/* Duration */}

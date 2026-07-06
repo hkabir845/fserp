@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState } from 'react'
 import { Wallet, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -258,12 +260,7 @@ export function LandlordLedgerEntryModal({
             </label>
             <label className="font-medium text-foreground/85">
               Date
-              <input
-                type="date"
-                className="mt-1 w-full rounded-lg border border-border px-2 py-2"
-                value={legDate}
-                onChange={(e) => setLegDate(e.target.value)}
-              />
+              <CompanyDateInput value={legDate} onChange={setLegDate} className="mt-1 w-full rounded-lg border border-border px-2 py-2" />
             </label>
             {legKind === 'payment' ? (
               <label className="flex items-center gap-2 text-foreground/85 sm:col-span-2">

@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Landmark, RefreshCw, Trash2, Wallet } from 'lucide-react'
@@ -412,12 +414,7 @@ export default function AquacultureFinancingPage() {
               </label>
               <label className="text-sm">
                 <span className="block text-xs font-medium text-muted-foreground">Date</span>
-                <input
-                  type="date"
-                  className="mt-1 rounded border border-border px-2 py-1.5"
-                  value={allocDate}
-                  onChange={(e) => setAllocDate(e.target.value)}
-                />
+                <CompanyDateInput value={allocDate} onChange={setAllocDate} className="mt-1 rounded border border-border px-2 py-1.5" />
               </label>
             </div>
             <div className="mt-3 space-y-2">
@@ -521,11 +518,11 @@ export default function AquacultureFinancingPage() {
               </label>
               <label className="text-sm">
                 <span className="block text-xs font-medium text-muted-foreground">P&amp;L from</span>
-                <input type="date" className="mt-1 rounded border px-2 py-1.5" value={plStart} onChange={(e) => setPlStart(e.target.value)} />
+                <CompanyDateInput value={plStart} onChange={setPlStart} className="mt-1 rounded border px-2 py-1.5" />
               </label>
               <label className="text-sm">
                 <span className="block text-xs font-medium text-muted-foreground">P&amp;L to</span>
-                <input type="date" className="mt-1 rounded border px-2 py-1.5" value={plEnd} onChange={(e) => setPlEnd(e.target.value)} />
+                <CompanyDateInput value={plEnd} onChange={setPlEnd} className="mt-1 rounded border px-2 py-1.5" />
               </label>
               <label className="text-sm">
                 <span className="block text-xs font-medium text-muted-foreground">Split method</span>
@@ -616,7 +613,7 @@ export default function AquacultureFinancingPage() {
                 <div className="flex flex-wrap gap-3 items-end">
                   <label className="text-sm">
                     <span className="block text-xs font-medium">Transfer date</span>
-                    <input type="date" className="mt-1 rounded border px-2 py-1.5" value={transferDate} onChange={(e) => setTransferDate(e.target.value)} />
+                    <CompanyDateInput value={transferDate} onChange={setTransferDate} className="mt-1 rounded border px-2 py-1.5" />
                   </label>
                   <label className="text-sm min-w-[14rem]">
                     <span className="block text-xs font-medium">Debit (e.g. bank)</span>

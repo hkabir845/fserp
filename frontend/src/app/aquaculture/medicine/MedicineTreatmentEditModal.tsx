@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import {
@@ -102,7 +104,7 @@ export function MedicineTreatmentEditModal(props: {
 
           <label className={labelCls}>
             Treatment date
-            <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
+            <CompanyDateInput value={date} onChange={setDate} className={inputCls} />
           </label>
 
           <label className={labelCls}>

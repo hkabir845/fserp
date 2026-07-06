@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
@@ -2842,12 +2844,7 @@ export default function LoansPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-foreground/85 mb-1">As of</label>
-                          <input
-                            className="w-full border rounded-lg px-3 py-2"
-                            type="date"
-                            value={cpForm.opening_balance_as_of}
-                            onChange={(e) => setCpForm({ ...cpForm, opening_balance_as_of: e.target.value })}
-                          />
+                          <CompanyDateInput value={cpForm.opening_balance_as_of} onChange={(iso) => setCpForm({ ...cpForm, opening_balance_as_of: iso })} className="w-full border rounded-lg px-3 py-2" />
                         </div>
                       </div>
                       <div>
@@ -3040,14 +3037,8 @@ export default function LoansPage() {
                             onChange={(e) => setCpEditForm({ ...cpEditForm, opening_balance: e.target.value })}
                             placeholder="Amount"
                           />
-                          <input
-                            className="w-full border rounded-lg px-3 py-2"
-                            type="date"
-                            value={cpEditForm.opening_balance_as_of}
-                            onChange={(e) =>
-                              setCpEditForm({ ...cpEditForm, opening_balance_as_of: e.target.value })
-                            }
-                          />
+                          <CompanyDateInput value={cpEditForm.opening_balance_as_of} onChange={(iso) =>
+                              setCpEditForm({ ...cpEditForm, opening_balance_as_of: iso })} className="w-full border rounded-lg px-3 py-2" />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-foreground/85 mb-1">
@@ -3784,12 +3775,7 @@ export default function LoansPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-foreground/85 mb-1">Start date (optional)</label>
-                          <input
-                            className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-                            type="date"
-                            value={loanForm.start_date}
-                            onChange={(e) => setLoanForm({ ...loanForm, start_date: e.target.value })}
-                          />
+                          <CompanyDateInput value={loanForm.start_date} onChange={(iso) => setLoanForm({ ...loanForm, start_date: iso })} className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring" />
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -3874,12 +3860,7 @@ export default function LoansPage() {
                   )}
                   <div>
                     <label className="block text-sm font-medium text-foreground/85 mb-1">Maturity date (optional)</label>
-                    <input
-                      className="w-full border rounded-lg px-3 py-2"
-                      type="date"
-                      value={loanForm.maturity_date}
-                      onChange={(e) => setLoanForm({ ...loanForm, maturity_date: e.target.value })}
-                    />
+                    <CompanyDateInput value={loanForm.maturity_date} onChange={(iso) => setLoanForm({ ...loanForm, maturity_date: iso })} className="w-full border rounded-lg px-3 py-2" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground/85 mb-1">
@@ -4043,12 +4024,7 @@ export default function LoansPage() {
                         </span>
                       </p>
                       <label className="block text-xs font-medium text-foreground/85 mb-1">Disbursement date</label>
-                      <input
-                        type="date"
-                        className="w-full border rounded-lg px-3 py-2 mb-2"
-                        value={disbDate}
-                        onChange={(e) => setDisbDate(e.target.value)}
-                      />
+                      <CompanyDateInput value={disbDate} onChange={setDisbDate} className="w-full border rounded-lg px-3 py-2 mb-2" />
                       <input
                         type="number"
                         step="0.01"
@@ -4400,12 +4376,7 @@ export default function LoansPage() {
                           actionLoan.interest_accrual_account_id && (
                             <div className="space-y-2 border-t border-primary/15 pt-3">
                               <label className="block text-xs font-medium text-foreground/85">Accrual date</label>
-                              <input
-                                type="date"
-                                className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                value={accrualDate}
-                                onChange={(e) => setAccrualDate(e.target.value)}
-                              />
+                              <CompanyDateInput value={accrualDate} onChange={setAccrualDate} className="w-full border rounded-lg px-2 py-1.5 text-sm" />
                               <input
                                 type="number"
                                 step="0.01"
@@ -4522,12 +4493,7 @@ export default function LoansPage() {
                         </p>
                       </div>
                       <label className="block text-xs font-medium text-foreground/85 mb-1">Payment date</label>
-                      <input
-                        type="date"
-                        className="w-full border rounded-lg px-3 py-2 mb-2"
-                        value={repayDate}
-                        onChange={(e) => setRepayDate(e.target.value)}
-                      />
+                      <CompanyDateInput value={repayDate} onChange={setRepayDate} className="w-full border rounded-lg px-3 py-2 mb-2" />
                       <input
                         type="number"
                         step="0.01"

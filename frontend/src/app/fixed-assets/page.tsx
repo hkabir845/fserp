@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
@@ -854,22 +856,12 @@ export default function FixedAssetsPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground/85 mb-1">In-service date</label>
-                    <input
-                      type="date"
-                      value={formData.in_service_date}
-                      onChange={(e) => setFormData({ ...formData, in_service_date: e.target.value })}
-                      className="w-full border border-border rounded-lg px-3 py-2"
-                    />
+                    <CompanyDateInput value={formData.in_service_date} onChange={(iso) => setFormData({ ...formData, in_service_date: iso })} className="w-full border border-border rounded-lg px-3 py-2" />
                     <p className="text-xs text-muted-foreground mt-1">When the asset started depreciating (for opening balance estimate).</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground/85 mb-1">Acquisition date</label>
-                    <input
-                      type="date"
-                      value={formData.acquisition_date}
-                      onChange={(e) => setFormData({ ...formData, acquisition_date: e.target.value })}
-                      className="w-full border border-border rounded-lg px-3 py-2"
-                    />
+                    <CompanyDateInput value={formData.acquisition_date} onChange={(iso) => setFormData({ ...formData, acquisition_date: iso })} className="w-full border border-border rounded-lg px-3 py-2" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground/85 mb-1">Salvage value (end-of-life scrap/residual) *</label>
@@ -1034,12 +1026,7 @@ export default function FixedAssetsPage() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Disposal date</label>
-                  <input
-                    type="date"
-                    value={disposeForm.disposal_date}
-                    onChange={(e) => setDisposeForm({ ...disposeForm, disposal_date: e.target.value })}
-                    className="w-full border border-border rounded-lg px-3 py-2"
-                  />
+                  <CompanyDateInput value={disposeForm.disposal_date} onChange={(iso) => setDisposeForm({ ...disposeForm, disposal_date: iso })} className="w-full border border-border rounded-lg px-3 py-2" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Proceeds amount</label>

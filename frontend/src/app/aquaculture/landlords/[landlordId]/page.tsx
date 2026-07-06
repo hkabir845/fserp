@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -527,12 +529,7 @@ export default function LandlordDetailPage() {
               </label>
               <label className="font-medium text-foreground/85">
                 Date
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-lg border border-border px-2 py-2"
-                  value={editDate}
-                  onChange={(ev) => setEditDate(ev.target.value)}
-                />
+                <CompanyDateInput value={editDate} onChange={setEditDate} className="mt-1 w-full rounded-lg border border-border px-2 py-2" />
               </label>
               <label className="font-medium text-foreground/85">
                 {editKind === 'adjustment' ? 'Signed amount' : 'Amount (positive)'}

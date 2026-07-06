@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
@@ -432,12 +434,7 @@ export default function FundTransfersPage() {
                 <label className="mb-2 block text-sm font-medium text-foreground">
                   Transfer Date <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="date"
-                  value={formData.transfer_date}
-                  onChange={(e) => setFormData({ ...formData, transfer_date: e.target.value })}
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                />
+                <CompanyDateInput value={formData.transfer_date} onChange={(iso) => setFormData({ ...formData, transfer_date: iso })} className="w-full px-4 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

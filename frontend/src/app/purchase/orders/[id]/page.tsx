@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
@@ -223,12 +225,7 @@ export default function PurchaseOrderDetailPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Receipt date</label>
-                  <input
-                    type="date"
-                    value={receiveForm.receipt_date}
-                    onChange={(e) => setReceiveForm({ ...receiveForm, receipt_date: e.target.value })}
-                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={receiveForm.receipt_date} onChange={(iso) => setReceiveForm({ ...receiveForm, receipt_date: iso })} className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm" />
                 </div>
               </div>
               {partialReceive && (

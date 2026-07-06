@@ -1,6 +1,7 @@
 'use client'
 
 import { ReportingHubBreadcrumb } from '@/components/ReportingHubBreadcrumb'
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -35,6 +36,8 @@ export default function PayrollEmployeesPage() {
   const qc = useQueryClient()
   const [tenantDomain, setTenantDomain] = useState<string>('')
   const [showAddEmp, setShowAddEmp] = useState(false)
+  const [newJoinDate, setNewJoinDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const [newOpeningBalanceAsOf, setNewOpeningBalanceAsOf] = useState(() => format(new Date(), 'yyyy-MM-dd'))
   const [salaryEmp, setSalaryEmp] = useState<Employee | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -222,7 +225,12 @@ export default function PayrollEmployeesPage() {
           </div>
           <button
             type="button"
-            onClick={() => setShowAddEmp(true)}
+            onClick={() => {
+              const today = format(new Date(), 'yyyy-MM-dd')
+              setNewJoinDate(today)
+              setNewOpeningBalanceAsOf(today)
+              setShowAddEmp(true)
+            }}
             className="rounded-lg border border-primary/25 bg-white px-3 py-2 text-sm font-semibold text-primary hover:bg-accent"
           >
             + Add employee
@@ -308,15 +316,14 @@ export default function PayrollEmployeesPage() {
                   email: String(fd.get('email') || '') || undefined,
                   department: String(fd.get('department') || '') || undefined,
                   designation: String(fd.get('designation') || '') || undefined,
-                  join_date: String(fd.get('join_date') || ''),
+                  join_date: newJoinDate,
                   basic_salary: Number(fd.get('basic_salary') || 0),
                   bank_name: String(fd.get('bank_name') || '') || undefined,
                   bank_account_no: String(fd.get('bank_account_no') || '') || undefined,
                   bank_branch: String(fd.get('bank_branch') || '') || undefined,
                   bank_routing_or_ifsc: String(fd.get('bank_routing_or_ifsc') || '') || undefined,
                   opening_balance: ob,
-                  opening_balance_as_of:
-                    ob !== 0 ? String(fd.get('opening_balance_as_of') || '') || undefined : undefined,
+                  opening_balance_as_of: ob !== 0 ? newOpeningBalanceAsOf || undefined : undefined,
                 })
               }}
             >
@@ -346,11 +353,10 @@ export default function PayrollEmployeesPage() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">Join date *</label>
-                <input
-                  name="join_date"
-                  type="date"
+                <CompanyDateInput
                   required
-                  defaultValue={format(new Date(), 'yyyy-MM-dd')}
+                  value={newJoinDate}
+                  onChange={setNewJoinDate}
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
                 />
               </div>
@@ -385,7 +391,7 @@ export default function PayrollEmployeesPage() {
                 <p className="text-xs text-muted-foreground mb-2">+ = you owe employee; − = advance from employee. Offsets Retained earnings (3200).</p>
                 <div className="grid grid-cols-2 gap-2">
                   <input name="opening_balance" type="number" step="0.01" defaultValue={0} className="rounded-lg border border-border px-3 py-2 text-sm" />
-                  <input name="opening_balance_as_of" type="date" defaultValue={format(new Date(), 'yyyy-MM-dd')} className="rounded-lg border border-border px-3 py-2 text-sm" />
+                  <CompanyDateInput value={newOpeningBalanceAsOf} onChange={setNewOpeningBalanceAsOf} className="rounded-lg border border-border px-3 py-2 text-sm" />
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">

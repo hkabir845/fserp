@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRightLeft, Beaker, FileBarChart, Fish, Plus, RefreshCw, Trash2, Pencil } from 'lucide-react'
@@ -1546,12 +1548,7 @@ export default function AquacultureFishTransfersPage() {
                 </label>
                 <label className="block text-sm font-medium text-foreground/85">
                   Transfer date
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                    value={transferDate}
-                    onChange={(e) => setTransferDate(e.target.value)}
-                  />
+                  <CompanyDateInput value={transferDate} onChange={setTransferDate} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
                 </label>
               </div>
               <label className="block text-sm font-medium text-foreground/85">

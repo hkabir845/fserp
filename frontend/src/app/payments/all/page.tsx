@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -466,25 +468,13 @@ export default function AllPaymentsPage() {
                   <label htmlFor="pay-all-start" className="mb-1 block text-xs font-medium text-muted-foreground">
                     From date
                   </label>
-                  <input
-                    id="pay-all-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
-                  />
+                  <CompanyDateInput value={startDate} onChange={setStartDate} className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20" id="pay-all-start" />
                 </div>
                 <div>
                   <label htmlFor="pay-all-end" className="mb-1 block text-xs font-medium text-muted-foreground">
                     To date
                   </label>
-                  <input
-                    id="pay-all-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
-                  />
+                  <CompanyDateInput value={endDate} onChange={setEndDate} className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20" id="pay-all-end" />
                 </div>
                 <div>
                   <label htmlFor="pay-all-min" className="mb-1 block text-xs font-medium text-muted-foreground">

@@ -1073,21 +1073,9 @@ export default function JournalEntriesPage() {
                     Date range
                   </label>
                   <div className="flex items-center space-x-2">
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
-                      placeholder="From Date"
-                    />
+                    <CompanyDateInput value={startDate} onChange={setStartDate} className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring" />
                     <span className="text-muted-foreground">to</span>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring"
-                      placeholder="To Date"
-                    />
+                    <CompanyDateInput value={endDate} onChange={setEndDate} className="flex-1 px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:ring-2 focus:ring-ring" />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">Leave blank to include all dates, including back-dated entries.</p>
                 </div>

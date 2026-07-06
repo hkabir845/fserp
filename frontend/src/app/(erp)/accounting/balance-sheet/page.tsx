@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { ReportingHubBreadcrumb } from '@/components/ReportingHubBreadcrumb'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -105,13 +107,7 @@ export default function BalanceSheetPage() {
           <label htmlFor="bs-date" className="text-sm text-muted-foreground">
             As on
           </label>
-          <input
-            id="bs-date"
-            type="date"
-            value={asOn}
-            onChange={(e) => setAsOn(e.target.value)}
-            className="rounded-lg border border-border px-3 py-2 text-sm"
-          />
+          <CompanyDateInput value={asOn} onChange={setAsOn} className="rounded-lg border border-border px-3 py-2 text-sm" id="bs-date" />
         </div>
       </div>
 

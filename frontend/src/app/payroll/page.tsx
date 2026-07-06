@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -1467,37 +1469,19 @@ export default function PayrollPage() {
                       <label className="mb-2 block text-sm font-medium text-foreground">
                         Period Start Date <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="date"
-                        required
-                        value={formData.pay_period_start}
-                        onChange={(e) => setFormData({ ...formData, pay_period_start: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                      />
+                      <CompanyDateInput value={formData.pay_period_start} onChange={(iso) => setFormData({ ...formData, pay_period_start: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" required={true} />
                     </div>
                     <div>
                       <label className="mb-2 block text-sm font-medium text-foreground">
                         Period End Date <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="date"
-                        required
-                        value={formData.pay_period_end}
-                        onChange={(e) => setFormData({ ...formData, pay_period_end: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                      />
+                      <CompanyDateInput value={formData.pay_period_end} onChange={(iso) => setFormData({ ...formData, pay_period_end: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" required={true} />
                     </div>
                     <div className="md:col-span-2">
                       <label className="mb-2 block text-sm font-medium text-foreground">
                         Payment Date <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="date"
-                        required
-                        value={formData.payment_date}
-                        onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                        className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                      />
+                      <CompanyDateInput value={formData.payment_date} onChange={(iso) => setFormData({ ...formData, payment_date: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" required={true} />
                     </div>
                     <div className="md:col-span-2">
                       <label className="mb-2 block text-sm font-medium text-foreground">

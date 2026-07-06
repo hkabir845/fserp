@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useRouter } from 'next/navigation'
 import { useMutation } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -291,11 +293,11 @@ export default function NewLCPage() {
             </div>
             <div>
               <label className={label}>Latest shipment</label>
-              <input className={field} type="date" value={form.latest_shipment_date} onChange={(e) => setForm({ ...form, latest_shipment_date: e.target.value })} />
+              <CompanyDateInput value={form.latest_shipment_date} onChange={(iso) => setForm({ ...form, latest_shipment_date: iso })} className={field} />
             </div>
             <div>
               <label className={label}>LC expiry *</label>
-              <input className={field} type="date" value={form.expiry_date} onChange={(e) => setForm({ ...form, expiry_date: e.target.value })} />
+              <CompanyDateInput value={form.expiry_date} onChange={(iso) => setForm({ ...form, expiry_date: iso })} className={field} />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">
               <label className="flex items-center gap-2 text-sm text-foreground/85">

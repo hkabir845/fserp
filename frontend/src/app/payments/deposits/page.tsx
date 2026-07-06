@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -389,15 +391,7 @@ export default function DepositsPage() {
                     <label htmlFor="deposit-date" className="mb-1 block text-sm font-medium text-foreground/85">
                       Deposit date <span className="text-destructive">*</span>
                     </label>
-                    <input
-                      id="deposit-date"
-                      name="deposit_date"
-                      type="date"
-                      value={depositDate}
-                      onChange={(e) => setDepositDate(e.target.value)}
-                      className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
-                      required
-                    />
+                    <CompanyDateInput value={depositDate} onChange={setDepositDate} className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20" id="deposit-date" name="deposit_date" required={true} />
                   </div>
                   <div className="sm:col-span-2">
                     <label htmlFor="deposit-memo" className="mb-1 block text-sm font-medium text-foreground/85">

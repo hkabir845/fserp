@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { BookOpen, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
@@ -161,12 +163,7 @@ export function AquacultureBiologicalAssetPanel({
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-medium text-muted-foreground">
               As of
-              <input
-                type="date"
-                value={asOf}
-                onChange={(e) => setAsOf(e.target.value)}
-                className="mt-1 block rounded-lg border border-border px-3 py-2 text-sm"
-              />
+              <CompanyDateInput value={asOf} onChange={setAsOf} className="mt-1 block rounded-lg border border-border px-3 py-2 text-sm" />
             </label>
             <button
               type="button"

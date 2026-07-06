@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -2422,21 +2424,11 @@ function SuperAdminPageContent() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="mb-2 block text-sm font-medium text-foreground">Payment Start Date</label>
-                        <input
-                          type="date"
-                          value={companyFormData.payment_start_date}
-                          onChange={(e) => setCompanyFormData({ ...companyFormData, payment_start_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                        />
+                        <CompanyDateInput value={companyFormData.payment_start_date} onChange={(iso) => setCompanyFormData({ ...companyFormData, payment_start_date: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
                       </div>
                       <div>
                         <label className="mb-2 block text-sm font-medium text-foreground">Payment End Date</label>
-                        <input
-                          type="date"
-                          value={companyFormData.payment_end_date}
-                          onChange={(e) => setCompanyFormData({ ...companyFormData, payment_end_date: e.target.value })}
-                          className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                        />
+                        <CompanyDateInput value={companyFormData.payment_end_date} onChange={(iso) => setCompanyFormData({ ...companyFormData, payment_end_date: iso })} className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
                       </div>
                     </div>
 

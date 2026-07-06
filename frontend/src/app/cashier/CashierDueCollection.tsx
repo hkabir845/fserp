@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useCallback, useEffect, useState } from "react"
 import api from "@/lib/api"
 import { isOffsetPagedPayload } from "@/lib/pagination"
@@ -369,13 +370,7 @@ export function CashierDueCollection({
               <label className="text-sm font-medium text-foreground" htmlFor="pos-collect-date">
                 Payment date
               </label>
-              <input
-                id="pos-collect-date"
-                type="date"
-                value={paymentDate}
-                onChange={e => setPaymentDate(e.target.value)}
-                className={inputClassName}
-              />
+              <CompanyDateInput value={paymentDate} onChange={iso => setPaymentDate(iso)} className={inputClassName} id="pos-collect-date" />
             </div>
           </div>
 

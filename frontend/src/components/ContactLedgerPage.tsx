@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -336,21 +338,11 @@ export default function ContactLedgerPage({
                 <div className="mt-6 flex flex-wrap items-end gap-4 border-t border-border/70 pt-4">
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground">Start date</label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="mt-1 rounded border border-border px-3 py-2 text-sm"
-                    />
+                    <CompanyDateInput value={startDate} onChange={setStartDate} className="mt-1 rounded border border-border px-3 py-2 text-sm" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground">End date</label>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="mt-1 rounded border border-border px-3 py-2 text-sm"
-                    />
+                    <CompanyDateInput value={endDate} onChange={setEndDate} className="mt-1 rounded border border-border px-3 py-2 text-sm" />
                   </div>
                   <div className="min-w-[14rem] flex-1">
                     <label className="block text-xs font-medium text-muted-foreground">Search (all dates)</label>
@@ -405,13 +397,7 @@ export default function ContactLedgerPage({
                   <form onSubmit={submitEntry} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Date</label>
-                      <input
-                        type="date"
-                        required
-                        value={entryForm.entry_date}
-                        onChange={(e) => setEntryForm((f) => ({ ...f, entry_date: e.target.value }))}
-                        className="mt-1 w-full rounded border border-border px-3 py-2 text-sm"
-                      />
+                      <CompanyDateInput value={entryForm.entry_date} onChange={(iso) => setEntryForm((f) => ({ ...f, entry_date: iso }))} className="mt-1 w-full rounded border border-border px-3 py-2 text-sm" required={true} />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Type</label>

@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import type { ReactNode } from 'react'
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -1994,13 +1996,7 @@ function InventoryContent() {
                               <label className="text-sm font-medium" htmlFor="inv-transfer-date">
                                 {inventoryT('date', language)}
                               </label>
-                              <input
-                                id="inv-transfer-date"
-                                type="date"
-                                className={inputClassName}
-                                value={transferDate}
-                                onChange={e => setTransferDate(e.target.value)}
-                              />
+                              <CompanyDateInput value={transferDate} onChange={iso => setTransferDate(iso)} className={inputClassName} id="inv-transfer-date" />
                             </div>
                           ) : null}
                           <div className="space-y-1 sm:col-span-2">

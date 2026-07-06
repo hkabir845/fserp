@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -530,21 +532,11 @@ export default function AquacultureDataBankPage() {
             </label>
             <label className="block text-sm">
               <span className="font-medium text-foreground/85">Period end</span>
-              <input
-                type="date"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
+              <CompanyDateInput value={periodEnd} onChange={setPeriodEnd} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
             </label>
             <label className="block text-sm">
               <span className="font-medium text-foreground/85">Period start (optional)</span>
-              <input
-                type="date"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
+              <CompanyDateInput value={periodStart} onChange={setPeriodStart} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
             </label>
             <div className="sm:col-span-2 lg:col-span-4">
               {!labelIsManual ? (
@@ -675,21 +667,11 @@ export default function AquacultureDataBankPage() {
                 </label>
                 <label className="block text-sm">
                   <span className="font-medium text-foreground/85">Period end</span>
-                  <input
-                    type="date"
-                    value={stationPeriodEnd}
-                    onChange={(e) => setStationPeriodEnd(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={stationPeriodEnd} onChange={setStationPeriodEnd} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
                 </label>
                 <label className="block text-sm">
                   <span className="font-medium text-foreground/85">Period start (optional)</span>
-                  <input
-                    type="date"
-                    value={stationPeriodStart}
-                    onChange={(e) => setStationPeriodStart(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={stationPeriodStart} onChange={setStationPeriodStart} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
                 </label>
               </div>
               {stationPreview && (

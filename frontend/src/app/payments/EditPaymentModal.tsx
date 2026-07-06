@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useMemo, useState } from 'react'
 import api from '@/lib/api'
 import { AMOUNT_SLATE_EDITABLE_CLASS } from '@/utils/amountFieldStyles'
@@ -679,13 +681,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2 sm:col-span-1">
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Date</label>
-                  <input
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                    required
-                  />
+                  <CompanyDateInput value={paymentDate} onChange={setPaymentDate} className="w-full rounded-lg border border-border px-3 py-2 text-sm" required={true} />
                 </div>
                 <div className="col-span-2 sm:col-span-1">
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Method</label>

@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useCallback, useEffect, useState } from "react"
 import api from "@/lib/api"
 import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
@@ -292,13 +293,7 @@ export function CashierPayBills({ vendors, currencySymbol, bankAccounts, onRecor
             <label className="text-sm font-medium text-foreground" htmlFor="pos-pay-date">
               Payment date
             </label>
-            <input
-              id="pos-pay-date"
-              type="date"
-              value={paymentDate}
-              onChange={e => setPaymentDate(e.target.value)}
-              className={inputClassName}
-            />
+            <CompanyDateInput value={paymentDate} onChange={iso => setPaymentDate(iso)} className={inputClassName} id="pos-pay-date" />
           </div>
         </div>
 

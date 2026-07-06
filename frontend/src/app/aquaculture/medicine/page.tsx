@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -763,21 +765,9 @@ function AquacultureMedicinePageInner() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
-                  <input
-                    type="date"
-                    className={selectCls}
-                    value={historyFrom}
-                    onChange={(e) => setHistoryFrom(e.target.value)}
-                    aria-label="From date"
-                  />
+                  <CompanyDateInput value={historyFrom} onChange={setHistoryFrom} className={selectCls} aria-label="From date" />
                   <span className="text-muted-foreground/70">–</span>
-                  <input
-                    type="date"
-                    className={selectCls}
-                    value={historyTo}
-                    onChange={(e) => setHistoryTo(e.target.value)}
-                    aria-label="To date"
-                  />
+                  <CompanyDateInput value={historyTo} onChange={setHistoryTo} className={selectCls} aria-label="To date" />
                 </label>
               </div>
               <button

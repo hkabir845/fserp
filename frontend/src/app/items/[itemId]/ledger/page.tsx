@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -181,27 +183,17 @@ export default function ItemStockLedgerPage() {
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="flex flex-col text-xs font-medium text-muted-foreground">
               From
-              <input
-                type="date"
-                value={start}
-                onChange={(e) => {
-                  setStart(e.target.value)
+              <CompanyDateInput value={start} onChange={(iso) => {
+                  setStart(iso)
                   setActivePreset('')
-                }}
-                className="mt-1 rounded-md border border-border px-2 py-1.5 text-sm"
-              />
+                }} className="mt-1 rounded-md border border-border px-2 py-1.5 text-sm" />
             </label>
             <label className="flex flex-col text-xs font-medium text-muted-foreground">
               To
-              <input
-                type="date"
-                value={end}
-                onChange={(e) => {
-                  setEnd(e.target.value)
+              <CompanyDateInput value={end} onChange={(iso) => {
+                  setEnd(iso)
                   setActivePreset('')
-                }}
-                className="mt-1 rounded-md border border-border px-2 py-1.5 text-sm"
-              />
+                }} className="mt-1 rounded-md border border-border px-2 py-1.5 text-sm" />
             </label>
             {(start || end) && (
               <button

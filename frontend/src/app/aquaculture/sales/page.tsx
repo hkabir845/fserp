@@ -1,5 +1,7 @@
 ﻿'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
@@ -525,12 +527,7 @@ export default function AquacultureSalesPage() {
                 </label>
                 <label className="mt-3 block text-sm font-medium text-foreground/85">
                   {aquacultureT('dueDate', lang)}
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                    value={finalizeDueDate}
-                    onChange={(e) => setFinalizeDueDate(e.target.value)}
-                  />
+                  <CompanyDateInput value={finalizeDueDate} onChange={setFinalizeDueDate} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
                 </label>
               </>
             )}

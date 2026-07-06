@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -608,12 +610,7 @@ function SupplierModal({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Effective date</label>
-                  <input
-                    type="date"
-                    value={form.opening_balance_as_of}
-                    onChange={(e) => setForm({ ...form, opening_balance_as_of: e.target.value })}
-                    className="w-full rounded-md border border-border px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={form.opening_balance_as_of} onChange={(iso) => setForm({ ...form, opening_balance_as_of: iso })} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
                 </div>
               </div>
             </div>

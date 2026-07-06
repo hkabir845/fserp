@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
@@ -1174,8 +1176,8 @@ export default function InvoicesPage() {
             ) : null}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-3 py-2 border border-border rounded-lg" aria-label="From date" />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-3 py-2 border border-border rounded-lg" aria-label="To date" />
+            <CompanyDateInput value={startDate} onChange={setStartDate} className="px-3 py-2 border border-border rounded-lg" aria-label="From date" />
+            <CompanyDateInput value={endDate} onChange={setEndDate} className="px-3 py-2 border border-border rounded-lg" aria-label="To date" />
             <input type="number" min="0" step="0.01" placeholder="Min amount" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="px-3 py-2 border border-border rounded-lg" />
             <input type="number" min="0" step="0.01" placeholder="Max amount" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="px-3 py-2 border border-border rounded-lg" />
           </div>
@@ -1423,24 +1425,13 @@ export default function InvoicesPage() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Invoice Date *
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={formData.invoice_date}
-                      onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.invoice_date} onChange={(iso) => setFormData({ ...formData, invoice_date: iso })} className="erp-field" required={true} />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
-                    <input
-                      type="date"
-                      value={formData.due_date}
-                      onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.due_date} onChange={(iso) => setFormData({ ...formData, due_date: iso })} className="erp-field" />
                   </div>
                 </div>
 
@@ -1735,24 +1726,13 @@ export default function InvoicesPage() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Invoice Date *
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={formData.invoice_date}
-                      onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.invoice_date} onChange={(iso) => setFormData({ ...formData, invoice_date: iso })} className="erp-field" required={true} />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
-                    <input
-                      type="date"
-                      value={formData.due_date}
-                      onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.due_date} onChange={(iso) => setFormData({ ...formData, due_date: iso })} className="erp-field" />
                   </div>
                 </div>
 

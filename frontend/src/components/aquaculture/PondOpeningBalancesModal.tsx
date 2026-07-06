@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -473,12 +475,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
               <label className="flex items-center gap-2 text-sm text-foreground/85">
                 <Calendar className="h-4 w-4 text-primary" aria-hidden />
                 <span className="font-medium">Cutover date</span>
-                <input
-                  type="date"
-                  className="rounded-lg border border-border px-2.5 py-1.5 text-sm"
-                  value={cutoverDate}
-                  onChange={(e) => setCutoverDate(e.target.value)}
-                />
+                <CompanyDateInput value={cutoverDate} onChange={setCutoverDate} className="rounded-lg border border-border px-2.5 py-1.5 text-sm" />
               </label>
               <button
                 type="button"
@@ -779,17 +776,11 @@ function EditablePartyTab({
                     />
                   </td>
                   <td className="py-2">
-                    <input
-                      type="date"
-                      className="rounded-lg border border-border px-2 py-1.5 text-sm"
-                      value={d?.asOf ?? ''}
-                      onChange={(e) =>
+                    <CompanyDateInput value={d?.asOf ?? ''} onChange={(iso) =>
                         setDrafts((prev) => ({
                           ...prev,
-                          [key]: { ...prev[key], asOf: e.target.value },
-                        }))
-                      }
-                    />
+                          [key]: { ...prev[key], asOf: iso },
+                        }))} className="rounded-lg border border-border px-2 py-1.5 text-sm" />
                   </td>
                   {kind === 'vendor' || kind === 'employee' ? (
                     <td className="py-2">
@@ -1018,17 +1009,11 @@ function CustomerOpeningTab({
                     <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                       Required when balance is not zero
                     </span>
-                    <input
-                      type="date"
-                      className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-                      value={d?.asOf ?? ''}
-                      onChange={(e) =>
+                    <CompanyDateInput value={d?.asOf ?? ''} onChange={(iso) =>
                         setDrafts((prev) => ({
                           ...prev,
-                          [p.pond_id]: { ...prev[p.pond_id], asOf: e.target.value, opening: prev[p.pond_id]?.opening ?? '' },
-                        }))
-                      }
-                    />
+                          [p.pond_id]: { ...prev[p.pond_id], asOf: iso, opening: prev[p.pond_id]?.opening ?? '' },
+                        }))} className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20" />
                   </label>
                   <label className="flex items-start gap-2 text-sm sm:col-span-2">
                     <input
@@ -1265,21 +1250,15 @@ function PlOpeningTab({
                         </label>
                         <label className="block text-xs sm:col-span-1">
                           <span className="font-medium text-foreground/85">As-of date</span>
-                          <input
-                            type="date"
-                            className="mt-1 w-full rounded-md border border-border px-2.5 py-2 text-sm"
-                            value={d?.asOf ?? ''}
-                            onChange={(e) =>
+                          <CompanyDateInput value={d?.asOf ?? ''} onChange={(iso) =>
                               setDrafts((prev) => ({
                                 ...prev,
                                 [key]: {
                                   amount: prev[key]?.amount ?? '',
-                                  asOf: e.target.value,
+                                  asOf: iso,
                                   memo: prev[key]?.memo ?? '',
                                 },
-                              }))
-                            }
-                          />
+                              }))} className="mt-1 w-full rounded-md border border-border px-2.5 py-2 text-sm" />
                         </label>
                       </div>
                       <p className={`mt-2 text-xs tabular-nums ${signedTone(signed)}`}>

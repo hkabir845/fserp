@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { ReportingHubBreadcrumb } from '@/components/ReportingHubBreadcrumb'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -293,12 +295,7 @@ export default function SalesReceiptsPage() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground">Receipt date</label>
-                  <input
-                    type="date"
-                    value={form.receipt_date}
-                    onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))}
-                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={form.receipt_date} onChange={(iso) => setForm((f) => ({ ...f, receipt_date: iso }))} className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm" />
                 </div>
               </div>
 

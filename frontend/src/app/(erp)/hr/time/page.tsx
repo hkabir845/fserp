@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { ReportingHubBreadcrumb } from '@/components/ReportingHubBreadcrumb'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -189,8 +191,8 @@ export default function HrTimePage() {
               <option value="casual">Casual</option>
               <option value="unpaid">Unpaid</option>
             </select>
-            <input className="rounded border px-3 py-2 text-sm" type="date" value={sd} onChange={(e) => setSd(e.target.value)} />
-            <input className="rounded border px-3 py-2 text-sm" type="date" value={ed} onChange={(e) => setEd(e.target.value)} />
+            <CompanyDateInput value={sd} onChange={setSd} className="rounded border px-3 py-2 text-sm" />
+            <CompanyDateInput value={ed} onChange={setEd} className="rounded border px-3 py-2 text-sm" />
             <button
               type="button"
               className="rounded-md bg-primary px-4 py-2 text-sm text-white disabled:opacity-50"
@@ -217,7 +219,7 @@ export default function HrTimePage() {
                 </option>
               ))}
             </select>
-            <input className="rounded border px-3 py-2 text-sm" type="date" value={adate} onChange={(e) => setAdate(e.target.value)} />
+            <CompanyDateInput value={adate} onChange={setAdate} className="rounded border px-3 py-2 text-sm" />
             <select className="rounded border px-3 py-2 text-sm" value={ast} onChange={(e) => setAst(e.target.value)}>
               <option value="present">Present</option>
               <option value="absent">Absent</option>
@@ -240,7 +242,7 @@ export default function HrTimePage() {
           <h2 className="text-sm font-semibold">Bulk attendance</h2>
           <p className="mt-1 text-xs text-muted-foreground">Mark one status for multiple employees on one date.</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <input className="rounded border px-3 py-2 text-sm" type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} />
+            <CompanyDateInput value={bulkDate} onChange={setBulkDate} className="rounded border px-3 py-2 text-sm" />
             <select className="rounded border px-3 py-2 text-sm" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
               <option value="present">Present</option>
               <option value="absent">Absent</option>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { CompanyDateInput } from '@/components/CompanyDateInput'
 import api from "@/lib/api"
 import { formatBankAccountTitle } from "@/lib/bankAccountDisplay"
 import { useToast } from "@/components/Toast"
@@ -177,13 +178,7 @@ export function CashierDonation({ currencySymbol, bankAccounts, onRecorded }: Ca
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-foreground">Date</label>
-              <input
-                type="date"
-                className={inputClassName}
-                value={entryDate}
-                onChange={e => setEntryDate(e.target.value)}
-                required
-              />
+              <CompanyDateInput value={entryDate} onChange={iso => setEntryDate(iso)} className={inputClassName} required={true} />
             </div>
           </div>
 

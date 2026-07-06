@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -1082,12 +1084,7 @@ export default function VendorsPage() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       As of Date
                     </label>
-                    <input
-                      type="date"
-                      value={formData.opening_balance_date}
-                      onChange={(e) => setFormData({ ...formData, opening_balance_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.opening_balance_date} onChange={(iso) => setFormData({ ...formData, opening_balance_date: iso })} className="erp-field" />
                     <p className="mt-1 text-xs text-muted-foreground">
                       Date of the opening balance
                     </p>

@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -881,13 +883,7 @@ export default function TankDipsPage() {
                 <label className="mb-2 block text-sm font-medium text-foreground">
                   Dip date *
                 </label>
-                <input
-                  type="date"
-                  value={editDipDate}
-                  onChange={(e) => setEditDipDate(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-warning"
-                  required
-                />
+                <CompanyDateInput value={editDipDate} onChange={setEditDipDate} className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-warning" required={true} />
               </div>
             </div>
 

@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -2770,8 +2772,8 @@ export default function BillsPage() {
               <option value="partial">{tr('partiallyPaid')}</option>
               <option value="overdue">{tr('overdue')}</option>
             </select>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-lg border border-border px-3 py-2" aria-label="From date" />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-lg border border-border px-3 py-2" aria-label="To date" />
+            <CompanyDateInput value={startDate} onChange={setStartDate} className="rounded-lg border border-border px-3 py-2" aria-label="From date" />
+            <CompanyDateInput value={endDate} onChange={setEndDate} className="rounded-lg border border-border px-3 py-2" aria-label="To date" />
             <input type="number" min="0" step="0.01" placeholder="Min amount" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="w-28 rounded-lg border border-border px-3 py-2" />
             <input type="number" min="0" step="0.01" placeholder="Max amount" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="w-28 rounded-lg border border-border px-3 py-2" />
             {hasActiveFilters ? (
@@ -3271,24 +3273,13 @@ export default function BillsPage() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Bill Date *
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={formData.bill_date}
-                      onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.bill_date} onChange={(iso) => setFormData({ ...formData, bill_date: iso })} className="erp-field" required={true} />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
-                    <input
-                      type="date"
-                      value={formData.due_date}
-                      onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.due_date} onChange={(iso) => setFormData({ ...formData, due_date: iso })} className="erp-field" />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -3785,24 +3776,13 @@ export default function BillsPage() {
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Bill Date *
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={formData.bill_date}
-                      onChange={(e) => setFormData({ ...formData, bill_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.bill_date} onChange={(iso) => setFormData({ ...formData, bill_date: iso })} className="erp-field" required={true} />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Due Date
                     </label>
-                    <input
-                      type="date"
-                      value={formData.due_date}
-                      onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                      className="erp-field"
-                    />
+                    <CompanyDateInput value={formData.due_date} onChange={(iso) => setFormData({ ...formData, due_date: iso })} className="erp-field" />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">

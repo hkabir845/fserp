@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -918,13 +920,7 @@ export function AquacultureStockLedgerFormModal({
               </label>
               <label className="block sm:col-span-1">
                 <span className={labelCls}>Entry date</span>
-                <input
-                  type="date"
-                  className={`${inputCls} mt-1.5`}
-                  value={form.entry_date}
-                  disabled={glLinked}
-                  onChange={(e) => setForm((f) => ({ ...f, entry_date: e.target.value }))}
-                />
+                <CompanyDateInput value={form.entry_date} onChange={(iso) => setForm((f) => ({ ...f, entry_date: iso }))} className={`${inputCls} mt-1.5`} disabled={glLinked} />
               </label>
               <label className="block sm:col-span-2">
                 <span className={labelCls}>Stocking batch (optional)</span>

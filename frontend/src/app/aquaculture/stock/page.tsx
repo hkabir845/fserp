@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
@@ -1976,21 +1978,11 @@ function AquacultureStockPageContent() {
             </label>
             <label className="text-xs font-medium text-muted-foreground">
               From
-              <input
-                type="date"
-                value={movFrom}
-                onChange={(e) => setMovFrom(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
+              <CompanyDateInput value={movFrom} onChange={setMovFrom} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
             </label>
             <label className="text-xs font-medium text-muted-foreground">
               To
-              <input
-                type="date"
-                value={movTo}
-                onChange={(e) => setMovTo(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
+              <CompanyDateInput value={movTo} onChange={setMovTo} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
             </label>
           </div>
           {movementsListCap != null &&
@@ -2487,21 +2479,11 @@ function AquacultureStockPageContent() {
                 </label>
                 <label className="text-xs font-medium text-muted-foreground">
                   From
-                  <input
-                    type="date"
-                    value={conFrom}
-                    onChange={(e) => setConFrom(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={conFrom} onChange={setConFrom} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
                 </label>
                 <label className="text-xs font-medium text-muted-foreground">
                   To
-                  <input
-                    type="date"
-                    value={conTo}
-                    onChange={(e) => setConTo(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
+                  <CompanyDateInput value={conTo} onChange={setConTo} className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm" />
                 </label>
               </div>
               {consumptionLoading ? (

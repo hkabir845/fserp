@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Droplets, Landmark, Plus, User, X } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -368,13 +370,7 @@ export function LandlordFormModal({
                     </label>
                     <label className="block text-sm font-medium text-foreground/85">
                       As of date
-                      <input
-                        type="date"
-                        disabled={values.openingLocked}
-                        className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:bg-muted"
-                        value={values.openingBalanceDate}
-                        onChange={(e) => setField('openingBalanceDate', e.target.value)}
-                      />
+                      <CompanyDateInput value={values.openingBalanceDate} onChange={(iso) => setField('openingBalanceDate', iso)} className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm disabled:bg-muted" disabled={values.openingLocked} />
                     </label>
                   </div>
                 </div>

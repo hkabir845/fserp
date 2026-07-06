@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -235,25 +237,13 @@ export default function NewPurchaseOrderPage() {
                 <label htmlFor="po-order-date" className="block text-sm font-medium text-foreground">
                   Order date
                 </label>
-                <input
-                  id="po-order-date"
-                  type="date"
-                  value={form.order_date}
-                  onChange={(e) => setForm({ ...form, order_date: e.target.value })}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
-                />
+                <CompanyDateInput value={form.order_date} onChange={(iso) => setForm({ ...form, order_date: iso })} className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20" id="po-order-date" />
               </div>
               <div>
                 <label htmlFor="po-expected" className="block text-sm font-medium text-foreground">
                   Expected date
                 </label>
-                <input
-                  id="po-expected"
-                  type="date"
-                  value={form.expected_date}
-                  onChange={(e) => setForm({ ...form, expected_date: e.target.value })}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
-                />
+                <CompanyDateInput value={form.expected_date} onChange={(iso) => setForm({ ...form, expected_date: iso })} className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm shadow-sm transition focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20" id="po-expected" />
               </div>
             </div>
           </section>

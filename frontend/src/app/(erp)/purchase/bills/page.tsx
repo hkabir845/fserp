@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { ReportingHubBreadcrumb } from '@/components/ReportingHubBreadcrumb'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -240,21 +242,11 @@ export default function PurchaseBillsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-foreground/85">Bill date</label>
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
-                    value={form.bill_date}
-                    onChange={(e) => setForm((f) => ({ ...f, bill_date: e.target.value }))}
-                  />
+                  <CompanyDateInput value={form.bill_date} onChange={(iso) => setForm((f) => ({ ...f, bill_date: iso }))} className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground/85">Due date (optional)</label>
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm"
-                    value={form.due_date}
-                    onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
-                  />
+                  <CompanyDateInput value={form.due_date} onChange={(iso) => setForm((f) => ({ ...f, due_date: iso }))} className="mt-1 w-full rounded-md border border-border px-3 py-2 text-sm" />
                 </div>
               </div>
               <div>

@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
@@ -500,27 +502,17 @@ export default function AquacultureOverviewPage() {
             <span className="text-[11px] font-semibold uppercase tracking-wide text-teal-200/80">Dates</span>
             <label className="flex items-center gap-2 text-xs font-medium text-teal-100">
               <span className="shrink-0 text-teal-200/80">From</span>
-              <input
-                type="date"
-                value={customStart}
-                onChange={(e) => {
-                  setCustomStart(e.target.value)
+              <CompanyDateInput value={customStart} onChange={(iso) => {
+                  setCustomStart(iso)
                   setPreset('custom')
-                }}
-                className={AQ_HERO_SELECT_SM}
-              />
+                }} className={AQ_HERO_SELECT_SM} />
             </label>
             <label className="flex items-center gap-2 text-xs font-medium text-teal-100">
               <span className="shrink-0 text-teal-200/80">To</span>
-              <input
-                type="date"
-                value={customEnd}
-                onChange={(e) => {
-                  setCustomEnd(e.target.value)
+              <CompanyDateInput value={customEnd} onChange={(iso) => {
+                  setCustomEnd(iso)
                   setPreset('custom')
-                }}
-                className={AQ_HERO_SELECT_SM}
-              />
+                }} className={AQ_HERO_SELECT_SM} />
             </label>
           </div>
         </>

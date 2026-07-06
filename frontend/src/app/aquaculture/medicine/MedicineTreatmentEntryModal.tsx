@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { Loader2, MapPin, Package, Stethoscope, X } from 'lucide-react'
@@ -204,13 +206,7 @@ export function MedicineTreatmentEntryModal(props: {
                 <>
                   <label className={labelCls}>
                     Treatment date <span className="text-destructive">*</span>
-                    <input
-                      type="date"
-                      className={`${inputCls} max-w-xs`}
-                      value={medDate}
-                      onChange={(e) => onMedDateChange(e.target.value)}
-                      disabled={medSaving}
-                    />
+                    <CompanyDateInput value={medDate} onChange={onMedDateChange} className={`${inputCls} max-w-xs`} disabled={medSaving} />
                   </label>
 
                   <MedicineProductLinesEditor

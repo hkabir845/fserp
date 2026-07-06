@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AlertCircle, UserPlus } from 'lucide-react'
@@ -878,13 +880,7 @@ export function PaymentReceivedForm({
 
           <div>
             <label className="block text-sm font-medium text-foreground/85 mb-1">Payment Date *</label>
-            <input
-              type="date"
-              value={paymentDate}
-              onChange={(e) => setPaymentDate(e.target.value)}
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success"
-              required
-            />
+            <CompanyDateInput value={paymentDate} onChange={setPaymentDate} className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-success" required={true} />
           </div>
 
           <div>

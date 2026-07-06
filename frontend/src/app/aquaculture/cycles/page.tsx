@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -636,21 +638,11 @@ export default function AquacultureCyclesPage() {
               )}
               <label className="block text-sm font-medium text-foreground/85">
                 {pick('Start date', 'শুরুর তারিখ')}
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  value={form.start_date}
-                  onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-                />
+                <CompanyDateInput value={form.start_date} onChange={(iso) => setForm((f) => ({ ...f, start_date: iso }))} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
               </label>
               <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('endDateOptional', lang)}
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  value={form.end_date}
-                  onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
-                />
+                <CompanyDateInput value={form.end_date} onChange={(iso) => setForm((f) => ({ ...f, end_date: iso }))} className="mt-1 w-full rounded-lg border border-border px-3 py-2" />
               </label>
               <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('sortOrder', lang)}

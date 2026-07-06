@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -1979,21 +1981,9 @@ export default function ChartOfAccountsPage() {
                 <div className="flex-1 min-w-[16rem]">
                   <label className="mb-2 block text-sm font-medium text-foreground">Date range</label>
                   <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="date"
-                      value={statementStartDate}
-                      onChange={(e) => setStatementStartDate(e.target.value)}
-                      max={statementEndDate || undefined}
-                      className="flex-1 min-w-[9rem] px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring"
-                    />
+                    <CompanyDateInput value={statementStartDate} onChange={setStatementStartDate} className="flex-1 min-w-[9rem] px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring" max={statementEndDate || undefined} />
                     <span className="text-muted-foreground">to</span>
-                    <input
-                      type="date"
-                      value={statementEndDate}
-                      onChange={(e) => setStatementEndDate(e.target.value)}
-                      min={statementStartDate || undefined}
-                      className="flex-1 min-w-[9rem] px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring"
-                    />
+                    <CompanyDateInput value={statementEndDate} onChange={setStatementEndDate} className="flex-1 min-w-[9rem] px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring" min={statementStartDate || undefined} />
                     <button
                       type="button"
                       onClick={() => void handleStatementDateChange()}
@@ -2565,13 +2555,7 @@ export default function ChartOfAccountsPage() {
                   <label className="mb-2 block text-sm font-medium text-foreground">
                     As of Date *
                   </label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.opening_balance_date}
-                    onChange={(e) => setFormData({ ...formData, opening_balance_date: e.target.value })}
-                    className="erp-field"
-                  />
+                  <CompanyDateInput value={formData.opening_balance_date} onChange={(iso) => setFormData({ ...formData, opening_balance_date: iso })} className="erp-field" required={true} />
                   <p className="mt-1 text-xs text-muted-foreground">
                     Date of the opening balance
                   </p>

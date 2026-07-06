@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -1264,12 +1266,7 @@ export default function CustomersPage() {
                         <label className="mb-2 block text-sm font-medium text-foreground">
                           {tr('asOfDate')}
                         </label>
-                        <input
-                          type="date"
-                          value={formData.opening_balance_date}
-                          onChange={(e) => setFormData({ ...formData, opening_balance_date: e.target.value })}
-                          className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
-                        />
+                        <CompanyDateInput value={formData.opening_balance_date} onChange={(iso) => setFormData({ ...formData, opening_balance_date: iso })} className="w-full px-4 py-2.5 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring" />
                         <p className="mt-1.5 text-xs text-muted-foreground">
                           {ct('openingBalanceDateHint')}
                         </p>

@@ -1,5 +1,7 @@
 'use client'
 
+import { CompanyDateInput } from '@/components/CompanyDateInput'
+
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
@@ -720,21 +722,11 @@ export default function TaxPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-foreground/85">Effective from</label>
-                  <input
-                    type="date"
-                    value={rateForm.effective_from}
-                    onChange={(e) => setRateForm({ ...rateForm, effective_from: e.target.value })}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
-                  />
+                  <CompanyDateInput value={rateForm.effective_from} onChange={(iso) => setRateForm({ ...rateForm, effective_from: iso })} className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20" />
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-foreground/85">Effective to</label>
-                  <input
-                    type="date"
-                    value={rateForm.effective_to}
-                    onChange={(e) => setRateForm({ ...rateForm, effective_to: e.target.value })}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
-                  />
+                  <CompanyDateInput value={rateForm.effective_to} onChange={(iso) => setRateForm({ ...rateForm, effective_to: iso })} className="w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20" />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">Leave dates empty if your deployment does not require schedule boundaries.</p>

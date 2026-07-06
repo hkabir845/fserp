@@ -1179,6 +1179,7 @@ export function AquaculturePlManagementPanel({
           )}
           <AquaculturePlNetSummary
             totals={data.totals}
+            expenseCategories={expensesByCategory}
             entityName={
               pondId
                 ? data.ponds.find((p) => String(p.pond_id) === pondId)?.pond_name ?? `Pond #${pondId}`

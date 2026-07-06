@@ -436,6 +436,7 @@ def compute_aquaculture_pl_summary_dict(
 
     rows = []
     total_rev = Decimal("0")
+    total_income = Decimal("0")
     total_exp = Decimal("0")
     total_pay = Decimal("0")
     total_feed = Decimal("0")
@@ -664,6 +665,7 @@ def compute_aquaculture_pl_summary_dict(
             }
         )
         total_rev += rev
+        total_income += income_total
         total_exp += expense_total
         total_pay += pay
         total_fry += fry_cost
@@ -681,7 +683,7 @@ def compute_aquaculture_pl_summary_dict(
         total_feed += feed_consumption_total
         total_med += medicine_consumption_total
 
-    total_profit = _money_q(total_rev - total_exp)
+    total_profit = _money_q(total_income - total_exp)
 
     # Always expose the full income/expense catalog as matrix columns (zeros where no activity).
     show_full_catalog = True
@@ -879,7 +881,7 @@ def compute_aquaculture_pl_summary_dict(
             "inter-pond transfer out reduces expenses."
         ),
         "pl_grand_totals": {
-            "total_income": str(_money_q(total_rev)),
+            "total_income": str(_money_q(total_income)),
             "total_costs_and_expenses": str(_money_q(total_exp)),
             "net_profit": str(total_profit),
         },
@@ -913,7 +915,7 @@ def compute_aquaculture_pl_summary_dict(
             "other_operating_expenses": str(_money_q(total_other)),
             "payroll_allocated": str(_money_q(total_pay)),
             "total_costs": str(_money_q(total_exp)),
-            "total_income": str(_money_q(total_rev)),
+            "total_income": str(_money_q(total_income)),
             "total_costs_and_expenses": str(_money_q(total_exp)),
             "consumption_expenses_total": str(
                 _money_q(total_feed + total_med + total_other_consumption)

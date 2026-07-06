@@ -2486,7 +2486,7 @@ def _entity_financial_summary_row(
         ponds = mgmt.get("ponds") or []
         if ponds:
             p0 = ponds[0]
-            row["management_revenue_bdt"] = _f(_d(p0.get("revenue")))
+            row["management_revenue_bdt"] = _f(_d(p0.get("income_total") or p0.get("revenue")))
             row["management_profit_bdt"] = _f(_d(p0.get("profit")))
             row["management_total_costs_bdt"] = _f(_d(p0.get("total_costs")))
             row["management_feed_consumption_bdt"] = _f(_d(p0.get("feed_consumption_cost")))
@@ -6143,7 +6143,7 @@ def _financial_analytics_entity_row(
         ponds = mgmt.get("ponds") or []
         if ponds:
             p0 = ponds[0]
-            row["management_revenue_bdt"] = _f(_d(p0.get("revenue")))
+            row["management_revenue_bdt"] = _f(_d(p0.get("income_total") or p0.get("revenue")))
             row["management_profit_bdt"] = _f(_d(p0.get("profit")))
             row["management_total_costs_bdt"] = _f(_d(p0.get("total_costs")))
             row["management_feed_consumption_bdt"] = _f(_d(p0.get("feed_consumption_cost")))

@@ -475,7 +475,7 @@ function renderEntitySectionTables(
             stationEntityName(shopHubs, stationScopeId) ?? 'Total — station',
           )
         : null}
-      {!stationScopeId
+      {!stationScopeId && !(pondScopeId && kind === 'pl')
         ? renderSection(
             pondScopeId
               ? `${label} — ${pondEntityName(byPond, pondScopeId) ?? 'pond'} (aquaculture, GL-tagged)`
@@ -495,6 +495,8 @@ function renderEntitySectionTables(
             (scopedByPond.length === 1 ? String(scopedByPond[0]?.pond_name ?? scopedByPond[0]?.entity_name ?? '') : null)
           }
           pondRows={scopedByPond}
+          primaryPl={pondScopeId != null}
+          glReferenceData={pondScopeId != null ? reportData : undefined}
         />
       ) : null}
       {!pondScopeId && unscoped ? renderSection(`${label} — head office / unassigned`, [unscoped]) : null}
@@ -543,6 +545,24 @@ export function renderExtraFinancialReport(
       : null
 
   if (reportType === 'expense-detail') {
+    const pondId = ctx.drillScope?.pondId
+    if (pondId != null && pondId > 0) {
+      return (
+        <div className="space-y-6">
+          {periodFilter(
+            'Pond expenses from the aquaculture register — all operating costs for this pond (feed, medicine, payroll, lease, vendor bills, etc.).',
+          )}
+          <PondScopedAquaculturePlBlock
+            data={data}
+            pondId={pondId}
+            pondName={typeof data.filter_pond_name === 'string' ? String(data.filter_pond_name) : null}
+            primaryPl
+            showIncomeList={false}
+          />
+        </div>
+      )
+    }
+
     const expenses = data.expenses as
       | { accounts?: { account_id?: number; account_code?: string; account_name?: string; balance?: number }[]; total?: number }
       | undefined
@@ -611,20 +631,27 @@ export function renderExtraFinancialReport(
             )}
           </div>
         </div>
-        <PondScopedAquaculturePlBlock
-          data={data}
-          pondId={ctx.drillScope?.pondId}
-          pondName={
-            typeof data.filter_pond_name === 'string'
-              ? String(data.filter_pond_name)
-              : null
-          }
-        />
       </div>
     )
   }
 
   if (reportType === 'income-detail') {
+    const pondId = ctx.drillScope?.pondId
+    if (pondId != null && pondId > 0) {
+      return (
+        <div className="space-y-6">
+          {periodFilter('Pond income from the aquaculture register — harvest sales and other registered income for this pond.')}
+          <PondScopedAquaculturePlBlock
+            data={data}
+            pondId={pondId}
+            pondName={typeof data.filter_pond_name === 'string' ? String(data.filter_pond_name) : null}
+            primaryPl
+            showCategoryList={false}
+          />
+        </div>
+      )
+    }
+
     const income = data.income as
       | { accounts?: { account_id?: number; account_code?: string; account_name?: string; balance?: number }[]; total?: number }
       | undefined
@@ -693,15 +720,6 @@ export function renderExtraFinancialReport(
             )}
           </div>
         </div>
-        <PondScopedAquaculturePlBlock
-          data={data}
-          pondId={ctx.drillScope?.pondId}
-          pondName={
-            typeof data.filter_pond_name === 'string'
-              ? String(data.filter_pond_name)
-              : null
-          }
-        />
       </div>
     )
   }
@@ -1050,9 +1068,18 @@ export function renderExtraFinancialReport(
         {typeof data.accounting_note === 'string' && (
           <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">{data.accounting_note}</p>
         )}
-        {isPond ? (
+        {isPond && pondScopeId ? (
+          <PondScopedAquaculturePlBlock
+            data={data}
+            pondId={pondScopeId}
+            pondName={pondEntityName(allPondRows, pondScopeId)}
+            pondRows={rows}
+            primaryPl
+            glReferenceData={data}
+          />
+        ) : isPond ? (
           entityPlTable(
-            pondScopeId ? pondEntityName(allPondRows, pondScopeId) ?? 'Pond' : 'Ponds',
+            'Ponds',
             rows,
             'pond',
             ctx.onViewEntityPl,
@@ -1068,30 +1095,34 @@ export function renderExtraFinancialReport(
             {entityPlTable('Shop hubs (no fuel)', shopRows, 'station', ctx.onViewEntityPl, ctx.drillScope)}
           </>
         )}
-        {isPond ? (
+        {isPond && !pondScopeId ? (
           <PondScopedAquaculturePlBlock
             data={data}
-            pondId={pondScopeId ?? (rows.length === 1 ? Number(rows[0]?.pond_id ?? rows[0]?.entity_id ?? 0) : null)}
-            pondName={
-              pondEntityName(allPondRows, pondScopeId) ??
-              (rows.length === 1 ? String(rows[0]?.pond_name ?? rows[0]?.entity_name ?? '') : null)
-            }
+            pondId={rows.length === 1 ? Number(rows[0]?.pond_id ?? rows[0]?.entity_id ?? 0) : null}
+            pondName={rows.length === 1 ? String(rows[0]?.pond_name ?? rows[0]?.entity_name ?? '') : null}
             pondRows={rows}
           />
         ) : null}
-        {segmentPlTotalsCard(
-          isPond
-            ? pondScopeId
-              ? pondEntityName(allPondRows, pondScopeId) ?? 'Total — pond'
-              : 'Total — all ponds'
-            : isFuelOnly
-              ? 'Total — all fuel filling stations'
-              : isShopOnly
-                ? 'Total — all shop hubs (no fuel)'
-                : 'Total — all stations',
-          entityTotal ?? (isPond ? segmentTotals.ponds : isFuelOnly ? segmentTotals.fuel_stations : isShopOnly ? segmentTotals.shop_hubs : segmentTotals.all_stations),
-          ctx.drillScope,
-        )}
+        {!pondScopeId
+          ? segmentPlTotalsCard(
+              isPond
+                ? 'Total — all ponds'
+                : isFuelOnly
+                  ? 'Total — all fuel filling stations'
+                  : isShopOnly
+                    ? 'Total — all shop hubs (no fuel)'
+                    : 'Total — all stations',
+              entityTotal ??
+                (isPond
+                  ? segmentTotals.ponds
+                  : isFuelOnly
+                    ? segmentTotals.fuel_stations
+                    : isShopOnly
+                      ? segmentTotals.shop_hubs
+                      : segmentTotals.all_stations),
+              ctx.drillScope,
+            )
+          : null}
         {!isPond && !isFuelOnly && !isShopOnly ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {segmentPlTotalsCard('Total — fuel filling stations', segmentTotals.fuel_stations, ctx.drillScope)}

@@ -290,9 +290,7 @@ function CombinedIncomeExpenseMatrix({
         const col = scopeAmt != null ? Number(scopeAmt) : expenseColTotal(k)
         return s + col
       }, 0)
-  const grandNet = grandTotals
-    ? Number(grandTotals.net_profit)
-    : grandIncome - grandExpense
+  const grandNet = grandIncome - grandExpense
 
   const getIncomeLabel = (key: string) =>
     labelForKey(incomeByPond ?? [], incomeByCategory ?? [], incomeColumns, key)
@@ -384,7 +382,7 @@ function CombinedIncomeExpenseMatrix({
               const expRow = rowTotals
                 ? Number(rowTotals.expense_total)
                 : sumExpenseColumns(expMap, expenseKeys)
-              const net = rowTotals ? Number(rowTotals.net_profit) : incRow - expRow
+              const net = incRow - expRow
               return (
                 <tr key={pond.id}>
                   <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-foreground">
@@ -615,19 +613,65 @@ export interface PlTotalsLike {
   net_profit?: string
 }
 
+/** Sum expense categories the same way the register does (transfer-out reduces total). */
+export function sumPlExpenseCategories(categories?: PlCategoryRow[]): number {
+  return (categories ?? []).reduce((s, c) => {
+    const amt = Number(c.amount ?? 0)
+    if (c.category === 'fish_transfer_cost_out') return s - amt
+    return s + amt
+  }, 0)
+}
+
+/**
+ * Canonical aquaculture P&L figures — net profit always deducts every expense,
+ * including feed, medicine, and all other consumption costs.
+ */
+export function resolveAquaculturePlFigures(
+  totals: PlTotalsLike,
+  expenseCategories?: PlCategoryRow[],
+): { income: number; expenses: number; netProfit: number } {
+  const income = Number(totals.total_income ?? totals.revenue ?? 0)
+
+  let expenses = Number(totals.total_costs_and_expenses ?? totals.total_costs ?? 0)
+  if (expenses <= 0) {
+    expenses = Number(totals.operating_expenses ?? 0)
+  }
+
+  const componentTotal =
+    Number(totals.feed_consumption_cost ?? 0) +
+    Number(totals.medicine_consumption_cost ?? 0) +
+    Number(totals.other_consumption_cost ?? 0) +
+    Number(totals.fry_fingerling_cost ?? 0) +
+    Number(totals.lease_cost ?? 0) +
+    Number(totals.salaries_and_payroll_cost ?? 0) +
+    Number(totals.pond_care_products_cost ?? 0) +
+    Number(totals.equipment_cost ?? 0) +
+    Number(totals.other_operating_expenses ?? 0)
+  if (componentTotal > expenses + 0.02) {
+    expenses = componentTotal
+  }
+
+  if (expenseCategories?.length) {
+    const listed = sumPlExpenseCategories(expenseCategories)
+    if (listed > expenses + 0.02) {
+      expenses = listed
+    }
+  }
+
+  return { income, expenses, netProfit: income - expenses }
+}
+
 /** Simple P&L summary: Income − Expenses = Net profit (expenses include feed, medicine, and all costs). */
 export function AquaculturePlNetSummary({
   totals,
   entityName,
+  expenseCategories,
 }: {
   totals: PlTotalsLike
   entityName?: string | null
+  expenseCategories?: PlCategoryRow[]
 }) {
-  const income = Number(totals.total_income ?? totals.revenue ?? 0)
-  const expenses = Number(
-    totals.total_costs_and_expenses ?? totals.total_costs ?? totals.operating_expenses ?? 0
-  )
-  const net = Number(totals.net_profit ?? totals.profit ?? income - expenses)
+  const { income, expenses, netProfit } = resolveAquaculturePlFigures(totals, expenseCategories)
 
   return (
     <div className="rounded-xl border-2 border-border bg-white p-5 shadow-sm">
@@ -656,10 +700,10 @@ export function AquaculturePlNetSummary({
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net profit</p>
           <p
             className={`mt-1 text-2xl font-bold tabular-nums ${
-              net >= 0 ? 'text-blue-900' : 'text-destructive'
+              netProfit >= 0 ? 'text-blue-900' : 'text-destructive'
             }`}
           >
-            {MoneyBdt(net)}
+            {MoneyBdt(netProfit)}
           </p>
         </div>
       </div>
@@ -744,10 +788,15 @@ export function PlActiveExpenseCategoriesList({
   categories,
   title = 'All pond expenses in this period',
   emptyMessage = 'No pond expenses recorded in this period.',
+  authoritativeTotal,
+  totalLabel = 'Total — listed categories',
 }: {
   categories?: PlCategoryRow[]
   title?: string
   emptyMessage?: string
+  /** When set, footer uses this total instead of summing visible rows. */
+  authoritativeTotal?: string | number
+  totalLabel?: string
 }) {
   const active = (categories ?? [])
     .filter((c) => Number(c.amount ?? 0) !== 0)
@@ -757,7 +806,11 @@ export function PlActiveExpenseCategoriesList({
       <p className="text-sm text-muted-foreground">{emptyMessage}</p>
     )
   }
-  const total = active.reduce((s, c) => s + Number(c.amount || 0), 0)
+  const listedTotal = active.reduce((s, c) => s + Number(c.amount || 0), 0)
+  const total =
+    authoritativeTotal != null && authoritativeTotal !== ''
+      ? Number(authoritativeTotal)
+      : listedTotal
   return (
     <div>
       <h4 className="font-semibold text-foreground mb-1">{title}</h4>
@@ -782,12 +835,18 @@ export function PlActiveExpenseCategoriesList({
           </tbody>
           <tfoot className="bg-muted">
             <tr>
-              <td className="px-3 py-2 font-bold text-foreground">Total — listed categories</td>
+              <td className="px-3 py-2 font-bold text-foreground">{totalLabel}</td>
               <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(String(total))}</td>
             </tr>
           </tfoot>
         </table>
       </div>
+      {authoritativeTotal != null &&
+      Math.abs(Number(authoritativeTotal) - listedTotal) > 0.02 ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Listed categories sum to {MoneyBdt(String(listedTotal))}; total includes rounding and categories without line detail.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -797,10 +856,14 @@ export function PlActiveIncomeCategoriesList({
   categories,
   title = 'All pond income in this period',
   emptyMessage = 'No pond income recorded in this period.',
+  authoritativeTotal,
+  totalLabel = 'Total — listed income types',
 }: {
   categories?: PlCategoryRow[]
   title?: string
   emptyMessage?: string
+  authoritativeTotal?: string | number
+  totalLabel?: string
 }) {
   const active = (categories ?? [])
     .filter((c) => Number(c.amount ?? 0) !== 0)
@@ -808,7 +871,11 @@ export function PlActiveIncomeCategoriesList({
   if (active.length === 0) {
     return <p className="text-sm text-muted-foreground">{emptyMessage}</p>
   }
-  const total = active.reduce((s, c) => s + Number(c.amount || 0), 0)
+  const listedTotal = active.reduce((s, c) => s + Number(c.amount || 0), 0)
+  const total =
+    authoritativeTotal != null && authoritativeTotal !== ''
+      ? Number(authoritativeTotal)
+      : listedTotal
   return (
     <div>
       <h4 className="font-semibold text-foreground mb-1">{title}</h4>
@@ -833,13 +900,66 @@ export function PlActiveIncomeCategoriesList({
           </tbody>
           <tfoot className="bg-muted">
             <tr>
-              <td className="px-3 py-2 font-bold text-foreground">Total — listed income types</td>
+              <td className="px-3 py-2 font-bold text-foreground">{totalLabel}</td>
               <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(String(total))}</td>
             </tr>
           </tfoot>
         </table>
       </div>
     </div>
+  )
+}
+
+/** Collapsed GL P&L numbers for pond scope — reference only, not added to register totals. */
+export function GlPlReferencePanel({
+  data,
+}: {
+  data?: {
+    income?: { total?: number }
+    cost_of_goods_sold?: { total?: number }
+    expenses?: { total?: number }
+    gross_profit?: number
+    net_income?: number
+  } | null
+}) {
+  if (!data) return null
+  const income = Number(data.income?.total ?? 0)
+  const cogs = Number(data.cost_of_goods_sold?.total ?? 0)
+  const expenses = Number(data.expenses?.total ?? 0)
+  const gross = Number(data.gross_profit ?? income - cogs)
+  const net = Number(data.net_income ?? gross - expenses)
+  const hasActivity =
+    Math.abs(income) > 0.02 ||
+    Math.abs(cogs) > 0.02 ||
+    Math.abs(expenses) > 0.02
+  if (!hasActivity) return null
+
+  const rows: [string, number][] = [
+    ['Income (GL)', income],
+    ['COGS (GL)', cogs],
+    ['Gross profit (GL)', gross],
+    ['Expenses (GL)', expenses],
+    ['Net income (GL)', net],
+  ]
+
+  return (
+    <details className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground">
+        Posted GL reference (not included in totals above)
+      </summary>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Journal postings to chart-of-accounts for this pond filter. The aquaculture register above is the authoritative
+        pond P&amp;L — feed, medicine, payroll, lease, and all operating costs are counted once there.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {rows.map(([label, val]) => (
+          <div key={label} className="rounded-md border border-border/80 bg-white px-3 py-2">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="font-semibold tabular-nums text-foreground">{MoneyBdt(val)}</p>
+          </div>
+        ))}
+      </div>
+    </details>
   )
 }
 
@@ -1019,12 +1139,17 @@ export function plMgmtFromEntityRows(rows: Record<string, unknown>[]): PlMgmtSna
     ponds,
     totals: {
       revenue: sumEntityMgmtField(pondRows, 'management_revenue_bdt'),
+      total_income: sumEntityMgmtField(pondRows, 'management_revenue_bdt'),
       feed_consumption_cost: sumEntityMgmtField(pondRows, 'management_feed_consumption_bdt'),
       medicine_consumption_cost: sumEntityMgmtField(pondRows, 'management_medicine_consumption_bdt'),
       other_consumption_cost: sumEntityMgmtField(pondRows, 'management_other_consumption_bdt'),
       other_operating_expenses: sumEntityMgmtField(pondRows, 'management_other_operating_bdt'),
+      total_costs: sumEntityMgmtField(pondRows, 'management_total_costs_bdt'),
       total_costs_and_expenses: sumEntityMgmtField(pondRows, 'management_total_costs_bdt'),
-      net_profit: sumEntityMgmtField(pondRows, 'management_profit_bdt'),
+      net_profit: String(
+        Number(sumEntityMgmtField(pondRows, 'management_revenue_bdt')) -
+          Number(sumEntityMgmtField(pondRows, 'management_total_costs_bdt')),
+      ),
     },
   }
 }
@@ -1047,34 +1172,46 @@ export function filterPlMgmtSnapshot(
 
   // Backend already pond-scoped (e.g. income-statement ?pond_id=) — use totals as-is.
   if ((mgmt.ponds ?? []).length <= 1) {
+    const expensesList = scopedExpenses ?? mgmt.expenses_by_category
+    const { netProfit } = resolveAquaculturePlFigures(mgmt.totals, expensesList)
     return {
       ...mgmt,
       ponds,
-      expenses_by_category: scopedExpenses ?? mgmt.expenses_by_category,
+      totals: {
+        ...mgmt.totals,
+        net_profit: String(netProfit),
+        profit: String(netProfit),
+      },
+      expenses_by_category: expensesList,
       income_by_category: scopedIncome ?? mgmt.income_by_category,
     }
   }
   const p = ponds[0]
+  const scopedTotals: PlTotalsLike = {
+    ...mgmt.totals,
+    revenue: p.revenue ?? mgmt.totals.revenue,
+    total_income: p.income_total ?? p.revenue ?? mgmt.totals.total_income,
+    feed_consumption_cost: p.feed_consumption_cost ?? mgmt.totals.feed_consumption_cost,
+    medicine_consumption_cost: p.medicine_consumption_cost ?? mgmt.totals.medicine_consumption_cost,
+    other_consumption_cost: p.other_consumption_cost ?? mgmt.totals.other_consumption_cost,
+    fry_fingerling_cost: p.fry_fingerling_cost ?? mgmt.totals.fry_fingerling_cost,
+    lease_cost: p.lease_cost ?? mgmt.totals.lease_cost,
+    salaries_and_payroll_cost: p.salaries_and_payroll_cost ?? mgmt.totals.salaries_and_payroll_cost,
+    other_operating_expenses: p.other_operating_expenses ?? mgmt.totals.other_operating_expenses,
+    total_costs: p.total_costs ?? p.expense_total ?? mgmt.totals.total_costs,
+    total_costs_and_expenses:
+      p.total_costs ?? p.expense_total ?? mgmt.totals.total_costs_and_expenses ?? mgmt.totals.total_costs,
+  }
+  const scopedExpensesList = scopedExpenses ?? []
+  const { netProfit } = resolveAquaculturePlFigures(scopedTotals, scopedExpensesList)
   return {
     ponds,
     totals: {
-      ...mgmt.totals,
-      revenue: p.revenue ?? mgmt.totals.revenue,
-      total_income: p.income_total ?? p.revenue ?? mgmt.totals.total_income,
-      feed_consumption_cost: p.feed_consumption_cost ?? mgmt.totals.feed_consumption_cost,
-      medicine_consumption_cost: p.medicine_consumption_cost ?? mgmt.totals.medicine_consumption_cost,
-      other_consumption_cost: p.other_consumption_cost ?? mgmt.totals.other_consumption_cost,
-      fry_fingerling_cost: p.fry_fingerling_cost ?? mgmt.totals.fry_fingerling_cost,
-      lease_cost: p.lease_cost ?? mgmt.totals.lease_cost,
-      salaries_and_payroll_cost: p.salaries_and_payroll_cost ?? mgmt.totals.salaries_and_payroll_cost,
-      other_operating_expenses: p.other_operating_expenses ?? mgmt.totals.other_operating_expenses,
-      total_costs: p.total_costs ?? p.expense_total ?? mgmt.totals.total_costs,
-      total_costs_and_expenses:
-        p.total_costs ?? p.expense_total ?? mgmt.totals.total_costs_and_expenses ?? mgmt.totals.total_costs,
-      net_profit: p.net_profit ?? p.profit ?? mgmt.totals.net_profit,
-      profit: p.profit ?? p.net_profit ?? mgmt.totals.profit,
+      ...scopedTotals,
+      net_profit: String(netProfit),
+      profit: String(netProfit),
     },
-    expenses_by_category: scopedExpenses ?? [],
+    expenses_by_category: scopedExpensesList,
     income_by_category: scopedIncome ?? [],
     expenses_by_pond: mgmt.expenses_by_pond,
     income_by_pond: mgmt.income_by_pond,
@@ -1104,20 +1241,27 @@ export function AquaculturePlConsumptionSection({
   showIncomeList = true,
   title,
   entityName,
+  primaryPl = false,
+  hideConsumptionBreakdown = false,
 }: {
   management?: PlMgmtSnapshot | null
   showCategoryList?: boolean
   showIncomeList?: boolean
   title?: string
   entityName?: string | null
+  /** When true, this section is the sole pond P&L (not a supplement to GL). */
+  primaryPl?: boolean
+  /** Hide feed/medicine breakdown — already listed in expense categories. */
+  hideConsumptionBreakdown?: boolean
 }) {
   if (!management?.totals) return null
   const totals = management.totals
   const scopedName = entityName?.trim() || management.ponds?.[0]?.pond_name?.trim() || null
   const hasConsumption =
-    Number(totals.feed_consumption_cost ?? 0) !== 0 ||
-    Number(totals.medicine_consumption_cost ?? 0) !== 0 ||
-    Number(totals.other_consumption_cost ?? 0) !== 0
+    !hideConsumptionBreakdown &&
+    (Number(totals.feed_consumption_cost ?? 0) !== 0 ||
+      Number(totals.medicine_consumption_cost ?? 0) !== 0 ||
+      Number(totals.other_consumption_cost ?? 0) !== 0)
   const singlePond = (management.ponds ?? []).length === 1
   const incomeTitle = scopedName
     ? `${scopedName} — income in this period`
@@ -1127,27 +1271,42 @@ export function AquaculturePlConsumptionSection({
     : 'All pond expenses in this period'
   const sectionTitle =
     title ??
-    (scopedName
-      ? `${scopedName} — income & expenses (aquaculture register)`
-      : 'Pond consumption & operating expenses (aquaculture register)')
+    (primaryPl && scopedName
+      ? `${scopedName} — Profit & Loss`
+      : scopedName
+        ? `${scopedName} — income & expenses (aquaculture register)`
+        : 'Pond consumption & operating expenses (aquaculture register)')
+  const plFigures = resolveAquaculturePlFigures(totals, management.expenses_by_category)
+  const expenseTotal = plFigures.expenses
+  const incomeTotal = plFigures.income
 
   return (
     <div className="space-y-6 rounded-xl border border-teal-200 bg-teal-50/30 p-4">
       <div>
         <h3 className="text-base font-semibold text-teal-950">{sectionTitle}</h3>
         <p className="mt-1 text-xs text-teal-900/80">
-          {scopedName
-            ? `Register totals for ${scopedName} only — feed and medicine consumption, vendor bills, payroll, lease, and all other pond costs. May differ from GL above.`
-            : 'Aquaculture register totals — feed and medicine consumption from pond warehouses, vendor bills, payroll, lease, and all other pond expenses. Same basis as Aquaculture — Pond P&L (may differ from GL above).'}
+          {primaryPl
+            ? scopedName
+              ? `All income and expenses for ${scopedName} — feed, medicine, payroll, lease, vendor bills, transfers, and every other pond cost counted once. Net profit = income − expenses.`
+              : 'All pond income and expenses from the aquaculture register — every cost counted once. Net profit = income − expenses.'
+            : scopedName
+              ? `Register totals for ${scopedName} only — feed and medicine consumption, vendor bills, payroll, lease, and all other pond costs. May differ from GL above.`
+              : 'Aquaculture register totals — feed and medicine consumption from pond warehouses, vendor bills, payroll, lease, and all other pond expenses. Same basis as Aquaculture — Pond P&L (may differ from GL above).'}
         </p>
       </div>
-      <AquaculturePlNetSummary totals={totals} entityName={scopedName} />
+      <AquaculturePlNetSummary
+        totals={totals}
+        entityName={primaryPl ? null : scopedName}
+        expenseCategories={management.expenses_by_category}
+      />
       {hasConsumption ? <PlConsumptionCostsExpenses totals={totals} /> : null}
       {!singlePond ? <PlPondByPondExpenseTable ponds={management.ponds} totals={totals} /> : null}
       {showIncomeList && (management.income_by_category?.length ?? 0) > 0 ? (
         <PlActiveIncomeCategoriesList
           categories={management.income_by_category}
           title={incomeTitle}
+          authoritativeTotal={primaryPl ? incomeTotal : undefined}
+          totalLabel={primaryPl ? 'Total income' : 'Total — listed income types'}
           emptyMessage={
             scopedName
               ? `No income recorded for ${scopedName} in this period.`
@@ -1159,6 +1318,8 @@ export function AquaculturePlConsumptionSection({
         <PlActiveExpenseCategoriesList
           categories={management.expenses_by_category}
           title={expenseTitle}
+          authoritativeTotal={primaryPl ? expenseTotal : undefined}
+          totalLabel={primaryPl ? 'Total expenses' : 'Total — listed categories'}
           emptyMessage={
             scopedName
               ? `No expenses recorded for ${scopedName} in this period.`
@@ -1175,11 +1336,19 @@ export function PondScopedAquaculturePlBlock({
   pondId,
   pondName,
   pondRows,
+  primaryPl = false,
+  glReferenceData,
+  showIncomeList,
+  showCategoryList,
 }: {
   data?: Record<string, unknown> | null
   pondId?: number | null
   pondName?: string | null
   pondRows?: Record<string, unknown>[]
+  primaryPl?: boolean
+  glReferenceData?: Record<string, unknown> | null
+  showIncomeList?: boolean
+  showCategoryList?: boolean
 }) {
   if (pondId == null || pondId <= 0) return null
   const mgmt = resolvePlMgmtSnapshot(data, pondRows, pondId)
@@ -1189,5 +1358,19 @@ export function PondScopedAquaculturePlBlock({
     mgmt.ponds?.find((p) => Number(p.pond_id) === pondId)?.pond_name?.trim() ||
     mgmt.ponds?.[0]?.pond_name?.trim() ||
     null
-  return <AquaculturePlConsumptionSection management={mgmt} entityName={name} />
+  return (
+    <>
+      <AquaculturePlConsumptionSection
+        management={mgmt}
+        entityName={name}
+        primaryPl={primaryPl}
+        hideConsumptionBreakdown={primaryPl}
+        showIncomeList={showIncomeList ?? true}
+        showCategoryList={showCategoryList ?? true}
+      />
+      {primaryPl && glReferenceData ? (
+        <GlPlReferencePanel data={glReferenceData as Parameters<typeof GlPlReferencePanel>[0]['data']} />
+      ) : null}
+    </>
+  )
 }

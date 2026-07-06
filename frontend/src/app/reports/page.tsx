@@ -5118,6 +5118,35 @@ function renderReportTable(
 
   // Income Statement
   if (reportType === 'income-statement' && data) {
+    const period = data?.period || {}
+    const { pondId, pondName } = resolveEffectiveReportPondScope(
+      data as Record<string, unknown>,
+      reportDrillScope().pondId,
+      scopeLabels?.ponds ?? [],
+    )
+
+    if (pondId != null) {
+      return (
+        <div className="space-y-8">
+          {hasPeriod &&
+            renderPeriodFilter(
+              period,
+              dateRange,
+              reportType,
+              handleReportDateChange,
+              'Pond P&L from the aquaculture register — all income minus all expenses for this pond in the selected period.',
+            )}
+          <PondScopedAquaculturePlBlock
+            data={data as Record<string, unknown>}
+            pondId={pondId}
+            pondName={pondName}
+            primaryPl
+            glReferenceData={data as Record<string, unknown>}
+          />
+        </div>
+      )
+    }
+
     const blocks = [
       { title: 'Income', payload: data.income, accent: 'border-emerald-200 bg-emerald-50/50' },
       {
@@ -5127,7 +5156,6 @@ function renderReportTable(
       },
       { title: 'Expenses', payload: data.expenses, accent: 'border-border bg-muted/40' },
     ]
-    const period = data?.period || {}
     const incomeTotal = Number(data.income?.total ?? 0)
     const cogsTotal = Number(data.cost_of_goods_sold?.total ?? 0)
     const expenseTotal = Number(data.expenses?.total ?? 0)
@@ -5193,21 +5221,6 @@ function renderReportTable(
             </p>
           </div>
         )}
-
-        {(() => {
-          const { pondId, pondName } = resolveEffectiveReportPondScope(
-            data as Record<string, unknown>,
-            reportDrillScope().pondId,
-            scopeLabels?.ponds ?? [],
-          )
-          return pondId != null ? (
-            <PondScopedAquaculturePlBlock
-              data={data as Record<string, unknown>}
-              pondId={pondId}
-              pondName={pondName}
-            />
-          ) : null
-        })()}
 
         <div className="space-y-6">
           {blocks.map(({ title, payload, accent }) => (
@@ -8706,6 +8719,7 @@ function renderReportTable(
         ) : null}
         <AquaculturePlNetSummary
           totals={t}
+          expenseCategories={byCat}
           entityName={
             ponds.length === 1
               ? ponds[0]?.pond_name

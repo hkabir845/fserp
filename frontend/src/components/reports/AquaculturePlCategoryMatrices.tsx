@@ -607,6 +607,7 @@ export interface PlTotalsLike {
   pond_care_products_cost?: string
   equipment_cost?: string
   other_operating_expenses?: string
+  operating_expenses?: string
   payroll_allocated?: string
   total_costs?: string
   total_costs_and_expenses?: string
@@ -622,8 +623,10 @@ export function AquaculturePlNetSummary({
   totals: PlTotalsLike
   entityName?: string | null
 }) {
-  const income = Number(totals.revenue ?? totals.total_income ?? 0)
-  const expenses = Number(totals.total_costs_and_expenses ?? totals.total_costs ?? 0)
+  const income = Number(totals.total_income ?? totals.revenue ?? 0)
+  const expenses = Number(
+    totals.total_costs_and_expenses ?? totals.total_costs ?? totals.operating_expenses ?? 0
+  )
   const net = Number(totals.net_profit ?? totals.profit ?? income - expenses)
 
   return (
@@ -791,6 +794,7 @@ export interface PlPondRowLike {
   pond_id?: number
   pond_name?: string
   revenue?: string
+  income_total?: string
   feed_consumption_cost?: string
   medicine_consumption_cost?: string
   other_consumption_cost?: string
@@ -947,20 +951,29 @@ export function filterPlMgmtSnapshot(
   if (pondId == null || pondId <= 0) return mgmt
   const ponds = (mgmt.ponds ?? []).filter((p) => Number(p.pond_id) === pondId)
   if (ponds.length === 0) return mgmt
+  // Backend already pond-scoped (e.g. income-statement ?pond_id=) — use totals as-is.
+  if ((mgmt.ponds ?? []).length <= 1) {
+    return { ...mgmt, ponds }
+  }
   const p = ponds[0]
   return {
     ponds,
     totals: {
-      revenue: p.revenue,
-      feed_consumption_cost: p.feed_consumption_cost,
-      medicine_consumption_cost: p.medicine_consumption_cost,
-      other_consumption_cost: p.other_consumption_cost,
-      fry_fingerling_cost: p.fry_fingerling_cost,
-      lease_cost: p.lease_cost,
-      salaries_and_payroll_cost: p.salaries_and_payroll_cost,
-      other_operating_expenses: p.other_operating_expenses,
-      total_costs_and_expenses: p.total_costs ?? p.expense_total,
-      net_profit: p.net_profit ?? p.profit,
+      ...mgmt.totals,
+      revenue: p.revenue ?? mgmt.totals.revenue,
+      total_income: p.income_total ?? p.revenue ?? mgmt.totals.total_income,
+      feed_consumption_cost: p.feed_consumption_cost ?? mgmt.totals.feed_consumption_cost,
+      medicine_consumption_cost: p.medicine_consumption_cost ?? mgmt.totals.medicine_consumption_cost,
+      other_consumption_cost: p.other_consumption_cost ?? mgmt.totals.other_consumption_cost,
+      fry_fingerling_cost: p.fry_fingerling_cost ?? mgmt.totals.fry_fingerling_cost,
+      lease_cost: p.lease_cost ?? mgmt.totals.lease_cost,
+      salaries_and_payroll_cost: p.salaries_and_payroll_cost ?? mgmt.totals.salaries_and_payroll_cost,
+      other_operating_expenses: p.other_operating_expenses ?? mgmt.totals.other_operating_expenses,
+      total_costs: p.total_costs ?? p.expense_total ?? mgmt.totals.total_costs,
+      total_costs_and_expenses:
+        p.total_costs ?? p.expense_total ?? mgmt.totals.total_costs_and_expenses ?? mgmt.totals.total_costs,
+      net_profit: p.net_profit ?? p.profit ?? mgmt.totals.net_profit,
+      profit: p.profit ?? p.net_profit ?? mgmt.totals.profit,
     },
     expenses_by_category: mgmt.expenses_by_category,
   }

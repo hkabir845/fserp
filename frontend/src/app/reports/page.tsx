@@ -3449,7 +3449,13 @@ export default function ReportsPage() {
                   '_aquaculturePlManagement' in reportData &&
                   reportData._aquaculturePlManagement ? (
                   <div className="w-full min-w-0 p-0">
-                    <AquaculturePlManagementPanel embedInReports reportStationKey={reportStationId} />
+                    <AquaculturePlManagementPanel
+                      embedInReports
+                      reportStationKey={reportStationId}
+                      reportDateRange={dateRange}
+                      reportAquaculturePondId={aquaculturePondId}
+                      onReportDateChange={handleReportDateChange}
+                    />
                   </div>
                 ) : selectedReport && reportData ? (
                   <div className="p-6">

@@ -31,7 +31,7 @@ import {
   suggestedAquacultureProfitTransferAccountIds,
   templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
-import { parseReportSiteScopeKey } from '../reportSiteScope'
+import { parseReportSiteScopeKey, resolveEffectiveAquaculturePondId, isPondLockedBySiteScope } from '../reportSiteScope'
 
 const AQ_REPORT_DATE_INPUT_CLS = 'mt-1 rounded-lg border border-border px-2 py-1.5 min-w-[9.5rem]'
 
@@ -215,11 +215,24 @@ type AquaculturePlManagementPanelProps = {
   embedInReports?: boolean
   /** Global Site scope from Reports page (`station id` or `p:{pondId}`). */
   reportStationKey?: string
+  /** Reports page period — kept in sync when embedded so P&L and this report match. */
+  reportDateRange?: { startDate: string; endDate: string }
+  /** In-report aquaculture pond filter when Site scope is All. */
+  reportAquaculturePondId?: string
+  /** When embedded, push date edits to the Reports page period (shared with P&L). */
+  onReportDateChange?: (
+    field: 'startDate' | 'endDate' | 'range',
+    value: string,
+    reportId?: string
+  ) => void
 }
 
 export function AquaculturePlManagementPanel({
   embedInReports = false,
   reportStationKey = '',
+  reportDateRange,
+  reportAquaculturePondId = '',
+  onReportDateChange,
 }: AquaculturePlManagementPanelProps) {
   const toast = useToast()
   const searchParams = useSearchParams()
@@ -227,10 +240,27 @@ export function AquaculturePlManagementPanel({
     () => (embedInReports ? parseArchivePlSearchParams(searchParams) : null),
     [embedInReports, searchParams]
   )
-  const { start: defaultStart, end: defaultEnd } = monthStartEnd()
-  const [start, setStart] = useState(archiveFromUrl?.start ?? defaultStart)
-  const [end, setEnd] = useState(archiveFromUrl?.end ?? defaultEnd)
-  const [pondId, setPondId] = useState(archiveFromUrl?.pondId ?? '')
+  const { start: monthStart, end: monthEnd } = monthStartEnd()
+  const embeddedStart = reportDateRange?.startDate?.trim() || monthStart
+  const embeddedEnd = reportDateRange?.endDate?.trim() || monthEnd
+  const [start, setStart] = useState(
+    archiveFromUrl?.start ?? (embedInReports ? embeddedStart : monthStart)
+  )
+  const [end, setEnd] = useState(
+    archiveFromUrl?.end ?? (embedInReports ? embeddedEnd : monthEnd)
+  )
+  const pondLockedBySiteScope = useMemo(
+    () => embedInReports && isPondLockedBySiteScope(reportStationKey),
+    [embedInReports, reportStationKey]
+  )
+  const embeddedPondId = useMemo(
+    () =>
+      embedInReports
+        ? resolveEffectiveAquaculturePondId(reportStationKey, reportAquaculturePondId)
+        : '',
+    [embedInReports, reportStationKey, reportAquaculturePondId]
+  )
+  const [pondId, setPondId] = useState(archiveFromUrl?.pondId ?? embeddedPondId ?? '')
   const [cycleId, setCycleId] = useState('')
   const [includeCycleBreakdown, setIncludeCycleBreakdown] = useState(false)
   const [cycles, setCycles] = useState<CycleOpt[]>([])
@@ -274,6 +304,16 @@ export function AquaculturePlManagementPanel({
     setEnd(archiveFromUrl.end)
     if (archiveFromUrl.pondId) setPondId(archiveFromUrl.pondId)
   }, [archiveFromUrl])
+
+  /** Keep embedded panel aligned with Reports period + Site scope (same inputs as Profit & Loss). */
+  useEffect(() => {
+    if (!embedInReports || archiveFromUrl) return
+    const rs = reportDateRange?.startDate?.trim()
+    const re = reportDateRange?.endDate?.trim()
+    if (rs && /^\d{4}-\d{2}-\d{2}$/.test(rs)) setStart(rs)
+    if (re && /^\d{4}-\d{2}-\d{2}$/.test(re)) setEnd(re)
+    setPondId(embeddedPondId)
+  }, [embedInReports, archiveFromUrl, reportDateRange?.startDate, reportDateRange?.endDate, embeddedPondId])
 
   const activePonds = useMemo(() => ponds.filter((p) => p.is_active !== false), [ponds])
   const pondsForScope = useMemo(() => {
@@ -820,13 +860,25 @@ export function AquaculturePlManagementPanel({
 
       {plScope === 'ponds' && (
         <>
+      {embedInReports && !archiveFromUrl ? (
+        <p className="mt-4 rounded-lg border border-teal-200 bg-teal-50/80 px-3 py-2 text-xs text-teal-950">
+          Pond scope follows <strong>Site scope</strong> at the top of Reports. Dates below are shared with{' '}
+          <strong>Profit &amp; Loss</strong> for the same period.
+        </p>
+      ) : null}
       <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
         <label className="text-sm text-foreground/85">
           <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">From</span>
           <CompanyDateInput
             value={start}
             max={end || undefined}
-            onChange={setStart}
+            onChange={(iso) => {
+              if (embedInReports && onReportDateChange) {
+                onReportDateChange('startDate', iso, 'aquaculture-pl-management')
+              } else {
+                setStart(iso)
+              }
+            }}
             className={AQ_REPORT_DATE_INPUT_CLS}
           />
         </label>
@@ -835,15 +887,22 @@ export function AquaculturePlManagementPanel({
           <CompanyDateInput
             value={end}
             min={start || undefined}
-            onChange={setEnd}
+            onChange={(iso) => {
+              if (embedInReports && onReportDateChange) {
+                onReportDateChange('endDate', iso, 'aquaculture-pl-management')
+              } else {
+                setEnd(iso)
+              }
+            }}
             className={AQ_REPORT_DATE_INPUT_CLS}
           />
         </label>
         <label className="text-sm text-foreground/85">
           <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Pond scope</span>
           <select
-            className="mt-1 min-w-[12rem] rounded-lg border border-border px-2 py-1.5"
+            className="mt-1 min-w-[12rem] rounded-lg border border-border px-2 py-1.5 disabled:opacity-60"
             value={pondId}
+            disabled={pondLockedBySiteScope}
             onChange={(e) => {
               setPondId(e.target.value)
               setCycleId('')

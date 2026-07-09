@@ -105,6 +105,12 @@ class Command(BaseCommand):
         parser.add_argument("--company-id", type=int, default=None, help="Company scope (auto if omitted)")
         parser.add_argument("--pond-code", type=str, required=True, help="Nursing pond code (e.g. P07)")
         parser.add_argument(
+            "--period-start",
+            type=str,
+            default=None,
+            help="P&L period start YYYY-MM-DD (default: company fiscal year containing period-end)",
+        )
+        parser.add_argument(
             "--period-end",
             type=str,
             default=None,
@@ -154,7 +160,10 @@ class Command(BaseCommand):
         period_end = date.today()
         if options["period_end"]:
             period_end = date.fromisoformat(options["period_end"])
-        period_start, period_end = fiscal_period_for_end_date(company, period_end)
+        if options.get("period_start"):
+            period_start = date.fromisoformat(options["period_start"])
+        else:
+            period_start, period_end = fiscal_period_for_end_date(company, period_end)
 
         dry = options["dry_run"]
         self.stdout.write(

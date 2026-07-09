@@ -1,0 +1,14 @@
+P08 PL expense categories:
+  Medicine purchase [medicine_purchase]: 18000.00
+  Fry stocking [fry_stocking]: 1100000.00
+  Pond equipment (aerators, nets, etc.) [equipment]: 18102.00
+  Repair & maintenance [repair_maintenance]: 2600.00
+  Electricity [electricity]: 26934.00
+  Transportation (vehicles & hauling) [transportation]: 35600.00
+  Day & contract labor [day_labor]: 1075.00
+  Vendor bill (pond-tagged line) [vendor_bill_pond]: 650.00
+total expense=1202961.00
+vendor_bill=0.00
+landlord=0.00
+fry_journal=1100000.00
+consumption_cogs=0.00

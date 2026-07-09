@@ -1,0 +1,49 @@
+Company 2 ('Adib Filling Station'), pond 17 'Ashari - 3 Nursing Pond' code='P06', period 2026-01-01 .. 2026-06-30, dry_run=False
+Before: income=0.00 expense=20300.00 net_profit=-20300.00 gap(expense-income)=20300.00
+Batch resync updated 2 transfer line(s)
+After resync: income=0.00 expense=20300.00 net_profit=-20300.00 gap=20300.00
+Outgoing transfer lines: 2, total cost_amount=661831.61
+Distributing gap 20300.00 across 2 line(s):
+  line 7 xfer#6 -> P01 fish=87780: 380417.37 -> 395928.63 (+15511.26)
+  line 14 xfer#8 -> P02 fish=27100: 281414.24 -> 286202.98 (+4788.74)
+  Transfer #8: GL AUTO-AQ-FISH-XFER-8 amount=265381.37
+  Transfer #6: GL AUTO-AQ-FISH-XFER-6 amount=395928.63
+GL repost: posted=2 skipped=0
+After adjustment: income=0.00 expense=20300.00 net_profit=-20300.00 gap=20300.00
+Remaining gap 20300.00 — may need manual review or stock ledger fix.
+=== RESTORE DELETED LEASE ENTRIES ===
+  restored P02 2026-05-05 461500 -> ent#118
+  restored P02 2026-05-05 17500 -> ent#119
+  restored P02 2026-05-05 15000 -> ent#120
+  restored P02 2026-05-11 3150 -> ent#121
+  restored P02 2026-05-11 10200 -> ent#122
+  restored P02 2026-05-19 16200 -> ent#123
+  restored P02 2026-05-22 17500 -> ent#124
+  restored P02 2026-05-22 10300 -> ent#125
+  restored P02 2026-05-26 30000 -> ent#126
+  restored P03 2026-05-17 1369110 -> ent#127
+  restored P03 2026-06-07 84725 -> ent#128
+
+=== CORRECT EXCESS-ONLY TRIM ===
+P02: annual=1183000.00 was=1336900.00 now=1182400.00 deleted=13
+  del #126 2026-05-26 30000.00
+  del #125 2026-05-22 10300.00
+  del #124 2026-05-22 17500.00
+  del #123 2026-05-19 16200.00
+  del #122 2026-05-11 10200.00
+  del #121 2026-05-11 3150.00
+  del #120 2026-05-05 15000.00
+  del #119 2026-05-05 17500.00
+  del #97 2026-04-30 10000.00
+  del #95 2026-04-09 10000.00
+  del #93 2026-03-16 10000.00
+  del #71 2025-12-12 1500.00
+  del #70 2025-12-12 3150.00
+P03: annual=2967715.00 was=3069410.00 now=2964685.00 deleted=2
+  del #128 2026-06-07 84725.00
+  del #104 2026-05-16 20000.00
+
+=== REPOST TRANSFER #8 GL ===
+xfer#8 posted=True amount=265381.37 line_total=286202.98
+
+=== P06 NURSING RECONCILE FY PERIOD ===

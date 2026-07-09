@@ -1,0 +1,19 @@
+P06 FY before: income=698181.31 expense=841788.56 gap=143607.25
+  line#7 -> P01: 395928.63 -> 505659.17 (+109730.54)
+  line#14 -> P02: 286202.98 -> 320079.69 (+33876.71)
+  GL xfer#8: posted=True amount=265381.37
+  GL xfer#6: posted=True amount=505659.17
+P06 FY after: income=841788.56 expense=841788.56 net=0.00
+
+=== FINAL POND P&L ===
+  P02 'Mynuddin Pond' (grow_out): net=-1569270.19
+  P01 'Ashari - 1 Pond' (grow_out): net=-842332.66
+  P03 'Ashari - 2 Pond' (grow_out): net=-2978107.24
+  P04 'Digonto Pond' (grow_out): net=707957.45
+  P05 'Mynuddin Nursing Pond' (nursing): net=126425.51
+  P06 'Ashari - 3 Nursing Pond' (nursing): net=0.00
+  P07 'Mynuddin Nursing Pond - 2' (nursing): net=-9300.00
+  P08 'Digonto Nursing Pond' (nursing): net=-1202961.00
+
+=== GL GAPS ===
+total=0

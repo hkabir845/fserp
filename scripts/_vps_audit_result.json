@@ -1,0 +1,130 @@
+{
+  "company_id": 2,
+  "company_name": "Adib Filling Station",
+  "period_start": "2025-07-01",
+  "period_end": "2026-06-30",
+  "pond_pl": [
+    {
+      "pond_id": 2,
+      "pond_name": "Mynuddin Pond",
+      "role": "grow_out",
+      "income": "6373020.00",
+      "expense": "7942290.19",
+      "net": "-1569270.19"
+    },
+    {
+      "pond_id": 13,
+      "pond_name": "Ashari - 1 Pond",
+      "role": "grow_out",
+      "income": "5700212.62",
+      "expense": "6542545.28",
+      "net": "-842332.66"
+    },
+    {
+      "pond_id": 14,
+      "pond_name": "Ashari - 2 Pond",
+      "role": "grow_out",
+      "income": "10460615.21",
+      "expense": "13438722.45",
+      "net": "-2978107.24"
+    },
+    {
+      "pond_id": 15,
+      "pond_name": "Digonto Pond",
+      "role": "grow_out",
+      "income": "4883586.98",
+      "expense": "4175629.53",
+      "net": "707957.45"
+    },
+    {
+      "pond_id": 16,
+      "pond_name": "Mynuddin Nursing Pond",
+      "role": "nursing",
+      "income": "354175.11",
+      "expense": "227749.60",
+      "net": "126425.51"
+    },
+    {
+      "pond_id": 17,
+      "pond_name": "Ashari - 3 Nursing Pond",
+      "role": "nursing",
+      "income": "841788.56",
+      "expense": "841788.56",
+      "net": "0.00"
+    },
+    {
+      "pond_id": 18,
+      "pond_name": "Mynuddin Nursing Pond - 2",
+      "role": "nursing",
+      "income": "0.00",
+      "expense": "9300.00",
+      "net": "-9300.00"
+    },
+    {
+      "pond_id": 19,
+      "pond_name": "Digonto Nursing Pond",
+      "role": "nursing",
+      "income": "0.00",
+      "expense": "1202961.00",
+      "net": "-1202961.00"
+    }
+  ],
+  "issues": [
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 18,
+      "pond_code": "P07",
+      "pond_name": "Mynuddin Nursing Pond - 2",
+      "income": "0.00",
+      "expense": "9300.00",
+      "net": "-9300.00",
+      "gap_expense_minus_income": "9300.00"
+    },
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 19,
+      "pond_code": "P08",
+      "pond_name": "Digonto Nursing Pond",
+      "income": "0.00",
+      "expense": "1202961.00",
+      "net": "-1202961.00",
+      "gap_expense_minus_income": "1202961.00"
+    },
+    {
+      "type": "transfer_gl_mismatch",
+      "transfer_id": 8,
+      "transfer_date": "2025-12-06",
+      "line_total": "320079.69",
+      "gl_amount": "265381.37"
+    }
+  ],
+  "warnings": [
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 16,
+      "pond_code": "P05",
+      "pond_name": "Mynuddin Nursing Pond",
+      "income": "354175.11",
+      "expense": "227749.60",
+      "net": "126425.51",
+      "gap_expense_minus_income": "-126425.51"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 13,
+      "pond_code": "P01",
+      "lease_pl": "908150.00",
+      "implied_annual": "1176000.00"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 15,
+      "pond_code": "P04",
+      "lease_pl": "672000.00",
+      "implied_annual": "769600.00"
+    }
+  ],
+  "issue_count": 3,
+  "warning_count": 3,
+  "gl_gap_total": 0
+}

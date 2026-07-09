@@ -1,0 +1,222 @@
+=== 1. GL BACKFILL ===
+Posted vendor_payment_made #11: Payment PAY-11 → Excavator Service
+Posted vendor_bill #13: Bill BILL-13 — Excavator Service
+Backfill complete: 2 posted, 0 failed.
+
+=== 2. NURSING P06 RECONCILE ===
+Company 2 ('Adib Filling Station'), pond 17 'Ashari - 3 Nursing Pond' code='P06', period 2026-01-01 .. 2026-07-10, dry_run=False
+Before: income=0.00 expense=20300.00 net_profit=-20300.00 gap(expense-income)=20300.00
+Batch resync updated 0 transfer line(s)
+After resync: income=0.00 expense=20300.00 net_profit=-20300.00 gap=20300.00
+Outgoing transfer lines: 2, total cost_amount=661831.61
+Distributing gap 20300.00 across 2 line(s):
+  line 7 xfer#6 -> P01 fish=87780: 380417.37 -> 395928.63 (+15511.26)
+  line 14 xfer#8 -> P02 fish=27100: 281414.24 -> 286202.98 (+4788.74)
+  Transfer #8: GL AUTO-AQ-FISH-XFER-8 amount=280892.63
+  Transfer #6: GL AUTO-AQ-FISH-XFER-6 amount=395928.63
+GL repost: posted=2 skipped=0
+After adjustment: income=0.00 expense=20300.00 net_profit=-20300.00 gap=20300.00
+Remaining gap 20300.00 — may need manual review or stock ledger fix.
+
+=== 3. NURSING P07 RECONCILE ===
+No transfer lines to distribute gap to.
+Company 2 ('Adib Filling Station'), pond 18 'Mynuddin Nursing Pond - 2' code='P07', period 2026-01-01 .. 2026-07-10, dry_run=False
+Before: income=0.00 expense=9300.00 net_profit=-9300.00 gap(expense-income)=9300.00
+Batch resync updated 0 transfer line(s)
+After resync: income=0.00 expense=9300.00 net_profit=-9300.00 gap=9300.00
+Outgoing transfer lines: 0, total cost_amount=0.00
+
+=== 4. TRANSFER GL RESYNC ===
+  'Digonto Pond' (grow_out): income=4883586.98 expense=4175629.53 net=707957.45
+  'Mynuddin Nursing Pond' (nursing): income=354175.11 expense=227749.60 net=126425.51
+  'Ashari - 3 Nursing Pond' (nursing): income=698181.31 expense=841788.56 net=-143607.25
+  'Mynuddin Nursing Pond - 2' (nursing): income=0.00 expense=9300.00 net=-9300.00
+  'Digonto Nursing Pond' (nursing): income=0.00 expense=1202961.00 net=-1202961.00
+
+ISSUES (6):
+  [nursing_pl_gap] {'type': 'nursing_pl_gap', 'pond_id': 17, 'pond_code': 'P06', 'pond_name': 'Ashari - 3 Nursing Pond', 'income': '698181.31', 'expense': '841788.56', 'net': '-143607.25', 'gap_expense_minus_income': '143607.25'}
+  [nursing_pl_gap] {'type': 'nursing_pl_gap', 'pond_id': 18, 'pond_code': 'P07', 'pond_name': 'Mynuddin Nursing Pond - 2', 'income': '0.00', 'expense': '9300.00', 'net': '-9300.00', 'gap_expense_minus_income': '9300.00'}
+  [nursing_pl_gap] {'type': 'nursing_pl_gap', 'pond_id': 19, 'pond_code': 'P08', 'pond_name': 'Digonto Nursing Pond', 'income': '0.00', 'expense': '1202961.00', 'net': '-1202961.00', 'gap_expense_minus_income': '1202961.00'}
+  [lease_over_annual] {'type': 'lease_over_annual', 'pond_id': 2, 'pond_code': 'P02', 'lease_pl': '1336900.00', 'implied_annual': '1183000.00', 'excess': '153900.00'}
+  [lease_over_annual] {'type': 'lease_over_annual', 'pond_id': 14, 'pond_code': 'P03', 'lease_pl': '3069410.00', 'implied_annual': '2967715.00', 'excess': '101695.00'}
+  [transfer_gl_mismatch] {'type': 'transfer_gl_mismatch', 'transfer_id': 8, 'transfer_date': '2025-12-06', 'line_total': '286202.98', 'gl_amount': '280892.63'}
+WARNINGS (4):
+  [nursing_pl_gap] {'type': 'nursing_pl_gap', 'pond_id': 16, 'pond_code': 'P05', 'pond_name': 'Mynuddin Nursing Pond', 'income': '354175.11', 'expense': '227749.60', 'net': '126425.51', 'gap_expense_minus_income': '-126425.51'}
+  [lease_under_annual] {'type': 'lease_under_annual', 'pond_id': 13, 'pond_code': 'P01', 'lease_pl': '908150.00', 'implied_annual': '1176000.00'}
+  [lease_under_annual] {'type': 'lease_under_annual', 'pond_id': 15, 'pond_code': 'P04', 'lease_pl': '672000.00', 'implied_annual': '769600.00'}
+  [transfer_gl_fixed] {'type': 'transfer_gl_fixed', 'transfer_id': 8, 'amount': '265381.37'}
+
+GL posting gaps: 0
+
+=== 5. LEASE TRIM P02 P03 ===
+P02: annual=1183000.00 was=1336900.00 now=755550.00 deleted=9
+  del #113 2026-05-26 30000.00 Small pond and Godown rent for Mynuddin
+  del #108 2026-05-22 10300.00 
+  del #107 2026-05-22 17500.00 
+  del #106 2026-05-19 16200.00 
+  del #103 2026-05-11 10200.00 Leasemoney to Khurshed for Mynuddin
+  del #102 2026-05-11 3150.00 Leasemoney to Veju landlords of Mynuddin
+  del #101 2026-05-05 15000.00 Leasemoney to Sikander for Mynuddin
+  del #100 2026-05-05 17500.00 Leasemoney to Sohel for Digonto
+  del #99 2026-05-05 461500.00 Leasemoney for Mynuddin
+P03: annual=2967715.00 was=3069410.00 now=1615575.00 deleted=2
+  del #115 2026-06-07 84725.00 Leasemoney to Rashidul
+  del #105 2026-05-17 1369110.00 Leasemoney to landlords of  Ashari - 2
+
+=== 6. FINAL AUDIT ===
+{
+  "company_id": 2,
+  "company_name": "Adib Filling Station",
+  "period_start": "2025-07-01",
+  "period_end": "2026-06-30",
+  "pond_pl": [
+    {
+      "pond_id": 2,
+      "pond_name": "Mynuddin Pond",
+      "role": "grow_out",
+      "income": "6373020.00",
+      "expense": "7481563.48",
+      "net": "-1108543.48"
+    },
+    {
+      "pond_id": 13,
+      "pond_name": "Ashari - 1 Pond",
+      "role": "grow_out",
+      "income": "5700212.62",
+      "expense": "6432814.74",
+      "net": "-732602.12"
+    },
+    {
+      "pond_id": 14,
+      "pond_name": "Ashari - 2 Pond",
+      "role": "grow_out",
+      "income": "10460615.21",
+      "expense": "12089612.45",
+      "net": "-1628997.24"
+    },
+    {
+      "pond_id": 15,
+      "pond_name": "Digonto Pond",
+      "role": "grow_out",
+      "income": "4883586.98",
+      "expense": "4175629.53",
+      "net": "707957.45"
+    },
+    {
+      "pond_id": 16,
+      "pond_name": "Mynuddin Nursing Pond",
+      "role": "nursing",
+      "income": "354175.11",
+      "expense": "227749.60",
+      "net": "126425.51"
+    },
+    {
+      "pond_id": 17,
+      "pond_name": "Ashari - 3 Nursing Pond",
+      "role": "nursing",
+      "income": "698181.31",
+      "expense": "841788.56",
+      "net": "-143607.25"
+    },
+    {
+      "pond_id": 18,
+      "pond_name": "Mynuddin Nursing Pond - 2",
+      "role": "nursing",
+      "income": "0.00",
+      "expense": "9300.00",
+      "net": "-9300.00"
+    },
+    {
+      "pond_id": 19,
+      "pond_name": "Digonto Nursing Pond",
+      "role": "nursing",
+      "income": "0.00",
+      "expense": "1202961.00",
+      "net": "-1202961.00"
+    }
+  ],
+  "issues": [
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 17,
+      "pond_code": "P06",
+      "pond_name": "Ashari - 3 Nursing Pond",
+      "income": "698181.31",
+      "expense": "841788.56",
+      "net": "-143607.25",
+      "gap_expense_minus_income": "143607.25"
+    },
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 18,
+      "pond_code": "P07",
+      "pond_name": "Mynuddin Nursing Pond - 2",
+      "income": "0.00",
+      "expense": "9300.00",
+      "net": "-9300.00",
+      "gap_expense_minus_income": "9300.00"
+    },
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 19,
+      "pond_code": "P08",
+      "pond_name": "Digonto Nursing Pond",
+      "income": "0.00",
+      "expense": "1202961.00",
+      "net": "-1202961.00",
+      "gap_expense_minus_income": "1202961.00"
+    },
+    {
+      "type": "transfer_gl_mismatch",
+      "transfer_id": 8,
+      "transfer_date": "2025-12-06",
+      "line_total": "286202.98",
+      "gl_amount": "265381.37"
+    }
+  ],
+  "warnings": [
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 16,
+      "pond_code": "P05",
+      "pond_name": "Mynuddin Nursing Pond",
+      "income": "354175.11",
+      "expense": "227749.60",
+      "net": "126425.51",
+      "gap_expense_minus_income": "-126425.51"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 2,
+      "pond_code": "P02",
+      "lease_pl": "755550.00",
+      "implied_annual": "1183000.00"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 13,
+      "pond_code": "P01",
+      "lease_pl": "908150.00",
+      "implied_annual": "1176000.00"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 14,
+      "pond_code": "P03",
+      "lease_pl": "1615575.00",
+      "implied_annual": "2967715.00"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 15,
+      "pond_code": "P04",
+      "lease_pl": "672000.00",
+      "implied_annual": "769600.00"
+    }
+  ],
+  "issue_count": 4,
+  "warning_count": 5,
+  "gl_gap_total": 0
+}
+
+ERR:

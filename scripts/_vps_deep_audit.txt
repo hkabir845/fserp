@@ -1,0 +1,47 @@
+=== NURSING POND TRANSFER DETAIL ===
+
+P05 'Mynuddin Nursing Pond'
+  PL income=354175.11 expense=227749.60 net=126425.51
+  xfer_out_lines=5 alltime_cost=941081.36 fy_cost=354175.11
+  direct_expense_register=217269.60
+    line#25 2025-07-14 -> P02 fish=110000 cost=230261.13
+    line#28 2025-07-14 -> P04 fish=59196 cost=123913.98
+
+P06 'Ashari - 3 Nursing Pond'
+  PL income=677881.31 expense=841788.56 net=-163907.25
+  xfer_out_lines=2 alltime_cost=661831.61 fy_cost=661831.61
+  direct_expense_register=151999.10
+    line#7 2025-11-08 -> P01 fish=87780 cost=380417.37
+    line#14 2025-12-06 -> P02 fish=27100 cost=281414.24
+
+P07 'Mynuddin Nursing Pond - 2'
+  PL income=0.00 expense=9300.00 net=-9300.00
+  xfer_out_lines=0 alltime_cost=0.00 fy_cost=0.00
+  direct_expense_register=0.00
+
+P08 'Digonto Nursing Pond'
+  PL income=0.00 expense=1202961.00 net=-1202961.00
+  xfer_out_lines=0 alltime_cost=0.00 fy_cost=0.00
+  direct_expense_register=0.00
+
+=== LEASE PAYMENTS BY POND (FY) ===
+  P01 payments=908150.00 pl_lease=908150.00 annual=1176000.00 under-267850.00
+  P02 payments=1336900.00 pl_lease=1336900.00 annual=1183000.00 OVER+153900.00
+  P03 payments=3069410.00 pl_lease=3069410.00 annual=2967715.00 OVER+101695.00
+  P04 payments=672000.00 pl_lease=672000.00 annual=769600.00 under-97600.00
+  P05 payments=0.00 pl_lease=0.00 annual=None
+  P06 payments=0.00 pl_lease=0.00 annual=None
+  P07 payments=0.00 pl_lease=0.00 annual=None
+  P08 payments=0.00 pl_lease=0.00 annual=None
+
+=== DUPLICATE LEASE (same pond+date+amount) ===
+
+=== GL GAPS ===
+total=2
+  vendor_payment_made: #11 Payment PAY-11 → Excavator Service 100000.00
+  vendor_bill: #13 Bill BILL-13 — Excavator Service 100000.00
+
+=== GROW-OUT NEGATIVE NET (possible transfer cost issues) ===
+  P02 'Mynuddin Pond' net=-1685104.74 xfer_in=511675.37 fry=1338029.12
+  P01 'Ashari - 1 Pond' net=-717090.86 xfer_in=380417.37 fry=863760.87
+  P03 'Ashari - 2 Pond' net=-3082832.24 xfer_in=0.00 fry=1433750.00

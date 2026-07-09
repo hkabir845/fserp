@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import TypeVar
 
 from django.db import transaction
@@ -11,6 +12,7 @@ from django.utils import timezone
 from api.models import (
     AquacultureDataBankPondClose,
     AquaculturePond,
+    AquacultureProductionCycle,
     Company,
     Station,
 )
@@ -78,6 +80,353 @@ def pond_biological_settlement(company_id: int, pond_id: int, as_of: date) -> di
         "settlement_weight_kg": weight.quantize(Decimal("0.0001")),
         "settlement_bioasset_value": bioasset,
     }
+
+
+_BIOASSET_CLOSE_TOLERANCE = Decimal("0.01")
+
+_YEAR_CLOSE_LEASE_NOTE = (
+    "Land lease and site costs on Site & lease are not closed with the pond — rent continues "
+    "through the empty pond renovation and preparation period until the next stocking cycle."
+)
+
+
+def _pond_warehouse_stock_lines(company_id: int, pond_id: int) -> list[dict]:
+    """Non-fish pond-warehouse rows with on-hand quantity (feed, medicine, supplies)."""
+    from decimal import Decimal
+
+    from api.services.aquaculture_pond_stock_service import pond_warehouse_stock_matrix
+
+    lines: list[dict] = []
+    for row in pond_warehouse_stock_matrix(company_id, pond_id=pond_id):
+        qty = Decimal(str(row.get("quantity") or "0"))
+        if qty <= 0:
+            continue
+        lines.append(
+            {
+                "item_id": row.get("item_id"),
+                "item_name": (row.get("item_name") or row.get("name") or "").strip(),
+                "quantity": str(qty),
+                "unit": (row.get("unit") or "").strip(),
+                "pos_category": (row.get("pos_category") or "").strip(),
+            }
+        )
+    return lines
+
+
+def _open_production_cycle_count(company_id: int, pond_id: int) -> int:
+    return AquacultureProductionCycle.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        end_date__isnull=True,
+    ).count()
+
+
+def pond_year_close_readiness(company_id: int, pond_id: int, as_of: date) -> dict:
+    """
+    Year close requires an empty pond ready for renovation / next cycle (global practice:
+    harvest, drain, dry, lime, predator removal) while land lease continues on Site & lease.
+
+    Hard blockers: live fish, biological inventory (1581), feed/medicine in pond warehouse.
+    Open production cycles are auto-ended on successful close (not a blocker).
+    """
+    settlement = pond_biological_settlement(company_id, pond_id, as_of)
+    fish_count = int(settlement["settlement_fish_count"] or 0)
+    fish_kg = settlement["settlement_weight_kg"]
+    bioasset = settlement["settlement_bioasset_value"]
+    warehouse_lines = _pond_warehouse_stock_lines(company_id, pond_id)
+    open_cycles = _open_production_cycle_count(company_id, pond_id)
+
+    blockers: list[str] = []
+    if fish_count > 0:
+        blockers.append(
+            f"{fish_count:,} live fish remain ({fish_kg} kg). Harvest or transfer all fish "
+            "before year close so the pond is empty for renovation."
+        )
+    if bioasset > _BIOASSET_CLOSE_TOLERANCE:
+        blockers.append(
+            f"Biological inventory (1581) balance {bioasset} remains for this pond. "
+            "Record harvest sales or bio-asset relief so the pond is financially empty."
+        )
+    if warehouse_lines:
+        parts = [
+            f'{(ln["item_name"] or "item").strip()} ({ln["quantity"]} {ln["unit"] or "units"})'.strip()
+            for ln in warehouse_lines[:5]
+        ]
+        extra = f" (+{len(warehouse_lines) - 5} more)" if len(warehouse_lines) > 5 else ""
+        blockers.append(
+            f"Feed/medicine still in pond warehouse: {', '.join(parts)}{extra}. "
+            "Use, transfer, or adjust stock before close."
+        )
+
+    actions = _year_close_readiness_actions(
+        pond_id=pond_id,
+        fish_count=fish_count,
+        bioasset=bioasset,
+        warehouse_lines=warehouse_lines,
+        open_cycles=open_cycles,
+    )
+
+    return {
+        "is_ready": len(blockers) == 0,
+        "blockers": blockers,
+        "actions": actions,
+        "open_production_cycle_count": open_cycles,
+        "warehouse_stock_lines": warehouse_lines,
+        "lease_continues_note": _YEAR_CLOSE_LEASE_NOTE,
+        "settlement_fish_count": fish_count,
+        "settlement_weight_kg": str(fish_kg),
+        "settlement_bioasset_value": str(bioasset),
+    }
+
+
+def _year_close_readiness_actions(
+    *,
+    pond_id: int,
+    fish_count: int,
+    bioasset: Decimal,
+    warehouse_lines: list[dict],
+    open_cycles: int,
+) -> list[dict]:
+    """Actionable next steps for operators (links or confirmed helpers)."""
+    actions: list[dict] = []
+    if fish_count > 0:
+        actions.append(
+            {
+                "id": "harvest_fish",
+                "kind": "link",
+                "label": "Record harvest sale",
+                "detail": f"{fish_count:,} live fish remain in this pond.",
+                "href": f"/aquaculture/sales?pond_id={pond_id}",
+            }
+        )
+        actions.append(
+            {
+                "id": "transfer_fish",
+                "kind": "link",
+                "label": "Transfer fish to another pond",
+                "detail": "Use inter-pond fish transfer when moving fingerlings or biomass.",
+                "href": f"/aquaculture/transfers?from_pond_id={pond_id}",
+            }
+        )
+    if bioasset > _BIOASSET_CLOSE_TOLERANCE:
+        actions.append(
+            {
+                "id": "bioasset_relief",
+                "kind": "link",
+                "label": "Finalize harvest sales or adjust bio-asset",
+                "detail": f"Biological inventory (1581) balance {bioasset} remains.",
+                "href": f"/aquaculture/sales?pond_id={pond_id}",
+            }
+        )
+        actions.append(
+            {
+                "id": "stock_ledger",
+                "kind": "link",
+                "label": "Fish stock ledger (mortality / write-down)",
+                "detail": "Post mortality or count adjustments with GL relief when needed.",
+                "href": f"/aquaculture/stock?pond_id={pond_id}",
+            }
+        )
+    if warehouse_lines:
+        actions.append(
+            {
+                "id": "return_warehouse",
+                "kind": "return_warehouse",
+                "label": "Return all warehouse stock to shop",
+                "detail": (
+                    f"{len(warehouse_lines)} item line(s) on hand — returns feed/medicine to the "
+                    "linked shop station (confirmed action)."
+                ),
+            }
+        )
+        actions.append(
+            {
+                "id": "pond_warehouse",
+                "kind": "link",
+                "label": "Pond warehouse detail",
+                "detail": "Review on-hand feed, medicine, and supplies.",
+                "href": f"/aquaculture/ponds/{pond_id}",
+            }
+        )
+        actions.append(
+            {
+                "id": "inventory_transfer",
+                "kind": "link",
+                "label": "Inventory transfers",
+                "detail": "Manual pond → shop return or inter-pond move.",
+                "href": "/inventory",
+            }
+        )
+    if open_cycles > 0:
+        actions.append(
+            {
+                "id": "open_cycles",
+                "kind": "info",
+                "label": f"{open_cycles} open production cycle(s)",
+                "detail": "These cycles will end automatically when year close succeeds.",
+                "href": f"/aquaculture/cycles?pond_id={pond_id}",
+            }
+        )
+    return actions
+
+
+def _resolve_return_station_id(
+    company_id: int,
+    pond_id: int,
+    station_id: int | None = None,
+) -> int | None:
+    if station_id:
+        if Station.objects.filter(pk=station_id, company_id=company_id, is_active=True).exists():
+            return station_id
+        return None
+    from api.services.aquaculture_pond_pos_customer import resolve_shop_station_for_pond
+    from api.services.station_stock import get_or_create_default_station
+
+    sid = resolve_shop_station_for_pond(company_id=company_id, pond_id=pond_id)
+    if sid:
+        return sid
+    return get_or_create_default_station(company_id).id
+
+
+def return_pond_warehouse_for_year_close(
+    *,
+    company_id: int,
+    pond_id: int,
+    user=None,
+    station_id: int | None = None,
+    memo: str = "",
+) -> tuple[dict | None, str | None]:
+    """
+    Explicit helper: return all pond-warehouse feed/medicine lines to a shop station.
+    Does not run automatically on year close.
+    """
+    from api.exceptions import StockBusinessError
+    from api.services.aquaculture_pond_stock_service import (
+        transfer_pond_warehouse_to_station,
+    )
+
+    pond = AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
+    if not pond:
+        return None, "Pond not found."
+
+    blocked = pond_write_blocked_detail(company_id, pond_id)
+    if blocked:
+        return None, blocked
+
+    lines = _pond_warehouse_stock_lines(company_id, pond_id)
+    if not lines:
+        return {"pond_id": pond_id, "returned_lines": 0, "items": []}, None
+
+    sid = _resolve_return_station_id(company_id, pond_id, station_id)
+    if not sid:
+        return None, "No active shop station found to receive returned stock."
+
+    items = [
+        {"item_id": int(ln["item_id"]), "quantity": ln["quantity"]}
+        for ln in lines
+        if ln.get("item_id") is not None
+    ]
+    if not items:
+        return None, "Warehouse stock lines could not be resolved for return."
+
+    note = (memo or "").strip() or f"Data Bank year-close prep — return all stock from {pond.name}"
+    try:
+        ret = transfer_pond_warehouse_to_station(
+            company_id=company_id,
+            pond_id=pond_id,
+            station_id=sid,
+            items=items,
+            memo=note[:500],
+        )
+    except StockBusinessError as ex:
+        return None, getattr(ex, "detail", str(ex))
+
+    remaining = _pond_warehouse_stock_lines(company_id, pond_id)
+    return {
+        "pond_id": pond_id,
+        "station_id": sid,
+        "return_id": ret.id,
+        "return_number": ret.return_number or "",
+        "returned_lines": len(items),
+        "remaining_lines": len(remaining),
+        "items": lines,
+    }, None
+
+
+def list_readiness_overview(company_id: int, as_of: date) -> dict:
+    """Readiness summary for every pond not currently data-locked (year-close prep fleet view)."""
+    ponds = list(
+        AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
+            "sort_order", "id"
+        )
+    )
+    rows: list[dict] = []
+    ready_count = 0
+    for pond in ponds:
+        if _active_close_qs(company_id, pond.id).exists():
+            rows.append(
+                {
+                    "pond_id": pond.id,
+                    "pond_name": pond.name,
+                    "pond_code": pond.code or "",
+                    "is_currently_locked": True,
+                    "is_ready": None,
+                    "blocker_count": None,
+                }
+            )
+            continue
+        readiness = pond_year_close_readiness(company_id, pond.id, as_of)
+        if readiness["is_ready"]:
+            ready_count += 1
+        rows.append(
+            {
+                "pond_id": pond.id,
+                "pond_name": pond.name,
+                "pond_code": pond.code or "",
+                "is_currently_locked": False,
+                "is_ready": readiness["is_ready"],
+                "blocker_count": len(readiness["blockers"]),
+                "open_production_cycle_count": readiness["open_production_cycle_count"],
+                "settlement_fish_count": readiness["settlement_fish_count"],
+                "settlement_bioasset_value": readiness["settlement_bioasset_value"],
+                "warehouse_line_count": len(readiness["warehouse_stock_lines"]),
+            }
+        )
+    open_ponds = [r for r in rows if not r["is_currently_locked"]]
+    return {
+        "as_of": as_of.isoformat(),
+        "pond_count": len(rows),
+        "open_pond_count": len(open_ponds),
+        "ready_pond_count": ready_count,
+        "not_ready_pond_count": len(open_ponds) - ready_count,
+        "lease_continues_note": _YEAR_CLOSE_LEASE_NOTE,
+        "ponds": rows,
+    }
+
+
+def _end_open_production_cycles_on_close(
+    company_id: int,
+    pond_id: int,
+    period_end: date,
+    close_label: str,
+) -> int:
+    """Mark open cycles ended on the close date so the next season starts fresh."""
+    note_suffix = f"Ended by Data Bank year close ({close_label}) on {period_end.isoformat()}."
+    ended = 0
+    for cycle in AquacultureProductionCycle.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        end_date__isnull=True,
+    ):
+        notes = (cycle.notes or "").strip()
+        if note_suffix not in notes:
+            notes = f"{notes}\n{note_suffix}".strip() if notes else note_suffix
+        cycle.end_date = period_end
+        cycle.is_active = False
+        cycle.notes = notes[:5000]
+        cycle.save(update_fields=["end_date", "is_active", "notes", "updated_at"])
+        ended += 1
+    return ended
 
 
 def user_may_manage_aquaculture_data_bank(user) -> bool:
@@ -379,6 +728,7 @@ def preview_station_close(
     pond_previews = [
         preview_pond_close(company, p, period_end, period_start) for p in ponds
     ]
+    ready_count = sum(1 for p in pond_previews if p.get("is_ready"))
     return {
         "station_id": station.id,
         "station_name": station.station_name or "",
@@ -387,6 +737,9 @@ def preview_station_close(
         "label": default_station_period_label(station.station_name, period_start, period_end),
         "pond_count": len(pond_ids),
         "open_pond_count": len(open_pond_ids),
+        "ready_pond_count": ready_count,
+        "not_ready_pond_count": len(pond_previews) - ready_count,
+        "lease_continues_note": _YEAR_CLOSE_LEASE_NOTE,
         "ponds": pond_previews,
     }
 
@@ -401,16 +754,22 @@ def preview_pond_close(
         period_start, period_end = fiscal_period_for_end_date(company, period_end)
     elif period_start > period_end:
         raise ValueError("period_start must be on or before period_end.")
-    settlement = pond_biological_settlement(company.id, pond.id, period_end)
+    readiness = pond_year_close_readiness(company.id, pond.id, period_end)
     return {
         "pond_id": pond.id,
         "pond_name": pond.name,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
         "label": default_period_label(pond.name, period_start, period_end),
-        "settlement_fish_count": settlement["settlement_fish_count"],
-        "settlement_weight_kg": str(settlement["settlement_weight_kg"]),
-        "settlement_bioasset_value": str(settlement["settlement_bioasset_value"]),
+        "settlement_fish_count": readiness["settlement_fish_count"],
+        "settlement_weight_kg": readiness["settlement_weight_kg"],
+        "settlement_bioasset_value": readiness["settlement_bioasset_value"],
+        "is_ready": readiness["is_ready"],
+        "blockers": readiness["blockers"],
+        "actions": readiness["actions"],
+        "open_production_cycle_count": readiness["open_production_cycle_count"],
+        "warehouse_stock_lines": readiness["warehouse_stock_lines"],
+        "lease_continues_note": readiness["lease_continues_note"],
     }
 
 
@@ -449,9 +808,20 @@ def close_pond(
         pond.name, period_start, period_end
     )
 
+    readiness = pond_year_close_readiness(company_id, pond_id, period_end)
+    if not readiness["is_ready"]:
+        detail = " ".join(readiness["blockers"])
+        return None, (
+            f"Pond is not ready for year close. {detail} "
+            f"{_YEAR_CLOSE_LEASE_NOTE}"
+        )
+
     settlement = pond_biological_settlement(company_id, pond_id, period_end)
 
     with transaction.atomic():
+        _end_open_production_cycles_on_close(
+            company_id, pond_id, period_end, display_label
+        )
         # Only one active operational lock per pond; prior closes stay in history.
         AquacultureDataBankPondClose.objects.filter(
             company_id=company_id,

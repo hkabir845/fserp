@@ -25,6 +25,10 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive'
+import {
+  YearCloseReadinessPanel,
+  type YearCloseReadinessAction,
+} from '@/components/aquaculture/YearCloseReadinessPanel'
 
 type PondClose = {
   id: number
@@ -130,6 +134,41 @@ type ClosePreview = {
   settlement_fish_count?: number | null
   settlement_weight_kg?: string | null
   settlement_bioasset_value?: string | null
+  is_ready?: boolean
+  blockers?: string[]
+  open_production_cycle_count?: number
+  warehouse_stock_lines?: {
+    item_id?: number
+    item_name?: string
+    quantity?: string
+    unit?: string
+    pos_category?: string
+  }[]
+  lease_continues_note?: string
+  actions?: YearCloseReadinessAction[]
+}
+
+type ReadinessOverviewRow = {
+  pond_id: number
+  pond_name: string
+  pond_code: string
+  is_currently_locked: boolean
+  is_ready: boolean | null
+  blocker_count: number | null
+  open_production_cycle_count?: number
+  settlement_fish_count?: number
+  settlement_bioasset_value?: string
+  warehouse_line_count?: number
+}
+
+type ReadinessOverview = {
+  as_of: string
+  pond_count: number
+  open_pond_count: number
+  ready_pond_count: number
+  not_ready_pond_count: number
+  lease_continues_note?: string
+  ponds: ReadinessOverviewRow[]
 }
 
 type StationClosePreview = {
@@ -140,6 +179,9 @@ type StationClosePreview = {
   label: string
   pond_count: number
   open_pond_count: number
+  ready_pond_count?: number
+  not_ready_pond_count?: number
+  lease_continues_note?: string
   ponds: ClosePreview[]
 }
 
@@ -187,6 +229,45 @@ export default function AquacultureDataBankPage() {
   const [stationCloseNotes, setStationCloseNotes] = useState('')
   const [stationPreview, setStationPreview] = useState<StationClosePreview | null>(null)
   const [closingStation, setClosingStation] = useState(false)
+  const [readinessOverview, setReadinessOverview] = useState<ReadinessOverview | null>(null)
+  const [expandedPreview, setExpandedPreview] = useState<ClosePreview | null>(null)
+  const [expandedPreviewLoading, setExpandedPreviewLoading] = useState(false)
+  const [returningWarehousePondId, setReturningWarehousePondId] = useState<number | null>(null)
+
+  const refreshPondPreview = useCallback(
+    async (pondId: number, endDate: string, startDate?: string) => {
+      const params: Record<string, string> = {
+        pond_id: String(pondId),
+        period_end: endDate,
+      }
+      if (startDate?.trim()) params.period_start = startDate.trim()
+      const { data: p } = await api.get<ClosePreview>(
+        '/aquaculture/data-bank/preview-pond-close/',
+        { params }
+      )
+      return p
+    },
+    []
+  )
+
+  const loadReadinessOverview = useCallback(
+    async (endDate: string) => {
+      if (!isAdmin || !endDate.trim()) {
+        setReadinessOverview(null)
+        return
+      }
+      try {
+        const { data } = await api.get<ReadinessOverview>(
+          '/aquaculture/data-bank/readiness-overview/',
+          { params: { period_end: endDate } }
+        )
+        setReadinessOverview(data)
+      } catch {
+        setReadinessOverview(null)
+      }
+    },
+    [isAdmin]
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -232,7 +313,43 @@ export default function AquacultureDataBankPage() {
   useEffect(() => {
     if (!isClientReady) return
     void load()
-  }, [load, isClientReady, selectedCompany?.id])
+    void loadReadinessOverview(periodEnd)
+  }, [load, loadReadinessOverview, isClientReady, selectedCompany?.id, periodEnd])
+
+  useEffect(() => {
+    setExpandedPreview(null)
+    if (!expandedPondId || !isAdmin || !periodEnd.trim()) return
+    const bankRow = data?.ponds.find((p) => p.pond_id === expandedPondId)
+    if (bankRow?.is_currently_locked) return
+    if (expandedPondId === closePondId && preview) {
+      setExpandedPreview(preview)
+      return
+    }
+    let cancelled = false
+    setExpandedPreviewLoading(true)
+    void (async () => {
+      try {
+        const p = await refreshPondPreview(expandedPondId, periodEnd, periodStart)
+        if (!cancelled) setExpandedPreview(p)
+      } catch {
+        if (!cancelled) setExpandedPreview(null)
+      } finally {
+        if (!cancelled) setExpandedPreviewLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    expandedPondId,
+    isAdmin,
+    periodEnd,
+    periodStart,
+    closePondId,
+    preview,
+    data,
+    refreshPondPreview,
+  ])
 
   useEffect(() => {
     setLabelIsManual(false)
@@ -305,14 +422,57 @@ export default function AquacultureDataBankPage() {
     }
   }, [closeStationId, stationPeriodEnd, stationPeriodStart, isAdmin])
 
+  const returnWarehouseForPond = async (pondId: number) => {
+    const row = ponds.find((p) => p.pond_id === pondId)
+    const name = row?.pond_name || `Pond ${pondId}`
+    const lineCount =
+      (pondId === closePondId ? preview?.warehouse_stock_lines?.length : undefined) ??
+      expandedPreview?.warehouse_stock_lines?.length ??
+      readinessOverview?.ponds.find((p) => p.pond_id === pondId)?.warehouse_line_count ??
+      0
+    const msg =
+      `Return all feed/medicine from ${name} to the linked shop station?\n\n` +
+      `${lineCount > 0 ? `${lineCount} item line(s) will move back to shop inventory.` : 'All on-hand pond warehouse stock will be returned.'}\n\n` +
+      'This is not automatic on year close — you are confirming this action now.'
+    if (!window.confirm(msg)) return
+    setReturningWarehousePondId(pondId)
+    try {
+      const { data: res } = await api.post<{ message?: string }>(
+        '/aquaculture/data-bank/return-warehouse/',
+        { pond_id: pondId, memo: `Data Bank year-close prep — ${name}` }
+      )
+      toast.success(res.message || `${name}: warehouse returned to shop`)
+      if (closePondId === pondId) {
+        const p = await refreshPondPreview(pondId, periodEnd, periodStart)
+        setPreview(p)
+        if (!labelIsManual) setCloseLabel(p.label)
+      }
+      if (expandedPondId === pondId) {
+        const p = await refreshPondPreview(pondId, periodEnd, periodStart)
+        setExpandedPreview(p)
+      }
+      await loadReadinessOverview(periodEnd)
+    } catch (e) {
+      toast.error(extractErrorMessage(e, 'Warehouse return failed'))
+    } finally {
+      setReturningWarehousePondId(null)
+    }
+  }
+
   const runPondClose = async (pondId: number, pondName: string) => {
     if (!periodEnd.trim()) {
       toast.error('Choose a period end date')
       return
     }
     const msg = preview
-      ? `Close ${pondName} for ${preview.label} (${preview.period_start} – ${preview.period_end})?\n\nOperational data in this window will be archived (read-only). Pond structure stays the same. New cycles and stocking should use dates after ${preview.period_end}.`
-      : `Close ${pondName} through ${periodEnd}?\n\nOperational data in the closed window will be archived. Pond structure stays the same; prepare the pond for the next season with dates after the period end.`
+      ? preview.is_ready === false
+        ? `Cannot close ${pondName}: pond is not ready.\n\n${(preview.blockers || []).join('\n')}`
+        : `Close ${pondName} for ${preview.label} (${preview.period_start} – ${preview.period_end})?\n\nThe pond is empty and ready for renovation. Operational data in this window will be archived (read-only). Land lease continues. New cycles and stocking should use dates after ${preview.period_end}.`
+      : `Close ${pondName} through ${periodEnd}?\n\nThe pond must be empty before close. Operational data in the closed window will be archived. Land lease continues; prepare the pond for the next season with dates after the period end.`
+    if (preview?.is_ready === false) {
+      toast.error(msg.replace(/\n/g, ' '))
+      return
+    }
     if (!window.confirm(msg)) return
     setClosing(true)
     try {
@@ -331,6 +491,7 @@ export default function AquacultureDataBankPage() {
       setCloseNotes('')
       setExpandedPondId(pondId)
       await load()
+      await loadReadinessOverview(periodEnd)
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Year close failed'))
     } finally {
@@ -380,6 +541,7 @@ export default function AquacultureDataBankPage() {
       }
       setStationCloseNotes('')
       await load()
+      await loadReadinessOverview(stationPeriodEnd)
     } catch (e) {
       toast.error(extractErrorMessage(e, 'Station close failed'))
     } finally {
@@ -475,6 +637,18 @@ export default function AquacultureDataBankPage() {
         </h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-muted-foreground">
           <li>
+            <strong className="font-medium text-foreground">Empty pond required</strong> — year
+            close is allowed only when the pond has no live fish, no feed or medicine in pond
+            warehouse, and no biological inventory (1581) balance. Open production cycles are
+            ended automatically on close. This matches global practice: after harvest the pond
+            is drained and prepared (drying, liming, predator removal) before the next stocking.
+          </li>
+          <li>
+            <strong className="font-medium text-foreground">Land lease continues</strong> — rent
+            and site costs on Site &amp; lease are not closed with the pond; lease keeps running
+            through the empty renovation period until the next cycle starts.
+          </li>
+          <li>
             <strong className="font-medium text-foreground">Pond structure unchanged</strong> — name,
             code, dimensions, and station link from Site &amp; lease remain as recorded.
           </li>
@@ -500,15 +674,30 @@ export default function AquacultureDataBankPage() {
 
       {isAdmin ? (
         <>
+        {readinessOverview && readinessOverview.open_pond_count > 0 ? (
+          <section className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+            <h2 className="text-sm font-semibold text-foreground">Fleet readiness</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              As of {formatDateOnly(readinessOverview.as_of)}:{' '}
+              <strong className="text-foreground">
+                {readinessOverview.ready_pond_count} of {readinessOverview.open_pond_count}
+              </strong>{' '}
+              open pond{readinessOverview.open_pond_count === 1 ? '' : 's'} ready for year close.
+              {readinessOverview.not_ready_pond_count > 0
+                ? ` ${readinessOverview.not_ready_pond_count} still need preparation.`
+                : ' All open ponds are empty.'}
+            </p>
+          </section>
+        ) : null}
         <section className="rounded-xl border border-warning/30 bg-warning/10/60 p-5 shadow-sm">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
             <Calendar className="h-5 w-5 text-warning-foreground" />
             Close one pond
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pick the pond and its period end. This archives operational data for that window and
-            leaves pond structure unchanged; the farmer starts the next season with dates after the
-            period end. Optional custom period start (otherwise fiscal year start from Settings).
+            Pick the pond and its period end. The pond must be totally empty (harvested, warehouse
+            cleared) and ready for renovation before close. Land lease continues on Site &amp; lease.
+            Optional custom period start (otherwise fiscal year start from Settings).
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label className="block text-sm sm:col-span-2">
@@ -588,26 +777,25 @@ export default function AquacultureDataBankPage() {
             </div>
           </div>
           {preview && (
-            <div className="mt-3 text-sm text-foreground/85">
-              <p>
+            <div className="mt-3 space-y-2">
+              <p className="text-sm text-foreground/85">
                 Preview: <strong>{preview.label}</strong> ({formatDateOnly(preview.period_start)} –{' '}
                 {formatDateOnly(preview.period_end)})
               </p>
-              {(preview.settlement_fish_count != null ||
-                preview.settlement_bioasset_value != null) && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Closing biomass to be recorded:{' '}
-                  {preview.settlement_fish_count != null
-                    ? `${preview.settlement_fish_count.toLocaleString()} fish`
-                    : '—'}
-                  {preview.settlement_weight_kg != null
-                    ? ` · ${Number(preview.settlement_weight_kg).toLocaleString()} kg`
-                    : ''}
-                  {preview.settlement_bioasset_value != null
-                    ? ` · bio-asset ${Number(preview.settlement_bioasset_value).toLocaleString()}`
-                    : ''}
-                </p>
-              )}
+              <YearCloseReadinessPanel
+              pondId={preview.pond_id}
+              pondName={preview.pond_name}
+              isReady={preview.is_ready}
+              blockers={preview.blockers}
+              actions={preview.actions}
+              openProductionCycleCount={preview.open_production_cycle_count}
+              leaseContinuesNote={preview.lease_continues_note}
+              settlementFishCount={preview.settlement_fish_count}
+              settlementWeightKg={preview.settlement_weight_kg}
+              settlementBioassetValue={preview.settlement_bioasset_value}
+              returningWarehouse={returningWarehousePondId === preview.pond_id}
+              onReturnWarehouse={returnWarehouseForPond}
+            />
             </div>
           )}
           <label className="mt-3 block text-sm">
@@ -621,7 +809,7 @@ export default function AquacultureDataBankPage() {
           </label>
           <button
             type="button"
-            disabled={closing || !closePondId}
+            disabled={closing || !closePondId || preview?.is_ready === false}
             onClick={() => {
               const row = ponds.find((p) => p.pond_id === closePondId)
               if (row) void runPondClose(row.pond_id, row.pond_name)
@@ -639,9 +827,8 @@ export default function AquacultureDataBankPage() {
             Close selected station
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Lock every pond linked to a shop station (for example Premium Agro) in one step — same
-            rules as a single-pond close: structure unchanged, closed-period data archived, each pond
-            gets its own close record and label.
+            Lock every pond linked to a shop station in one step. Each pond must be empty (same
+            readiness rules as single-pond close). Land lease continues on Site &amp; lease.
           </p>
           {stationList.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">No active stations. Add sites under Stations first.</p>
@@ -682,13 +869,25 @@ export default function AquacultureDataBankPage() {
                   </p>
                   <p>
                     {stationPreview.pond_count} linked pond{stationPreview.pond_count === 1 ? '' : 's'},{' '}
-                    {stationPreview.open_pond_count} still open for this close.
+                    {stationPreview.open_pond_count} still open for this close
+                    {stationPreview.ready_pond_count != null
+                      ? ` · ${stationPreview.ready_pond_count} ready`
+                      : ''}
+                    {stationPreview.not_ready_pond_count != null &&
+                    stationPreview.not_ready_pond_count > 0
+                      ? ` · ${stationPreview.not_ready_pond_count} not ready`
+                      : ''}
+                    .
                   </p>
+                  {stationPreview.lease_continues_note ? (
+                    <p className="text-xs text-muted-foreground">{stationPreview.lease_continues_note}</p>
+                  ) : null}
                   {stationPreview.ponds.length > 0 ? (
                     <ul className="list-inside list-disc text-muted-foreground">
                       {stationPreview.ponds.map((p) => (
                         <li key={p.pond_id}>
                           {p.pond_name} — {p.label}
+                          {p.is_ready === false ? ' (not ready)' : p.is_ready ? ' (ready)' : ''}
                         </li>
                       ))}
                     </ul>
@@ -709,7 +908,9 @@ export default function AquacultureDataBankPage() {
                 disabled={
                   closingStation ||
                   !closeStationId ||
-                  (stationPreview != null && stationPreview.open_pond_count === 0)
+                  (stationPreview != null && stationPreview.open_pond_count === 0) ||
+                  (stationPreview != null &&
+                    (stationPreview.not_ready_pond_count ?? 0) > 0)
                 }
                 onClick={() => void runStationClose()}
                 className="mt-4 inline-flex items-center gap-2 rounded-lg bg-teal-800 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-900 disabled:opacity-60"
@@ -746,6 +947,7 @@ export default function AquacultureDataBankPage() {
           ponds.map((row) => {
             const open = expandedPondId === row.pond_id
             const latest = row.latest_close
+            const overviewRow = readinessOverview?.ponds.find((p) => p.pond_id === row.pond_id)
             return (
               <div
                 key={row.pond_id}
@@ -793,6 +995,19 @@ export default function AquacultureDataBankPage() {
                           <Eye className="h-3 w-3" /> Reference
                         </span>
                       ) : null}
+                      {overviewRow && !overviewRow.is_currently_locked && overviewRow.is_ready != null ? (
+                        overviewRow.is_ready ? (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                            Ready to close
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                            {(overviewRow.blocker_count ?? 0) > 0
+                              ? `${overviewRow.blocker_count} blocker(s)`
+                              : 'Not ready'}
+                          </span>
+                        )
+                      ) : null}
                     </div>
                     {latest ? (
                       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -815,7 +1030,41 @@ export default function AquacultureDataBankPage() {
                   </div>
                 </button>
                 {open && (
-                  <div className="border-t border-border/70 px-4 py-3">
+                  <div className="border-t border-border/70 px-4 py-3 space-y-4">
+                    {!row.is_currently_locked && isAdmin ? (
+                      <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Year-close readiness
+                        </h3>
+                        {expandedPreviewLoading && !expandedPreview ? (
+                          <p className="mt-2 text-sm text-muted-foreground">Loading readiness…</p>
+                        ) : expandedPreview ? (
+                          <div className="mt-2">
+                            <YearCloseReadinessPanel
+                              pondId={row.pond_id}
+                              pondName={row.pond_name}
+                              isReady={expandedPreview.is_ready}
+                              blockers={expandedPreview.blockers}
+                              actions={expandedPreview.actions}
+                              openProductionCycleCount={expandedPreview.open_production_cycle_count}
+                              leaseContinuesNote={expandedPreview.lease_continues_note}
+                              settlementFishCount={expandedPreview.settlement_fish_count}
+                              settlementWeightKg={expandedPreview.settlement_weight_kg}
+                              settlementBioassetValue={expandedPreview.settlement_bioasset_value}
+                              compact
+                              returningWarehouse={returningWarehousePondId === row.pond_id}
+                              onReturnWarehouse={returnWarehouseForPond}
+                            />
+                          </div>
+                        ) : overviewRow && overviewRow.is_ready != null ? (
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {overviewRow.is_ready
+                              ? 'Ready for year close.'
+                              : `${overviewRow.blocker_count ?? 0} item(s) to clear before close.`}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {row.close_history.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No close history for this pond.</p>
                     ) : (

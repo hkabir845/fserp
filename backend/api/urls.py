@@ -706,6 +706,14 @@ urlpatterns = [
         aquaculture_data_bank_views.aquaculture_data_bank_preview_pond_close,
     ),
     path(
+        "aquaculture/data-bank/readiness-overview/",
+        aquaculture_data_bank_views.aquaculture_data_bank_readiness_overview,
+    ),
+    path(
+        "aquaculture/data-bank/return-warehouse/",
+        aquaculture_data_bank_views.aquaculture_data_bank_return_warehouse,
+    ),
+    path(
         "aquaculture/data-bank/close-pond/",
         aquaculture_data_bank_views.aquaculture_data_bank_close_pond,
     ),

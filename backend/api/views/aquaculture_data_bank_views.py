@@ -12,11 +12,13 @@ from api.services.aquaculture_data_bank_service import (
     close_pond,
     close_station,
     list_data_bank,
+    list_readiness_overview,
     pond_close_to_dict,
     preview_pond_close,
     preview_station_close,
     relock_close,
     reopen_close_for_reference,
+    return_pond_warehouse_for_year_close,
     unlock_pond_close,
     user_may_manage_aquaculture_data_bank,
 )
@@ -92,6 +94,70 @@ def aquaculture_data_bank_preview_pond_close(request):
     except ValueError as ex:
         return JsonResponse({"detail": str(ex)}, status=400)
     return JsonResponse(payload)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@auth_required
+@require_company_id
+def aquaculture_data_bank_readiness_overview(request):
+    """Fleet readiness for year close (open ponds only scored)."""
+    err = _aquaculture_access(request)
+    if err:
+        return err
+    period_end, date_err = _parse_date_field(
+        request.GET.get("period_end") or request.GET.get("as_of"),
+        "period_end",
+    )
+    if date_err:
+        return date_err
+    return JsonResponse(list_readiness_overview(request.company_id, period_end))
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+def aquaculture_data_bank_return_warehouse(request):
+    """Return all pond-warehouse stock to shop (confirmed year-close prep helper)."""
+    err = _data_bank_admin_required(request)
+    if err:
+        return err
+    body, parse_err = parse_json_body(request)
+    if parse_err:
+        return parse_err
+    cid = request.company_id
+    raw_pond = body.get("pond_id")
+    try:
+        pond_id = int(raw_pond)
+    except (TypeError, ValueError):
+        return JsonResponse({"detail": "pond_id is required and must be an integer."}, status=400)
+    raw_station = body.get("station_id")
+    station_id: int | None = None
+    if raw_station is not None and str(raw_station).strip() != "":
+        try:
+            station_id = int(raw_station)
+        except (TypeError, ValueError):
+            return JsonResponse({"detail": "station_id must be an integer."}, status=400)
+    result, msg = return_pond_warehouse_for_year_close(
+        company_id=cid,
+        pond_id=pond_id,
+        user=getattr(request, "api_user", None),
+        station_id=station_id,
+        memo=(body.get("memo") or "").strip(),
+    )
+    if msg:
+        return JsonResponse({"detail": msg}, status=400)
+    return JsonResponse(
+        {
+            **result,
+            "message": (
+                f"Returned {result['returned_lines']} warehouse line(s) from pond "
+                f"#{pond_id} to shop station #{result['station_id']}."
+            ),
+        },
+        status=201,
+    )
 
 
 @csrf_exempt

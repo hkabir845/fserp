@@ -64,6 +64,14 @@ import {
   SALES_PURCHASE_PERIOD_PRESETS,
   type SalesPurchasePeriodPreset,
 } from './salesPurchasePeriod'
+import {
+  AQUACULTURE_PERIOD_PRESETS,
+  aquacultureRangeForPreset,
+  defaultAquacultureReportRange,
+  inferAquaculturePeriodPreset,
+  isAquaculturePeriodReport,
+  type AquaculturePeriodPreset,
+} from './aquacultureReportPeriod'
 import { EXTRA_FINANCIAL_REPORT_IDS, renderExtraFinancialReport } from '@/components/reports/ExtraFinancialReportPanels'
 import { ReportStructuredFallback } from '@/components/reports/ReportStructuredFallback'
 import {
@@ -161,6 +169,7 @@ type ReportScopeTableProps = {
   stations: { id: number; station_name: string }[]
   ponds: { id: number; name: string }[]
   aquaculturePondId: string
+  fiscalYearStart?: string
   onViewEntityPl?: (entityType: 'station' | 'pond', entityId: number) => void
   onLoansStrictSiteChange?: (strict: boolean) => void
 }
@@ -1443,6 +1452,10 @@ export default function ReportsPage() {
     startDate: localDateISO(),
     endDate: localDateISO(),
   })
+  const [companyFiscalYearStart, setCompanyFiscalYearStart] = useState('01-01')
+  const [aquacultureDateRange, setAquacultureDateRange] = useState(() =>
+    defaultAquacultureReportRange('01-01')
+  )
   const [filterCategory, setFilterCategory] = useState<
     'all' | 'mix' | 'financial' | 'operational' | 'analytical' | 'inventory' | 'aquaculture'
   >('all')
@@ -1474,6 +1487,11 @@ export default function ReportsPage() {
   const [loansStrictSiteOnly, setLoansStrictSiteOnly] = useState(false)
   const [businessSegment, setBusinessSegment] = useState<ReportBusinessSegment>('all')
   const todayIso = localDateISO()
+  const effectivePeriodDateRange = useMemo(
+    () =>
+      isAquaculturePeriodReport(selectedReport) ? aquacultureDateRange : dateRange,
+    [selectedReport, aquacultureDateRange, dateRange]
+  )
   const [salesPurchaseDateRange, setSalesPurchaseDateRange] = useState({
     startDate: todayIso,
     endDate: todayIso,
@@ -1563,11 +1581,15 @@ export default function ReportsPage() {
           name?: string
           company_name?: string
           aquaculture_enabled?: boolean
+          fiscal_year_start?: string
         }
         const label = [d.name, d.company_name]
           .map((x) => (typeof x === 'string' ? x.trim() : ''))
           .find((s) => s.length > 0)
         if (label) setReportCompanyLabel(label)
+        const fy = String(d.fiscal_year_start || '01-01').trim().slice(0, 5) || '01-01'
+        setCompanyFiscalYearStart(fy)
+        setAquacultureDateRange(defaultAquacultureReportRange(fy))
         if (typeof d.aquaculture_enabled === 'boolean') {
           setCompanyAquacultureEnabled(d.aquaculture_enabled)
         } else {
@@ -1965,7 +1987,9 @@ export default function ReportsPage() {
         params.start_date = spRangeForFetch.startDate
         params.end_date = spRangeForFetch.endDate
       } else {
-        const periodRange = opts?.dateRangeOverride ?? dateRange
+        const periodRange = opts?.dateRangeOverride ?? (
+          isAquaculturePeriodReport(reportId) ? aquacultureDateRange : dateRange
+        )
         params.start_date = periodRange.startDate
         params.end_date = periodRange.endDate
       }
@@ -2138,6 +2162,7 @@ export default function ReportsPage() {
     }
   }, [
     dateRange,
+    aquacultureDateRange,
     router,
     itemScopeCategory,
     itemScopeItemIds,
@@ -2292,7 +2317,12 @@ export default function ReportsPage() {
     const archiveStart = (searchParams.get('start_date') || '').trim().slice(0, 10)
     const archiveEnd = (searchParams.get('end_date') || '').trim().slice(0, 10)
     if (/^\d{4}-\d{2}-\d{2}$/.test(archiveStart) && /^\d{4}-\d{2}-\d{2}$/.test(archiveEnd)) {
-      setDateRange({ startDate: archiveStart, endDate: archiveEnd })
+      const archiveRange = { startDate: archiveStart, endDate: archiveEnd }
+      if (isAquaculturePeriodReport(reportParam)) {
+        setAquacultureDateRange(archiveRange)
+      } else {
+        setDateRange(archiveRange)
+      }
       if (SALES_PURCHASE_REPORT_IDS.has(reportParam as ReportType)) {
         setSalesPurchaseDateRange({ startDate: archiveStart, endDate: archiveEnd })
         setSalesPurchaseDatePreset(inferSalesPurchasePreset({ startDate: archiveStart, endDate: archiveEnd }))
@@ -2350,12 +2380,20 @@ export default function ReportsPage() {
       field === 'range'
         ? { startDate: value.split('|')[0] ?? '', endDate: value.split('|')[1] ?? '' }
         : {
-            startDate: field === 'startDate' ? value : dateRange.startDate,
-            endDate: field === 'endDate' ? value : dateRange.endDate,
+            startDate: field === 'startDate' ? value : (
+              isAquaculturePeriodReport(targetReportId) ? aquacultureDateRange.startDate : dateRange.startDate
+            ),
+            endDate: field === 'endDate' ? value : (
+              isAquaculturePeriodReport(targetReportId) ? aquacultureDateRange.endDate : dateRange.endDate
+            ),
           }
 
     // Update state immediately for UI responsiveness
-    setDateRange(newDateRange)
+    if (isAquaculturePeriodReport(targetReportId)) {
+      setAquacultureDateRange(newDateRange)
+    } else {
+      setDateRange(newDateRange)
+    }
 
     // Clear existing timer
     if (debounceTimerRef.current) {
@@ -2373,7 +2411,7 @@ export default function ReportsPage() {
     } else {
       debounceTimerRef.current = setTimeout(refetch, 500)
     }
-  }, [dateRange, fetchReport, selectedReport])
+  }, [dateRange, aquacultureDateRange, fetchReport, selectedReport])
 
   const printReport = () => {
     if (!reportData || !selectedReport) return
@@ -2812,7 +2850,7 @@ export default function ReportsPage() {
     const fileName = `${reportTitle.replace(/\s+/g, '_')}_${
       selectedReport && SALES_PURCHASE_REPORT_IDS.has(selectedReport)
         ? salesPurchaseDateRange.endDate
-        : dateRange.endDate
+        : effectivePeriodDateRange.endDate
     }`
     
     if (format === 'json') {
@@ -3349,8 +3387,8 @@ export default function ReportsPage() {
   return (
     <ReportDrillProvider
       scope={{
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
+        startDate: effectivePeriodDateRange.startDate,
+        endDate: effectivePeriodDateRange.endDate,
         siteScopeKey: reportStationId,
       }}
     >
@@ -3845,7 +3883,7 @@ export default function ReportsPage() {
                       {renderReportTable(
                         selectedReport,
                         reportData,
-                        dateRange,
+                        effectivePeriodDateRange,
                         setDateRange,
                         fetchReport,
                         handleReportDateChange,
@@ -3884,6 +3922,7 @@ export default function ReportsPage() {
                           stations: reportStationList,
                           ponds: aquaculturePonds,
                           aquaculturePondId: effectiveAquaculturePondId,
+                          fiscalYearStart: companyFiscalYearStart,
                           onViewEntityPl: openEntityPlDetail,
                           onLoansStrictSiteChange:
                             selectedReport === 'loans-borrow-and-lent'
@@ -3937,7 +3976,8 @@ function renderPeriodFilter(
   dateRange?: { startDate: string; endDate: string },
   reportType?: ReportType,
   onDateChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void,
-  description?: string
+  description?: string,
+  fiscalYearStart?: string
 ) {
   const currentStartDate = period?.start_date
     ? toDateInputValue(period.start_date)
@@ -3957,6 +3997,8 @@ function renderPeriodFilter(
       reportType={reportType}
       onDateChange={onDateChange}
       description={description || 'Data is filtered by this date range.'}
+      fiscalYearStart={fiscalYearStart}
+      aquacultureMode={isAquaculturePeriodReport(reportType)}
     />
   )
 }
@@ -4116,12 +4158,16 @@ function PeriodFilter({
   reportType,
   onDateChange,
   description,
+  fiscalYearStart = '01-01',
+  aquacultureMode = false,
 }: {
   startDate: string
   endDate: string
   reportType?: ReportType
   onDateChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void
   description: string
+  fiscalYearStart?: string
+  aquacultureMode?: boolean
 }) {
   // Explicit "Custom" selection: the range can still match a preset (e.g. today),
   // so we track an intentional custom pick separately from range inference.
@@ -4134,7 +4180,11 @@ function PeriodFilter({
 
   const activePreset = explicitCustom
     ? 'custom'
-    : inferSalesPurchasePreset({ startDate, endDate })
+    : aquacultureMode
+      ? inferAquaculturePeriodPreset({ startDate, endDate }, fiscalYearStart)
+      : inferSalesPurchasePreset({ startDate, endDate })
+
+  const presets = aquacultureMode ? AQUACULTURE_PERIOD_PRESETS : SALES_PURCHASE_PERIOD_PRESETS
 
   return (
     <div className="bg-blue-50 border border-primary/25 p-4 rounded-lg">
@@ -4144,7 +4194,7 @@ function PeriodFilter({
             Report Period:
           </label>
           <div className="flex flex-wrap gap-1.5">
-            {SALES_PURCHASE_PERIOD_PRESETS.map((p) => {
+            {presets.map((p) => {
               const isActive = activePreset === p.id
               return (
                 <button
@@ -4156,7 +4206,9 @@ function PeriodFilter({
                       return
                     }
                     setExplicitCustom(false)
-                    const r = salesPurchaseRangeForPreset(p.id)
+                    const r = aquacultureMode
+                      ? aquacultureRangeForPreset(p.id as AquaculturePeriodPreset, fiscalYearStart)
+                      : salesPurchaseRangeForPreset(p.id as SalesPurchasePeriodPreset)
                     onDateChange?.('range', `${r.startDate}|${r.endDate}`, reportType)
                   }}
                   className={[
@@ -4412,6 +4464,14 @@ function renderReportTable(
 
   const period = data?.period || {}
   const periodDateRange = salesPurchasePeriodProps?.dateRange ?? dateRange
+  const fiscalYearStart = scopeLabels?.fiscalYearStart || '01-01'
+  const pf = (
+    periodArg: { start_date?: string; end_date?: string },
+    dr?: { startDate: string; endDate: string },
+    rt?: ReportType,
+    onChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void,
+    desc?: string
+  ) => renderPeriodFilter(periodArg, dr, rt, onChange, desc, fiscalYearStart)
   const hasPeriod =
     REPORTS_WITH_PERIOD.has(reportType) &&
     (period.start_date ||
@@ -4443,7 +4503,7 @@ function renderReportTable(
     const extra = renderExtraFinancialReport(reportType, data, {
       hasPeriod,
       renderPeriodFilter: (props) =>
-        renderPeriodFilter(
+        pf(
           props.period,
           dateRange,
           reportType,
@@ -4467,7 +4527,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -4860,7 +4920,7 @@ function renderReportTable(
           />
         ) : null}
 
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -4915,7 +4975,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Report Period - Date Range */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -5047,7 +5107,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Report Period - Date Range */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -5206,7 +5266,7 @@ function renderReportTable(
       return (
         <div className="space-y-8">
           {hasPeriod &&
-            renderPeriodFilter(
+            pf(
               period,
               dateRange,
               reportType,
@@ -5248,7 +5308,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {/* Report Period - Date Range */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -5484,7 +5544,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -5556,7 +5616,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -5629,7 +5689,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -5720,7 +5780,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -5787,7 +5847,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -5853,7 +5913,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Report Period - Date Range */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -5987,7 +6047,7 @@ function renderReportTable(
     }
     return (
       <div className="space-y-6">
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -6187,7 +6247,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -6345,7 +6405,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -6420,7 +6480,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -6507,7 +6567,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -7044,7 +7104,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -7174,7 +7234,7 @@ function renderReportTable(
 
     return (
       <div className="space-y-6">
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -7371,7 +7431,7 @@ function renderReportTable(
 
     return (
       <div className="space-y-6">
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -7806,7 +7866,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Report Period - Date Range */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -7955,7 +8015,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -8294,7 +8354,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -8525,7 +8585,7 @@ function renderReportTable(
     return (
       <div className="space-y-6">
         {/* Period Info - Editable inline date inputs */}
-        {hasPeriod && renderPeriodFilter(
+        {hasPeriod && pf(
           period,
           dateRange,
           reportType,
@@ -8784,7 +8844,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -8926,7 +8986,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -9127,7 +9187,7 @@ function renderReportTable(
         data={data as Record<string, unknown>}
         hasPeriod={hasPeriod}
         renderPeriodFilter={(props) =>
-          renderPeriodFilter(
+          pf(
             props.period,
             props.dateRange,
             props.reportType as ReportType,
@@ -9157,7 +9217,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -9386,7 +9446,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -9661,7 +9721,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -9740,7 +9800,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -9881,7 +9941,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -9962,7 +10022,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10085,7 +10145,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10200,7 +10260,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10294,7 +10354,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10366,7 +10426,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10467,7 +10527,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10548,7 +10608,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10621,7 +10681,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10736,7 +10796,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,
@@ -10805,7 +10865,7 @@ function renderReportTable(
     return (
       <div className="space-y-8">
         {hasPeriod &&
-          renderPeriodFilter(
+          pf(
             period,
             dateRange,
             reportType,

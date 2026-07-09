@@ -456,7 +456,7 @@ def fiscal_period_for_end_date(company: Company, period_end: date) -> tuple[date
     """Return (period_start, period_end) using company fiscal year start."""
     month, day = _parse_fiscal_year_start(company)
     start = date(period_end.year, month, day)
-    if start > period_end:
+    if start >= period_end:
         start = date(period_end.year - 1, month, day)
     return start, period_end
 

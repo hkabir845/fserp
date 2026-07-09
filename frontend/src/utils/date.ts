@@ -17,6 +17,36 @@ export function localDateISO(d: Date = new Date()): string {
   return `${y}-${m}-${day}`
 }
 
+/** Parse company fiscal_year_start (MM-DD) into calendar month/day. */
+export function parseFiscalYearStart(raw: string | null | undefined): { month: number; day: number } {
+  const parts = (raw || '01-01').trim().slice(0, 5).split('-')
+  if (parts.length === 2) {
+    const month = Number(parts[0])
+    const day = Number(parts[1])
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return { month, day }
+    }
+  }
+  return { month: 1, day: 1 }
+}
+
+/** Inclusive crop/fiscal year window ending on periodEnd (local calendar). */
+export function fiscalPeriodForEndDate(
+  fiscalYearStart: string,
+  periodEnd: Date = new Date()
+): { startDate: string; endDate: string } {
+  const { month, day } = parseFiscalYearStart(fiscalYearStart)
+  const endDate = localDateISO(periodEnd)
+  let startYear = periodEnd.getFullYear()
+  const startCandidate = new Date(startYear, month - 1, day)
+  const endLocal = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate())
+  if (startCandidate >= endLocal) {
+    startYear -= 1
+  }
+  const startDate = localDateISO(new Date(startYear, month - 1, day))
+  return { startDate, endDate }
+}
+
 /**
  * Value for `<input type="date">` without shifting calendar day through UTC (avoids `toISOString()` bugs).
  */

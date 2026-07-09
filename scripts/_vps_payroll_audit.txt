@@ -1,0 +1,211 @@
+P04 payroll FY total: 380980.00 (Jul6 ref 250980, excess 130000.00)
+
+=== ALL P04 ALLOCATIONS ===
+#55 run#35 2025-07-07 status=paid gross=8000.00
+  P04=8000.00 splits=[P04=8000.00]
+  staff: Boro Babu=8000.00
+  notes: Salary for June,2025
+#62 run#42 2025-07-13 status=paid gross=32500.00
+  P04=14500.00 splits=[P04=14500.00 | P03=4000.00]
+  staff: Jasim Kaka=14000.00; Eidris Kaka=4000.00; Boro Babu=6000.00; Jahangir Kaka=8500.00
+  notes: Salary for June,2025
+#67 run#49 2025-08-09 status=paid gross=13700.00
+  P04=13700.00 splits=[P04=13700.00]
+  staff: Jahangir Kaka=13700.00
+  notes: Salary for July ,2025
+#70 run#51 2025-08-10 status=paid gross=42000.00
+  P04=14000.00 splits=[P04=14000.00 | P02=14000.00 | P03=14000.00]
+  staff: Robiul Hosen=14000.00; Eidris Kaka=14000.00; Boro Babu=14000.00
+#72 run#53 2025-09-07 status=paid gross=15100.00
+  P04=15100.00 splits=[P04=15100.00]
+  staff: Jahangir Kaka=15100.00
+#76 run#55 2025-09-10 status=paid gross=35000.00
+  P04=5000.00 splits=[P04=5000.00 | P03=30000.00]
+  staff: Eidris Kaka=14000.00; Boro Babu=5000.00; Sadek Kaka=16000.00
+#78 run#56 2025-09-11 status=paid gross=37000.00
+  P04=9000.00 splits=[P04=9000.00 | P02=28000.00]
+  staff: Robiul Hosen=14000.00; Boro Babu=9000.00; Monu Mia=14000.00
+#80 run#57 2025-09-16 status=paid gross=16000.00
+  P04=2000.00 splits=[P04=2000.00 | P03=14000.00]
+  staff: Jasim Kaka=14000.00; Boro Babu=1000.00; Jahangir Kaka=1000.00
+  notes: Salary for August,2025
+#86 run#62 2025-10-30 status=paid gross=16000.00
+  P04=16000.00 splits=[P04=16000.00]
+  staff: Jahangir Kaka=16000.00
+#89 run#63 2025-11-07 status=paid gross=42000.00
+  P04=14000.00 splits=[P01=14000.00 | P04=14000.00 | P03=14000.00]
+  staff: Eidris Kaka=14000.00; Boro Babu=14000.00; Azad Sikder Badsha=14000.00
+#94 run#65 2025-11-08 status=paid gross=67800.00
+  P04=12800.00 splits=[P02=16000.00 | P01=13000.00 | P03=26000.00 | P04=12800.00]
+  staff: Robiul Hosen=14000.00; Boro Babu=12800.00; Sadek Kaka=26000.00; Aynal Hoque=13000.00; Monju Mia=2000.00
+#98 run#67 2025-12-03 status=paid gross=39000.00
+  P04=9000.00 splits=[P01=16000.00 | P04=9000.00 | P03=14000.00]
+  staff: Eidris Kaka=14000.00; Jahangir Kaka=9000.00; Aynal Hoque=16000.00
+#101 run#68 2025-12-06 status=paid gross=35000.00
+  P04=7000.00 splits=[P01=14000.00 | P04=7000.00 | P03=14000.00]
+  staff: Azad Sikder Badsha=14000.00; Sadek Kaka=14000.00; Jahangir Kaka=7000.00
+#105 run#69 2025-12-07 status=paid gross=57500.00
+  P04=14000.00 splits=[P02=28000.00 | P01=500.00 | P03=15000.00 | P04=14000.00]
+  staff: Robiul Hosen=14000.00; Jasim Kaka=14000.00; Boro Babu=14000.00; Azad Sikder Badsha=500.00; Monu Mia=14000.00; Sadek Kaka=1000.00
+#108 run#71 2026-01-08 status=paid gross=30500.00
+  P04=15000.00 splits=[P04=15000.00 | P03=15500.00]
+  staff: Jahangir Kaka=15500.00; Sadek Kaka=15000.00
+  notes: Salary for Dec,2025
+#111 run#72 2026-01-09 status=paid gross=57500.00
+  P04=14500.00 splits=[P04=14500.00 | P02=14000.00 | P03=29000.00]
+  staff: Robiul Hosen=14000.00; Jasim Kaka=15000.00; Eidris Kaka=14000.00; Boro Babu=14500.00
+  notes: Salary for Dec,2025
+#117 run#74 2026-02-11 status=paid gross=56000.00
+  P04=28000.00 splits=[P01=14000.00 | P04=28000.00 | P03=14000.00]
+  staff: Sadek Kaka=14000.00; Eidris Kaka=14000.00; Boro Babu=14000.00; Aynal Hoque=14000.00
+  notes: Salary for January
+#119 run#76 2026-02-18 status=paid gross=39380.00
+  P04=39380.00 splits=[P04=39380.00]
+  staff: Sadek Kaka=9690.00; Boro Babu=20000.00; Jahangir Kaka=9690.00
+  notes: Salary for Digonto
+#149 run#86 2026-03-09 status=paid gross=65000.00
+  P04=19000.00 splits=[P01=28000.00 | P04=19000.00 | P03=18000.00]
+  staff: Jasim Kaka=4000.00; Jahangir Kaka=14000.00; Sadek Kaka=13000.00; Boro Babu=6000.00; Azad Sikder Badsha=14000.00; Aynal Hoque=14000.00
+  notes: Salary for February,2026
+#152 run#87 2026-03-15 status=paid gross=65000.00
+  P04=9000.00 splits=[P04=9000.00 | P02=28000.00 | P03=28000.00]
+  staff: Robiul Hosen=14000.00; Jasim Kaka=14000.00; Eidris Kaka=14000.00; Boro Babu=9000.00; Monu Mia=14000.00
+  notes: Salary for February,2026
+#156 run#88 2026-03-20 status=paid gross=56000.00
+  P04=14000.00 splits=[P01=14000.00 | P04=14000.00 | P02=14000.00 | P03=14000.00]
+  staff: Robiul Hosen=7000.00; Jasim Kaka=7000.00; Sadek Kaka=7000.00; Eidris Kaka=7000.00; Boro Babu=7000.00; Azad Sikder Badsha=7000.00
+  notes: Eid Bonous
+#160 run#89 2026-04-09 status=paid gross=126000.00
+  P04=28000.00 splits=[P01=28000.00 | P04=28000.00 | P02=28000.00 | P03=42000.00]
+  staff: Robiul Hosen=14000.00; Jasim Kaka=14000.00; Jahangir Kaka=14000.00; Sadek Kaka=14000.00; Eidris Kaka=14000.00; Boro Babu=14000.00
+  notes: Salary for March,2026
+#165 run#90 2026-05-16 status=paid gross=68000.00
+  P04=8000.00 splits=[P01=18000.00 | P04=8000.00 | P02=14000.00 | P03=28000.00]
+  staff: Robiul Hosen=14000.00; Jasim Kaka=14000.00; Jahangir Kaka=14000.00; Sadek Kaka=2000.00; Boro Babu=6000.00; Azad Sikder Badsha=14000.00
+  notes: Salary for April,2026
+#168 run#91 2026-05-20 status=paid gross=50000.00
+  P04=12000.00 splits=[P04=12000.00 | P02=14000.00 | P03=24000.00]
+  staff: Jahangir Kaka=10000.00; Sadek Kaka=12000.00; Eidris Kaka=14000.00; Monu Mia=14000.00
+  notes: Salary for April,2026
+#161 run#92 2026-05-21 status=paid gross=8000.00
+  P04=8000.00 splits=[P04=8000.00]
+  staff: Boro Babu=8000.00
+  notes: Salary for April,2026
+#173 run#8 2026-05-25 status=paid gross=11000.00
+  P04=11000.00 splits=[P04=11000.00]
+  staff: Sadek Kaka=11000.00
+  notes: Salary for Month of April
+#179 run#94 2026-05-27 status=paid gross=89500.00
+  P04=21000.00 splits=[P01=35000.00 | P04=21000.00 | P02=14000.00]
+  staff: Shakil Hosain=19500.00; Boro Babu=21000.00; Azad Sikder Badsha=14000.00; Monu Mia=14000.00; Aynal Hoque=21000.00
+  notes: Salary for May 2026 
+And Eid Bonous
+
+=== EMPLOYEES WITH home_pond != P04 BUT PAID ON P04 RUNS ===
+  run#42 2025-07-13 Jasim Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=14500.00
+  run#42 2025-07-13 Eidris Kaka home=P03 scope=assigned_pond emp_line=4000.00 P04_alloc=14500.00
+  run#51 2025-08-10 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#51 2025-08-10 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#55 2025-09-10 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=5000.00
+  run#55 2025-09-10 Sadek Kaka home=P03 scope=assigned_pond emp_line=16000.00 P04_alloc=5000.00
+  run#56 2025-09-11 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#56 2025-09-11 Monu Mia home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#57 2025-09-16 Jasim Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=2000.00
+  run#63 2025-11-07 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#63 2025-11-07 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#65 2025-11-08 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=12800.00
+  run#65 2025-11-08 Sadek Kaka home=P03 scope=assigned_pond emp_line=26000.00 P04_alloc=12800.00
+  run#65 2025-11-08 Aynal Hoque home=P01 scope=assigned_pond emp_line=13000.00 P04_alloc=12800.00
+  run#65 2025-11-08 Monju Mia home=P02 scope=assigned_pond emp_line=2000.00 P04_alloc=12800.00
+  run#67 2025-12-03 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#67 2025-12-03 Aynal Hoque home=P01 scope=assigned_pond emp_line=16000.00 P04_alloc=9000.00
+  run#68 2025-12-06 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=7000.00
+  run#68 2025-12-06 Sadek Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=7000.00
+  run#69 2025-12-07 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#69 2025-12-07 Jasim Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#69 2025-12-07 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=500.00 P04_alloc=14000.00
+  run#69 2025-12-07 Monu Mia home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=14000.00
+  run#69 2025-12-07 Sadek Kaka home=P03 scope=assigned_pond emp_line=1000.00 P04_alloc=14000.00
+  run#71 2026-01-08 Jahangir Kaka home=P03 scope=assigned_pond emp_line=15500.00 P04_alloc=15000.00
+  run#72 2026-01-09 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=14500.00
+  run#72 2026-01-09 Jasim Kaka home=P03 scope=assigned_pond emp_line=15000.00 P04_alloc=14500.00
+  run#72 2026-01-09 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=14500.00
+  run#74 2026-02-11 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#74 2026-02-11 Aynal Hoque home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#86 2026-03-09 Jasim Kaka home=P03 scope=assigned_pond emp_line=4000.00 P04_alloc=19000.00
+  run#86 2026-03-09 Jahangir Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=19000.00
+  run#86 2026-03-09 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=19000.00
+  run#86 2026-03-09 Aynal Hoque home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=19000.00
+  run#87 2026-03-15 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#87 2026-03-15 Jasim Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#87 2026-03-15 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#87 2026-03-15 Monu Mia home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=9000.00
+  run#88 2026-03-20 Robiul Hosen home=P02 scope=assigned_pond emp_line=7000.00 P04_alloc=14000.00
+  run#88 2026-03-20 Jasim Kaka home=P03 scope=assigned_pond emp_line=7000.00 P04_alloc=14000.00
+  run#88 2026-03-20 Eidris Kaka home=P03 scope=assigned_pond emp_line=7000.00 P04_alloc=14000.00
+  run#88 2026-03-20 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=7000.00 P04_alloc=14000.00
+  run#88 2026-03-20 Monu Mia home=P02 scope=assigned_pond emp_line=7000.00 P04_alloc=14000.00
+  run#88 2026-03-20 Aynal Hoque home=P01 scope=assigned_pond emp_line=7000.00 P04_alloc=14000.00
+  run#89 2026-04-09 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#89 2026-04-09 Jasim Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#89 2026-04-09 Jahangir Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#89 2026-04-09 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#89 2026-04-09 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#89 2026-04-09 Monu Mia home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#89 2026-04-09 Aynal Hoque home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=28000.00
+  run#90 2026-05-16 Robiul Hosen home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=8000.00
+  run#90 2026-05-16 Jasim Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=8000.00
+  run#90 2026-05-16 Jahangir Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=8000.00
+  run#90 2026-05-16 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=8000.00
+  run#90 2026-05-16 Aynal Hoque home=P01 scope=assigned_pond emp_line=4000.00 P04_alloc=8000.00
+  run#91 2026-05-20 Jahangir Kaka home=P03 scope=assigned_pond emp_line=10000.00 P04_alloc=12000.00
+  run#91 2026-05-20 Eidris Kaka home=P03 scope=assigned_pond emp_line=14000.00 P04_alloc=12000.00
+  run#91 2026-05-20 Monu Mia home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=12000.00
+  run#94 2026-05-27 Shakil Hosain home=N/A scope=not_applicable emp_line=19500.00 P04_alloc=21000.00
+  run#94 2026-05-27 Azad Sikder Badsha home=P01 scope=assigned_pond emp_line=14000.00 P04_alloc=21000.00
+  run#94 2026-05-27 Monu Mia home=P02 scope=assigned_pond emp_line=14000.00 P04_alloc=21000.00
+  run#94 2026-05-27 Aynal Hoque home=P01 scope=assigned_pond emp_line=21000.00 P04_alloc=21000.00
+misassigned rows: 63
+
+=== EMPLOYEES home_pond=P04 (should be on P04 payroll) ===
+  Sadek Kaka scope=assigned_pond paid_in_FY=97690.00
+  Boro Babu scope=assigned_pond paid_in_FY=203300.00
+  Jahangir Kaka scope=assigned_pond paid_in_FY=79990.00
+
+=== PAYROLL BY POND ===
+  P01: 299500.00
+  P02: 415150.00
+  P03: 568500.00
+  P04: 380980.00
+
+=== TIMING: before vs after Jul 6 2025 ===
+through Jul6: 0.00 (0 runs)
+after Jul6:   380980.00 (27 runs)
+
+=== LARGE P04-ONLY RUNS (>= 20000) after Jul 6 ===
+  run#76 2026-02-18 P04=39380.00 gross=39380.00
+    Sadek Kaka home=P04 scope=assigned_pond amt=9690.00
+    Boro Babu home=P04 scope=assigned_pond amt=20000.00
+    Jahangir Kaka home=P04 scope=assigned_pond amt=9690.00
+
+=== SHARED PAYROLL RUNS (P04 + other ponds) ===
+  run#42 2025-07-13: P04=14500.00, P03=4000.00
+  run#51 2025-08-10: P04=14000.00, P02=14000.00, P03=14000.00
+  run#55 2025-09-10: P04=5000.00, P03=30000.00
+  run#56 2025-09-11: P04=9000.00, P02=28000.00
+  run#57 2025-09-16: P04=2000.00, P03=14000.00
+  run#63 2025-11-07: P01=14000.00, P04=14000.00, P03=14000.00
+  run#65 2025-11-08: P02=16000.00, P01=13000.00, P03=26000.00, P04=12800.00
+  run#67 2025-12-03: P01=16000.00, P04=9000.00, P03=14000.00
+  run#68 2025-12-06: P01=14000.00, P04=7000.00, P03=14000.00
+  run#69 2025-12-07: P02=28000.00, P01=500.00, P03=15000.00, P04=14000.00
+  run#71 2026-01-08: P04=15000.00, P03=15500.00
+  run#72 2026-01-09: P04=14500.00, P02=14000.00, P03=29000.00
+  run#74 2026-02-11: P01=14000.00, P04=28000.00, P03=14000.00
+  run#86 2026-03-09: P01=28000.00, P04=19000.00, P03=18000.00
+  run#87 2026-03-15: P04=9000.00, P02=28000.00, P03=28000.00
+  run#88 2026-03-20: P01=14000.00, P04=14000.00, P02=14000.00, P03=14000.00
+  run#89 2026-04-09: P01=28000.00, P04=28000.00, P02=28000.00, P03=42000.00
+  run#90 2026-05-16: P01=18000.00, P04=8000.00, P02=14000.00, P03=28000.00
+  run#91 2026-05-20: P04=12000.00, P02=14000.00, P03=24000.00
+  run#94 2026-05-27: P01=35000.00, P04=21000.00, P02=14000.00

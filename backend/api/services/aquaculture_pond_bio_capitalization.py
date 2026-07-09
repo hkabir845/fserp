@@ -164,7 +164,7 @@ def post_pond_expense_reclass_to_1581(
         return Decimal("0")
 
     balances = pond_production_expense_balances(company_id, pond_id, entry_date)
-    available = sum(amt for _, amt, _ in balances)
+    available = sum((Decimal(str(amt)) for _, amt, _ in balances), Decimal("0"))
     target = _money_q(min(amount_needed, available))
     if target <= 0:
         return Decimal("0")

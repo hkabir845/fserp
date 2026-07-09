@@ -1012,23 +1012,32 @@ export default function AquacultureFishTransfersPage() {
     }
     try {
       let glMsg = ''
+      let whMsg = ''
       if (editingId != null) {
-        const { data } = await api.put<{ transfer?: TransferRow; gl_sync?: GlSyncPayload }>(
-          `/aquaculture/fish-pond-transfers/${editingId}/`,
-          body
-        )
+        const { data } = await api.put<{
+          transfer?: TransferRow
+          gl_sync?: GlSyncPayload
+          nursing_warehouse_transfers?: unknown[]
+        }>(`/aquaculture/fish-pond-transfers/${editingId}/`, body)
         glMsg = formatTransferGlMessage(data?.gl_sync, data?.transfer, sym)
+        if (data?.nursing_warehouse_transfers?.length) {
+          whMsg = aquacultureT('nursingWarehouseMoved', lang)
+        }
         toast.success(
-          glMsg ? `${aquacultureT('transferUpdated', lang)} ${glMsg}` : aquacultureT('transferUpdated', lang)
+          [aquacultureT('transferUpdated', lang), glMsg, whMsg].filter(Boolean).join(' ')
         )
       } else {
-        const { data } = await api.post<{ transfer?: TransferRow; gl_sync?: GlSyncPayload }>(
-          '/aquaculture/fish-pond-transfers/',
-          body
-        )
+        const { data } = await api.post<{
+          transfer?: TransferRow
+          gl_sync?: GlSyncPayload
+          nursing_warehouse_transfers?: unknown[]
+        }>('/aquaculture/fish-pond-transfers/', body)
         glMsg = formatTransferGlMessage(data?.gl_sync, data?.transfer, sym)
+        if (data?.nursing_warehouse_transfers?.length) {
+          whMsg = aquacultureT('nursingWarehouseMoved', lang)
+        }
         toast.success(
-          glMsg ? `${aquacultureT('transferRecorded', lang)} ${glMsg}` : aquacultureT('transferRecorded', lang)
+          [aquacultureT('transferRecorded', lang), glMsg, whMsg].filter(Boolean).join(' ')
         )
       }
       closeModal()
@@ -1276,6 +1285,7 @@ export default function AquacultureFishTransfersPage() {
             {fromPond?.pond_role === 'nursing' ? (
               <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
                 <p className="font-medium">{aquacultureT('nursingFingerlingTransfer', lang)}</p>
+                <p className="mt-1 text-sky-900">{aquacultureT('nursingEmptyingNote', lang)}</p>
                 <ol className="mt-1 list-decimal space-y-0.5 pl-4">
                   {nursingSteps.slice(3).map((s) => (
                     <li key={s}>{s}</li>

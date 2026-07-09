@@ -516,6 +516,14 @@ const strings: Dict = {
     bn: 'এই মাছ স্থানান্তর সরাবেন? পুকুর স্টক ও ব্যবস্থাপনা P&L পুনঃহিসাব — যেন স্থানান্তর হয়নি (রোলব্যাক)।',
   },
   nursingFingerlingTransfer: { en: 'Nursing → fingerling transfer', bn: 'নার্সিং → fingerling স্থানান্তর' },
+  nursingWarehouseMoved: {
+    en: 'Remaining feed/medicine warehouse stock moved to grow-out pond(s).',
+    bn: 'অবশিষ্ট ফিড/ঔষধ গুদাম স্টক grow-out পুকুরে স্থানান্তর হয়েছে।',
+  },
+  nursingEmptyingNote: {
+    en: 'When all fingerlings leave the nursing pond, production costs move with the fish (by head count and weight share) and leftover feed/medicine stock moves automatically.',
+    bn: 'সব fingerling চলে গেলে উৎপাদন খরচ মাছের সাথে (সংখ্যা ও ওজন অনুপাতে) যায় এবং অবশিষ্ট ফিড/ঔষধ স্টক স্বয়ংক্রিয়ভাবে grow-out-এ যায়।',
+  },
   sameSiteGrowOut: { en: 'Same-site grow-out', bn: 'একই সাইট grow-out' },
   loadingSampleStock: { en: 'Loading sample & book stock for source pond…', bn: 'উৎস পুকুরের নমুনা ও বই স্টক লোড…' },
   biomassSampleTransfer: { en: 'Biomass sample for transfer', bn: 'স্থানান্তরের জন্য বায়োমাস নমুনা' },

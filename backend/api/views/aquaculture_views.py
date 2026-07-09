@@ -46,6 +46,7 @@ from api.models import (
 from api.views.journal_entries_views import _entry_to_json
 from api.services.aquaculture_feeding_advice_service import build_feeding_advice_payload, effective_advice_text
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
+from api.services.aquaculture_nursing_finalize_service import maybe_transfer_nursing_warehouse_when_empty
 from api.services.aquaculture_transfer_cost import (
     backfill_missing_transfer_line_costs,
     pond_uses_nursing_batch_costing,
@@ -5311,6 +5312,10 @@ def aquaculture_fish_pond_transfers(request):
             sync_gl=True,
         )
         gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, xfer)
+        nursing_warehouse_transfers = maybe_transfer_nursing_warehouse_when_empty(
+            company_id=cid,
+            xfer=xfer,
+        )
 
     xfer = (
         AquacultureFishPondTransfer.objects.filter(pk=xfer.pk)
@@ -5318,14 +5323,14 @@ def aquaculture_fish_pond_transfers(request):
         .prefetch_related("lines__to_pond", "lines__to_production_cycle")
         .first()
     )
-    return JsonResponse(
-        {
-            "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
-            "transfer": _fish_transfer_to_json(xfer),
-            "gl_sync": gl_result,
-        },
-        status=201,
-    )
+    payload = {
+        "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
+        "transfer": _fish_transfer_to_json(xfer),
+        "gl_sync": gl_result,
+    }
+    if nursing_warehouse_transfers:
+        payload["nursing_warehouse_transfers"] = nursing_warehouse_transfers
+    return JsonResponse(payload, status=201)
 
 
 @csrf_exempt
@@ -5383,19 +5388,24 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
                 sync_gl=True,
             )
             gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, t)
+            nursing_warehouse_transfers = maybe_transfer_nursing_warehouse_when_empty(
+                company_id=cid,
+                xfer=t,
+            )
         t = (
             AquacultureFishPondTransfer.objects.filter(pk=t.pk)
             .select_related("from_pond", "from_production_cycle")
             .prefetch_related("lines__to_pond", "lines__to_production_cycle")
             .first()
         )
-        return JsonResponse(
-            {
-                "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
-                "transfer": _fish_transfer_to_json(t),
-                "gl_sync": gl_result,
-            }
-        )
+        put_payload = {
+            "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
+            "transfer": _fish_transfer_to_json(t),
+            "gl_sync": gl_result,
+        }
+        if nursing_warehouse_transfers:
+            put_payload["nursing_warehouse_transfers"] = nursing_warehouse_transfers
+        return JsonResponse(put_payload)
     pond_ids = [t.from_pond_id] + list(t.lines.values_list("to_pond_id", flat=True))
     lock_err = _ponds_write_lock_response(cid, pond_ids, t.transfer_date)
     if lock_err:

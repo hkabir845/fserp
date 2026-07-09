@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 # Inter-pond fish transfers (nursing phase → grow-out): documented on P&L API and transfers UI.
+INTER_POND_FINGERLING_TRANSFER_INCOME = "inter_pond_fingerling_transfer"
+
 INTER_POND_FISH_TRANSFER_PL_NOTE = (
-    "Inter-pond fish transfers: each line carries cost_amount (biological production cost moved with the fish). "
-    "Nursing → grow-out: cost/head = (fry + feed + medicine + pond care + other direct costs on source pond) "
-    "÷ live fingerlings still in the nursing pond (survivors after mortality — not original stocked count). "
-    "Line cost = heads transferred × cost/head. Weight (kg), pcs/kg, and biomass derive from stock position "
-    "and latest biomass sample. Pond P&L increases operating cost on receiving ponds and decreases on the source "
-    "by the same totals. GL AUTO-AQ-FISH-XFER-{id} moves account 1581 between pond tags when seeded. "
+    "Inter-pond fish transfers: each line carries cost_amount (fully loaded nursing cost moved with the fish). "
+    "Nursing → grow-out: fry + feed + medicine + lease + electricity + equipment + all other nursing-period costs "
+    "are spread across survivor fingerlings (fish already moved + still in the nursing pond). Each line's share "
+    "uses the average of its head-count % and weight % within the batch. When all live fish have left the nursing "
+    "pond, transfer income on nursing equals gross nursing expenses (net ≈ zero) and grow-out shows the same total "
+    "as inter-pond transfer-in expense. Remaining feed/medicine warehouse stock moves automatically to grow-out. "
+    "GL AUTO-AQ-FISH-XFER-{id} moves account 1581 between pond tags when seeded. "
     "Each line requires weight_kg and fish_count (heads), both greater than zero."
 )
 
@@ -241,6 +244,7 @@ EXPENSE_CATEGORY_LABELS["feed_medicine"] = "Feed & medicine purchase (legacy)"
 AQUACULTURE_INCOME_TYPE_CHOICES: tuple[tuple[str, str], ...] = (
     ("fish_harvest_sale", "Fish harvest sale"),
     ("fingerling_sale", "Fingerling / fry sale"),
+    ("inter_pond_fingerling_transfer", "Inter-pond fingerling transfer (nursing)"),
     ("processing_value_add", "Processing / value-added"),
     ("empty_feed_sack_sale", "Empty feed sack sale"),
     ("used_material_sale", "Used / scrap material sale"),

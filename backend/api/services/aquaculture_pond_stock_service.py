@@ -45,6 +45,11 @@ from api.services.gl_posting import (
 from api.services.inventory_validation import assert_pos_general_lines_within_qoh
 from api.services.station_stock import add_station_stock, decrement_station_lines, get_station_stock, item_uses_station_bins
 
+
+def item_is_live_fish_sku(item: Item | None) -> bool:
+    """Live fish SKUs are pond biomass — not feed/medicine pond-warehouse inventory."""
+    return bool(item and (getattr(item, "pos_category", None) or "").strip().lower() == "fish")
+
 logger = logging.getLogger(__name__)
 
 POND_WAREHOUSE_CONSUMPTION_CATEGORIES = frozenset({"feed_consumed", "medicine_consumed"})
@@ -52,7 +57,11 @@ POND_WAREHOUSE_NON_TRANSFERABLE_ITEM_NUMBERS = frozenset({"AQ-EMPTY-SACK"})
 
 
 def _assert_pond_warehouse_transfer_item(company_id: int, item: Item) -> None:
-    """Feed/medicine shop SKUs only — not fuel, hatchery non-bin stock, or pond scrap like empty sacks."""
+    """Feed/medicine shop SKUs only — not fuel, live fish, hatchery non-bin stock, or pond scrap."""
+    if item_is_live_fish_sku(item):
+        raise StockBusinessError(
+            "Live fish cannot move through pond warehouse — use vendor bills or inter-pond fish transfers."
+        )
     if not item_uses_station_bins(company_id, item):
         raise StockBusinessError(
             "Pond warehouse transfers only support shop items tracked per station. "
@@ -154,6 +163,12 @@ def get_pond_item_stock(company_id: int, pond_id: int, item_id: int) -> Decimal:
 def add_pond_stock(company_id: int, pond_id: int, item_id: int, qty_delta: Decimal) -> None:
     if qty_delta == 0:
         return
+    item = Item.objects.filter(pk=item_id, company_id=company_id).only("name", "pos_category").first()
+    if item_is_live_fish_sku(item):
+        raise StockBusinessError(
+            f'"{(item.name or "").strip()}" is live fish — stock it with a vendor bill (fish count & kg) '
+            "tagged to the pond, not pond warehouse inventory."
+        )
     row, _ = ItemPondStock.objects.select_for_update().get_or_create(
         company_id=company_id,
         pond_id=pond_id,
@@ -797,6 +812,8 @@ def pond_warehouse_stock_matrix(company_id: int, *, pond_id: int | None = None) 
             continue
         pond = r.pond
         it = r.item
+        if item_is_live_fish_sku(it):
+            continue
         cw = it.content_weight_kg
         uc = item_inventory_unit_cost(it)
         wg = getattr(pond, "warehouse_group", None)

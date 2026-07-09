@@ -221,7 +221,7 @@ def test_bill_rejects_fish_dims_without_item_line(api_client, company_tenant, au
 
 @pytest.mark.django_db
 def test_posted_fish_bill_receives_into_pond_not_station_bins(api_client, company_tenant, auth_admin_headers):
-    """Fish SKUs use pond stock (ItemPondStock), not shop station bins, when the line tags a pond."""
+    """Fish SKUs stock as pond biomass (bill fish_count/kg), not ItemPondStock or shop station bins."""
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
     st = Station.objects.create(company_id=company_tenant.id, station_name="Shop Hub", is_active=True)
     pond = AquaculturePond.objects.create(
@@ -282,8 +282,7 @@ def test_posted_fish_bill_receives_into_pond_not_station_bins(api_client, compan
     row = ItemPondStock.objects.filter(
         company_id=company_tenant.id, pond_id=pond.id, item_id=fry.id
     ).first()
-    assert row is not None
-    assert row.quantity == Decimal("50000")
+    assert row is None or (row.quantity or Decimal("0")) == Decimal("0")
 
     st_total = ItemStationStock.objects.filter(company_id=company_tenant.id, item_id=fry.id).aggregate(
         s=Sum("quantity")
@@ -360,10 +359,12 @@ def test_posted_fish_bill_pond_receipt_prefers_fish_count_over_line_quantity(
     row = ItemPondStock.objects.filter(
         company_id=company_tenant.id, pond_id=pond.id, item_id=fry.id
     ).first()
-    assert row is not None
-    assert row.quantity == Decimal("300000")
-    fry.refresh_from_db()
-    assert fry.quantity_on_hand == Decimal("300000")
+    assert row is None or (row.quantity or Decimal("0")) == Decimal("0")
+    pos = compute_fish_stock_position_rows(
+        company_tenant.id, pond_id=pond.id, fish_species_filter="tilapia"
+    )
+    assert len(pos) == 1
+    assert pos[0]["vendor_bill_in_fish_count"] == 300000
 
 
 @pytest.mark.django_db

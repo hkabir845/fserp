@@ -22,6 +22,7 @@ from api.services.aquaculture_constants import (
     AQUACULTURE_EXPENSE_CATEGORY_CHOICES,
     AQUACULTURE_INCOME_TYPE_CHOICES,
     FISH_STOCK_LEDGER_PL_NOTE,
+    INTER_POND_FINGERLING_TRANSFER_INCOME,
     INTER_POND_FISH_TRANSFER_PL_NOTE,
     SHARED_OPERATING_COST_RULE,
 )
@@ -231,11 +232,17 @@ def _pond_income_total(merged_rev: dict[str, Decimal]) -> Decimal:
     return _money_q(sum((_money_q(v) for v in merged_rev.values()), Decimal("0")))
 
 
-def _pond_expense_matrix_total(pond_exp: dict[str, Decimal]) -> Decimal:
-    """Sum every expense category; inter-pond transfer-out reduces the total."""
+def _pond_is_nursing(pond: AquaculturePond) -> bool:
+    return (pond.pond_role or "").strip().lower() == "nursing"
+
+
+def _pond_expense_matrix_total(pond_exp: dict[str, Decimal], *, nursing_pond: bool = False) -> Decimal:
+    """Sum expense categories; nursing uses inter-pond income instead of transfer-out relief."""
     total = Decimal("0")
     for code, amt in pond_exp.items():
-        if code == "fish_transfer_cost_out":
+        if nursing_pond and code in ("fish_transfer_cost_in", "fish_transfer_cost_out"):
+            continue
+        if code == "fish_transfer_cost_out" and not nursing_pond:
             total -= _money_q(amt)
         else:
             total += _money_q(amt)
@@ -485,6 +492,7 @@ def compute_aquaculture_pl_summary_dict(
         else:
             t_in = _money_q(transfer_in_by_pond.get(pond.id, Decimal("0")))
             t_out = _money_q(transfer_out_by_pond.get(pond.id, Decimal("0")))
+        nursing_pond = _pond_is_nursing(pond)
         wo = _money_q(writeoff_by_pond.get(pond.id, Decimal("0")))
         prior_income = prior_expense = Decimal("0")
         prior_income_by: dict[str, Decimal] = {}
@@ -510,7 +518,7 @@ def compute_aquaculture_pl_summary_dict(
             exp_direct
             + exp_shared
             + t_in
-            - t_out
+            + (Decimal("0") if nursing_pond else -t_out)
             + wo
             + prior_expense
             + feed_cost
@@ -519,6 +527,8 @@ def compute_aquaculture_pl_summary_dict(
         )
         period_rev = _rev_q(pond.id).aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
         rev = _money_q(Decimal(str(period_rev)) + prior_income)
+        if nursing_pond and t_out > 0:
+            rev = _money_q(rev + t_out)
         if cycle_filter_id is not None:
             pay = Decimal("0")
         else:
@@ -540,6 +550,8 @@ def compute_aquaculture_pl_summary_dict(
             merged_rev[code] += _money_q(Decimal(str(row["t"] or 0)))
         for code, amt in prior_income_by.items():
             merged_rev[code] += _money_q(amt)
+        if nursing_pond and t_out > 0:
+            merged_rev[INTER_POND_FINGERLING_TRANSFER_INCOME] += t_out
         rev_fish, rev_empty, rev_other = _income_breakdown(dict(merged_rev))
         fry_cost = _fry_fingerling_cost_for_pond(
             cid, pond.id, start, end, cycle_filter_id, t_in
@@ -585,7 +597,11 @@ def compute_aquaculture_pl_summary_dict(
         for code, amt in pond_exp.items():
             signed = _money_q(amt)
             if code == "fish_transfer_cost_out":
+                if nursing_pond:
+                    continue
                 company_expense_dec[code] -= signed
+            elif nursing_pond and code == "fish_transfer_cost_in":
+                continue
             else:
                 company_expense_dec[code] += signed
 
@@ -599,7 +615,7 @@ def compute_aquaculture_pl_summary_dict(
         medicine_consumption_total = _money_q(pond_exp.get("medicine_consumed", Decimal("0")))
         other_consumption_total = _sum_expense_codes(pond_exp, PL_OTHER_CONSUMPTION_CODES)
         income_total = _pond_income_total(pond_income)
-        expense_total = _pond_expense_matrix_total(pond_exp)
+        expense_total = _pond_expense_matrix_total(pond_exp, nursing_pond=nursing_pond)
         net_profit = _money_q(income_total - expense_total)
         other_opex = _money_q(
             expense_total

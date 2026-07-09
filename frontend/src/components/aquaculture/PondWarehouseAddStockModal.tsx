@@ -123,7 +123,7 @@ export function PondWarehouseAddStockModal(props: {
           list
             .filter((p: PosTransferItem & { pos_category?: string }) => {
               const pc = (p.pos_category || '').toLowerCase()
-              return pc !== 'fuel' && pc !== 'non_pos'
+              return pc !== 'fuel' && pc !== 'non_pos' && pc !== 'fish'
             })
             .map((p: Record<string, unknown>) => ({
               id: typeof p.id === 'number' ? p.id : Number(p.id),
@@ -344,7 +344,6 @@ export function PondWarehouseAddStockModal(props: {
     { id: 'feed', label: 'Feed' },
     { id: 'medicine', label: 'Medicine' },
     { id: 'general', label: 'Supplies' },
-    { id: 'fish', label: 'Fish / fry' },
   ]
 
   return (

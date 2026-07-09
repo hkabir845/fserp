@@ -95,9 +95,12 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
     lines = list(transfer.lines.select_related("to_pond", "to_production_cycle").all())
     total_requested = _money_q(
         sum(
-            _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0)))
-            for ln in lines
-            if _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0))) > 0
+            (
+                _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0)))
+                for ln in lines
+                if _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0))) > 0
+            ),
+            Decimal("0"),
         )
     )
     reclass_posted = Decimal("0")

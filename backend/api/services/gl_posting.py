@@ -2361,9 +2361,11 @@ def receipt_inventory_from_posted_bill(
                 item_uses_station_bins,
             )
 
-            # Fish / hatchery SKUs (pos_category fish, non_pos, …) do not use shop station bins;
-            # physical qty belongs in ItemPondStock when the line tags a pond (e.g. fry to nursing pond).
+            # Fish / hatchery SKUs (pos_category fish, non_pos, …) do not use shop station bins.
+            # Live fish are tracked as pond biomass (vendor bill fish_count / weight), not ItemPondStock.
             if not item_uses_station_bins(company_id, item):
+                if _is_fish_item(item):
+                    continue
                 pond_id = getattr(line, "aquaculture_pond_id", None)
                 if pond_id:
                     from api.services.aquaculture_pond_stock_service import add_pond_stock
@@ -2404,6 +2406,8 @@ def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
                 _sync_item_qoh_from_tanks(company_id, item.id)
         else:
             if not item_uses_station_bins(company_id, item):
+                if _is_fish_item(item):
+                    continue
                 pond_id = getattr(line, "aquaculture_pond_id", None)
                 if pond_id:
                     from api.services.aquaculture_pond_stock_service import add_pond_stock

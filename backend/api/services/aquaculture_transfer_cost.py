@@ -14,14 +14,13 @@ from api.services.aquaculture_stock_service import compute_fish_stock_position_r
 # Costs that stay on the source pond when fish leave (not moved with fingerlings/fish).
 _BIO_ASSET_EXCLUDED_FROM_TRANSFER = frozenset({"lease", "shop_supplies"})
 
-# Nursing pond fixed assets / overhead — stay on source when fingerlings move to grow-out ponds.
-_NURSING_FIXED_POND_BUCKETS = frozenset(
+# Nursing pond fixed assets / overhead — included in fully loaded fingerling transfer cost.
+_NURSING_FIXED_POND_BUCKETS = frozenset()
+
+_NURSING_COST_POOL_SKIP_CATEGORIES = frozenset(
     {
-        "lease",
-        "shop_supplies",
-        "electricity",
-        "equipment",
-        "repair_maintenance",
+        "fish_transfer_cost_in",
+        "fish_transfer_cost_out",
     }
 )
 
@@ -488,6 +487,26 @@ def _nursing_uncycled_other_production_total(
     return _money_q(total)
 
 
+def _nursing_gross_expense_pool_from_pl(
+    *,
+    payload: dict,
+    from_pond_id: int,
+) -> Decimal:
+    """Sum every nursing-period expense category except inter-pond transfer lines."""
+    for group in payload.get("expenses_by_pond") or []:
+        if int(group.get("pond_id") or 0) != from_pond_id:
+            continue
+        total = Decimal("0")
+        for cat in group.get("categories") or []:
+            code = str(cat.get("category") or "")
+            if code in _NURSING_COST_POOL_SKIP_CATEGORIES:
+                continue
+            total += Decimal(str(cat.get("amount") or 0))
+        if total > 0:
+            return _money_q(total)
+    return Decimal("0")
+
+
 def _nursing_batch_cost_pool(
     *,
     company_id: int,
@@ -495,9 +514,9 @@ def _nursing_batch_cost_pool(
     transfer_date: date,
     from_cycle: AquacultureProductionCycle | None,
 ) -> Decimal:
-    """Full fry + production costs on nursing pond (not reduced by prior transfer-out relief)."""
-    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    """Full nursing-period costs (fry + feed + lease + electricity + …) for fingerling transfer allocation."""
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
+    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
     payload = compute_aquaculture_pl_summary_dict(
         company_id,
         start,
@@ -507,47 +526,9 @@ def _nursing_batch_cost_pool(
         from_cycle,
         include_cycle_breakdown=False,
     )
-    ponds = payload.get("ponds") or []
-    fry_cycle = Decimal("0")
-    other = Decimal("0")
-    if ponds:
-        cpk = ponds[0].get("cost_per_kg") or {}
-        for row in cpk.get("costing_lines") or []:
-            code = str(row.get("cost_bucket") or "")
-            if code not in _TRANSFER_COST_BUCKETS or code in _NURSING_FIXED_POND_BUCKETS:
-                continue
-            amt = Decimal(str(row.get("amount") or 0))
-            if amt <= 0:
-                continue
-            if code == "fry_stocking":
-                fry_cycle += amt
-            else:
-                other += amt
-    fry_pond = _nursing_fry_pool_for_pond_batch(
-        company_id=company_id,
-        from_pond_id=from_pond_id,
-        transfer_date=transfer_date,
-        from_cycle=from_cycle,
-    )
-    fry = max(fry_cycle, fry_pond)
-    if from_cycle is not None:
-        open_batches = AquacultureProductionCycle.objects.filter(
-            company_id=company_id,
-            pond_id=from_pond_id,
-            end_date__isnull=True,
-            is_active=True,
-            source_production_cycle__isnull=True,
-        ).count()
-        if open_batches <= 1:
-            other += _nursing_uncycled_other_production_total(
-                company_id=company_id,
-                from_pond_id=from_pond_id,
-                start=start,
-                end=end,
-            )
-    total = _money_q(other + fry)
-    if total > 0:
-        return total
+    gross = _nursing_gross_expense_pool_from_pl(payload=payload, from_pond_id=from_pond_id)
+    if gross > 0:
+        return gross
     return _bio_total_for_transfer_scope(
         company_id=company_id,
         from_pond_id=from_pond_id,
@@ -687,17 +668,84 @@ def _nursing_fingerling_allocation_denominator(
     return stocked
 
 
+def _nursing_blended_line_fraction(
+    fish_count: int,
+    weight_kg: Decimal,
+    *,
+    total_fish: int,
+    total_weight: Decimal,
+) -> Decimal:
+    """Share of a nursing batch by fingerling count and biomass (equal weight to each)."""
+    if total_fish <= 0 or fish_count <= 0:
+        return Decimal("0")
+    head_frac = Decimal(fish_count) / Decimal(total_fish)
+    wk = _money_q(weight_kg or Decimal("0"))
+    tw = _money_q(total_weight or Decimal("0"))
+    if wk <= 0 or tw <= 0:
+        return head_frac
+    weight_frac = wk / tw
+    return (head_frac + weight_frac) / Decimal("2")
+
+
+def _allocate_nursing_batch_line_costs(
+    *,
+    bio_total: Decimal,
+    survivor_pool: int,
+    line_specs: list[tuple[int, Decimal]],
+) -> list[Decimal]:
+    """
+    Spread movable nursing costs across transfer lines using head + weight shares.
+
+    survivor_pool keeps mortality cost on survivors; only the transferred-fish portion
+    of the pool is allocated, split by blended count/weight share per line.
+    """
+    active = [(fc, wk) for fc, wk in line_specs if fc > 0]
+    if not active or bio_total <= 0:
+        return [Decimal("0")] * len(line_specs)
+
+    total_fish = sum(fc for fc, _ in active)
+    total_weight = _money_q(sum(wk for _, wk in active))
+    denom = survivor_pool if survivor_pool > 0 else total_fish
+    transferred_portion = _money_q(bio_total * Decimal(total_fish) / Decimal(denom))
+
+    fractions: list[Decimal] = []
+    for fc, wk in line_specs:
+        if fc <= 0:
+            fractions.append(Decimal("0"))
+            continue
+        fractions.append(
+            _nursing_blended_line_fraction(
+                fc,
+                wk,
+                total_fish=total_fish,
+                total_weight=total_weight,
+            )
+        )
+
+    costs = [_money_q(transferred_portion * frac) for frac in fractions]
+    allocated = sum(costs, Decimal("0"))
+    remainder = _money_q(transferred_portion - allocated)
+    if remainder != 0:
+        eligible = [i for i, (fc, _) in enumerate(line_specs) if fc > 0]
+        if eligible:
+            sweep_idx = max(eligible, key=lambda i: costs[i])
+            costs[sweep_idx] = _money_q(costs[sweep_idx] + remainder)
+    return costs
+
+
 def _nursing_line_cost_from_per_head(
     *,
     company_id: int,
     from_pond_id: int,
     transfer_date: date,
     from_cycle: AquacultureProductionCycle | None,
+    weight_kg: Decimal,
     fish_count: int | None,
+    transfer_total_weight_kg: Decimal | None = None,
     transfer_total_fish_count: int | None = None,
     exclude_transfer_id: int | None = None,
 ) -> Decimal:
-    """line cost = fish_count × (fry + production expenses) ÷ survivor fingerling pool."""
+    """Line cost from survivor pool with proportional head + weight share within the transfer."""
     heads = int(fish_count or 0)
     if heads <= 0:
         return Decimal("0")
@@ -717,6 +765,10 @@ def _nursing_line_cost_from_per_head(
     )
     if bio_total <= 0:
         return Decimal("0")
+    xfer_fish = int(transfer_total_fish_count or heads)
+    xfer_weight = transfer_total_weight_kg if transfer_total_weight_kg and transfer_total_weight_kg > 0 else _money_q(
+        weight_kg or Decimal("0")
+    )
     denom = _nursing_fingerling_allocation_denominator(
         company_id=company_id,
         from_pond_id=from_pond_id,
@@ -728,7 +780,26 @@ def _nursing_line_cost_from_per_head(
     )
     if denom <= 0:
         return Decimal("0")
-    return _money_q(bio_total * Decimal(heads) / Decimal(denom))
+    costs = _allocate_nursing_batch_line_costs(
+        bio_total=bio_total,
+        survivor_pool=denom,
+        line_specs=[(heads, _money_q(weight_kg or Decimal("0")))],
+    )
+    if xfer_fish > heads and xfer_fish > 0:
+        doc_costs = _allocate_nursing_batch_line_costs(
+            bio_total=bio_total,
+            survivor_pool=denom,
+            line_specs=[(xfer_fish, xfer_weight)],
+        )
+        doc_total = doc_costs[0] if doc_costs else Decimal("0")
+        line_frac = _nursing_blended_line_fraction(
+            heads,
+            _money_q(weight_kg or Decimal("0")),
+            total_fish=xfer_fish,
+            total_weight=xfer_weight,
+        )
+        return _money_q(doc_total * line_frac)
+    return costs[0] if costs else Decimal("0")
 
 
 def _nursing_pond_survivor_live_heads(
@@ -904,7 +975,9 @@ def _production_cost_share_for_line(
             from_pond_id=from_pond_id,
             transfer_date=transfer_date,
             from_cycle=cycle_obj,
+            weight_kg=weight_kg,
             fish_count=fish_count,
+            transfer_total_weight_kg=transfer_total_weight_kg,
             transfer_total_fish_count=transfer_total_fish_count,
             exclude_transfer_id=exclude_transfer_id,
         )
@@ -1132,10 +1205,11 @@ def lookup_transfer_cost_per_head(
         denom = live_heads
     per_head = _money_q(bio_total / Decimal(denom))
     note = (
-        f"Transfer cost/head = movable biological asset ({bio_total}) ÷ {denom} survivor fingerlings "
-        "(fish already moved + still in pond, or biomass sample; "
-        "fry + feed + medicine + pond care + day labor on the nursing pond). "
-        "Each line = fish count × cost/head. Lease, electricity, aerators/equipment stay on the source pond."
+        f"Movable biological asset ({bio_total}) ÷ {denom} survivor fingerlings "
+        "(fish already moved + still in pond, or biomass sample; includes fry, feed, medicine, "
+        "lease, electricity, equipment, and all other nursing-period expenses). "
+        "Each line = transferred share × average of head% and weight% within the batch. "
+        "When all fingerlings leave nursing, inter-pond transfer income equals gross nursing expenses."
     )
     return per_head, note
 
@@ -1415,7 +1489,7 @@ def _resync_nursing_batch_group(
     from_production_cycle_id: int | None,
     after_transfer_date: date | None = None,
 ) -> int:
-    """Spread one nursing batch cost pool across all transfer lines by fish count."""
+    """Spread one nursing batch cost pool across all transfer lines by fish count and weight."""
     from api.models import AquacultureFishPondTransfer, AquacultureProductionCycle
 
     qs = AquacultureFishPondTransfer.objects.filter(
@@ -1441,6 +1515,7 @@ def _resync_nursing_batch_group(
 
     max_date = max(t.transfer_date for t in transfers)
     line_refs: list = []
+    line_specs: list[tuple[int, Decimal]] = []
     total_fish = 0
     for tr in transfers:
         for ln in tr.lines.all():
@@ -1449,6 +1524,7 @@ def _resync_nursing_batch_group(
                 continue
             total_fish += fc
             line_refs.append(ln)
+            line_specs.append((fc, _money_q(ln.weight_kg or Decimal("0"))))
 
     if total_fish <= 0:
         return 0
@@ -1475,10 +1551,14 @@ def _resync_nursing_batch_group(
     if denom <= 0:
         denom = total_fish
 
+    allocated_costs = _allocate_nursing_batch_line_costs(
+        bio_total=bio_total,
+        survivor_pool=denom,
+        line_specs=line_specs,
+    )
+
     updated = 0
-    for ln in line_refs:
-        fc = int(ln.fish_count or 0)
-        new_cost = _money_q(bio_total * Decimal(fc) / Decimal(denom))
+    for ln, new_cost in zip(line_refs, allocated_costs):
         if new_cost <= 0:
             continue
         if _money_q(ln.cost_amount or Decimal("0")) == new_cost:

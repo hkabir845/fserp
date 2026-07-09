@@ -118,7 +118,7 @@ AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("System (automatic)", ("vendor_bill_pond",)),
 )
 AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Fish & production sales", ("fish_harvest_sale", "fingerling_sale", "processing_value_add")),
+    ("Fish & production sales", ("fish_harvest_sale", "fingerling_sale", "inter_pond_fingerling_transfer", "processing_value_add")),
     (
         "By-products & scrap",
         ("empty_feed_sack_sale", "used_material_sale", "rejected_material_sale", "used_equipment_sale"),
@@ -203,6 +203,9 @@ _AQUACULTURE_EXPENSE_SUPPLEMENTAL_HINTS: dict[str, str] = {
 AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
     "fish_harvest_sale": "Primary table-fish or market harvest revenue from the pond.",
     "fingerling_sale": "Sales of fry or fingerlings produced or held at the pond.",
+    "inter_pond_fingerling_transfer": (
+        "Internal nursing-to-grow-out fingerling transfer at fully loaded cost (nursing income)."
+    ),
     "processing_value_add": "Smoked, filleted, or otherwise processed fish sold at a premium.",
     "empty_feed_sack_sale": (
         "Non-biological byproduct income for this pond — empty sacks sold after feed consumption. "

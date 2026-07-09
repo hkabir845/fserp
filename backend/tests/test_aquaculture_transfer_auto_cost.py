@@ -18,6 +18,7 @@ from api.models import (
 from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine
 from api.services.aquaculture_pl_service import _money_q
 from api.services.aquaculture_transfer_cost import (
+    _allocate_nursing_batch_line_costs,
     backfill_missing_transfer_line_costs,
     preview_transfer_line_costs,
     resolve_auto_transfer_line_cost,
@@ -352,9 +353,13 @@ def test_two_nursing_transfers_share_total_bio_by_survivor_fish_count(company_te
     c1 = tr1.lines.first().cost_amount
     c2 = tr2.lines.first().cost_amount
     total_fish = 87780 + 27100
-    per_fish = Decimal("660000.00") / Decimal(total_fish)
-    assert c1 == _money_q(per_fish * 87780)
-    assert c2 == _money_q(per_fish * 27100)
+    expected = _allocate_nursing_batch_line_costs(
+        bio_total=Decimal("660000.00"),
+        survivor_pool=total_fish,
+        line_specs=[(87780, Decimal("418")), (27100, Decimal("666.34"))],
+    )
+    assert c1 == expected[0]
+    assert c2 == expected[1]
     assert c1 + c2 == Decimal("660000.00")
     assert c1 > c2
     assert c1 < Decimal("660000.00")
@@ -442,10 +447,18 @@ def test_nursing_resync_spreads_later_expenses_across_all_transfer_dates(company
     total_fish = sum(int(ln.fish_count or 0) for ln in lines)
     total_cost = sum(ln.cost_amount or Decimal("0") for ln in lines)
     bio_total = Decimal("413200.00")
-    per_fish = bio_total / Decimal(total_fish)
+    expected = _allocate_nursing_batch_line_costs(
+        bio_total=bio_total,
+        survivor_pool=total_fish,
+        line_specs=[
+            (int(ln.fish_count or 0), ln.weight_kg or Decimal("0"))
+            for ln in lines
+        ],
+    )
     assert total_cost <= bio_total
-    assert lines[0].cost_amount == _money_q(per_fish * 107580)
+    assert lines[0].cost_amount == expected[0]
     assert lines[0].cost_amount < Decimal("391200.00")
+    assert sum(expected) == bio_total
 
 
 @pytest.mark.django_db
@@ -614,8 +627,8 @@ def test_nursing_transfer_cost_uses_live_heads_and_all_production_expenses(compa
 @pytest.mark.django_db
 def test_mynuddin_nursing_fry_and_feed_exclude_fixed_pond_costs(company_tenant):
     """
-    Mynuddin-style: 1.1M fry + feed/medicine/day labor move with fingerlings;
-    lease/electricity/equipment stay on the nursing pond.
+    Mynuddin-style: fry + feed + day labor + lease/electricity/equipment all move with fingerlings;
+    nursing P&L nets to ~zero when all fish are transferred.
     """
     _enable(company_tenant)
     cid = company_tenant.id
@@ -704,12 +717,22 @@ def test_mynuddin_nursing_fry_and_feed_exclude_fixed_pond_costs(company_tenant):
     )
     tr1.lines.first().refresh_from_db()
     tr2.lines.first().refresh_from_db()
-    movable_total = Decimal("1100000.33") + Decimal("85000.00") + Decimal("12000.00")
+    movable_total = (
+        Decimal("1100000.33")
+        + Decimal("85000.00")
+        + Decimal("12000.00")
+        + Decimal("45000.00")
+        + Decimal("80000.00")
+    )
     transferred_fish = 107580 + 122528
     survivor_pool = 346148
-    per_fish = movable_total / Decimal(survivor_pool)
-    assert tr1.lines.first().cost_amount == _money_q(per_fish * 107580)
-    assert tr2.lines.first().cost_amount == _money_q(per_fish * 122528)
+    expected = _allocate_nursing_batch_line_costs(
+        bio_total=movable_total,
+        survivor_pool=survivor_pool,
+        line_specs=[(107580, Decimal("900")), (122528, Decimal("1200"))],
+    )
+    assert tr1.lines.first().cost_amount == expected[0]
+    assert tr2.lines.first().cost_amount == expected[1]
     line_total = tr1.lines.first().cost_amount + tr2.lines.first().cost_amount
     assert abs(line_total - _money_q(movable_total * Decimal(transferred_fish) / Decimal(survivor_pool))) <= Decimal(
         "0.02"
@@ -791,9 +814,13 @@ def test_nursing_batch_resync_without_nursing_role_when_large_head_batch(company
     tr1.lines.first().refresh_from_db()
     tr2.lines.first().refresh_from_db()
     total_fish = 200000 + 146148
-    per_fish = Decimal("1100000.00") / Decimal(total_fish)
-    assert tr1.lines.first().cost_amount == _money_q(per_fish * 200000)
-    assert tr2.lines.first().cost_amount == _money_q(per_fish * 146148)
+    expected = _allocate_nursing_batch_line_costs(
+        bio_total=Decimal("1100000.00"),
+        survivor_pool=total_fish,
+        line_specs=[(200000, Decimal("500")), (146148, Decimal("600"))],
+    )
+    assert tr1.lines.first().cost_amount == expected[0]
+    assert tr2.lines.first().cost_amount == expected[1]
     assert tr1.lines.first().cost_amount + tr2.lines.first().cost_amount == Decimal("1100000.00")
 
 
@@ -1011,7 +1038,7 @@ def test_nursing_transfer_500k_fry_at_220_per_piece_plus_feed(company_tenant):
         from_cycle=None,
         lines=[{"weight_kg": Decimal("15000"), "fish_count": 210000}],
     )
-    movable = Decimal("1100000.00") + Decimal("350000.00") + Decimal("45000.00")
+    movable = Decimal("1100000.00") + Decimal("350000.00") + Decimal("45000.00") + Decimal("60000.00")
     per_head = movable / Decimal("450000")
     expected = _money_q(per_head * 210000)
     assert preview["cost_basis"] == "per_head"

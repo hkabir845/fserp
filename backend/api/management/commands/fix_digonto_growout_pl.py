@@ -169,8 +169,8 @@ class Command(BaseCommand):
         xfer_save = _money(Decimal(str(p04_line.cost_amount or 0)) - p04_new)
         lease_save = _money(
             sum(
-                abs(Decimal(str(e.amount_signed or 0)))
-                for e in AquacultureLandlordLedgerEntry.objects.filter(pk__in=lease_remove_ids)
+                (abs(Decimal(str(e.amount_signed or 0))) for e in AquacultureLandlordLedgerEntry.objects.filter(pk__in=lease_remove_ids)),
+                Decimal("0"),
             )
         )
         self.stdout.write(f"Lease payments to remove ({len(lease_remove_ids)}): {lease_remove_ids} (sum={lease_save})")

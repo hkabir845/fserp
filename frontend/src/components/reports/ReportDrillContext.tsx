@@ -328,21 +328,29 @@ export function DrillAmount({
   const canDrill = !disabled && drill && ctx && isDrillTargetActionable(drill)
 
   if (!canDrill) {
-    return <span className={className}>{formatted}</span>
+    return <span className={`tabular-nums ${className}`}>{formatted}</span>
   }
 
   return (
-    <button
-      type="button"
+    <span
+      role="button"
+      tabIndex={0}
       className={`${DRILL_BTN} tabular-nums ${className}`}
       title={title || 'Click to view source detail'}
       onClick={(e) => {
         e.stopPropagation()
         ctx.push(drill)
       }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          e.stopPropagation()
+          ctx.push(drill)
+        }
+      }}
     >
       {formatted}
-    </button>
+    </span>
   )
 }
 

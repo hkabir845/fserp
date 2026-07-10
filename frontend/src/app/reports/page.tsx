@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Fragment, Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
@@ -1434,6 +1434,23 @@ function getReportExportPondScope(
 }
 
 export default function ReportsPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageLayout>
+          <div className="app-scroll-pad flex min-h-[40vh] items-center justify-center">
+            <RefreshCw className="h-10 w-10 animate-spin text-primary" aria-hidden />
+          </div>
+        </PageLayout>
+      }
+    >
+      <ReportsPageContent />
+    </Suspense>
+  )
+}
+
+function ReportsPageContent() {
+  const [reportLoadError, setReportLoadError] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const pageMeta = usePageMeta()
@@ -1944,6 +1961,7 @@ export default function ReportsPage() {
     }
   ) => {
     setLoading(true)
+    setReportLoadError(null)
     setReportData(null) // Clear previous data
     scrollReportPanelIntoView()
     const segmentForFetch = opts?.businessSegment ?? businessSegment
@@ -1958,6 +1976,7 @@ export default function ReportsPage() {
       }
       setSelectedReport('analytics-kpi')
       setReportData({ _analytics: true as const })
+      setReportLoadError(null)
       setLoading(false)
       return
     }
@@ -1971,6 +1990,7 @@ export default function ReportsPage() {
       }
       setSelectedReport('aquaculture-pl-management')
       setReportData({ _aquaculturePlManagement: true as const })
+      setReportLoadError(null)
       setLoading(false)
       return
     }
@@ -2086,6 +2106,7 @@ export default function ReportsPage() {
       if (response.data) {
         setReportData(response.data)
         setSelectedReport(reportId)
+        setReportLoadError(null)
       } else {
         throw new Error('Invalid response data')
       }
@@ -2121,6 +2142,7 @@ export default function ReportsPage() {
                 if (retry.data) {
                   setReportData(retry.data)
                   setSelectedReport(reportId)
+                  setReportLoadError(null)
                   return
                 }
               }
@@ -2155,7 +2177,7 @@ export default function ReportsPage() {
               'Restart the Django server if you added this report recently, and confirm the frontend is calling your local API (http://localhost:8000/api in dev).'
             : `${backendDetail} (${reportId})`
       }
-      alert(errorMessage)
+      setReportLoadError(errorMessage)
       setReportData(null)
     } finally {
       setLoading(false)
@@ -3589,6 +3611,24 @@ export default function ReportsPage() {
                       reportAquaculturePondId={aquaculturePondId}
                       onReportDateChange={handleReportDateChange}
                     />
+                  </div>
+                ) : selectedReport && reportLoadError && !reportData ? (
+                  <div className="flex min-h-[min(50vh,24rem)] items-center justify-center p-4 sm:min-h-[400px] lg:min-h-[600px]">
+                    <div className="max-w-md text-center">
+                      <div
+                        className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                        role="alert"
+                      >
+                        {reportLoadError}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => selectedReport && void fetchReport(selectedReport)}
+                        className="erp-btn-primary mt-4"
+                      >
+                        Try again
+                      </button>
+                    </div>
                   </div>
                 ) : selectedReport && reportData ? (
                   <div className="p-4 sm:p-6">
@@ -5212,7 +5252,9 @@ function renderReportTable(
                 <p className="font-semibold">
                   {gain ? 'Net profit' : 'Net loss'} (cumulative through period end, on balance sheet)
                 </p>
-                <p className="mt-1 tabular-nums text-lg font-bold">{Money(ni, accountsTotalRow(leAccounts, 'Cumulative net income'), 'total')}</p>
+                <p className="mt-1 tabular-nums text-lg font-bold">
+                  {Money(ni, accountsTotalRow(leAccounts, 'Cumulative net income'), 'total')}
+                </p>
                 <p className={`mt-1 text-xs ${gain ? 'text-emerald-800/90' : 'text-rose-800/90'}`}>
                   Included under Equity as &quot;Net income (cumulative P&L — unclosed to equity)&quot; so Assets
                   match Liabilities + Equity. After closing P&amp;L to Retained Earnings, this rollup is usually
@@ -5340,34 +5382,34 @@ function renderReportTable(
           "P&L includes posted journal activity from start through end date (not opening balances on revenue/expense accounts)."
         )}
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-emerald-900">{Money(incomeTotal, plIncomeDrill, 'total')}</p>
+            <div className="mt-1 text-lg font-bold tabular-nums text-emerald-900">{Money(incomeTotal, plIncomeDrill, 'total')}</div>
           </div>
           <div className="rounded-lg border-2 border-amber-400 bg-warning/10 p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-warning-foreground">COGS</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-warning-foreground">{Money(cogsTotal, plCogsDrill, 'total')}</p>
+            <div className="mt-1 text-lg font-bold tabular-nums text-warning-foreground">{Money(cogsTotal, plCogsDrill, 'total')}</div>
           </div>
           <div className="rounded-lg border border-green-300 bg-green-50 p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-success">Gross profit</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-green-900">
+            <div className="mt-1 text-lg font-bold tabular-nums text-green-900">
               {Money(data.gross_profit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
-            </p>
+            </div>
           </div>
           <div className="rounded-lg border border-border bg-white p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Expenses</p>
-            <p className="mt-1 text-lg font-bold tabular-nums text-foreground">{Money(expenseTotal, plExpenseDrill, 'total')}</p>
+            <div className="mt-1 text-lg font-bold tabular-nums text-foreground">{Money(expenseTotal, plExpenseDrill, 'total')}</div>
           </div>
-          <div className="col-span-2 rounded-lg border border-blue-300 bg-blue-50 p-3 shadow-sm sm:col-span-1 lg:col-span-1">
+          <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 shadow-sm sm:col-span-2 lg:col-span-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net income</p>
-            <p
+            <div
               className={`mt-1 text-lg font-bold tabular-nums ${
                 Number(data.net_income ?? 0) >= 0 ? 'text-blue-900' : 'text-destructive'
               }`}
             >
               {Money(data.net_income, plAllDrill, 'total')}
-            </p>
+            </div>
           </div>
         </div>
 
@@ -5386,11 +5428,11 @@ function renderReportTable(
         <div className="space-y-6">
           {blocks.map(({ title, payload, accent }) => (
             <div key={title} className={`rounded-lg border bg-white shadow-sm ${accent}`}>
-              <div className="flex items-center justify-between border-b border-inherit p-4">
+              <div className="flex flex-col gap-2 border-b border-inherit p-4 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-                <span className="text-sm font-bold tabular-nums text-foreground">
+                <div className="text-sm font-bold tabular-nums text-foreground">
                   {Money(payload?.total, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
-                </span>
+                </div>
               </div>
               <div className="divide-y divide-border">
                 {(payload?.accounts ?? []).length > 0 ? (
@@ -5405,9 +5447,9 @@ function renderReportTable(
                         <p className="truncate text-sm font-medium text-foreground">{account.account_name}</p>
                         <p className="text-xs text-muted-foreground">{account.account_code}</p>
                       </div>
-                      <p className="ml-4 whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">
+                      <div className="ml-4 whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">
                         <DrillAmount amount={account.balance} drill={glDrill} />
-                      </p>
+                      </div>
                     </div>
                     )
                   })
@@ -5457,20 +5499,20 @@ function renderReportTable(
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-gradient-to-br from-green-50 to-card border-2 border-green-300 rounded-lg p-5 shadow-sm">
                   <p className="text-xs text-success uppercase tracking-wide font-semibold">Gross Profit</p>
-                  <p className="text-2xl font-bold text-success mt-2">
+                  <div className="text-2xl font-bold text-success mt-2">
                     {Money(grossProfit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
-                  </p>
+                  </div>
                   <p className="text-xs text-success mt-1">
                     Income − COGS · {grossMargin.toFixed(1)}% margin
                   </p>
                 </div>
                 <div className="bg-gradient-to-br from-accent to-card border-2 border-blue-300 rounded-lg p-5 shadow-sm">
                   <p className="text-xs text-primary uppercase tracking-wide font-semibold">Net Income</p>
-                  <p className={`text-2xl font-bold mt-2 ${
+                  <div className={`text-2xl font-bold mt-2 ${
                     netIncome >= 0 ? 'text-primary' : 'text-destructive'
                   }`}>
                     {Money(netIncome, plAllDrill, 'total')}
-                  </p>
+                  </div>
                   <p className="text-xs text-primary mt-1">
                     Gross Profit − Expenses
                   </p>

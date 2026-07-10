@@ -673,10 +673,10 @@ export function AquaculturePlBottomLine({
 }) {
   return (
     <div className="rounded-lg border-2 border-primary/30 bg-primary/5 px-4 py-4 text-center">
-      <p className="text-sm font-semibold text-foreground tabular-nums">
+      <div className="text-sm font-semibold text-foreground tabular-nums">
         Total income ({MoneyBdt(income)}) − Total expenses ({MoneyBdt(expenses)}) = Net profit (
         <span className={netProfit >= 0 ? 'text-primary' : 'text-destructive'}>{MoneyBdt(netProfit)}</span>)
-      </p>
+      </div>
     </div>
   )
 }
@@ -704,27 +704,27 @@ export function AquaculturePlNetSummary({
       <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
         <div className="min-w-[7rem] text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">{MoneyBdt(income)}</p>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">{MoneyBdt(income)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           −
         </span>
         <div className="min-w-[7rem] text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Expenses</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-rose-900">{MoneyBdt(expenses)}</p>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-rose-900">{MoneyBdt(expenses)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           =
         </span>
         <div className="min-w-[7rem] text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net profit</p>
-          <p
+          <div
             className={`mt-1 text-2xl font-bold tabular-nums ${
               netProfit >= 0 ? 'text-blue-900' : 'text-destructive'
             }`}
           >
             {MoneyBdt(netProfit)}
-          </p>
+          </div>
         </div>
       </div>
     </div>
@@ -751,7 +751,7 @@ export function AquaculturePlExpenseKpiGrid({ totals }: { totals: PlTotalsLike }
       {cards.map(([label, val]) => (
         <div key={label} className="rounded-xl border border-border bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{MoneyBdt(val ?? '0')}</p>
+          <div className="mt-1 text-lg font-semibold tabular-nums text-foreground">{MoneyBdt(val ?? '0')}</div>
         </div>
       ))}
     </div>
@@ -864,7 +864,9 @@ export function PlActiveExpenseCategoriesList({
       {authoritativeTotal != null &&
       Math.abs(Number(authoritativeTotal) - listedTotal) > 0.02 ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          Listed categories sum to {MoneyBdt(String(listedTotal))}; total includes rounding and categories without line detail.
+          Listed categories sum to{' '}
+          <span className="tabular-nums">{MoneyBdt(String(listedTotal))}</span>; total includes rounding and categories
+          without line detail.
         </p>
       ) : null}
     </div>
@@ -975,7 +977,7 @@ export function GlPlReferencePanel({
         {rows.map(([label, val]) => (
           <div key={label} className="rounded-md border border-border/80 bg-white px-3 py-2">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="font-semibold tabular-nums text-foreground">{MoneyBdt(val)}</p>
+            <div className="font-semibold tabular-nums text-foreground">{MoneyBdt(val)}</div>
           </div>
         ))}
       </div>
@@ -1377,12 +1379,30 @@ export function PondScopedAquaculturePlBlock({
 }) {
   if (pondId == null || pondId <= 0) return null
   const mgmt = resolvePlMgmtSnapshot(data, pondRows, pondId)
-  if (!mgmt?.totals) return null
   const name =
     pondName?.trim() ||
-    mgmt.ponds?.find((p) => Number(p.pond_id) === pondId)?.pond_name?.trim() ||
-    mgmt.ponds?.[0]?.pond_name?.trim() ||
+    mgmt?.ponds?.find((p) => Number(p.pond_id) === pondId)?.pond_name?.trim() ||
+    mgmt?.ponds?.[0]?.pond_name?.trim() ||
     null
+  const scopedLabel = name || `Pond #${pondId}`
+
+  if (!mgmt?.totals) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/30 px-4 py-8 text-center">
+        <p className="text-sm font-medium text-foreground">No aquaculture register data for {scopedLabel}</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          There is no pond income or expense activity in this period, or the register has not been loaded yet. Try a
+          wider date range or confirm pond transactions are recorded.
+        </p>
+        {primaryPl && glReferenceData ? (
+          <div className="mt-6 text-left">
+            <GlPlReferencePanel data={glReferenceData as Parameters<typeof GlPlReferencePanel>[0]['data']} />
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <>
       <AquaculturePlConsumptionSection

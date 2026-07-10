@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDateOnly } from '@/utils/date'
-import { PlatformLayout } from '@/components/PlatformLayout'
 
 interface Broadcast {
   id: number
@@ -112,8 +111,8 @@ export default function BroadcastPage() {
   }
 
   return (
-    <PlatformLayout>
-      <div className="py-8">
+    <>
+          <div className="app-scroll-pad py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Page Header */}
           <div className="mb-8 flex justify-between items-center">
@@ -325,7 +324,7 @@ export default function BroadcastPage() {
           }}
         />
       )}
-    </PlatformLayout>
+    </>
   )
 }
 

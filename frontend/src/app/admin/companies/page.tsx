@@ -4,7 +4,6 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import { useCompany } from '@/contexts/CompanyContext'
 import {
   Building2,
@@ -853,10 +852,7 @@ function CompaniesPageContent() {
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full min-w-0 p-4 sm:p-6 lg:p-8">
+    <div className="app-scroll-pad w-full min-w-0">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-bold text-foreground sm:text-xl">
@@ -2449,18 +2445,13 @@ function CompaniesPageContent() {
               </div>
             </div>
           )}
-        </div>
-      </div>
     </div>
   )
 }
 
 function CompaniesPageFallback() {
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
-    </div>
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
   )
 }
 

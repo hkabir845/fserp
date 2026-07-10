@@ -5,7 +5,7 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
 import api, { isApiSessionError } from '@/lib/api'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDate } from '@/utils/date'
@@ -254,9 +254,8 @@ export default function ContactLedgerPage({
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
+    <PageLayout>
+      <div className="app-scroll-pad">
           <div className="mb-6 flex flex-wrap items-center gap-4">
             <Link
               href={backHref}
@@ -469,7 +468,7 @@ export default function ContactLedgerPage({
                 </div>
               )}
 
-              <div className="relative overflow-hidden rounded-lg bg-white shadow">
+              <div className="relative overflow-x-auto rounded-lg bg-white shadow">
                 {refetching ? (
                   <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Updating ledger" />
@@ -575,7 +574,7 @@ export default function ContactLedgerPage({
           ) : (
             <p className="text-muted-foreground">No data.</p>
           )}
-        </div>
       </div>
+    </PageLayout>
   )
 }

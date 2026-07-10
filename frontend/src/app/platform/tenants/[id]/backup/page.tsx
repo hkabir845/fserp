@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { PlatformLayout } from '@/components/PlatformLayout'
 import { getPlatformUser } from '@/lib/platform-auth'
 
 type Tenant = {
@@ -127,8 +126,7 @@ export default function TenantBackupPage() {
   if (!mounted || !Number.isFinite(tenantId)) return null
 
   return (
-    <PlatformLayout>
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-3xl app-scroll-pad py-8">
         <div className="mb-6">
           <Link href="/platform/tenants/browse" className="text-sm font-medium text-purple-600 hover:text-purple-800">
             ← All tenants
@@ -269,6 +267,5 @@ export default function TenantBackupPage() {
           )}
         </section>
       </div>
-    </PlatformLayout>
   )
 }

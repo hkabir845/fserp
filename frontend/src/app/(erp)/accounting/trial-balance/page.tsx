@@ -74,7 +74,7 @@ export default function TrialBalancePage() {
       {query.data && (
         <>
           <p className="text-xs text-muted-foreground">Cut-off: {labelDate}</p>
-          <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
             <table className="min-w-full divide-y divide-border text-sm">
               <thead className="bg-muted/40">
                 <tr>

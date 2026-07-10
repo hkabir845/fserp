@@ -309,8 +309,8 @@ export default function FundTransfersPage() {
           </button>
         }
       >
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="w-full">
+          <div className="erp-table-panel">
+            <table className="w-full min-w-[48rem]">
               <thead className="bg-muted/40 border-b-2 border-border">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-foreground/85 uppercase">Transfer #</th>

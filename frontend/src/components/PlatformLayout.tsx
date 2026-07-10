@@ -33,12 +33,12 @@ export function PlatformLayout({ children }: PlatformLayoutProps) {
     localStorage.setItem('platform-sidebar-width', sidebarWidth.toString())
   }, [sidebarWidth])
 
-  // Handle window resize
+  // Handle window resize — align with main ERP sidebar (768px / md)
   useEffect(() => {
     const handleResize = () => {
-      setIsDesktop(window.innerWidth >= 1024) // lg breakpoint
-      if (window.innerWidth >= 1024) {
-        setSidebarOpen(false) // Close mobile sidebar on desktop
+      setIsDesktop(window.innerWidth >= 768)
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(false)
       }
     }
 
@@ -60,7 +60,7 @@ export function PlatformLayout({ children }: PlatformLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-muted/40 flex">
+    <div className="flex h-dvh max-h-dvh min-h-0 w-full min-w-0 max-w-full flex-row bg-muted/40">
       <PlatformSidebar 
         isOpen={sidebarOpen} 
         onClose={() => setSidebarOpen(false)}
@@ -69,7 +69,7 @@ export function PlatformLayout({ children }: PlatformLayoutProps) {
       />
 
       <div 
-        className="flex-1 flex flex-col"
+        className="erp-main-column flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden print:!ml-0"
         style={{ 
           marginLeft: isDesktop ? `${sidebarWidth}px` : '0',
           transition: 'margin-left 0.2s ease-in-out'
@@ -87,7 +87,8 @@ export function PlatformLayout({ children }: PlatformLayoutProps) {
               {/* Mobile menu button */}
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-md text-muted-foreground hover:text-foreground/85 hover:bg-muted"
+                className="md:hidden p-2 rounded-md text-muted-foreground hover:text-foreground/85 hover:bg-muted touch-min"
+                aria-label="Open menu"
               >
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -118,7 +119,7 @@ export function PlatformLayout({ children }: PlatformLayoutProps) {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {children}
         </main>
       </div>

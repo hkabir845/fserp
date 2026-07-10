@@ -3,7 +3,7 @@
 import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
+import PageLayout from '@/components/PageLayout'
 import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useCompany } from '@/contexts/CompanyContext'
 import { 
@@ -3392,9 +3392,8 @@ export default function ReportsPage() {
         siteScopeKey: reportStationId,
       }}
     >
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-auto app-scroll-pad">
+    <PageLayout>
+      <div className="app-scroll-pad">
         <AquaculturePageShell
           flush
           showBackLink={false}
@@ -3475,7 +3474,7 @@ export default function ReportsPage() {
                         onChange={applyReportSiteScopeChange}
                         stations={reportStationList}
                         ponds={aquaculturePonds}
-                        className="min-w-[16rem] rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
+                        className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30 sm:min-w-[16rem] sm:w-auto"
                       />
                     </div>
                     <p className="text-xs text-muted-foreground sm:text-right">
@@ -3487,10 +3486,34 @@ export default function ReportsPage() {
             )}
 
           <div className="flex min-h-0 w-full min-w-0 flex-col gap-6 lg:max-h-[calc(100dvh-11rem)] lg:flex-row lg:items-stretch lg:gap-6 xl:gap-8">
-            {/* Report list: fixed max width; main pane uses flex-1 for full usable width (especially for Analytics) */}
+            {/* Mobile: compact report picker instead of scrolling through every card */}
+            <div className="lg:hidden">
+              <label htmlFor="mobile-report-select" className="mb-1.5 block text-sm font-medium text-foreground">
+                Report
+              </label>
+              <select
+                id="mobile-report-select"
+                value={selectedReport ?? ''}
+                onChange={(e) => {
+                  const id = e.target.value as ReportType
+                  if (id) void fetchReport(id)
+                }}
+                disabled={loading}
+                className="w-full min-w-0 rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
+              >
+                <option value="">Choose a report…</option>
+                {filteredReports.map((report) => (
+                  <option key={report.id} value={report.id}>
+                    {report.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Report list — desktop sidebar */}
             <aside
               ref={reportListRef}
-              className="w-full min-w-0 shrink-0 space-y-3 lg:max-h-full lg:max-w-[20rem] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 xl:max-w-[22rem]"
+              className="hidden w-full min-w-0 shrink-0 space-y-3 lg:block lg:max-h-full lg:max-w-[20rem] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 xl:max-w-[22rem]"
             >
               {filteredReports.map((report) => {
                 const Icon = report.icon
@@ -3542,9 +3565,9 @@ export default function ReportsPage() {
               id="report-display-panel"
               className="min-h-0 w-full min-w-0 flex-1 scroll-mt-4 lg:max-h-full lg:overflow-y-auto lg:overscroll-y-contain"
             >
-              <div className="min-h-[600px] w-full min-w-0 max-w-full rounded-lg border border-border bg-white">
+              <div className="min-h-[min(50vh,24rem)] w-full min-w-0 max-w-full rounded-lg border border-border bg-white sm:min-h-[400px] lg:min-h-[600px]">
                 {loading ? (
-                  <div className="flex h-[600px] items-center justify-center">
+                  <div className="flex min-h-[min(50vh,24rem)] items-center justify-center py-12 sm:min-h-[400px] lg:min-h-[600px]">
                     <div className="text-center">
                       <RefreshCw className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
                       <p className="text-muted-foreground">Loading report...</p>
@@ -3568,21 +3591,21 @@ export default function ReportsPage() {
                     />
                   </div>
                 ) : selectedReport && reportData ? (
-                  <div className="p-6">
+                  <div className="p-4 sm:p-6">
                     {/* Report Header */}
-                    <div className="flex items-center justify-between mb-6 pb-4 border-b">
-                  <div>
-                    <h2 className="text-2xl font-bold text-foreground">
+                    <div className="mb-6 flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-foreground sm:text-2xl">
                       {filteredReports.find(r => r.id === selectedReport)?.title}
                     </h2>
                     <p className="text-sm text-muted-foreground mt-1">
                       Generated on {formatDate(new Date())}
                     </p>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={printReport}
-                      className="flex items-center space-x-2 px-4 py-2 bg-success text-white rounded-lg hover:bg-success/90 transition-colors"
+                      className="flex items-center space-x-2 px-3 py-2 bg-success text-white rounded-lg hover:bg-success/90 transition-colors text-sm sm:px-4"
                       title="Print Report"
                     >
                       <Printer className="h-4 w-4" />
@@ -3590,7 +3613,7 @@ export default function ReportsPage() {
                     </button>
                     <button
                       onClick={() => downloadReport('json')}
-                      className="erp-btn-secondary flex items-center space-x-2 bg-muted-foreground text-primary-foreground transition-colors"
+                      className="erp-btn-secondary flex items-center space-x-2 bg-muted-foreground text-primary-foreground transition-colors text-sm"
                       title="Export as JSON"
                     >
                       <Download className="h-4 w-4" />
@@ -3598,7 +3621,7 @@ export default function ReportsPage() {
                     </button>
                     <button
                       onClick={() => downloadReport('csv')}
-                      className="erp-btn-primary flex items-center space-x-2 transition-colors"
+                      className="erp-btn-primary flex items-center space-x-2 transition-colors text-sm"
                       title="Export as CSV"
                     >
                       <Download className="h-4 w-4" />
@@ -3642,7 +3665,7 @@ export default function ReportsPage() {
                                   setAquaculturePondId(v)
                                   setAquacultureCycleId('')
                                 }}
-                                className="erp-field min-w-[12rem] rounded-md px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-muted"
+                                className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[12rem] disabled:cursor-not-allowed disabled:bg-muted"
                               >
                                 <option value="">All ponds</option>
                                 {aquaculturePonds.map((p) => (
@@ -3663,7 +3686,7 @@ export default function ReportsPage() {
                                     value={aquacultureCycleId}
                                     onChange={(e) => setAquacultureCycleId(e.target.value)}
                                     disabled={!effectiveAquaculturePondId}
-                                    className="min-w-[12rem] rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm disabled:opacity-50"
+                                    className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[12rem] disabled:opacity-50"
                                   >
                                     <option value="">All cycles (pond scope)</option>
                                     {aquacultureCycles.map((c) => (
@@ -3696,7 +3719,7 @@ export default function ReportsPage() {
                                     value={fingerlingSearch}
                                     onChange={(e) => setFingerlingSearch(e.target.value)}
                                     placeholder="Pond, species, batch, memo…"
-                                    className="erp-field min-w-[14rem] rounded-md px-2 py-1.5 text-sm"
+                                    className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[14rem]"
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1">
@@ -3707,7 +3730,7 @@ export default function ReportsPage() {
                                     id="fl-report-species"
                                     value={fingerlingSpecies}
                                     onChange={(e) => setFingerlingSpecies(e.target.value)}
-                                    className="erp-field min-w-[10rem] rounded-md px-2 py-1.5 text-sm"
+                                    className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[10rem]"
                                   >
                                     <option value="">All species</option>
                                     <option value="tilapia">Tilapia</option>
@@ -3725,7 +3748,7 @@ export default function ReportsPage() {
                                     id="fl-nursing-pond"
                                     value={fingerlingNursingPondId}
                                     onChange={(e) => setFingerlingNursingPondId(e.target.value)}
-                                    className="erp-field min-w-[12rem] rounded-md px-2 py-1.5 text-sm"
+                                    className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[12rem]"
                                   >
                                     <option value="">All nursing</option>
                                     {aquaculturePonds
@@ -3745,7 +3768,7 @@ export default function ReportsPage() {
                                     id="fl-growout-pond"
                                     value={fingerlingGrowoutPondId}
                                     onChange={(e) => setFingerlingGrowoutPondId(e.target.value)}
-                                    className="erp-field min-w-[12rem] rounded-md px-2 py-1.5 text-sm"
+                                    className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[12rem]"
                                   >
                                     <option value="">All grow-out</option>
                                     {aquaculturePonds
@@ -3772,7 +3795,7 @@ export default function ReportsPage() {
                                     value={fingerlingMinCost}
                                     onChange={(e) => setFingerlingMinCost(e.target.value)}
                                     placeholder="0"
-                                    className="erp-field w-[8rem] rounded-md px-2 py-1.5 text-sm tabular-nums"
+                                    className="erp-field w-full rounded-md px-2 py-1.5 text-sm tabular-nums sm:w-[8rem]"
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1">
@@ -3787,7 +3810,7 @@ export default function ReportsPage() {
                                     value={fingerlingMaxCost}
                                     onChange={(e) => setFingerlingMaxCost(e.target.value)}
                                     placeholder="Any"
-                                    className="erp-field w-[8rem] rounded-md px-2 py-1.5 text-sm tabular-nums"
+                                    className="erp-field w-full rounded-md px-2 py-1.5 text-sm tabular-nums sm:w-[8rem]"
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1">
@@ -3800,7 +3823,7 @@ export default function ReportsPage() {
                                     onChange={(e) =>
                                       setFingerlingBalance(e.target.value as 'all' | 'balanced' | 'unbalanced')
                                     }
-                                    className="erp-field min-w-[10rem] rounded-md px-2 py-1.5 text-sm"
+                                    className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[10rem]"
                                   >
                                     <option value="all">All transfers</option>
                                     <option value="balanced">Balanced only</option>
@@ -3827,7 +3850,7 @@ export default function ReportsPage() {
                         (!selectedReport || !SUMMARY_EXCLUDED_REPORTS.includes(selectedReport)) ? (
                         <div>
                           <h3 className="text-lg font-semibold text-foreground mb-3">Summary</h3>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
                             {Object.entries(reportData.summary as Record<string, unknown>).map(([key, value], idx) => {
                               const summaryEntryKey = `${idx}-${key}`
                               const colorClasses = [
@@ -3950,12 +3973,13 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-[600px]">
-                    <div className="text-center">
+                  <div className="flex min-h-[min(50vh,24rem)] items-center justify-center py-12 sm:min-h-[400px] lg:min-h-[600px]">
+                    <div className="text-center px-4">
                       <FileText className="h-16 w-16 text-muted-foreground/40 mx-auto mb-4" />
                       <p className="text-muted-foreground text-lg">Select a report to view</p>
                       <p className="text-muted-foreground/70 text-sm mt-2">
-                        Choose from the report cards on the left
+                        <span className="lg:hidden">Choose a report from the dropdown above</span>
+                        <span className="hidden lg:inline">Choose from the report cards on the left</span>
                       </p>
                     </div>
                   </div>
@@ -3965,7 +3989,7 @@ export default function ReportsPage() {
           </div>
         </AquaculturePageShell>
       </div>
-    </div>
+    </PageLayout>
     </ReportDrillProvider>
   )
 }
@@ -4016,7 +4040,7 @@ function renderItemScopeFilterPanel(
         {options?.panelTitle || 'Scope: category and products (optional)'}
       </p>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="min-w-[200px] flex-1">
+        <div className="min-w-0 w-full flex-1 sm:min-w-[200px]">
           <label className="mb-1 block text-xs font-medium uppercase text-muted-foreground">Category</label>
           <select
             className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
@@ -4539,7 +4563,7 @@ function renderReportTable(
         {summary && Object.keys(summary).length > 0 && (
           <div>
             <h4 className="font-semibold text-foreground mb-3">Summary</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
               <div className="bg-gradient-to-br from-muted/40 to-muted border border-border rounded-lg p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
@@ -8374,7 +8398,7 @@ function renderReportTable(
         {summary && Object.keys(summary).length > 0 && (
           <div>
             <h4 className="font-semibold text-foreground mb-3">Period summary</h4>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
               <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Readings</p>
                 <p className="text-2xl font-bold text-foreground mt-1">{summary.readings_count ?? 0}</p>
@@ -8604,7 +8628,7 @@ function renderReportTable(
         {summary && Object.keys(summary).length > 0 && (
           <div>
             <h4 className="font-semibold text-foreground mb-3">Summary</h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
               <div className="bg-gradient-to-br from-muted/40 to-muted border border-border rounded-lg p-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>

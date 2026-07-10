@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { PlatformLayout } from '@/components/PlatformLayout'
 import clsx from 'clsx'
 
 interface Plan {
@@ -265,8 +264,8 @@ export default function PlatformPlansPage() {
   const subCountForArchive = archiving ? countsByPlan.get(archiving.id)?.total ?? 0 : 0
 
   return (
-    <PlatformLayout>
-      <div className="min-h-screen bg-gradient-to-b from-muted/40 via-white to-violet-50/40">
+    <>
+          <div className="app-scroll-pad min-h-0 bg-gradient-to-b from-muted/40 via-white to-violet-50/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-14">
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8 mb-12">
             <div className="max-w-2xl">
@@ -762,6 +761,6 @@ export default function PlatformPlansPage() {
           </div>
         </div>
       )}
-    </PlatformLayout>
+    </>
   )
 }

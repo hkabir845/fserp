@@ -101,7 +101,7 @@ export default function GoodsReceiptListPage() {
         )}
 
         <div className="bg-white rounded-xl border border-border shadow-sm">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground">Purchasing</div>

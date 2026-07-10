@@ -214,7 +214,7 @@ export default function QualityLabPage() {
   return (
           <div className="min-h-screen bg-gradient-to-b from-muted/40 to-card">
         <div className="border-b border-border/80 bg-white/90 backdrop-blur">
-          <div className="mx-auto max-w-6xl px-4 py-8">
+          <div className="mx-auto w-full min-w-0 max-w-6xl">
             <ReportingHubBreadcrumb current="Lab & QC" className="mb-4" />
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -252,7 +252,7 @@ export default function QualityLabPage() {
           </div>
         </div>
 
-        <div className="mx-auto max-w-6xl space-y-8 px-4 py-8">
+        <div className="mx-auto w-full min-w-0 max-w-6xl space-y-8">
           {error ? (
             <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning-foreground">
               Select a tenant in the company switcher to use the quality lab.

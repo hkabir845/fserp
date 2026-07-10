@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PlatformLayout } from '@/components/PlatformLayout'
 import { formatDateOnly } from '@/utils/date'
 import { getPlatformUser } from '@/lib/platform-auth'
 
@@ -103,9 +102,8 @@ export default function PlatformDashboard() {
   if (!isMounted) return null
 
   return (
-    <PlatformLayout>
-      <div className="py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="app-scroll-pad py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Master Company Card */}
           <div className="bg-gradient-to-r from-purple-600 to-purple-800 rounded-lg shadow-lg p-6 mb-8 text-white">
             <div className="flex items-center justify-between">
@@ -303,7 +301,6 @@ export default function PlatformDashboard() {
           </div>
         </div>
       </div>
-    </PlatformLayout>
   )
 }
 

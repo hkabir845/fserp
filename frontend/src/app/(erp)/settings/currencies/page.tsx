@@ -47,7 +47,7 @@ export default function SettingsCurrenciesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-lg bg-white shadow">
+      <div className="overflow-x-auto rounded-lg bg-white shadow">
         <div className="border-b border-border px-6 py-4">
           <h2 className="text-lg font-semibold text-foreground">Available Currencies</h2>
           <p className="mt-1 text-sm text-muted-foreground">

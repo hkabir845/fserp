@@ -134,14 +134,14 @@ export default function SalesReceiptsPage() {
   const error = (receiptsQuery.error as any)?.message || (customersQuery.error as any)?.message || (invoicesQuery.error as any)?.message
 
   return (
-    <div className="p-6">
+    <div>
       <ReportingHubBreadcrumb current="Sales receipts" className="mb-4" />
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Sales Receipts</h1>
           <p className="mt-1 text-sm text-muted-foreground">Record customer payments and post them to accounting (Cash/Bank → Accounts Receivable).</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/sales/invoices"
             className="inline-flex items-center rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
@@ -220,7 +220,7 @@ export default function SalesReceiptsPage() {
         </div>
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-border bg-white">
+      <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-white">
         {loading ? (
           <div className="p-6 text-sm text-muted-foreground">Loading receipts…</div>
         ) : error ? (

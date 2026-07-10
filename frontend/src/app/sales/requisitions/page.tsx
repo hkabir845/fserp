@@ -54,7 +54,7 @@ export default function SalesRequisitionsPage() {
   }, [rows])
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
+    <div className="mx-auto w-full min-w-0 max-w-6xl">
       <ReportingHubBreadcrumb current="Sales requisitions" className="mb-4" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -109,7 +109,7 @@ export default function SalesRequisitionsPage() {
         )}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+      <div className="mt-6 erp-table-panel">
         <table className="min-w-full divide-y divide-border text-sm">
           <thead className="bg-muted/40">
             <tr>

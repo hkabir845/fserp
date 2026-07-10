@@ -366,7 +366,7 @@ export default function PaymentReceivedPage() {
         }
       >
           {policyBanner && (
-            <div className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900">
               <div className="flex gap-2">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
                 <div>

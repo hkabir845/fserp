@@ -37,16 +37,16 @@ export function MasterCompanyBanner() {
 
   return (
     <div className={`bg-gradient-to-r ${bgColor} text-white px-4 py-3 shadow-lg border-b-2 ${borderColor}`}>
-      <div className="flex items-center justify-center space-x-3">
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center">
         {icon === Lock ? (
-          <Lock className="h-5 w-5 animate-pulse" />
+          <Lock className="h-5 w-5 shrink-0 animate-pulse" />
         ) : icon === TestTube ? (
-          <TestTube className="h-5 w-5 animate-pulse" />
+          <TestTube className="h-5 w-5 shrink-0 animate-pulse" />
         ) : (
-          <Crown className="h-5 w-5 text-yellow-300 animate-pulse" />
+          <Crown className="h-5 w-5 shrink-0 text-yellow-300 animate-pulse" />
         )}
-        <div className="flex items-center space-x-2">
-          <Building2 className="h-4 w-4" />
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <Building2 className="h-4 w-4 shrink-0" />
           <span className="font-bold text-sm md:text-base">
             {isLocked 
               ? 'MASTER COMPANY LOCKED - All Modifications Blocked'
@@ -57,14 +57,14 @@ export function MasterCompanyBanner() {
           </span>
         </div>
         {icon === Lock ? (
-          <Lock className="h-5 w-5 animate-pulse" />
+          <Lock className="h-5 w-5 shrink-0 animate-pulse" />
         ) : icon === TestTube ? (
-          <TestTube className="h-5 w-5 animate-pulse" />
+          <TestTube className="h-5 w-5 shrink-0 animate-pulse" />
         ) : (
-          <Crown className="h-5 w-5 text-yellow-300 animate-pulse" />
+          <Crown className="h-5 w-5 shrink-0 text-yellow-300 animate-pulse" />
         )}
       </div>
-      <div className="text-center mt-1 text-xs md:text-sm opacity-90">
+      <div className="mt-1 px-1 text-center text-xs md:text-sm opacity-90">
         {isLocked 
           ? '🔒 Master company is LOCKED. All modifications are blocked. Please unlock to make changes.'
           : isTesting
@@ -89,8 +89,8 @@ export function TenantCompanyBanner() {
 
   return (
     <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-4 py-2 shadow-md border-b border-blue-800">
-      <div className="flex items-center justify-center space-x-2">
-        <Building2 className="h-4 w-4" />
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 text-center">
+        <Building2 className="h-4 w-4 shrink-0" />
         <span className="font-semibold text-sm md:text-base">
           {selectedCompany.name} - Production Mode
         </span>

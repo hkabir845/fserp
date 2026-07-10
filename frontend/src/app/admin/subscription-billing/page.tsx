@@ -5,7 +5,6 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
@@ -718,23 +717,18 @@ function SubscriptionBillingContent() {
 
   if (!mode || mode !== 'saas_dashboard') {
     return (
-      <div className="flex h-screen bg-muted page-with-sidebar">
-        <Sidebar />
-        <div className="flex min-h-0 flex-1 overflow-y-auto p-4 sm:p-8">
+      <div className="app-scroll-pad">
           <div className="w-full max-w-lg mx-auto rounded-xl bg-white app-modal-pad shadow text-center">
             <CreditCard className="h-12 w-12 text-muted-foreground/70 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">Subscription &amp; Billing</h2>
             <p className="text-muted-foreground mb-4">Switch to SaaS Dashboard mode in the sidebar to manage tenant billing.</p>
           </div>
-        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-muted page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted">
         <header className="shrink-0 border-b border-border/80 bg-white">
           <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-[hsl(var(--hero-from))] px-4 py-5 sm:px-8 text-white">
             <div className="flex flex-wrap items-start justify-between gap-4 max-w-7xl mx-auto">
@@ -1502,7 +1496,6 @@ function SubscriptionBillingContent() {
             </div>
           </div>
         </div>
-      </div>
 
       {planEditOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">

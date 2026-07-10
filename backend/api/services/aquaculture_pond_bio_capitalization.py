@@ -143,6 +143,7 @@ def post_pond_expense_reclass_to_1581(
     """
     if amount_needed <= 0:
         return Decimal("0")
+    amount_needed = Decimal(str(amount_needed))
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
         existing = (
             JournalEntryLine.objects.filter(
@@ -165,7 +166,7 @@ def post_pond_expense_reclass_to_1581(
 
     balances = pond_production_expense_balances(company_id, pond_id, entry_date)
     available = sum((Decimal(str(amt)) for _, amt, _ in balances), Decimal("0"))
-    target = _money_q(min(amount_needed, available))
+    target = _money_q(min(amount_needed, Decimal(str(available))))
     if target <= 0:
         return Decimal("0")
 

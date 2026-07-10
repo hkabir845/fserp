@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import { Megaphone, Plus, Trash2, X, Eye, Edit2, CheckCircle, XCircle } from 'lucide-react'
 import { useToast } from '@/components/Toast'
@@ -277,14 +276,11 @@ function BroadcastingPageContent() {
 
   if (loading) {
     return (
-      <div className="page-with-sidebar flex h-screen">
-        <Sidebar />
-        <div className="flex-1 flex items-center justify-center">
+      <div className="flex min-h-[40vh] items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-muted-foreground">Loading broadcasts...</p>
           </div>
-        </div>
       </div>
     )
   }
@@ -307,10 +303,7 @@ function BroadcastingPageContent() {
   }
 
   return (
-    <div className="page-with-sidebar flex h-screen bg-muted/40">
-      <Sidebar />
-      <div className="flex-1 overflow-y-auto">
-        <div className="app-scroll-pad">
+    <div className="app-scroll-pad bg-muted/40">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-foreground flex items-center space-x-2">
               <Megaphone className="h-6 w-6 text-primary" />
@@ -465,8 +458,6 @@ function BroadcastingPageContent() {
               </div>
             )}
           </div>
-        </div>
-      </div>
 
       {/* Broadcast Modal */}
       {showBroadcastModal && (

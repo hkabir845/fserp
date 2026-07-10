@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import {
   Users,
@@ -389,21 +388,15 @@ function UsersPageContent() {
 
   if (mode !== 'saas_dashboard') {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-y-auto app-scroll-pad">
+      <div className="app-scroll-pad">
           <div className="bg-white rounded-lg shadow app-modal-pad text-center">
             <p className="text-muted-foreground">Please switch to SaaS Dashboard mode to manage users.</p>
           </div>
-        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-y-auto">
         <div className="app-scroll-pad">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -901,8 +894,6 @@ function UsersPageContent() {
             </div>
           )}
         </div>
-      </div>
-    </div>
   )
 }
 

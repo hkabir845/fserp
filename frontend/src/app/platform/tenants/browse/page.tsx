@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
-import { PlatformLayout } from '@/components/PlatformLayout'
 import { getPlatformUser } from '@/lib/platform-auth'
 import { formatDateOnly } from '@/utils/date'
 
@@ -92,8 +91,7 @@ export default function PlatformTenantsBrowsePage() {
   }
 
   return (
-    <PlatformLayout>
-      <div className="py-8">
+          <div className="py-8">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -270,6 +268,5 @@ export default function PlatformTenantsBrowsePage() {
           )}
         </div>
       </div>
-    </PlatformLayout>
   )
 }

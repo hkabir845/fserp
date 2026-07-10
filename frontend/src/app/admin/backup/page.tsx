@@ -6,7 +6,6 @@
  */
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import PageLayout from '@/components/PageLayout'
 import BackupRestorePanel, { type BackupCompanyOption } from '@/components/backup/BackupRestorePanel'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
@@ -87,7 +86,6 @@ function SaasBackupRestoreContent() {
   }
 
   return (
-    <PageLayout>
       <div className="mx-auto max-w-3xl app-scroll-pad">
         <div className="mb-8 flex items-start gap-3">
           <div className="rounded-lg bg-accent p-3">
@@ -112,7 +110,6 @@ function SaasBackupRestoreContent() {
           onTargetCompanyChange={setTargetCompanyId}
         />
       </div>
-    </PageLayout>
   )
 }
 

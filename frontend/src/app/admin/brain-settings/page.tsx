@@ -5,7 +5,6 @@
  */
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import PageLayout from '@/components/PageLayout'
 import { CompanyProvider } from '@/contexts/CompanyContext'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
 import { useToast } from '@/components/Toast'
@@ -148,7 +147,6 @@ function SaasBrainSettingsContent() {
   }
 
   return (
-    <PageLayout>
       <div className="mx-auto max-w-2xl app-scroll-pad">
         <div className="mb-8 flex items-start gap-3">
           <div className="rounded-lg bg-indigo-100 p-3">
@@ -345,7 +343,6 @@ function SaasBrainSettingsContent() {
           <BrainOwnerAppCard language="en" />
         </div>
       </div>
-    </PageLayout>
   )
 }
 

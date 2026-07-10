@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
-import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
+import PageLayout from '@/components/PageLayout'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import api, { fetchCurrentCompany } from '@/lib/api'
@@ -27,6 +26,14 @@ function readSessionRoleAndPermissions(): {
   } catch {
     return { role: null, permissions: null }
   }
+}
+
+function AquacultureGate({ children }: { children: React.ReactNode }) {
+  return (
+    <main id="aquaculture-workspace" className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none" role="main">
+      {children}
+    </main>
+  )
 }
 
 export default function AquacultureLayout({ children }: { children: React.ReactNode }) {
@@ -76,7 +83,7 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/40">
+      <div className="flex min-h-dvh items-center justify-center bg-muted/40">
         <div className="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-primary" />
       </div>
     )
@@ -84,79 +91,62 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
 
   if (!enabled) {
     return (
-      <div className="page-with-sidebar flex min-h-screen bg-muted/40">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <MasterCompanyBanner />
-          <TenantCompanyBanner />
-          <main className="flex-1 p-6 sm:p-10" role="main">
-            <div className="mx-auto max-w-lg rounded-xl border border-warning/30/80 bg-warning/10/90 p-6 text-warning-foreground shadow-sm">
-              <h1 className="text-lg font-semibold tracking-tight text-warning-foreground">
-                {aquacultureT('aqNotActiveTitle', lang)}
-              </h1>
-              <p className="mt-2 text-sm leading-relaxed text-warning-foreground/95">
-                {aquacultureT('aqNotActiveBody', lang)}
-              </p>
-              <Link
-                href="/company"
-                className="mt-4 inline-block text-sm font-medium text-primary underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
-              >
-                {aquacultureT('companySettings', lang)}
-              </Link>
-            </div>
-          </main>
+      <PageLayout className="bg-muted/40">
+        <div className="app-scroll-pad p-6 sm:p-10">
+          <div className="mx-auto max-w-lg rounded-xl border border-warning/30/80 bg-warning/10/90 p-6 text-warning-foreground shadow-sm">
+            <h1 className="text-lg font-semibold tracking-tight text-warning-foreground">
+              {aquacultureT('aqNotActiveTitle', lang)}
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-warning-foreground/95">
+              {aquacultureT('aqNotActiveBody', lang)}
+            </p>
+            <Link
+              href="/company"
+              className="mt-4 inline-block text-sm font-medium text-primary underline decoration-teal-600/40 underline-offset-2 hover:decoration-teal-900"
+            >
+              {aquacultureT('companySettings', lang)}
+            </Link>
+          </div>
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   if (!navUnlocked) {
     return (
-      <div className="page-with-sidebar flex min-h-screen bg-muted/40">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <MasterCompanyBanner />
-          <TenantCompanyBanner />
-          <main className="flex-1 p-6 sm:p-10" role="main">
-            <div className="mx-auto max-w-lg rounded-xl border border-border bg-white p-6 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-muted p-2 text-foreground/85" aria-hidden>
-                  <ShieldAlert className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg font-semibold tracking-tight text-foreground">
-                    {aquacultureT('accessRestricted', lang)}
-                  </h1>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    {aquacultureT('aqAccessRestrictedBody', lang)}
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-3 text-sm font-medium">
-                    <Link href="/users" className="text-primary underline decoration-teal-600/40 underline-offset-2">
-                      {aquacultureT('users', lang)}
-                    </Link>
-                    <Link href="/apps" className="text-foreground/85 underline decoration-slate-400 underline-offset-2">
-                      {aquacultureT('apps', lang)}
-                    </Link>
-                  </div>
+      <PageLayout className="bg-muted/40">
+        <div className="app-scroll-pad p-6 sm:p-10">
+          <div className="mx-auto max-w-lg rounded-xl border border-border bg-white p-6 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-muted p-2 text-foreground/85" aria-hidden>
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg font-semibold tracking-tight text-foreground">
+                  {aquacultureT('accessRestricted', lang)}
+                </h1>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {aquacultureT('aqAccessRestrictedBody', lang)}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-3 text-sm font-medium">
+                  <Link href="/users" className="text-primary underline decoration-teal-600/40 underline-offset-2">
+                    {aquacultureT('users', lang)}
+                  </Link>
+                  <Link href="/apps" className="text-foreground/85 underline decoration-slate-400 underline-offset-2">
+                    {aquacultureT('apps', lang)}
+                  </Link>
                 </div>
               </div>
             </div>
-          </main>
+          </div>
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="page-with-sidebar flex h-dvh max-h-dvh min-h-0 w-full min-w-0 max-w-full flex-row bg-muted/40">
-      <Sidebar />
-      <div className="erp-main-column flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <MasterCompanyBanner />
-        <TenantCompanyBanner />
-        <main id="aquaculture-workspace" className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none" role="main">
-          {children}
-        </main>
-      </div>
-    </div>
+    <PageLayout className="bg-muted/40" containScroll>
+      <AquacultureGate>{children}</AquacultureGate>
+    </PageLayout>
   )
 }

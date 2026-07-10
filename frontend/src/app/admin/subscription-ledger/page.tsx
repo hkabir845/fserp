@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import SubscriptionLedger from '@/components/SubscriptionLedger'
 import { useToast } from '@/components/Toast'
@@ -50,10 +49,7 @@ function SubscriptionLedgerPageContent() {
   }, [mode, router])
 
   return (
-    <div className="page-with-sidebar flex h-screen bg-muted/40">
-      <Sidebar />
-      <div className="flex-1 overflow-y-auto">
-        <div className="app-scroll-pad">
+    <div className="app-scroll-pad bg-muted/40">
           {/* Header Section - Removed duplicate header since SubscriptionLedger component has its own */}
 
           {/* Info Banner - How SaaS Subscription Billing Works */}
@@ -119,18 +115,13 @@ function SubscriptionLedgerPageContent() {
           <div className="bg-white rounded-lg shadow p-6">
             <SubscriptionLedger initialCompanyId={initialCompanyId} />
           </div>
-        </div>
-      </div>
     </div>
   )
 }
 
 function SubscriptionLedgerPageFallback() {
   return (
-    <div className="flex h-screen bg-muted/40 page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Loading…</div>
-    </div>
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
   )
 }
 

@@ -21,14 +21,14 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         </div>
 
         <div className="mb-6 border-b border-border">
-          <nav className="-mb-px flex space-x-8" aria-label="Settings sections">
+          <nav className="-mb-px flex gap-6 overflow-x-auto pb-px" aria-label="Settings sections">
             {TABS.map((tab) => {
               const active = pathname === tab.href || pathname?.startsWith(`${tab.href}/`)
               return (
                 <Link
                   key={tab.href}
                   href={tab.href}
-                  className={`border-b-2 py-4 px-1 text-sm font-medium transition-colors ${
+                  className={`shrink-0 border-b-2 py-4 px-1 text-sm font-medium transition-colors ${
                     active
                       ? 'border-indigo-500 text-primary'
                       : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground/85'

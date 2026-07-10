@@ -4,7 +4,6 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import Link from 'next/link'
 import { Building2, Plus, Edit2, Trash2, Eye, FileText, AlertCircle, X, Grid3x3, List, RotateCw, ChevronRight, Printer } from 'lucide-react'
@@ -518,22 +517,16 @@ function ContractsPageContent() {
 
   if (mode !== 'saas_dashboard') {
     return (
-      <div className="flex h-screen page-with-sidebar">
-        <Sidebar />
-        <div className="flex-1 overflow-y-auto app-scroll-pad">
+      <div className="app-scroll-pad">
           <div className="bg-white rounded-lg shadow app-modal-pad text-center">
             <p className="text-muted-foreground">Please switch to SaaS Dashboard mode to manage contracts.</p>
           </div>
-        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex-1 overflow-y-auto">
-        <div className="app-scroll-pad">
+      <div className="app-scroll-pad">
           {/* Breadcrumb */}
           <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
             <Link href="/admin" className="hover:text-foreground/85 transition-colors">Admin</Link>
@@ -1301,8 +1294,6 @@ function ContractsPageContent() {
             </div>
           )}
         </div>
-      </div>
-    </div>
   )
 }
 

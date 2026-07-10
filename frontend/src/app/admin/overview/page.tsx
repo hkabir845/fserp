@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import PageLayout from '@/components/PageLayout'
 import { ErpPageShell } from '@/components/aquaculture/ErpPageShell'
 import { CompanyProvider, useCompany } from '@/contexts/CompanyContext'
 import Link from 'next/link'
@@ -108,7 +107,6 @@ function OverviewPageContent() {
 
   if (!mode || mode !== 'saas_dashboard') {
     return (
-      <PageLayout>
         <div className="app-scroll-pad">
           <div className="erp-empty-state w-full">
             <Building2 className="mx-auto mb-4 h-12 w-12 text-muted-foreground/60" />
@@ -117,12 +115,10 @@ function OverviewPageContent() {
             <p className="text-sm text-muted-foreground/80">Use the mode switcher in the sidebar to switch to SaaS Dashboard mode.</p>
           </div>
         </div>
-      </PageLayout>
     )
   }
 
   return (
-    <PageLayout>
       <div className="app-scroll-pad">
         <ErpPageShell
           flush
@@ -276,7 +272,6 @@ function OverviewPageContent() {
           )}
         </ErpPageShell>
       </div>
-    </PageLayout>
   )
 }
 

@@ -236,7 +236,7 @@ export default function JournalEntriesPage() {
 
       <div className="space-y-6">
         {data.map((je) => (
-          <div key={je.id} className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+          <div key={je.id} className="erp-table-panel">
             <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/70 bg-muted/40 px-4 py-3">
               <div>
                 <span className="font-mono text-sm font-semibold text-primary">{je.entry_number}</span>

@@ -133,7 +133,7 @@ export default function PurchaseOrdersPage() {
         )}
 
         <div className="bg-white rounded-xl border border-border shadow-sm">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground">Purchasing</div>
@@ -142,7 +142,7 @@ export default function PurchaseOrdersPage() {
                   Create POs, receive goods into inventory (GRN), then raise vendor bills for accounting.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={() => refetch()}
@@ -181,7 +181,7 @@ export default function PurchaseOrdersPage() {
         </div>
 
         <div className="bg-white rounded-xl border border-border shadow-sm">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold text-foreground">Filters</div>
@@ -246,7 +246,7 @@ export default function PurchaseOrdersPage() {
           {isLoading ? (
             <div className="p-10 text-center text-sm text-muted-foreground">Loading purchase orders…</div>
           ) : isError ? (
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4">
                 <div className="text-sm font-semibold text-destructive">Couldn’t load purchase orders</div>
                 <div className="mt-1 text-sm text-destructive">{(error as any)?.message || 'Unexpected error'}</div>

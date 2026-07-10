@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDateOnly, formatDateTime } from '@/utils/date'
-import { PlatformLayout } from '@/components/PlatformLayout'
 
 type BillingCycle = 'monthly' | 'yearly'
 
@@ -133,8 +132,7 @@ export default function PlatformSubscriptionsPage() {
   }, [error])
 
   return (
-    <PlatformLayout>
-      <div className="py-8">
+          <div className="py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mb-8 flex items-start justify-between gap-4">
             <div>
@@ -403,7 +401,6 @@ export default function PlatformSubscriptionsPage() {
           )}
         </div>
       </div>
-    </PlatformLayout>
   )
 }
 

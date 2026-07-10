@@ -48,7 +48,8 @@ function Section({
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-      <table className="mt-2 min-w-full divide-y divide-border text-sm">
+      <div className="mt-2 overflow-x-auto">
+      <table className="min-w-full divide-y divide-border text-sm">
         <tbody className="divide-y divide-border/70">
           {rows.map((row) => (
             <tr key={row.account_code}>
@@ -67,6 +68,7 @@ function Section({
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   )
 }

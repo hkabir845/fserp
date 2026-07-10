@@ -3,7 +3,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDateTime } from '@/utils/date'
-import { PlatformLayout } from '@/components/PlatformLayout'
 
 type SubscriptionInvoice = {
   id: number
@@ -38,8 +37,7 @@ export default function PlatformPaymentsPage() {
   const err = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? (error as Error)?.message
 
   return (
-    <PlatformLayout>
-    <div className="mx-auto max-w-6xl space-y-6">
+        <div className="mx-auto max-w-6xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Payments</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -90,6 +88,5 @@ export default function PlatformPaymentsPage() {
         </div>
       )}
     </div>
-    </PlatformLayout>
   )
 }

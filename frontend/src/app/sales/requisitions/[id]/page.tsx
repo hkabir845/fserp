@@ -103,7 +103,7 @@ export default function SalesRequisitionDetailPage() {
     (convertMut.error as any)?.response?.data?.detail
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto w-full min-w-0 max-w-3xl">
       <Link href="/sales/requisitions" className="text-sm font-medium text-primary hover:text-primary">
         ← All sales requisitions
       </Link>

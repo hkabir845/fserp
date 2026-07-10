@@ -133,7 +133,7 @@ export default function PreFormulationDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div>
         <div className="text-center text-muted-foreground">Loading...</div>
       </div>
     )
@@ -141,7 +141,7 @@ export default function PreFormulationDetailPage() {
 
   if (!preform) {
     return (
-      <div className="p-6">
+      <div>
         <div className="text-center text-red-500">Pre-formulation not found</div>
       </div>
     )
@@ -153,7 +153,7 @@ export default function PreFormulationDetailPage() {
     .reduce((sum, line) => sum + line.inclusion_value, 0)
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-6">
         <button
           onClick={() => router.back()}
@@ -171,7 +171,7 @@ export default function PreFormulationDetailPage() {
           {/* Header Card */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-foreground mb-4">Template Details</h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Category</label>
                 <p className="text-foreground">{preform.category}</p>

@@ -166,7 +166,7 @@ export default function CrmLeadsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
+        <div className="erp-table-panel">
           {isLoading ? (
             <div className="p-6 text-sm text-muted-foreground">Loading…</div>
           ) : (

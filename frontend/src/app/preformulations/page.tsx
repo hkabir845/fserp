@@ -79,7 +79,7 @@ export default function PreFormulationsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground mb-2">Pre-Formulation Library</h1>
         <p className="text-muted-foreground">World Standard Pre-Formulation Templates</p>
@@ -223,7 +223,7 @@ export default function PreFormulationsPage() {
       </div>
 
       {/* Results Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow overflow-hidden erp-table-panel">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-border">
             <thead className="bg-muted/40">

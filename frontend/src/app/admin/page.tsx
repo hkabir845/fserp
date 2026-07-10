@@ -4,7 +4,6 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/Sidebar'
 import CompanySwitcher from '@/components/CompanySwitcher'
 import ContractManagement from '@/components/ContractManagement'
 import SubscriptionLedger from '@/components/SubscriptionLedger'
@@ -36,7 +35,6 @@ import {
   PlayCircle,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
-import { MasterCompanyBanner, TenantCompanyBanner } from '@/components/MasterCompanyBanner'
 import api from '@/lib/api'
 import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { formatCurrency, formatNumber } from '@/utils/currency'
@@ -890,15 +888,7 @@ function SuperAdminPageContent() {
   }
 
   return (
-    <div className="flex h-screen page-with-sidebar">
-      <Sidebar />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Master/Tenant Company Banner */}
-        <MasterCompanyBanner />
-        <TenantCompanyBanner />
-        
-        <div className="flex min-h-0 flex-1 overflow-auto">
-          <div className="p-4 sm:p-6 lg:p-8">
+    <>
           {/* Info Banner - Mode is controlled from Sidebar */}
           {mode === 'fsms_erp' && (
             <div className="mb-6 rounded-lg border border-primary/25 bg-blue-50 p-4">
@@ -1514,7 +1504,7 @@ function SuperAdminPageContent() {
               {/* Broadcasting Tab */}
               {activeTab === 'broadcasting' && (
                 <div>
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
                     <h2 className="text-xl font-bold text-foreground flex items-center space-x-2">
                       <Megaphone className="h-6 w-6 text-primary" />
                       <span>Broadcasting</span>
@@ -1641,7 +1631,7 @@ function SuperAdminPageContent() {
               {/* Users Tab */}
               {activeTab === 'users' && (
             <div>
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
                 <h2 className="text-xl font-bold text-foreground">All Users</h2>
                 <button
                   onClick={handleCreateUser}
@@ -2893,8 +2883,6 @@ function SuperAdminPageContent() {
               </div>
             </div>
           )}
-        </div>
-      </div>
       
       {showPushUpdateDialog && (
         <div className="erp-modal-backdrop">
@@ -3053,8 +3041,7 @@ function SuperAdminPageContent() {
           </div>
         </div>
       )}
-      </div>
-    </div>
+    </>
   )
 }
 

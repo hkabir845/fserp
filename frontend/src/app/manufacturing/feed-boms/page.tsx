@@ -141,7 +141,7 @@ export default function FeedBomsPage() {
         <ReportingHubBreadcrumb current="Feed BOMs" />
         {/* Header */}
         <div className="bg-white rounded-xl border border-border">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground">Manufacturing</div>
@@ -152,7 +152,7 @@ export default function FeedBomsPage() {
                   Manage feed formulations, versions, and costing. Approved BOMs can be used for production orders.
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   onClick={() => refetch()}
@@ -174,8 +174,8 @@ export default function FeedBomsPage() {
 
         {/* Filters */}
         <div className="bg-white rounded-xl border border-border">
-          <div className="p-6">
-            <div className="flex items-center justify-between gap-4">
+          <div className="p-4 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-foreground">Filters</div>
                 <div className="text-xs text-muted-foreground mt-1">
@@ -225,7 +225,7 @@ export default function FeedBomsPage() {
         {/* Content */}
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           {isError ? (
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-4">
                 <div className="text-sm font-semibold text-destructive">Couldn’t load Feed BOMs</div>
                 <div className="mt-1 text-sm text-destructive">

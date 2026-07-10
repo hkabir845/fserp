@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { api } from '@/lib/api'
-import { PlatformLayout } from '@/components/PlatformLayout'
 import { getPlatformUser } from '@/lib/platform-auth'
 
 interface SubscriptionPlan {
@@ -149,8 +148,7 @@ export default function PlatformNewTenantPage() {
 
   if (created) {
     return (
-      <PlatformLayout>
-        <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-muted/40 to-card py-10">
+              <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-muted/40 to-card py-10">
           <div className="mx-auto max-w-2xl px-4 sm:px-6">
             <div className="overflow-hidden rounded-2xl border border-emerald-200/80 bg-white shadow-lg shadow-emerald-900/5 ring-1 ring-slate-900/5">
               <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-600 to-teal-600 px-8 py-10 text-white">
@@ -220,7 +218,6 @@ export default function PlatformNewTenantPage() {
             </div>
           </div>
         </div>
-      </PlatformLayout>
     )
   }
 
@@ -229,8 +226,7 @@ export default function PlatformNewTenantPage() {
     (createMutation.error as Error)?.message
 
   return (
-    <PlatformLayout>
-      <div className="min-h-screen bg-gradient-to-b from-muted/40 via-white to-slate-50/80">
+          <div className="min-h-screen bg-gradient-to-b from-muted/40 via-white to-slate-50/80">
         <div className="border-b border-border/80 bg-white/90 backdrop-blur">
           <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
             <nav className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -735,6 +731,5 @@ export default function PlatformNewTenantPage() {
           </div>
         </div>
       </div>
-    </PlatformLayout>
   )
 }

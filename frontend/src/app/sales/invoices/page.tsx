@@ -52,14 +52,14 @@ export default function SalesInvoicesPage() {
   const total = useMemo(() => rows.reduce((s, r) => s + (Number(r.total_amount) || 0), 0), [rows])
 
   return (
-    <div className="p-6">
+    <div>
       <ReportingHubBreadcrumb current="Sales invoices" className="mb-4" />
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Sales Invoices</h1>
           <p className="mt-1 text-sm text-muted-foreground">View posted invoices. Demo seed data is on the Master tenant (domain master).</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/sales/receipts"
             className="inline-flex items-center rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold text-foreground/85 hover:bg-muted/40"
@@ -98,7 +98,7 @@ export default function SalesInvoicesPage() {
         />
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-border bg-white">
+      <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-white">
         {invoicesQuery.isLoading ? (
           <div className="p-6 text-sm text-muted-foreground">Loading invoices…</div>
         ) : invoicesQuery.isError ? (

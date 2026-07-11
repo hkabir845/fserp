@@ -356,6 +356,21 @@ def lookup_transfer_cost_per_kg(
     return per_kg, note
 
 
+def _latest_nursing_expense_date(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    cycle_filter_id: int | None,
+) -> date | None:
+    """Latest direct nursing expense date (so post-transfer feed/medicine still enter the cost pool)."""
+    from api.models import AquacultureExpense
+
+    q = AquacultureExpense.objects.filter(company_id=company_id, pond_id=from_pond_id)
+    if cycle_filter_id is not None:
+        q = q.filter(production_cycle_id=cycle_filter_id)
+    return q.order_by("-expense_date").values_list("expense_date", flat=True).first()
+
+
 def _nursing_cost_as_of_date(
     *,
     company_id: int,
@@ -364,7 +379,13 @@ def _nursing_cost_as_of_date(
     transfer_date: date,
     exclude_transfer_id: int | None = None,
 ) -> date:
-    """Use the latest transfer date in the batch so fry + later feed/medicine costs are included."""
+    """
+    Cost pool end date for a nursing batch.
+
+    Uses the later of: this transfer date, the latest transfer in the batch, and the latest
+    direct nursing expense — so feed/medicine posted after the last fingerling movement still
+    re-spreads onto transfer lines on resync.
+    """
     from api.models import AquacultureFishPondTransfer
 
     q = AquacultureFishPondTransfer.objects.filter(
@@ -377,10 +398,18 @@ def _nursing_cost_as_of_date(
         q = q.filter(from_production_cycle_id__isnull=True)
     if exclude_transfer_id is not None:
         q = q.exclude(pk=exclude_transfer_id)
-    latest = q.order_by("-transfer_date").values_list("transfer_date", flat=True).first()
-    if latest and latest > transfer_date:
-        return latest
-    return transfer_date
+    latest_xfer = q.order_by("-transfer_date").values_list("transfer_date", flat=True).first()
+    latest_exp = _latest_nursing_expense_date(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+    )
+    as_of = transfer_date
+    if latest_xfer and latest_xfer > as_of:
+        as_of = latest_xfer
+    if latest_exp and latest_exp > as_of:
+        as_of = latest_exp
+    return as_of
 
 
 def _nursing_fry_pool_for_pond_batch(
@@ -603,6 +632,31 @@ def _latest_sample_fish_count(
     return _pick_count(base)
 
 
+def _implied_net_fish_count_only(
+    *,
+    company_id: int,
+    pond_id: int,
+    cycle_filter_id: int | None,
+) -> int:
+    """Transactional implied live heads only — never a biomass-sample fallback."""
+    def _net_for_scope(scope_cycle_id: int | None) -> int:
+        pos_rows = compute_fish_stock_position_rows(
+            company_id,
+            pond_id=pond_id,
+            production_cycle_id=scope_cycle_id,
+        )
+        if not pos_rows:
+            return 0
+        return max(0, int(pos_rows[0].get("implied_net_fish_count") or 0))
+
+    live = _net_for_scope(cycle_filter_id)
+    if live > 0:
+        return live
+    if cycle_filter_id is not None:
+        return _net_for_scope(None)
+    return 0
+
+
 def _nursing_fingerling_allocation_denominator(
     *,
     company_id: int,
@@ -620,6 +674,10 @@ def _nursing_fingerling_allocation_denominator(
     biomass / vendor-bill stocking estimate when the ledger is stale). The fish count
     on the transfer line being priced is never part of this pool — it only multiplies
     cost/head in the numerator.
+
+    After transfers have started, the pool is prior_out + ledger net only. A stale
+    biomass sample must not inflate the denominator (that under-allocates transfer
+    income so an emptied nursing pond shows negative profit instead of ≈0).
     """
     del fish_count, transfer_total_fish_count  # draft line counts must not inflate the pool
 
@@ -635,11 +693,10 @@ def _nursing_fingerling_allocation_denominator(
         cycle_filter_id=cycle_filter_id,
         as_of_date=transfer_date,
     )
-    live = _nursing_pond_survivor_live_heads(
+    ledger_live = _implied_net_fish_count_only(
         company_id=company_id,
         pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
-        as_of_date=transfer_date,
     )
     stocked = _nursing_stocked_heads_basis(
         company_id=company_id,
@@ -647,15 +704,28 @@ def _nursing_fingerling_allocation_denominator(
         cycle_filter_id=cycle_filter_id,
     )
 
-    # Mortality keeps full fry+feed cost on survivors: pool = already moved + still on hand.
-    survivor_pool = prior_out + live
+    # Transfers already recorded: mortality cost stays on ledger survivors only.
+    # Do not raise the pool to a pre-empty biomass sample.
+    if prior_out > 0:
+        survivor_pool = prior_out + ledger_live
+        return survivor_pool if survivor_pool > 0 else prior_out
+
+    live = _nursing_pond_survivor_live_heads(
+        company_id=company_id,
+        pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+        as_of_date=transfer_date,
+    )
+
+    # No outbound transfers yet — estimate the batch from sample / stocked / live.
+    survivor_pool = live
     if sample > 0 and survivor_pool < sample:
-        survivor_pool = max(survivor_pool, sample)
-    if prior_out <= 0 and live <= 0 and sample > 0:
         survivor_pool = sample
-    elif prior_out <= 0 and live <= 0 and stocked > 0:
+    if live <= 0 and sample > 0:
+        survivor_pool = sample
+    elif live <= 0 and stocked > 0:
         survivor_pool = stocked
-    elif prior_out <= 0 and stocked > survivor_pool:
+    elif stocked > survivor_pool:
         # Vendor fry bill shows full batch; ledger live not reconciled yet.
         survivor_pool = max(survivor_pool, stocked)
 
@@ -1514,6 +1584,14 @@ def _resync_nursing_batch_group(
         ).first()
 
     max_date = max(t.transfer_date for t in transfers)
+    cycle_filter_id = from_production_cycle_id
+    cost_as_of = _nursing_cost_as_of_date(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        cycle_filter_id=cycle_filter_id,
+        transfer_date=max_date,
+        exclude_transfer_id=None,
+    )
     line_refs: list = []
     line_specs: list[tuple[int, Decimal]] = []
     total_fish = 0
@@ -1532,18 +1610,17 @@ def _resync_nursing_batch_group(
     bio_total = _nursing_batch_cost_pool(
         company_id=company_id,
         from_pond_id=from_pond_id,
-        transfer_date=max_date,
+        transfer_date=cost_as_of,
         from_cycle=from_cycle,
     )
     if bio_total <= 0:
         return 0
 
-    cycle_filter_id = from_production_cycle_id
     denom = _nursing_fingerling_allocation_denominator(
         company_id=company_id,
         from_pond_id=from_pond_id,
         cycle_filter_id=cycle_filter_id,
-        transfer_date=max_date,
+        transfer_date=cost_as_of,
         fish_count=total_fish,
         transfer_total_fish_count=None,
         exclude_transfer_id=None,

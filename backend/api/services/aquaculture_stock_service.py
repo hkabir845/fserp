@@ -742,26 +742,14 @@ def implied_fish_stock_for_outbound_scope(
     production_cycle_id: int | None,
     fish_species: str,
 ) -> tuple[int, Decimal]:
-    """Implied net fish count and kg for outbound validation (pond / cycle / species scope)."""
+    """
+    Implied net fish count and kg for outbound validation (pond / cycle / species scope).
+
+    Uses pond-level position rows (already aggregated). Cycle/species breakdown buckets must
+    not be used alone here: when several fry bills sit in different cycle buckets, taking
+    only the first breakdown row understates available stock and blocks valid transfers.
+    """
     sp_code, _ = normalize_fish_species(fish_species)
-    rows = compute_fish_stock_position_breakdown_rows(
-        company_id,
-        pond_id=pond_id,
-        production_cycle_id=production_cycle_id,
-        fish_species_filter=sp_code,
-    )
-    if rows:
-        r = _enrich_stock_row_with_sample_reference(
-            company_id,
-            pond_id,
-            production_cycle_id=production_cycle_id,
-            fish_species=fish_species,
-            row=rows[0],
-        )
-        return (
-            int(r.get("implied_net_fish_count") or 0),
-            effective_biomass_kg_from_position_row(r),
-        )
     rows_pond = compute_fish_stock_position_rows(
         company_id,
         pond_id=pond_id,

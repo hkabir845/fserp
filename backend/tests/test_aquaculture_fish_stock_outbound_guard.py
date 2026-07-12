@@ -248,6 +248,128 @@ def test_api_allows_harvest_sale_within_stock(api_client, company_tenant, auth_a
 
 
 @pytest.mark.django_db
+def test_assert_outbound_allows_when_extra_fry_bill_untagged_to_cycle(company_tenant):
+    """
+    Pond-level stock includes all fry bills; cycle-scoped stock must include fry tagged to
+    that cycle. Untagged extra fry still counts when validating without a cycle.
+    """
+    from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine
+    from api.services.aquaculture_stock_service import implied_fish_stock_for_outbound_scope
+
+    src = AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="Nursing Split Fry",
+        pond_role="nursing",
+        is_active=True,
+    )
+    dst = AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="Grow",
+        pond_role="grow_out",
+        is_active=True,
+    )
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=src,
+        name="Batch A",
+        start_date=date(2026, 4, 1),
+    )
+    vendor = Vendor.objects.create(company_id=company_tenant.id, company_name="Fry Vendor")
+    fish_item = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry",
+        pos_category="fish",
+        unit="kg",
+        unit_price=Decimal("100"),
+        cost=Decimal("80"),
+    )
+    bill_main = Bill.objects.create(
+        company_id=company_tenant.id,
+        vendor=vendor,
+        bill_number="B-FRY-MAIN",
+        bill_date=date(2026, 4, 1),
+        status="posted",
+        stock_receipt_applied=True,
+        total=Decimal("5000"),
+    )
+    BillLine.objects.create(
+        bill=bill_main,
+        item=fish_item,
+        quantity=Decimal("1"),
+        amount=Decimal("5000"),
+        aquaculture_pond=src,
+        aquaculture_production_cycle=cy,
+        aquaculture_fish_count=500000,
+        aquaculture_fish_weight_kg=Decimal("166.6667"),
+        aquaculture_fish_species="tilapia",
+    )
+    bill_extra = Bill.objects.create(
+        company_id=company_tenant.id,
+        vendor=vendor,
+        bill_number="B-FRY-EXTRA",
+        bill_date=date(2026, 4, 1),
+        status="posted",
+        stock_receipt_applied=True,
+        total=Decimal("300"),
+    )
+    BillLine.objects.create(
+        bill=bill_extra,
+        item=fish_item,
+        quantity=Decimal("1"),
+        amount=Decimal("300"),
+        aquaculture_pond=src,
+        aquaculture_production_cycle=None,
+        aquaculture_fish_count=30000,
+        aquaculture_fish_weight_kg=Decimal("10"),
+        aquaculture_fish_species="tilapia",
+    )
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=company_tenant.id,
+        from_pond=src,
+        from_production_cycle=cy,
+        transfer_date=date(2026, 6, 1),
+        fish_species="tilapia",
+    )
+    AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=dst,
+        fish_count=515344,
+        weight_kg=Decimal("10000"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=company_tenant.id,
+        pond=src,
+        fish_species="tilapia",
+        sample_date=date(2026, 6, 15),
+        estimated_fish_count=100,
+        estimated_total_weight_kg=Decimal("7"),
+        stock_reference_fish_count=14656,
+        extrapolated_biomass_kg=Decimal("1025.92"),
+    )
+
+    # Pond-level (no cycle): 530000 - 515344 = 14656
+    avail_c, _ = implied_fish_stock_for_outbound_scope(
+        company_tenant.id, src.id, production_cycle_id=None, fish_species="tilapia"
+    )
+    assert avail_c == 14656
+    err = assert_outbound_fish_within_implied_stock(
+        company_tenant.id,
+        src.id,
+        production_cycle_id=None,
+        fish_species="tilapia",
+        fish_count=14656,
+        weight_kg=Decimal("100"),
+    )
+    assert err is None
+
+    # Cycle-scoped without tagging the extra 30k still shows a deficit
+    avail_cycle, _ = implied_fish_stock_for_outbound_scope(
+        company_tenant.id, src.id, production_cycle_id=cy.id, fish_species="tilapia"
+    )
+    assert avail_cycle == -15344
+
+
+@pytest.mark.django_db
 def test_pond_fry_stocking_capitalized_journal_total_with_no_journals(company_tenant):
     """Regression: aggregate scalar must not be subscripted again ( broke fish sale POST )."""
     from api.services.aquaculture_cost_per_kg import pond_fry_stocking_capitalized_journal_total

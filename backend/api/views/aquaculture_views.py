@@ -3604,6 +3604,9 @@ def aquaculture_samples_list_or_create(request):
     apply_aquaculture_biomass_sample_extrapolation(b)
     apply_biomass_sample_valuation(b)
     b.save()
+    from api.services.aquaculture_biomass_book_revaluation_service import sync_biomass_book_weight_from_sample
+
+    sync_biomass_book_weight_from_sample(b)
     b = AquacultureBiomassSample.objects.filter(pk=b.pk).select_related("pond", "production_cycle").first()
     return JsonResponse(_sample_to_json(b), status=201)
 
@@ -3729,6 +3732,9 @@ def aquaculture_sample_detail(request, sample_id: int):
         apply_aquaculture_biomass_sample_extrapolation(b)
         apply_biomass_sample_valuation(b)
         b.save()
+        from api.services.aquaculture_biomass_book_revaluation_service import sync_biomass_book_weight_from_sample
+
+        sync_biomass_book_weight_from_sample(b)
         b = AquacultureBiomassSample.objects.filter(pk=b.pk).select_related("pond", "production_cycle").first()
         return JsonResponse(_sample_to_json(b))
     lock_err = _pond_write_lock_response(cid, b.pond_id, b.sample_date)
@@ -4395,7 +4401,13 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
         post_books = bool(post_books)
     if post_books and bv <= 0:
         return JsonResponse({"detail": "post_to_books requires book_value greater than zero"}, status=400)
-    if fcd == 0 or wkd == 0:
+    if kind == "adjustment":
+        if fcd == 0 and wkd == 0:
+            return JsonResponse(
+                {"detail": "adjustment requires a non-zero fish_count_delta and/or weight_kg_delta."},
+                status=400,
+            )
+    elif fcd == 0 or wkd == 0:
         return JsonResponse(
             {"detail": "fish_count_delta and weight_kg_delta must both be non-zero."},
             status=400,

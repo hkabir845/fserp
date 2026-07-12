@@ -208,6 +208,8 @@ interface StockPositionRow {
   pond_name: string
   implied_net_fish_count: number
   implied_net_weight_kg: string
+  effective_net_weight_kg?: string
+  book_net_weight_kg?: string
   latest_sample_estimated_fish_count: number | null
   latest_sample_fish_species_label?: string | null
 }
@@ -1003,7 +1005,12 @@ export default function AquacultureOverviewPage() {
                       {formatNumber(r.implied_net_fish_count, 0)}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-foreground/85 sm:px-5">
-                      {formatNumber(parseNum(r.implied_net_weight_kg), 2)}
+                      {formatNumber(
+                        Number.isFinite(Number(r.effective_net_weight_kg))
+                          ? Number(r.effective_net_weight_kg)
+                          : parseNum(r.implied_net_weight_kg),
+                        2,
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground sm:px-5">
                       {r.latest_sample_estimated_fish_count != null ? (

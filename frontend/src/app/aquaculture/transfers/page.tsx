@@ -898,6 +898,13 @@ export default function AquacultureFishTransfersPage() {
       return
     }
     if (!effectiveSamplePcs && editingId == null) {
+      const nursing = fromPond?.pond_role === 'nursing'
+      if (nursing) {
+        toast.error(
+          'Nursing transfers need a recent biomass sample (pcs/kg). Record one under Aquaculture → Sampling, then try again.',
+        )
+        return
+      }
       const ok = window.confirm(
         'No biomass sample found for this pond, cycle, and species. Weight from head count may be wrong. Record a sample under Aquaculture → Sampling first. Save this transfer anyway?'
       )
@@ -908,9 +915,11 @@ export default function AquacultureFishTransfersPage() {
       sampleStaleDays > SAMPLE_STALE_DAYS &&
       editingId == null
     ) {
-      const ok = window.confirm(
-        `Latest sample is ${sampleStaleDays} days old (>${SAMPLE_STALE_DAYS}). Fingerling size may have changed — consider re-sampling. Continue with this pcs/kg?`
-      )
+      const nursing = fromPond?.pond_role === 'nursing'
+      const msg = nursing
+        ? `Latest sample is ${sampleStaleDays} days old (>${SAMPLE_STALE_DAYS}). For nursing transfers, re-sample before moving fingerlings. Continue anyway?`
+        : `Latest sample is ${sampleStaleDays} days old (>${SAMPLE_STALE_DAYS}). Fingerling size may have changed — consider re-sampling. Continue with this pcs/kg?`
+      const ok = window.confirm(msg)
       if (!ok) return
     }
     const available = effectiveSourceStock.heads

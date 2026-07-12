@@ -33,6 +33,7 @@ import { PondWarehouseAddStockModal } from '@/components/aquaculture/PondWarehou
 import { PondWarehouseInterPondModal } from '@/components/aquaculture/PondWarehouseInterPondModal'
 import { AquacultureStockLedgerFormModal } from './AquacultureStockLedgerFormModal'
 import { AquacultureBiologicalAssetPanel } from './AquacultureBiologicalAssetPanel'
+import { bookBiomassKg, displayBiomassKg } from '@/app/aquaculture/aquacultureFishMetrics'
 
 const iconAction =
   'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-white text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 disabled:pointer-events-none disabled:opacity-40'
@@ -87,6 +88,8 @@ interface PositionRow {
   other_adjustment_weight_kg?: string
   other_adjustment_fish_count?: number
   implied_net_weight_kg: string
+  effective_net_weight_kg?: string
+  book_net_weight_kg?: string
   implied_net_fish_count: number
   latest_sample_date: string | null
   latest_sample_estimated_fish_count: number | null
@@ -400,10 +403,20 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
         <MovementCell kg={otherKg} fish={otherFish} signed tone="slate" />
       </td>
       <td className="border-l border-border bg-accent/40 py-2 pl-3 pr-4 tabular-nums">
-        <div className="font-semibold text-primary">{formatNumber(Number(r.implied_net_weight_kg), 2)} kg</div>
+        <div className="font-semibold text-primary">{formatNumber(displayBiomassKg(r), 2)} kg</div>
         <div className="text-xs font-medium text-primary/80">
           {formatNumber(r.implied_net_fish_count, 0)} fish (est.)
         </div>
+        {(() => {
+          const book = bookBiomassKg(r)
+          const est = displayBiomassKg(r)
+          if (book == null || Math.abs(book - est) < 0.005) return null
+          return (
+            <div className="text-[11px] text-muted-foreground" title="Transaction book kg (fry in − transfers out)">
+              Book {formatNumber(book, 2)} kg
+            </div>
+          )
+        })()}
       </td>
       <td className="py-2 pr-4 text-foreground/85">
         <div className="flex flex-col gap-1">
@@ -917,7 +930,7 @@ function AquacultureStockPageContent() {
     let totalKg = 0
     let totalFish = 0
     for (const r of position) {
-      totalKg += Number(r.implied_net_weight_kg) || 0
+      totalKg += displayBiomassKg(r)
       totalFish += Number(r.implied_net_fish_count) || 0
     }
     return { pondCount: position.length, totalKg, totalFish }
@@ -1436,7 +1449,7 @@ function AquacultureStockPageContent() {
                         </td>
                         <td className="py-2 pr-4 tabular-nums">
                           <div className="font-medium text-foreground">
-                            {formatNumber(Number(r.implied_net_weight_kg), 2)} kg
+                            {formatNumber(displayBiomassKg(r), 2)} kg
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {formatNumber(r.implied_net_fish_count, 0)} fish
@@ -1444,6 +1457,14 @@ function AquacultureStockPageContent() {
                               ? ` · ${formatNumber(Number(r.current_fish_per_kg), 1)} pcs/kg`
                               : ''}
                           </div>
+                          {(() => {
+                            const book = bookBiomassKg(r)
+                            const est = displayBiomassKg(r)
+                            if (book == null || Math.abs(book - est) < 0.005) return null
+                            return (
+                              <div className="text-[11px] text-muted-foreground">Book {formatNumber(book, 2)} kg</div>
+                            )
+                          })()}
                         </td>
                         <td className="py-2 pr-4 tabular-nums text-foreground/85">
                           <div>{formatNumber(Number(r.ledger_weight_kg_delta), 2)} kg</div>

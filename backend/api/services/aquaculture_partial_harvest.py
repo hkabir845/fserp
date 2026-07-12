@@ -333,13 +333,16 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang
     bio = effective_biomass_kg_from_position_row(row)
     txn_bio = _d(row.get("implied_net_weight_kg"))
 
-    harvest = compute_partial_harvest_suggestion(
-        bio,
-        fish_n,
+    vol_raw = row.get("water_volume_cu_ft")
+    vol = _d(vol_raw) if vol_raw not in (None, "") else None
+    # Density / load badges must use estimated biomass, not fry-book kg (often negative on nursing).
+    load_advice = compute_biomass_load_advice_dict(
+        biomass_kg=bio if bio > 0 else Decimal("0"),
+        fish_count=max(fish_n, 0),
         water_area_decimal=water_area_decimal,
         pond_role=row.get("pond_role"),
-        current_fish_per_kg=pcs,
-        load_level=row.get("load_level"),
+        water_volume_cu_ft=vol,
+        fish_per_kg=pcs,
         lang=lang_n,
     )
 
@@ -349,5 +352,25 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang
     out["current_avg_weight_kg"] = avg_kg
     out["effective_net_weight_kg"] = str(bio)
     out["book_net_weight_kg"] = str(txn_bio)
-    out.update(harvest)
+    for key in (
+        "stock_density_kg_per_decimal",
+        "stock_density_kg_per_1000_cu_ft",
+        "load_level",
+        "load_level_label",
+        "advice_summary",
+        "partial_harvest_applicable",
+        "partial_harvest_suggested_kg",
+        "partial_harvest_suggested_fish_count",
+        "partial_harvest_target_kg_per_decimal",
+        "partial_harvest_post_load_kg_per_decimal",
+        "partial_harvest_rationale",
+        "owner_decision_recommended",
+        "owner_decision_summary",
+        "owner_action",
+        "biomass_kg_for_load",
+        "fish_count_for_load",
+        "comfort_kg_per_decimal",
+    ):
+        if key in load_advice:
+            out[key] = load_advice[key]
     return out

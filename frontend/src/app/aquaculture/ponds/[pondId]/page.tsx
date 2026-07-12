@@ -33,6 +33,7 @@ import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
+import { bookBiomassKg, displayBiomassKg } from '@/app/aquaculture/aquacultureFishMetrics'
 import { AskBrainButton } from '@/components/brain/AskBrainButton'
 import {
   PondEconomicsSnapshotPanel,
@@ -312,6 +313,8 @@ interface ItemPickRow {
 interface StockRow {
   implied_net_fish_count: number
   implied_net_weight_kg: string
+  effective_net_weight_kg?: string
+  book_net_weight_kg?: string
   stock_density_kg_per_decimal?: string | null
   load_level?: string
   load_level_label?: string
@@ -1107,13 +1110,21 @@ export default function PondDetailViewPage() {
               </h2>
               <dl className="mt-3 space-y-2 text-sm">
                 <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Implied net (all species)</dt>
+                  <dt className="text-muted-foreground">Estimated biomass (all species)</dt>
                   <dd className="tabular-nums text-foreground">
                     {stock
-                      ? `${formatNumber(stock.implied_net_fish_count, 0)} fish · ${formatNumber(parseNum(stock.implied_net_weight_kg), 2)} kg`
+                      ? `${formatNumber(stock.implied_net_fish_count, 0)} fish · ${formatNumber(displayBiomassKg(stock), 2)} kg`
                       : '—'}
                   </dd>
                 </div>
+                {stock && bookBiomassKg(stock) != null && Math.abs((bookBiomassKg(stock) ?? 0) - displayBiomassKg(stock)) >= 0.005 ? (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Book kg (transactions)</dt>
+                    <dd className="tabular-nums text-muted-foreground">
+                      {formatNumber(bookBiomassKg(stock) ?? 0, 2)} kg
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="flex justify-between gap-2">
                   <dt className="text-muted-foreground">Tilapia net</dt>
                   <dd className="tabular-nums text-foreground">

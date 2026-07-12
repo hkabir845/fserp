@@ -6,6 +6,10 @@ export type StockMetricsRow = {
   pond_id?: number
   pond_name?: string
   implied_net_weight_kg?: string
+  /** Sample-based estimated biomass (preferred for display). */
+  effective_net_weight_kg?: string
+  /** Transaction book kg (fry in − transfers); may be negative on nursing ponds. */
+  book_net_weight_kg?: string
   implied_net_fish_count?: number
   current_fish_per_kg?: string | null
   current_fish_per_kg_source?: string | null
@@ -22,6 +26,21 @@ export type StockMetricsRow = {
   partial_harvest_post_load_kg_per_decimal?: string | null
   partial_harvest_rationale?: string
   water_area_decimal?: string | null
+}
+
+/** Primary live biomass kg: estimated/effective first, then book. */
+export function displayBiomassKg(row: StockMetricsRow | null | undefined): number {
+  if (!row) return 0
+  const eff = Number(row.effective_net_weight_kg)
+  if (Number.isFinite(eff)) return eff
+  const book = Number(row.book_net_weight_kg ?? row.implied_net_weight_kg)
+  return Number.isFinite(book) ? book : 0
+}
+
+export function bookBiomassKg(row: StockMetricsRow | null | undefined): number | null {
+  if (!row) return null
+  const book = Number(row.book_net_weight_kg ?? row.implied_net_weight_kg)
+  return Number.isFinite(book) ? book : null
 }
 
 export type FcrBlock = {

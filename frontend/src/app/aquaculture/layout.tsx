@@ -30,7 +30,11 @@ function readSessionRoleAndPermissions(): {
 
 function AquacultureGate({ children }: { children: React.ReactNode }) {
   return (
-    <main id="aquaculture-workspace" className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none" role="main">
+    <main
+      id="aquaculture-workspace"
+      className="h-full min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none"
+      role="main"
+    >
       {children}
     </main>
   )

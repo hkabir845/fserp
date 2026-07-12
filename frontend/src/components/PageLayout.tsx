@@ -28,7 +28,8 @@ export default function PageLayout({ children, className = '', containScroll = f
         <div
           className={
             containScroll
-              ? 'min-h-0 flex-1 overflow-hidden'
+              ? // flex column so children can use flex-1 / h-full for their own scroll panes
+                'flex min-h-0 flex-1 flex-col overflow-hidden'
               : 'min-h-0 flex-1 overflow-y-auto overscroll-contain'
           }
         >

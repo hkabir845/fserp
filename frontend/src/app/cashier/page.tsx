@@ -594,9 +594,10 @@ export default function CashierPOSPage() {
   }, [showShortcuts])
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000)
+    // Live clock on the bar; tick every second while invoice preview is open so print shows real time.
+    const id = setInterval(() => setNow(new Date()), showInvoicePreview ? 1_000 : 30_000)
     return () => clearInterval(id)
-  }, [])
+  }, [showInvoicePreview])
 
   useEffect(() => {
     const isEditable = (el: EventTarget | null) => {
@@ -1261,10 +1262,11 @@ export default function CashierPOSPage() {
         </tr>`
       })
       .join("")
+    const printedAt = formatDate(new Date(), true)
     const body = `
       <div class="co">
         <h1>Invoice (draft) — POS</h1>
-        <p class="muted">Printed ${escapeHtml(formatDate(new Date(), true))}</p>
+        <p><strong>Date / Time:</strong> ${escapeHtml(printedAt)}</p>
       </div>
       <p class="muted">Customer: ${escapeHtml(custLabel)} · Payment: ${escapeHtml(
       displayPaymentMethodLabel
@@ -2826,9 +2828,11 @@ export default function CashierPOSPage() {
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="border-b border-border bg-muted/40 p-4 text-sm">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Date
+                Date / Time
               </p>
-              <p className="text-foreground">{formatDate(new Date())}</p>
+              <p className="text-foreground tabular-nums">
+                <time dateTime={now.toISOString()}>{formatDate(now, true)}</time>
+              </p>
             </div>
 
             <div className="overflow-x-auto p-4">
@@ -2952,9 +2956,6 @@ export default function CashierPOSPage() {
             </div>
           </div>
 
-          <div className="text-xs text-muted-foreground">
-            <p>Date/Time: {formatDate(new Date(), true)}</p>
-          </div>
           <div className="flex justify-end border-t border-border pt-4">
             <button
               type="button"

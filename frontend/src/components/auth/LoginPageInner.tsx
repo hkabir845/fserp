@@ -9,6 +9,7 @@ import { formatApiErrorJson } from '@/utils/errorHandler'
 import { loginRedirectAfterAuth } from '@/utils/loginRedirect'
 import { AndroidAppDownload } from '@/components/AndroidAppDownload'
 import { BrainAppInstallPrompt } from '@/components/brain/BrainAppInstallPrompt'
+import { isCapacitorNativeApp } from '@/lib/androidApp'
 
 export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 'brain' }) {
   const router = useRouter()
@@ -150,10 +151,12 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
 
       const cachedEndpoint =
         typeof window !== 'undefined' ? localStorage.getItem('login_endpoint_cache') : null
+      const nativeApp = isCapacitorNativeApp()
 
       let response: Response | null = null
       let lastError: Error | null = null
 
+      // JSON first — CapacitorHttp on Android breaks multipart FormData login.
       const endpoints: Array<{
         name: string
         url: string
@@ -162,48 +165,54 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
         headers: Record<string, string>
       }> = [
         {
-          name: 'form',
-          url: `${baseUrl}/auth/login/form/`,
-          method: 'POST',
-          body: (() => {
-            const formData = new FormData()
-            formData.append('username', username.trim())
-            formData.append('password', password)
-            return formData
-          })(),
-          headers: { Accept: 'application/json' },
-        },
-        {
           name: 'json',
           url: `${baseUrl}/auth/login/json/`,
           method: 'POST',
           body: JSON.stringify({ username: username.trim(), password }),
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         },
-        {
-          name: 'oauth2',
-          url: `${baseUrl}/auth/login/`,
-          method: 'POST',
-          body: (() => {
-            const params = new URLSearchParams()
-            params.append('username', username.trim())
-            params.append('password', password)
-            params.append('grant_type', 'password')
-            return params.toString()
-          })(),
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Accept: 'application/json',
-          },
-        },
+        ...(nativeApp
+          ? []
+          : [
+              {
+                name: 'form',
+                url: `${baseUrl}/auth/login/form/`,
+                method: 'POST',
+                body: (() => {
+                  const formData = new FormData()
+                  formData.append('username', username.trim())
+                  formData.append('password', password)
+                  return formData
+                })(),
+                headers: { Accept: 'application/json' },
+              },
+              {
+                name: 'oauth2',
+                url: `${baseUrl}/auth/login/`,
+                method: 'POST',
+                body: (() => {
+                  const params = new URLSearchParams()
+                  params.append('username', username.trim())
+                  params.append('password', password)
+                  params.append('grant_type', 'password')
+                  return params.toString()
+                })(),
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  Accept: 'application/json',
+                },
+              },
+            ]),
       ]
 
-      if (cachedEndpoint) {
+      if (cachedEndpoint && !nativeApp) {
         const cachedIndex = endpoints.findIndex((e) => e.name === cachedEndpoint)
         if (cachedIndex > 0) {
           const cached = endpoints.splice(cachedIndex, 1)[0]
           endpoints.unshift(cached)
         }
+      } else if (nativeApp && typeof window !== 'undefined') {
+        localStorage.setItem('login_endpoint_cache', 'json')
       }
 
       endpointLoop: for (const endpoint of endpoints) {
@@ -233,7 +242,12 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
             response = null
             continue endpointLoop
           }
-          break endpointLoop
+          // Wrong password / forbidden — stop. Other errors may be transport (e.g. FormData via CapacitorHttp).
+          if (response.status === 401 || response.status === 403) {
+            break endpointLoop
+          }
+          response = null
+          continue endpointLoop
         } catch (err) {
           response = null
           lastError = err as Error

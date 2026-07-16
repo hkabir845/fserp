@@ -13,7 +13,8 @@ const config: CapacitorConfig = {
   appName: 'FS ERP',
   webDir: 'www',
   server: {
-    url: appUrl,
+    /** Open login directly — remote WebView shell for all SaaS tenants. */
+    url: `${appUrl}/login`,
     androidScheme: 'https',
     cleartext: false,
   },

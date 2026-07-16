@@ -65,6 +65,8 @@ Users tap **Download Android app** on `/login`, install the APK, and open the ap
 
 Build a new signed APK, replace `fserp.apk` on the server, and ask users to download and install again (Android will upgrade in place if the signing key matches).
 
+Signing uses a local `android/key.properties` + `android/fserp-release.jks` (both gitignored). Copy `key.properties.example` to `key.properties` on a new machine. **Back up the `.jks` and passwords** — losing them forces a new key and users must uninstall before reinstalling.
+
 ## Mobile / Android compatibility
 
 - **Login page**: scrolls on small screens, 44px+ touch targets, 16px inputs (no zoom on focus), safe-area padding for notched phones.

@@ -101,7 +101,7 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
       </p>
       {android ? (
         <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
-          After download, open the file and tap <span className="font-medium">Install</span>. If Android asks, allow installs from your browser for this step only.
+          After download, open the file and tap <span className="font-medium">Install</span>. If Android asks, allow installs from your browser for this step only. If you already have an older FS ERP install, uninstall it first, then install this build.
         </p>
       ) : null}
     </div>

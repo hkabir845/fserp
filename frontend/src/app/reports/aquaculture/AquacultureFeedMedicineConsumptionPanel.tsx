@@ -485,10 +485,10 @@ export function AquacultureFeedMedicineConsumptionPanel({
             <DailyFeedTable
               rows={farmDaily}
               footerLabel="Grand total — all ponds"
-              footerSacks={totals.total_feed_sacks ?? totalFeedSacks}
-              footerKg={totals.total_feed_kg ?? totalFeedKg}
-              footerTons={totals.total_feed_tons ?? totalFeedTons}
-              footerAmount={totals.total_feed_amount ?? totalFeed}
+              footerSacks={totalFeedSacks}
+              footerKg={totalFeedKg}
+              footerTons={totalFeedTons}
+              footerAmount={totalFeed}
               showPondCount
             />
           </div>
@@ -509,14 +509,14 @@ export function AquacultureFeedMedicineConsumptionPanel({
       <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3 space-y-2">
         <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-foreground">
           <span>{pondTotalLabel(groups.length === 1 ? groups[0]?.pond_name : pondScopeLabel)}</span>
-          <span className="tabular-nums">{MoneyBdt(totals.total_amount ?? totalAmount)}</span>
+          <span className="tabular-nums">{MoneyBdt(totalAmount)}</span>
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
           <span>
             Feed: <Qty value={totalFeedSacks} /> sacks · <Qty value={totalFeedKg} /> kg ·{' '}
-            <Qty value={totalFeedTons} digits={4} /> t · {MoneyBdt(totals.total_feed_amount ?? totalFeed)}
+            <Qty value={totalFeedTons} digits={4} /> t · {MoneyBdt(totalFeed)}
           </span>
-          <span>Medicine: {MoneyBdt(totals.total_medicine_amount ?? totalMed)}</span>
+          <span>Medicine: {MoneyBdt(totalMed)}</span>
           <span>{lineCount} consumption line(s)</span>
         </div>
       </div>

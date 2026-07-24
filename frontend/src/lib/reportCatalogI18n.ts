@@ -443,6 +443,26 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
       bn: 'পুকুর ও ভাগ করা বরাদ্দ অনুযায়ী পরিচালন ব্যয় — উপমোট সহ (BDT)',
     },
   },
+  'aquaculture-feed-consumption': {
+    title: {
+      en: 'Aquaculture — Feed consumption',
+      bn: 'অ্যাকোয়াকালচার — খাবার ব্যবহার',
+    },
+    description: {
+      en: 'Per-pond daily feed ledger (sacks, kg, metric tons) with entry detail and farm totals (BDT)',
+      bn: 'পুকুরভিত্তিক দৈনিক খাবার খাতা (বস্তা, কেজি, মেট্রিক টন) — এন্ট্রি বিস্তারিত ও খামার মোট (BDT)',
+    },
+  },
+  'aquaculture-medicine-consumption': {
+    title: {
+      en: 'Aquaculture — Medicine consumption',
+      bn: 'অ্যাকোয়াকালচার — ঔষধ ব্যবহার',
+    },
+    description: {
+      en: 'Per-pond medicine use from warehouse with daily totals, entry detail, and period cost (BDT)',
+      bn: 'পুকুর গুদাম থেকে ঔষধ ব্যবহার — দৈনিক মোট, এন্ট্রি বিস্তারিত ও সময়সীমার খরচ (BDT)',
+    },
+  },
   'aquaculture-feed-medicine-consumption': {
     title: {
       en: 'Aquaculture — Feed & medicine consumption',

@@ -7,7 +7,13 @@ from decimal import Decimal
 
 import pytest
 
-from api.models import AquacultureExpense, AquaculturePond, Company
+from api.models import (
+    AquacultureExpense,
+    AquacultureExpenseInventoryLine,
+    AquaculturePond,
+    Company,
+    Item,
+)
 
 
 def _enable(c: Company) -> None:
@@ -155,3 +161,145 @@ def test_feed_medicine_consumption_report_pond_filter(
     # Scoped farm daily still reflects filtered rows only
     assert len(data["farm_daily_feed"]) == 1
     assert data["farm_daily_feed"][0]["kg"] == "10.00"
+
+
+@pytest.mark.django_db
+def test_feed_consumption_and_medicine_consumption_are_separate(
+    api_client, company_tenant, auth_admin_headers
+):
+    _enable(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Split Pond", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="feed_consumed",
+        expense_date=date(2026, 5, 4),
+        amount=Decimal("400.00"),
+        feed_weight_kg=Decimal("8.0000"),
+        feed_sack_count=Decimal("0.30"),
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="medicine_consumed",
+        expense_date=date(2026, 5, 5),
+        amount=Decimal("75.00"),
+    )
+
+    feed_r = api_client.get(
+        "/api/reports/aquaculture-feed-consumption/",
+        {"start_date": "2026-05-01", "end_date": "2026-05-31"},
+        **auth_admin_headers,
+    )
+    assert feed_r.status_code == 200, feed_r.content.decode()
+    feed_data = json.loads(feed_r.content.decode())
+    assert feed_data["consumption_kind"] == "feed"
+    assert feed_data["totals"]["total_feed_amount"] == "400.00"
+    assert feed_data["totals"]["total_medicine_amount"] == "0.00"
+    assert feed_data["totals"]["total_amount"] == "400.00"
+    assert len(feed_data["groups"][0]["lines"]) == 1
+
+    med_r = api_client.get(
+        "/api/reports/aquaculture-medicine-consumption/",
+        {"start_date": "2026-05-01", "end_date": "2026-05-31"},
+        **auth_admin_headers,
+    )
+    assert med_r.status_code == 200, med_r.content.decode()
+    med_data = json.loads(med_r.content.decode())
+    assert med_data["consumption_kind"] == "medicine"
+    assert med_data["totals"]["total_feed_amount"] == "0.00"
+    assert med_data["totals"]["total_medicine_amount"] == "75.00"
+    assert med_data["totals"]["total_amount"] == "75.00"
+    assert len(med_data["groups"][0]["lines"]) == 1
+
+
+@pytest.mark.django_db
+def test_feed_medicine_consumption_report_item_filters(
+    api_client, company_tenant, auth_admin_headers
+):
+    _enable(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Filter Pond", is_active=True)
+    feed_a = Item.objects.create(
+        company_id=cid, name="Feed A", item_type="inventory", pos_category="feed", is_active=True
+    )
+    feed_b = Item.objects.create(
+        company_id=cid, name="Feed B", item_type="inventory", pos_category="feed", is_active=True
+    )
+    med = Item.objects.create(
+        company_id=cid,
+        name="Med X",
+        item_type="inventory",
+        pos_category="medicine",
+        is_active=True,
+    )
+
+    exp_a = AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="feed_consumed",
+        expense_date=date(2026, 5, 4),
+        amount=Decimal("100.00"),
+        feed_weight_kg=Decimal("10.0000"),
+        feed_sack_count=Decimal("0.40"),
+    )
+    AquacultureExpenseInventoryLine.objects.create(
+        expense=exp_a, item=feed_a, quantity=Decimal("0.40")
+    )
+    exp_b = AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="feed_consumed",
+        expense_date=date(2026, 5, 5),
+        amount=Decimal("200.00"),
+        feed_weight_kg=Decimal("20.0000"),
+        feed_sack_count=Decimal("0.80"),
+    )
+    AquacultureExpenseInventoryLine.objects.create(
+        expense=exp_b, item=feed_b, quantity=Decimal("0.80")
+    )
+    exp_m = AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="medicine_consumed",
+        expense_date=date(2026, 5, 6),
+        amount=Decimal("50.00"),
+    )
+    AquacultureExpenseInventoryLine.objects.create(
+        expense=exp_m, item=med, quantity=Decimal("1.00")
+    )
+
+    r = api_client.get(
+        "/api/reports/aquaculture-feed-medicine-consumption/",
+        {
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-31",
+            "feed_item_id": str(feed_a.id),
+        },
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content.decode())
+    assert data["filter_feed_item_id"] == feed_a.id
+    assert data["totals"]["total_feed_amount"] == "100.00"
+    assert data["totals"]["total_medicine_amount"] == "50.00"
+    assert data["totals"]["total_amount"] == "150.00"
+    opt_ids = {o["id"] for o in data["feed_item_options"]}
+    assert feed_a.id in opt_ids and feed_b.id in opt_ids
+
+    r2 = api_client.get(
+        "/api/reports/aquaculture-feed-medicine-consumption/",
+        {
+            "start_date": "2026-05-01",
+            "end_date": "2026-05-31",
+            "medicine_item_id": str(med.id),
+            "feed_item_id": str(feed_b.id),
+        },
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 200, r2.content.decode()
+    data2 = json.loads(r2.content.decode())
+    assert data2["totals"]["total_feed_amount"] == "200.00"
+    assert data2["totals"]["total_medicine_amount"] == "50.00"
+    assert data2["filter_medicine_item_id"] == med.id

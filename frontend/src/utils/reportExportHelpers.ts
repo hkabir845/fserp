@@ -356,8 +356,14 @@ function lineToCsvCells(line: Record<string, unknown>): string[] {
   return cells
 }
 
-/** Feed & medicine consumption — daily feed ledger + entry detail. */
-export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): string {
+/** Feed / medicine consumption — daily ledger + entry detail. */
+export function buildFeedMedicineConsumptionCsv(
+  data: Record<string, unknown>,
+  opts?: { mode?: 'feed' | 'medicine' | 'both' }
+): string {
+  const mode = opts?.mode ?? 'both'
+  const showFeed = mode === 'feed' || mode === 'both'
+  const showMed = mode === 'medicine' || mode === 'both'
   const groups = Array.isArray(data.groups) ? (data.groups as Record<string, unknown>[]) : []
   const farmDaily = Array.isArray(data.farm_daily_feed)
     ? (data.farm_daily_feed as Record<string, unknown>[])
@@ -367,7 +373,7 @@ export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): 
 
   let out = ''
 
-  if (farmDaily.length) {
+  if (showFeed && farmDaily.length) {
     out += 'Farm daily feed (all ponds)\n'
     out += 'Date,Ponds,Sacks,kg,Tons,Cost BDT,Entries\n'
     farmDaily.forEach((row) => {
@@ -394,34 +400,63 @@ export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): 
     out += '\n\n'
   }
 
-  out += 'Per-pond daily feed\n'
-  out += 'Pond,Date,Sacks,kg,Tons,Cost BDT,Entries\n'
-  groups.forEach((g) => {
-    const pond = String(g.pond_name ?? '')
-    const daily = Array.isArray(g.daily_feed) ? (g.daily_feed as Record<string, unknown>[]) : []
-    daily.forEach((row) => {
+  if (showFeed) {
+    out += 'Per-pond daily feed\n'
+    out += 'Pond,Date,Sacks,kg,Tons,Cost BDT,Entries\n'
+    groups.forEach((g) => {
+      const pond = String(g.pond_name ?? '')
+      const daily = Array.isArray(g.daily_feed) ? (g.daily_feed as Record<string, unknown>[]) : []
+      daily.forEach((row) => {
+        out += [
+          escapeCsvValue(pond),
+          escapeCsvValue(row.date),
+          escapeCsvValue(row.sacks),
+          escapeCsvValue(row.kg),
+          escapeCsvValue(row.tons),
+          escapeCsvValue(row.amount),
+          escapeCsvValue(row.entry_count),
+        ].join(',')
+        out += '\n'
+      })
       out += [
-        escapeCsvValue(pond),
-        escapeCsvValue(row.date),
-        escapeCsvValue(row.sacks),
-        escapeCsvValue(row.kg),
-        escapeCsvValue(row.tons),
-        escapeCsvValue(row.amount),
-        escapeCsvValue(row.entry_count),
+        escapeCsvValue(`${pond} TOTAL`),
+        '',
+        escapeCsvValue(g.subtotal_feed_sacks),
+        escapeCsvValue(g.subtotal_feed_kg),
+        escapeCsvValue(g.subtotal_feed_tons),
+        escapeCsvValue(g.subtotal_feed_amount),
+        '',
       ].join(',')
       out += '\n'
     })
-    out += [
-      escapeCsvValue(`${pond} TOTAL`),
-      '',
-      escapeCsvValue(g.subtotal_feed_sacks),
-      escapeCsvValue(g.subtotal_feed_kg),
-      escapeCsvValue(g.subtotal_feed_tons),
-      escapeCsvValue(g.subtotal_feed_amount),
-      '',
-    ].join(',')
-    out += '\n'
-  })
+  }
+
+  if (showMed) {
+    out += `${out ? '\n' : ''}Per-pond daily medicine\n`
+    out += 'Pond,Date,Cost BDT,Entries\n'
+    groups.forEach((g) => {
+      const pond = String(g.pond_name ?? '')
+      const daily = Array.isArray(g.daily_medicine)
+        ? (g.daily_medicine as Record<string, unknown>[])
+        : []
+      daily.forEach((row) => {
+        out += [
+          escapeCsvValue(pond),
+          escapeCsvValue(row.date),
+          escapeCsvValue(row.amount),
+          escapeCsvValue(row.entry_count),
+        ].join(',')
+        out += '\n'
+      })
+      out += [
+        escapeCsvValue(`${pond} TOTAL`),
+        '',
+        escapeCsvValue(g.subtotal_medicine_amount),
+        '',
+      ].join(',')
+      out += '\n'
+    })
+  }
 
   out += '\nEntry detail\n'
   out += 'Pond,Date,Type,Item,Quantity,Unit,Sacks,kg,Cost BDT,Source,Memo\n'
@@ -429,6 +464,9 @@ export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): 
     const pond = String(g.pond_name ?? '')
     const lines = Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []
     lines.forEach((ln) => {
+      const kind = String(ln.kind ?? '')
+      if (mode === 'feed' && kind !== 'feed') return
+      if (mode === 'medicine' && kind !== 'medicine') return
       out += [
         escapeCsvValue(pond),
         escapeCsvValue(ln.entry_date),
@@ -446,12 +484,16 @@ export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): 
     })
   })
 
-  if (totals.total_amount != null) {
+  if (showFeed) {
     out += `\nGrand total feed sacks,${totals.total_feed_sacks ?? ''}\n`
     out += `Grand total feed kg,${totals.total_feed_kg ?? ''}\n`
     out += `Grand total feed tons,${totals.total_feed_tons ?? ''}\n`
     out += `Grand total feed cost BDT,${totals.total_feed_amount ?? ''}\n`
+  }
+  if (showMed) {
     out += `Grand total medicine cost BDT,${totals.total_medicine_amount ?? ''}\n`
+  }
+  if (mode === 'both' && totals.total_amount != null) {
     out += `Grand total cost BDT,${totals.total_amount}\n`
   }
   return out
@@ -608,13 +650,33 @@ export function buildAquaculturePrintHtml(
     return html
   }
 
-  if (reportId === 'aquaculture-feed-medicine-consumption' && Array.isArray(data.groups)) {
+  if (
+    (reportId === 'aquaculture-feed-consumption' ||
+      reportId === 'aquaculture-medicine-consumption' ||
+      reportId === 'aquaculture-feed-medicine-consumption') &&
+    Array.isArray(data.groups)
+  ) {
+    const mode =
+      reportId === 'aquaculture-feed-consumption'
+        ? 'feed'
+        : reportId === 'aquaculture-medicine-consumption'
+          ? 'medicine'
+          : 'both'
     const groups = data.groups as Record<string, unknown>[]
     const headers = ['Date', 'Type', 'Item', 'Qty', 'Feed kg', 'Cost BDT', 'Source / memo']
+    const titlePrefix =
+      mode === 'feed' ? 'Feed' : mode === 'medicine' ? 'Medicine' : 'Feed & medicine'
     let html = ''
     groups.forEach((g) => {
       const pond = String(g.pond_name ?? '')
-      const lines = Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []
+      const lines = (Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []).filter(
+        (ln) => {
+          const kind = String(ln.kind ?? '')
+          if (mode === 'feed') return kind === 'feed'
+          if (mode === 'medicine') return kind === 'medicine'
+          return true
+        }
+      )
       const rows = lines.map((ln) => [
         String(ln.entry_date ?? ''),
         String(ln.kind_label ?? ln.kind ?? ''),
@@ -624,13 +686,25 @@ export function buildAquaculturePrintHtml(
         fmtMoney(ln.amount),
         String(ln.source_doc ?? ln.memo ?? ''),
       ])
-      html += htmlTable(`Feed & medicine — ${pond}`, headers, rows)
-      if (g.subtotal_amount != null) {
+      html += htmlTable(`${titlePrefix} — ${pond}`, headers, rows)
+      if (mode === 'feed' && g.subtotal_feed_amount != null) {
+        html += `<p><strong>Feed subtotal:</strong> ${fmtMoney(g.subtotal_feed_amount)}</p>`
+      } else if (mode === 'medicine' && g.subtotal_medicine_amount != null) {
+        html += `<p><strong>Medicine subtotal:</strong> ${fmtMoney(g.subtotal_medicine_amount)}</p>`
+      } else if (g.subtotal_amount != null) {
         html += `<p><strong>Subtotal:</strong> ${fmtMoney(g.subtotal_amount)} (Feed ${fmtMoney(g.subtotal_feed_amount)} · Medicine ${fmtMoney(g.subtotal_medicine_amount)})</p>`
       }
     })
     const totals = (data.totals as Record<string, unknown>) ?? {}
-    if (totals.total_amount != null) {
+    if (mode === 'feed') {
+      html += `<div class="summary"><p><strong>Grand total feed:</strong> ${fmtMoney(totals.total_feed_amount)}`
+      if (totals.total_feed_kg != null) {
+        html += ` · ${escapeHtml(String(totals.total_feed_kg))} kg`
+      }
+      html += '</p></div>'
+    } else if (mode === 'medicine') {
+      html += `<div class="summary"><p><strong>Grand total medicine:</strong> ${fmtMoney(totals.total_medicine_amount)}</p></div>`
+    } else if (totals.total_amount != null) {
       html += `<div class="summary"><p><strong>Grand total:</strong> ${fmtMoney(totals.total_amount)}</p>`
       html += `<p>Feed: ${fmtMoney(totals.total_feed_amount)} · Medicine: ${fmtMoney(totals.total_medicine_amount)}`
       if (totals.total_feed_kg != null) {

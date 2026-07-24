@@ -277,6 +277,8 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-fish-sales",
         "aquaculture-pond-sales-comprehensive",
         "aquaculture-expenses",
+        "aquaculture-feed-consumption",
+        "aquaculture-medicine-consumption",
         "aquaculture-feed-medicine-consumption",
         "aquaculture-sampling",
         "aquaculture-production-cycles",

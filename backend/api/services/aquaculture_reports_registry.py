@@ -61,7 +61,9 @@ from api.services.report_i18n import (
     note_expenses_station_scope,
     note_fish_biomass_movements,
     note_fish_stock_adjustments,
+    note_feed_consumption,
     note_feed_medicine_consumption,
+    note_medicine_consumption,
     note_fish_stock_breakdown,
     note_fish_stock_position,
     note_pond_sales_comprehensive,
@@ -112,6 +114,15 @@ def _pond_filter(company_id: int, raw: str | None) -> tuple[int | None, JsonResp
     if not AquaculturePond.objects.filter(pk=pid, company_id=company_id).exists():
         return None, JsonResponse({"detail": "Pond not found"}, status=404)
     return pid, None
+
+
+def _item_filter(company_id: int, raw: str | None) -> tuple[int | None, JsonResponse | None]:
+    if not raw or not str(raw).strip().isdigit():
+        return None, None
+    iid = int(raw)
+    if not Item.objects.filter(pk=iid, company_id=company_id).exists():
+        return None, JsonResponse({"detail": "Item not found"}, status=404)
+    return iid, None
 
 
 def _cycle_filter(company_id: int, raw: str | None) -> tuple[int | None, AquacultureProductionCycle | None, JsonResponse | None]:
@@ -184,8 +195,13 @@ def build_aquaculture_report(
         payload = _report_pond_sales_comprehensive(company_id, start, end, request)
     elif report_id == "aquaculture-expenses":
         payload = _report_expenses(company_id, start, end, request)
+    elif report_id == "aquaculture-feed-consumption":
+        payload = _report_feed_medicine_consumption(company_id, start, end, request, kind="feed")
+    elif report_id == "aquaculture-medicine-consumption":
+        payload = _report_feed_medicine_consumption(company_id, start, end, request, kind="medicine")
     elif report_id == "aquaculture-feed-medicine-consumption":
-        payload = _report_feed_medicine_consumption(company_id, start, end, request)
+        # Legacy combined report (kept for bookmarks / API clients)
+        payload = _report_feed_medicine_consumption(company_id, start, end, request, kind=None)
     elif report_id == "aquaculture-sampling":
         payload = _report_sampling(company_id, start, end, request)
     elif report_id == "aquaculture-production-cycles":
@@ -236,6 +252,8 @@ def build_aquaculture_report(
             "aquaculture-fish-sales",
             "aquaculture-pond-sales-comprehensive",
             "aquaculture-expenses",
+            "aquaculture-feed-consumption",
+            "aquaculture-medicine-consumption",
             "aquaculture-feed-medicine-consumption",
             "aquaculture-sampling",
             "aquaculture-production-cycles",
@@ -1321,25 +1339,71 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
 
 
 def _report_feed_medicine_consumption(
-    company_id: int, start: date, end: date, request: HttpRequest
+    company_id: int,
+    start: date,
+    end: date,
+    request: HttpRequest,
+    *,
+    kind: str | None = None,
 ) -> dict[str, Any] | JsonResponse:
     """
-    Pond-warehouse feed & medicine consumption.
+    Pond-warehouse feed and/or medicine consumption.
 
-    Primary view: per-pond daily feed totals (sacks, kg, metric tons, cost) with
-    pond and farm grand totals. Line-level detail is retained under each group.
+    ``kind``: ``feed``, ``medicine``, or None (both — legacy combined report).
+    Primary view: per-pond daily totals with farm grand totals and line detail.
     """
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    feed_item_id, ferr = _item_filter(company_id, request.GET.get("feed_item_id"))
+    if ferr:
+        return ferr
+    medicine_item_id, merr = _item_filter(company_id, request.GET.get("medicine_item_id"))
+    if merr:
+        return merr
+
+    kind_norm = (kind or "").strip().lower() or None
+    if kind_norm == "feed":
+        medicine_item_id = None
+    elif kind_norm == "medicine":
+        feed_item_id = None
 
     rows = compute_pond_warehouse_consumption_rows(
         company_id,
         pond_id=pond_filter_id,
         date_from=start,
         date_to=end,
+        kind=kind_norm,
         limit=10000,
     )
+
+    feed_item_options: dict[int, str] = {}
+    medicine_item_options: dict[int, str] = {}
+    for r in rows:
+        iid = r.get("item_id")
+        if iid is None:
+            continue
+        try:
+            iid_int = int(iid)
+        except (TypeError, ValueError):
+            continue
+        name = (r.get("item_name") or "").strip() or f"Item #{iid_int}"
+        if r.get("kind") == "feed":
+            feed_item_options[iid_int] = name
+        else:
+            medicine_item_options[iid_int] = name
+
+    if feed_item_id is not None or medicine_item_id is not None:
+        filtered_rows: list[dict] = []
+        for r in rows:
+            if r.get("kind") == "feed":
+                if feed_item_id is not None and r.get("item_id") != feed_item_id:
+                    continue
+            else:
+                if medicine_item_id is not None and r.get("item_id") != medicine_item_id:
+                    continue
+            filtered_rows.append(r)
+        rows = filtered_rows
 
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
@@ -1513,10 +1577,31 @@ def _report_feed_medicine_consumption(
             "total_feed_sacks": str(_qty_q(grand_feed_sacks)),
             "total_feed_tons": str(grand_tons),
         },
-        "accounting_note": note_feed_medicine_consumption(company_id),
+        "consumption_kind": kind_norm or "both",
+        "accounting_note": (
+            note_feed_consumption(company_id)
+            if kind_norm == "feed"
+            else note_medicine_consumption(company_id)
+            if kind_norm == "medicine"
+            else note_feed_medicine_consumption(company_id)
+        ),
+        "feed_item_options": [
+            {"id": iid, "name": feed_item_options[iid]}
+            for iid in sorted(feed_item_options.keys(), key=lambda x: (feed_item_options[x].lower(), x))
+        ],
+        "medicine_item_options": [
+            {"id": iid, "name": medicine_item_options[iid]}
+            for iid in sorted(
+                medicine_item_options.keys(), key=lambda x: (medicine_item_options[x].lower(), x)
+            )
+        ],
     }
     if pond_filter_id is not None:
         out["filter_pond_id"] = pond_filter_id
+    if feed_item_id is not None:
+        out["filter_feed_item_id"] = feed_item_id
+    if medicine_item_id is not None:
+        out["filter_medicine_item_id"] = medicine_item_id
     return out
 
 

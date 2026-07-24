@@ -73,11 +73,14 @@ type PeriodFilterProps = {
   hint: string
 }
 
+export type ConsumptionReportMode = 'feed' | 'medicine' | 'both'
+
 export type AquacultureFeedMedicineConsumptionPanelProps = {
   data: Record<string, unknown>
   hasPeriod: boolean
   renderPeriodFilter: (props: PeriodFilterProps) => ReactNode
   reportType?: string
+  mode?: ConsumptionReportMode
   dateRange?: { startDate: string; endDate: string }
   pondScopeLabel?: string | null
 }
@@ -263,11 +266,17 @@ function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
   )
 }
 
-function PondSection({ group }: { group: ConsumptionGroup }) {
+function PondSection({ group, mode }: { group: ConsumptionGroup; mode: ConsumptionReportMode }) {
   const [showDetail, setShowDetail] = useState(false)
+  const showFeed = mode === 'feed' || mode === 'both'
+  const showMed = mode === 'medicine' || mode === 'both'
   const dailyFeed = group.daily_feed || []
   const dailyMed = group.daily_medicine || []
-  const detailLines = group.lines || []
+  const detailLines = (group.lines || []).filter((l) => {
+    if (mode === 'feed') return l.kind === 'feed'
+    if (mode === 'medicine') return l.kind === 'medicine'
+    return true
+  })
   const medLines = group.medicine_lines || detailLines.filter((l) => l.kind === 'medicine')
 
   return (
@@ -275,37 +284,43 @@ function PondSection({ group }: { group: ConsumptionGroup }) {
       <div className="border-b border-border/70 bg-cyan-50/80 px-4 py-3">
         <h4 className="font-semibold text-cyan-950">{group.pond_name}</h4>
         <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-cyan-900/80">
-          <span>
-            Feed: <Qty value={group.subtotal_feed_sacks} /> sacks · <Qty value={group.subtotal_feed_kg} /> kg ·{' '}
-            <Qty value={group.subtotal_feed_tons} digits={4} /> t
-          </span>
-          <span>Feed cost: {MoneyBdt(group.subtotal_feed_amount)}</span>
-          <span>Medicine: {MoneyBdt(group.subtotal_medicine_amount)}</span>
-          <span>
-            {group.feed_day_count ?? dailyFeed.length} feed day(s)
-            {(group.medicine_day_count ?? dailyMed.length) > 0
-              ? ` · ${group.medicine_day_count ?? dailyMed.length} medicine day(s)`
-              : ''}
-          </span>
+          {showFeed ? (
+            <>
+              <span>
+                Feed: <Qty value={group.subtotal_feed_sacks} /> sacks · <Qty value={group.subtotal_feed_kg} /> kg ·{' '}
+                <Qty value={group.subtotal_feed_tons} digits={4} /> t
+              </span>
+              <span>Feed cost: {MoneyBdt(group.subtotal_feed_amount)}</span>
+              <span>{group.feed_day_count ?? dailyFeed.length} feed day(s)</span>
+            </>
+          ) : null}
+          {showMed ? (
+            <>
+              <span>Medicine: {MoneyBdt(group.subtotal_medicine_amount)}</span>
+              <span>{group.medicine_day_count ?? dailyMed.length} medicine day(s)</span>
+            </>
+          ) : null}
         </p>
       </div>
 
       <div className="space-y-4 p-3">
-        <div>
-          <h5 className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-amber-900">
-            Daily feed consumption
-          </h5>
-          <DailyFeedTable
-            rows={dailyFeed}
-            footerLabel={`Total — ${group.pond_name}`}
-            footerSacks={group.subtotal_feed_sacks}
-            footerKg={group.subtotal_feed_kg}
-            footerTons={group.subtotal_feed_tons}
-            footerAmount={group.subtotal_feed_amount}
-          />
-        </div>
+        {showFeed ? (
+          <div>
+            <h5 className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-amber-900">
+              Daily feed consumption
+            </h5>
+            <DailyFeedTable
+              rows={dailyFeed}
+              footerLabel={`Total — ${group.pond_name}`}
+              footerSacks={group.subtotal_feed_sacks}
+              footerKg={group.subtotal_feed_kg}
+              footerTons={group.subtotal_feed_tons}
+              footerAmount={group.subtotal_feed_amount}
+            />
+          </div>
+        ) : null}
 
-        {dailyMed.length > 0 || medLines.length > 0 ? (
+        {showMed && (dailyMed.length > 0 || medLines.length > 0) ? (
           <div>
             <h5 className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-violet-900">
               Medicine consumption
@@ -377,7 +392,8 @@ export function AquacultureFeedMedicineConsumptionPanel({
   data,
   hasPeriod,
   renderPeriodFilter,
-  reportType = 'aquaculture-feed-medicine-consumption',
+  reportType = 'aquaculture-feed-consumption',
+  mode = 'both',
   dateRange,
   pondScopeLabel,
 }: AquacultureFeedMedicineConsumptionPanelProps) {
@@ -386,6 +402,8 @@ export function AquacultureFeedMedicineConsumptionPanel({
   const farmDaily = (Array.isArray(data.farm_daily_feed) ? data.farm_daily_feed : []) as DailyFeedRow[]
   const totals = (data.totals as Record<string, unknown>) || {}
   const summary = (data.summary as Record<string, unknown>) || {}
+  const showFeed = mode === 'feed' || mode === 'both'
+  const showMed = mode === 'medicine' || mode === 'both'
 
   const totalFeed = Number(totals.total_feed_amount ?? summary.total_feed_amount_bdt ?? 0)
   const totalMed = Number(totals.total_medicine_amount ?? summary.total_medicine_amount_bdt ?? 0)
@@ -396,7 +414,31 @@ export function AquacultureFeedMedicineConsumptionPanel({
   const lineCount = Number(summary.line_count ?? totals.line_count ?? 0)
   const pondCount = Number(summary.pond_group_count ?? groups.length)
   const feedDayCount = Number(totals.feed_day_count ?? summary.feed_day_count ?? farmDaily.length)
-  const showFarmDaily = !pondScopeLabel && groups.length > 1 && farmDaily.length > 0
+  const medDayCount = Number(
+    summary.medicine_day_count ??
+      groups.reduce((n, g) => n + Number(g.medicine_day_count ?? g.daily_medicine?.length ?? 0), 0)
+  )
+  const showFarmDaily = showFeed && !pondScopeLabel && groups.length > 1 && farmDaily.length > 0
+  const periodHint =
+    mode === 'medicine'
+      ? 'Medicine consumed from pond warehouses by day and entry. Optional pond and medicine filters narrow the ledger.'
+      : mode === 'feed'
+        ? 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond and feed filters narrow the ledger.'
+        : 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond, feed, and medicine filters narrow the ledger.'
+  const intro =
+    mode === 'medicine'
+      ? 'Pond medicine consumption — daily totals and entry detail at inventory cost (BDT).'
+      : mode === 'feed'
+        ? 'Pond feed consumption — daily ledger with sacks, kg, tons, and cost (BDT at inventory value).'
+        : 'Standard pond feed & medicine consumption — daily feed ledger with sacks, kg, tons, and cost (BDT at inventory value).'
+  const emptyLabel =
+    mode === 'medicine'
+      ? 'No medicine consumption in this period.'
+      : mode === 'feed'
+        ? 'No feed consumption in this period.'
+        : 'No feed or medicine consumption in this period.'
+  const sectionTitle =
+    mode === 'medicine' ? 'Per-pond medicine consumption' : mode === 'feed' ? 'Per-pond daily feed' : 'Per-pond consumption'
 
   return (
     <div className="space-y-8">
@@ -405,13 +447,12 @@ export function AquacultureFeedMedicineConsumptionPanel({
           period,
           dateRange,
           reportType,
-          hint: 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Leave pond filter empty for all ponds.',
+          hint: periodHint,
         })}
 
       <div>
         <p className="text-sm font-medium text-foreground/85">
-          Standard pond feed &amp; medicine consumption — daily feed ledger with{' '}
-          <strong>sacks</strong>, <strong>kg</strong>, <strong>tons</strong>, and cost (BDT at inventory value).
+          {intro}
           {pondScopeLabel ? (
             <>
               {' '}
@@ -425,62 +466,81 @@ export function AquacultureFeedMedicineConsumptionPanel({
       </div>
 
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(11.5rem,1fr))]">
-        <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
-            <Package className="h-4 w-4 shrink-0" aria-hidden />
-            Feed cost
+        {showFeed ? (
+          <>
+            <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
+                <Package className="h-4 w-4 shrink-0" aria-hidden />
+                Feed cost
+              </div>
+              <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
+                {MoneyBdt(totalFeed)}
+              </p>
+            </div>
+            <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Feed sacks</p>
+              <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
+                <Qty value={totalFeedSacks} />
+              </p>
+            </div>
+            <div className="min-w-0 overflow-hidden rounded-lg border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed kg</p>
+              <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-cyan-950 sm:text-lg">
+                <Qty value={totalFeedKg} />
+              </p>
+            </div>
+            <div className="min-w-0 overflow-hidden rounded-lg border border-cyan-200 bg-cyan-50/50 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed tons</p>
+              <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-cyan-950 sm:text-lg">
+                <Qty value={totalFeedTons} digits={4} />
+              </p>
+              <p className="mt-1 text-[11px] text-cyan-800/70">1 t = 1,000 kg</p>
+            </div>
+          </>
+        ) : null}
+        {showMed ? (
+          <div className="min-w-0 overflow-hidden rounded-lg border border-violet-200 bg-violet-50/80 p-4 shadow-sm">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-900">
+              <Pill className="h-4 w-4 shrink-0" aria-hidden />
+              Medicine cost
+            </div>
+            <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-violet-950 sm:text-lg">
+              {MoneyBdt(totalMed)}
+            </p>
           </div>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
-            {MoneyBdt(totalFeed)}
-          </p>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Feed sacks</p>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
-            <Qty value={totalFeedSacks} />
-          </p>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-lg border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed kg</p>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-cyan-950 sm:text-lg">
-            <Qty value={totalFeedKg} />
-          </p>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-lg border border-cyan-200 bg-cyan-50/50 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed tons</p>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-cyan-950 sm:text-lg">
-            <Qty value={totalFeedTons} digits={4} />
-          </p>
-          <p className="mt-1 text-[11px] text-cyan-800/70">1 t = 1,000 kg</p>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-lg border border-violet-200 bg-violet-50/80 p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-900">
-            <Pill className="h-4 w-4 shrink-0" aria-hidden />
-            Medicine cost
+        ) : null}
+        {mode === 'both' ? (
+          <div className="min-w-0 overflow-hidden rounded-lg border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Total cost</p>
+            <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-rose-950 sm:text-lg">
+              {MoneyBdt(totalAmount)}
+            </p>
           </div>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-violet-950 sm:text-lg">
-            {MoneyBdt(totalMed)}
-          </p>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-lg border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Total cost</p>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-rose-950 sm:text-lg">
-            {MoneyBdt(totalAmount)}
-          </p>
-        </div>
+        ) : null}
         <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ponds</p>
           <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-foreground sm:text-lg">
             {pondCount}
           </p>
         </div>
-        <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feed days</p>
-          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-foreground sm:text-lg">
-            {feedDayCount}
-          </p>
-          <p className="mt-1 text-[11px] text-muted-foreground">{lineCount} entries</p>
-        </div>
+        {showFeed ? (
+          <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feed days</p>
+            <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-foreground sm:text-lg">
+              {feedDayCount}
+            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{lineCount} entries</p>
+          </div>
+        ) : null}
+        {showMed && !showFeed ? (
+          <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Medicine days</p>
+            <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-foreground sm:text-lg">
+              {medDayCount}
+            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{lineCount} entries</p>
+          </div>
+        ) : null}
       </div>
 
       {showFarmDaily ? (
@@ -506,12 +566,12 @@ export function AquacultureFeedMedicineConsumptionPanel({
       ) : null}
 
       {groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No feed or medicine consumption in this period.</p>
+        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
         <div className="space-y-6">
-          <h3 className="text-sm font-semibold text-foreground">Per-pond daily feed</h3>
+          <h3 className="text-sm font-semibold text-foreground">{sectionTitle}</h3>
           {groups.map((g) => (
-            <PondSection key={`fmc-${g.pond_id}`} group={g} />
+            <PondSection key={`fmc-${g.pond_id}`} group={g} mode={mode} />
           ))}
         </div>
       )}
@@ -519,19 +579,23 @@ export function AquacultureFeedMedicineConsumptionPanel({
       <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3 space-y-2">
         <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-foreground">
           <span>{pondTotalLabel(groups.length === 1 ? groups[0]?.pond_name : pondScopeLabel)}</span>
-          <span className="tabular-nums">{MoneyBdt(totalAmount)}</span>
+          <span className="tabular-nums">
+            {MoneyBdt(mode === 'feed' ? totalFeed : mode === 'medicine' ? totalMed : totalAmount)}
+          </span>
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-          <span>
-            Feed: <Qty value={totalFeedSacks} /> sacks · <Qty value={totalFeedKg} /> kg ·{' '}
-            <Qty value={totalFeedTons} digits={4} /> t · {MoneyBdt(totalFeed)}
-          </span>
-          <span>Medicine: {MoneyBdt(totalMed)}</span>
+          {showFeed ? (
+            <span>
+              Feed: <Qty value={totalFeedSacks} /> sacks · <Qty value={totalFeedKg} /> kg ·{' '}
+              <Qty value={totalFeedTons} digits={4} /> t · {MoneyBdt(totalFeed)}
+            </span>
+          ) : null}
+          {showMed ? <span>Medicine: {MoneyBdt(totalMed)}</span> : null}
           <span>{lineCount} consumption line(s)</span>
         </div>
       </div>
 
-      <FcrSummaryBlock data={data} />
+      {showFeed ? <FcrSummaryBlock data={data} /> : null}
     </div>
   )
 }

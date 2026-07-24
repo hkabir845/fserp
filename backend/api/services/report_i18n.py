@@ -128,3 +128,23 @@ def note_feed_medicine_consumption(company_id: int) -> str:
         "দৈনিক খাবার মোট: বস্তা, কেজি ও মেট্রিক টন (১ টন = ১,০০০ কেজি) সহ খরচ। "
         "বস্তা ও কেজি প্রতিটি ব্যবহারের রেকর্ড থেকে; খরচ ব্যবহারের সময় ইনভেন্টরি মূল্য (COGS)।",
     )
+
+
+def note_feed_consumption(company_id: int) -> str:
+    return pick_for_company(
+        company_id,
+        "Feed consumed from each pond warehouse (manual consumption or feeding advice apply). "
+        "Daily totals show sacks, kilograms, and metric tons (1 t = 1,000 kg) plus cost at inventory value (COGS).",
+        "প্রতিটি পুকুর গুদাম থেকে ব্যবহৃত খাবার (ম্যানুয়াল বা ফিডিং অ্যাডভাইস প্রয়োগ)। "
+        "দৈনিক মোট: বস্তা, কেজি ও মেট্রিক টন (১ টন = ১,০০০ কেজি) সহ ইনভেন্টরি মূল্যে খরচ (COGS)।",
+    )
+
+
+def note_medicine_consumption(company_id: int) -> str:
+    return pick_for_company(
+        company_id,
+        "Medicine consumed from each pond warehouse (manual treatments). "
+        "Daily totals and entry detail show cost at inventory value (COGS).",
+        "প্রতিটি পুকুর গুদাম থেকে ব্যবহৃত ঔষধ (ম্যানুয়াল চিকিৎসা)। "
+        "দৈনিক মোট ও এন্ট্রি বিস্তারিত ইনভেন্টরি মূল্যে খরচ (COGS) দেখায়।",
+    )

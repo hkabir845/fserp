@@ -10,7 +10,7 @@ import {
   FileText, TrendingUp, DollarSign, Users, Package, 
   BarChart3, Calendar, Download, Filter, RefreshCw, Printer,
   Gauge, Droplet,   ClipboardList, Layers, ShoppingCart, MapPin, Fish, Store,
-  Scale, Landmark, Banknote, BookOpen, CreditCard,
+  Scale, Landmark, Banknote, BookOpen, CreditCard, Search, X, Pill,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -33,7 +33,7 @@ import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { t as i18nT } from '@/lib/i18n'
-import { localizeReportCard } from '@/lib/reportCatalogI18n'
+import { localizeReportCard, REPORT_CATALOG_LABELS } from '@/lib/reportCatalogI18n'
 import { getTenantLocaleConfig } from '@/utils/tenantLocale'
 import {
   formatPondScopeKey,
@@ -223,6 +223,8 @@ type ReportType =
   | 'aquaculture-fish-sales'
   | 'aquaculture-pond-sales-comprehensive'
   | 'aquaculture-expenses'
+  | 'aquaculture-feed-consumption'
+  | 'aquaculture-medicine-consumption'
   | 'aquaculture-feed-medicine-consumption'
   | 'aquaculture-sampling'
   | 'aquaculture-production-cycles'
@@ -687,11 +689,19 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
-    id: 'aquaculture-feed-medicine-consumption',
-    title: 'Aquaculture — Feed & medicine consumption',
+    id: 'aquaculture-feed-consumption',
+    title: 'Aquaculture — Feed consumption',
     description:
-      'Per-pond daily feed ledger (sacks, kg, metric tons) with medicine use, entry detail, and farm totals (BDT)',
+      'Per-pond daily feed ledger (sacks, kg, metric tons) with entry detail and farm totals (BDT)',
     icon: Package,
+    category: 'aquaculture',
+  },
+  {
+    id: 'aquaculture-medicine-consumption',
+    title: 'Aquaculture — Medicine consumption',
+    description:
+      'Per-pond medicine use from warehouse with daily totals, entry detail, and period cost (BDT)',
+    icon: Pill,
     category: 'aquaculture',
   },
   {
@@ -786,6 +796,8 @@ const reports: ReportCard[] = [
 
 function isApiBackedReportId(reportId: string): reportId is ReportType {
   if (CLIENT_ONLY_REPORT_IDS.has(reportId as ReportType)) return false
+  // Legacy combined consumption report (not listed in hub; still fetchable via deep link)
+  if (reportId === 'aquaculture-feed-medicine-consumption') return true
   return reports.some((r) => r.id === reportId)
 }
 
@@ -807,6 +819,8 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-expenses',
+  'aquaculture-feed-consumption',
+  'aquaculture-medicine-consumption',
   'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
@@ -828,6 +842,20 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-equipment-assets',
   'aquaculture-pond-total-inventory',
 ])
+
+const CONSUMPTION_REPORT_IDS = new Set<ReportType>([
+  'aquaculture-feed-consumption',
+  'aquaculture-medicine-consumption',
+  'aquaculture-feed-medicine-consumption',
+])
+
+function consumptionReportMode(
+  reportId: ReportType | string | null | undefined
+): 'feed' | 'medicine' | 'both' {
+  if (reportId === 'aquaculture-feed-consumption') return 'feed'
+  if (reportId === 'aquaculture-medicine-consumption') return 'medicine'
+  return 'both'
+}
 
 /** Mix — Fuel & Aquaculture: core GL + fuel ops + every aquaculture report (when role allows). */
 const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
@@ -861,7 +889,8 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-pond-pl',
   'aquaculture-expenses',
-  'aquaculture-feed-medicine-consumption',
+  'aquaculture-feed-consumption',
+  'aquaculture-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
@@ -1011,6 +1040,8 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-expenses',
+  'aquaculture-feed-consumption',
+  'aquaculture-medicine-consumption',
   'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
@@ -1476,8 +1507,13 @@ function ReportsPageContent() {
   const [filterCategory, setFilterCategory] = useState<
     'all' | 'mix' | 'financial' | 'operational' | 'analytical' | 'inventory' | 'aquaculture'
   >('all')
+  const [reportSearch, setReportSearch] = useState('')
 
   const [aquaculturePondId, setAquaculturePondId] = useState('')
+  const [aquacultureFeedItemId, setAquacultureFeedItemId] = useState('')
+  const [aquacultureMedicineItemId, setAquacultureMedicineItemId] = useState('')
+  const [aquacultureFeedItems, setAquacultureFeedItems] = useState<{ id: number; name: string }[]>([])
+  const [aquacultureMedicineItems, setAquacultureMedicineItems] = useState<{ id: number; name: string }[]>([])
   const [aquacultureCycleId, setAquacultureCycleId] = useState('')
   const [aquacultureIncludeCycleBreakdown, setAquacultureIncludeCycleBreakdown] = useState(false)
   const [fingerlingSearch, setFingerlingSearch] = useState('')
@@ -1798,6 +1834,76 @@ function ReportsPageContent() {
     }
   }, [aquaculturePondId, selectedReport])
 
+  useEffect(() => {
+    if (!selectedReport || !CONSUMPTION_REPORT_IDS.has(selectedReport)) {
+      setAquacultureFeedItems([])
+      setAquacultureMedicineItems([])
+      setAquacultureFeedItemId('')
+      setAquacultureMedicineItemId('')
+      return
+    }
+    let cancelled = false
+    api
+      .get<{ id: number; name: string; pos_category?: string; item_type?: string }[]>('/items/', {
+        params: { pos_only: 'true' },
+      })
+      .then((res) => {
+        if (cancelled) return
+        const raw = Array.isArray(res.data) ? res.data : []
+        const inventory = raw.filter((it) => (it.item_type || '').toLowerCase() === 'inventory')
+        const mergeCatalog = (
+          prev: { id: number; name: string }[],
+          cat: 'feed' | 'medicine'
+        ) => {
+          const byId = new Map(prev.map((x) => [x.id, x]))
+          for (const it of inventory) {
+            if ((it.pos_category || '').toLowerCase() !== cat) continue
+            byId.set(it.id, { id: it.id, name: it.name })
+          }
+          return Array.from(byId.values()).sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+          )
+        }
+        setAquacultureFeedItems((prev) => mergeCatalog(prev, 'feed'))
+        setAquacultureMedicineItems((prev) => mergeCatalog(prev, 'medicine'))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAquacultureFeedItems([])
+          setAquacultureMedicineItems([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedReport, selectedCompany?.id])
+
+  useEffect(() => {
+    if (!selectedReport || !CONSUMPTION_REPORT_IDS.has(selectedReport) || !reportData) return
+    const data = reportData as {
+      feed_item_options?: { id?: number; name?: string }[]
+      medicine_item_options?: { id?: number; name?: string }[]
+    }
+    const mergeOpts = (
+      prev: { id: number; name: string }[],
+      incoming: { id?: number; name?: string }[] | undefined
+    ) => {
+      if (!Array.isArray(incoming) || incoming.length === 0) return prev
+      const byId = new Map(prev.map((x) => [x.id, x]))
+      for (const opt of incoming) {
+        const id = Number(opt?.id)
+        if (!Number.isFinite(id) || id <= 0) continue
+        const name = String(opt?.name || '').trim() || `Item #${id}`
+        byId.set(id, { id, name })
+      }
+      return Array.from(byId.values()).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      )
+    }
+    setAquacultureFeedItems((prev) => mergeOpts(prev, data.feed_item_options))
+    setAquacultureMedicineItems((prev) => mergeOpts(prev, data.medicine_item_options))
+  }, [selectedReport, reportData])
+
   const showAquacultureReports =
     companyAquacultureEnabled !== false &&
     (hasPermission('app.aquaculture') || hasPermission('app.aquaculture.report_pl'))
@@ -1916,23 +2022,44 @@ function ReportsPageContent() {
     }
 
     // Then filter by category
+    let categoryFiltered: ReportCard[]
     if (filterCategory === 'all') {
-      return roleFilteredReports
-    }
-    if (filterCategory === 'mix') {
+      categoryFiltered = roleFilteredReports
+    } else if (filterCategory === 'mix') {
       const mixSet = new Set<ReportType>(MIX_FUEL_AQUACULTURE_REPORT_IDS)
       const order = MIX_FUEL_AQUACULTURE_REPORT_IDS
-      return roleFilteredReports
+      categoryFiltered = roleFilteredReports
         .filter((r) => mixSet.has(r.id))
         .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
-    }
-    if (filterCategory === 'analytical') {
+    } else if (filterCategory === 'analytical') {
       const pondExtra = new Set<ReportType>(ANALYTICAL_POND_REPORT_IDS)
-      return roleFilteredReports.filter(
+      categoryFiltered = roleFilteredReports.filter(
         (r) => r.category === 'analytical' || pondExtra.has(r.id),
       )
+    } else {
+      categoryFiltered = roleFilteredReports.filter((r) => r.category === filterCategory)
     }
-    return roleFilteredReports.filter((r) => r.category === filterCategory)
+
+    const q = reportSearch.trim().toLowerCase()
+    if (!q) return categoryFiltered
+    return categoryFiltered.filter((r) => {
+      const loc = REPORT_CATALOG_LABELS[r.id]
+      const haystack = [
+        r.title,
+        r.description,
+        r.id,
+        r.category,
+        loc?.title.en,
+        loc?.title.bn,
+        loc?.description.en,
+        loc?.description.bn,
+      ]
+        .filter(Boolean)
+        .join('\n')
+        .toLowerCase()
+      // Character-level: match as soon as typed characters appear as a substring
+      return haystack.includes(q)
+    })
   }
   
   const filteredReports = getFilteredReports()
@@ -2057,6 +2184,23 @@ function ReportsPageContent() {
           params.growout_pond_id = fingerlingGrowoutPondId
         }
         if (fingerlingBalance !== 'all') params.balance = fingerlingBalance
+      }
+      if (CONSUMPTION_REPORT_IDS.has(reportId)) {
+        const mode = consumptionReportMode(reportId)
+        if (
+          (mode === 'feed' || mode === 'both') &&
+          aquacultureFeedItemId &&
+          /^\d+$/.test(aquacultureFeedItemId)
+        ) {
+          params.feed_item_id = aquacultureFeedItemId
+        }
+        if (
+          (mode === 'medicine' || mode === 'both') &&
+          aquacultureMedicineItemId &&
+          /^\d+$/.test(aquacultureMedicineItemId)
+        ) {
+          params.medicine_item_id = aquacultureMedicineItemId
+        }
       }
     }
 
@@ -2190,6 +2334,8 @@ function ReportsPageContent() {
     itemScopeItemIds,
     reportStationId,
     aquaculturePondId,
+    aquacultureFeedItemId,
+    aquacultureMedicineItemId,
     aquacultureCycleId,
     aquacultureIncludeCycleBreakdown,
     fingerlingSearch,
@@ -2298,7 +2444,7 @@ function ReportsPageContent() {
   useEffect(() => {
     if (!selectedReport || !String(selectedReport).startsWith('aquaculture-')) return
     if (selectedReport === 'aquaculture-pl-management') return
-    const sig = `${effectiveAquaculturePondId}|${aquacultureCycleId}|${aquacultureIncludeCycleBreakdown ? '1' : '0'}`
+    const sig = `${effectiveAquaculturePondId}|${aquacultureCycleId}|${aquacultureIncludeCycleBreakdown ? '1' : '0'}|${aquacultureFeedItemId}|${aquacultureMedicineItemId}`
     if (aquacultureFilterSigRef.current === '') {
       aquacultureFilterSigRef.current = sig
       return
@@ -2310,6 +2456,8 @@ function ReportsPageContent() {
     effectiveAquaculturePondId,
     aquacultureCycleId,
     aquacultureIncludeCycleBreakdown,
+    aquacultureFeedItemId,
+    aquacultureMedicineItemId,
     selectedReport,
     fetchReport,
   ])
@@ -3359,8 +3507,10 @@ function ReportsPageContent() {
           }
         }
         const groupsCsv =
-          selectedReport === 'aquaculture-feed-medicine-consumption'
-            ? buildFeedMedicineConsumptionCsv(reportData as Record<string, unknown>)
+          selectedReport && CONSUMPTION_REPORT_IDS.has(selectedReport)
+            ? buildFeedMedicineConsumptionCsv(reportData as Record<string, unknown>, {
+                mode: consumptionReportMode(selectedReport),
+              })
             : buildAquacultureGroupsCsv(reportData as Record<string, unknown>)
         if (groupsCsv) csvContent += `\n${groupsCsv}`
         if (selectedReport === 'aquaculture-pond-sales-comprehensive' && reportData && typeof reportData === 'object') {
@@ -3509,8 +3659,37 @@ function ReportsPageContent() {
 
           <div className="flex min-h-0 w-full min-w-0 flex-col gap-6 lg:max-h-[calc(100dvh-11rem)] lg:flex-row lg:items-stretch lg:gap-6 xl:gap-8">
             {/* Mobile: compact report picker instead of scrolling through every card */}
-            <div className="lg:hidden">
-              <label htmlFor="mobile-report-select" className="mb-1.5 block text-sm font-medium text-foreground">
+            <div className="space-y-2 lg:hidden">
+              <label htmlFor="mobile-report-search" className="block text-sm font-medium text-foreground">
+                Search reports
+              </label>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <input
+                  id="mobile-report-search"
+                  type="search"
+                  value={reportSearch}
+                  onChange={(e) => setReportSearch(e.target.value)}
+                  placeholder="Type to filter reports…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full min-w-0 rounded-lg border border-border bg-white py-2.5 pl-9 pr-9 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
+                />
+                {reportSearch ? (
+                  <button
+                    type="button"
+                    onClick={() => setReportSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+              <label htmlFor="mobile-report-select" className="block text-sm font-medium text-foreground">
                 Report
               </label>
               <select
@@ -3523,7 +3702,9 @@ function ReportsPageContent() {
                 disabled={loading}
                 className="w-full min-w-0 rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:opacity-50"
               >
-                <option value="">Choose a report…</option>
+                <option value="">
+                  {filteredReports.length === 0 ? 'No matching reports' : 'Choose a report…'}
+                </option>
                 {filteredReports.map((report) => (
                   <option key={report.id} value={report.id}>
                     {report.title}
@@ -3535,8 +3716,50 @@ function ReportsPageContent() {
             {/* Report list — desktop sidebar */}
             <aside
               ref={reportListRef}
-              className="hidden w-full min-w-0 shrink-0 space-y-3 lg:block lg:max-h-full lg:max-w-[20rem] lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1 xl:max-w-[22rem]"
+              className="hidden w-full min-w-0 shrink-0 space-y-3 lg:flex lg:max-h-full lg:max-w-[20rem] lg:flex-col lg:overflow-hidden lg:pr-1 xl:max-w-[22rem]"
             >
+              <div className="shrink-0 space-y-1.5">
+                <label htmlFor="desktop-report-search" className="block text-sm font-medium text-foreground">
+                  Search reports
+                </label>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <input
+                    id="desktop-report-search"
+                    type="search"
+                    value={reportSearch}
+                    onChange={(e) => setReportSearch(e.target.value)}
+                    placeholder="Type to filter reports…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-full min-w-0 rounded-lg border border-border bg-white py-2 pl-9 pr-9 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
+                  />
+                  {reportSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => setReportSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                {reportSearch.trim() ? (
+                  <p className="text-xs text-muted-foreground">
+                    {filteredReports.length} match{filteredReports.length === 1 ? '' : 'es'}
+                  </p>
+                ) : null}
+              </div>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain">
+              {filteredReports.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-6 text-center text-sm text-muted-foreground">
+                  No reports match “{reportSearch.trim()}”.
+                </p>
+              ) : null}
               {filteredReports.map((report) => {
                 const Icon = report.icon
                 const isSelected = selectedReport === report.id
@@ -3579,6 +3802,7 @@ function ReportsPageContent() {
                   </button>
                 )
               })}
+              </div>
             </aside>
 
             {/* Report Display — flex-1 so charts and tables use the full right-hand workspace */}
@@ -3715,6 +3939,58 @@ function ReportsPageContent() {
                                 ))}
                               </select>
                             </div>
+                            {selectedReport && CONSUMPTION_REPORT_IDS.has(selectedReport) && (
+                              <>
+                                {(consumptionReportMode(selectedReport) === 'feed' ||
+                                  consumptionReportMode(selectedReport) === 'both') && (
+                                  <div className="flex flex-col gap-1">
+                                    <label
+                                      className="text-xs font-medium text-cyan-900"
+                                      htmlFor="aq-report-feed"
+                                    >
+                                      Feed (optional)
+                                    </label>
+                                    <select
+                                      id="aq-report-feed"
+                                      value={aquacultureFeedItemId}
+                                      onChange={(e) => setAquacultureFeedItemId(e.target.value)}
+                                      className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[12rem]"
+                                    >
+                                      <option value="">All feeds</option>
+                                      {aquacultureFeedItems.map((it) => (
+                                        <option key={`feed-${it.id}`} value={String(it.id)}>
+                                          {it.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                                {(consumptionReportMode(selectedReport) === 'medicine' ||
+                                  consumptionReportMode(selectedReport) === 'both') && (
+                                  <div className="flex flex-col gap-1">
+                                    <label
+                                      className="text-xs font-medium text-cyan-900"
+                                      htmlFor="aq-report-medicine"
+                                    >
+                                      Medicine (optional)
+                                    </label>
+                                    <select
+                                      id="aq-report-medicine"
+                                      value={aquacultureMedicineItemId}
+                                      onChange={(e) => setAquacultureMedicineItemId(e.target.value)}
+                                      className="erp-field w-full min-w-0 rounded-md px-2 py-1.5 text-sm sm:min-w-[12rem]"
+                                    >
+                                      <option value="">All medicines</option>
+                                      {aquacultureMedicineItems.map((it) => (
+                                        <option key={`med-${it.id}`} value={String(it.id)}>
+                                          {it.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </>
+                            )}
                             {selectedReport === 'aquaculture-pond-pl' && (
                               <>
                                 <div className="flex flex-col gap-1">
@@ -9238,11 +9514,7 @@ function renderReportTable(
     )
   }
 
-  if (
-    reportType === 'aquaculture-feed-medicine-consumption' &&
-    data &&
-    Array.isArray(data.groups)
-  ) {
+  if (CONSUMPTION_REPORT_IDS.has(reportType) && data && Array.isArray(data.groups)) {
     const pondName =
       data.filter_pond_id != null
         ? scopeLabels?.ponds?.find((p) => p.id === Number(data.filter_pond_id))?.name ??
@@ -9262,6 +9534,7 @@ function renderReportTable(
           )
         }
         reportType={reportType}
+        mode={consumptionReportMode(reportType)}
         dateRange={dateRange}
         pondScopeLabel={pondName}
       />

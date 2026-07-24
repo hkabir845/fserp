@@ -1,12 +1,34 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import { Package, Pill } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, Package, Pill } from 'lucide-react'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import { formatNumber } from '@/utils/currency'
 
 function MoneyBdt(amount: unknown) {
   return <ReportAmountCell amount={Number(amount ?? 0)} currency="BDT" plain />
+}
+
+function Qty({ value, digits = 2 }: { value: unknown; digits?: number }) {
+  const n = Number(value ?? 0)
+  if (!Number.isFinite(n) || n === 0) return <span className="text-muted-foreground">—</span>
+  return <span className="tabular-nums">{formatNumber(n, digits)}</span>
+}
+
+type DailyFeedRow = {
+  date?: string
+  sacks?: string | number
+  kg?: string | number
+  tons?: string | number
+  amount?: string | number
+  entry_count?: number
+  pond_count?: number
+}
+
+type DailyMedicineRow = {
+  date?: string
+  amount?: string | number
+  entry_count?: number
 }
 
 type ConsumptionLine = {
@@ -18,6 +40,7 @@ type ConsumptionLine = {
   quantity?: string | number | null
   unit?: string
   feed_weight_kg?: string | number | null
+  feed_sack_count?: string | number | null
   amount?: string | number
   source_doc?: string
   memo?: string
@@ -26,11 +49,21 @@ type ConsumptionLine = {
 type ConsumptionGroup = {
   pond_id: number
   pond_name: string
+  daily_feed?: DailyFeedRow[]
+  daily_medicine?: DailyMedicineRow[]
+  feed_lines?: ConsumptionLine[]
+  medicine_lines?: ConsumptionLine[]
   lines?: ConsumptionLine[]
   subtotal_feed_amount?: string
   subtotal_medicine_amount?: string
   subtotal_amount?: string
   subtotal_feed_kg?: string
+  subtotal_feed_sacks?: string
+  subtotal_feed_tons?: string
+  feed_day_count?: number
+  medicine_day_count?: number
+  feed_line_count?: number
+  medicine_line_count?: number
 }
 
 type PeriodFilterProps = {
@@ -100,6 +133,246 @@ function FcrSummaryBlock({ data }: { data: Record<string, unknown> }) {
   )
 }
 
+function DailyFeedTable({
+  rows,
+  footerLabel,
+  footerSacks,
+  footerKg,
+  footerTons,
+  footerAmount,
+  showPondCount,
+}: {
+  rows: DailyFeedRow[]
+  footerLabel: string
+  footerSacks?: string | number
+  footerKg?: string | number
+  footerTons?: string | number
+  footerAmount?: string | number
+  showPondCount?: boolean
+}) {
+  if (!rows.length) {
+    return <p className="px-3 py-2 text-sm text-muted-foreground">No daily feed consumption in this period.</p>
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="border-b text-left text-xs text-muted-foreground">
+            <th className="px-2 py-1.5">Date</th>
+            {showPondCount ? <th className="px-2 py-1.5 text-right">Ponds</th> : null}
+            <th className="px-2 py-1.5 text-right">Sacks</th>
+            <th className="px-2 py-1.5 text-right">kg</th>
+            <th className="px-2 py-1.5 text-right">Tons (t)</th>
+            <th className="px-2 py-1.5 text-right">Cost (BDT)</th>
+            <th className="px-2 py-1.5 text-right">Entries</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/70">
+          {rows.map((row) => (
+            <tr key={row.date}>
+              <td className="px-2 py-1.5 whitespace-nowrap font-medium">{row.date}</td>
+              {showPondCount ? (
+                <td className="px-2 py-1.5 text-right tabular-nums">{row.pond_count ?? '—'}</td>
+              ) : null}
+              <td className="px-2 py-1.5 text-right">
+                <Qty value={row.sacks} />
+              </td>
+              <td className="px-2 py-1.5 text-right">
+                <Qty value={row.kg} />
+              </td>
+              <td className="px-2 py-1.5 text-right">
+                <Qty value={row.tons} digits={4} />
+              </td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(row.amount)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+                {row.entry_count ?? '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className="bg-muted/50">
+          <tr>
+            <td className="px-2 py-2 text-xs font-semibold" colSpan={showPondCount ? 2 : 1}>
+              {footerLabel}
+            </td>
+            <td className="px-2 py-2 text-right text-xs font-bold">
+              <Qty value={footerSacks} />
+            </td>
+            <td className="px-2 py-2 text-right text-xs font-bold">
+              <Qty value={footerKg} />
+            </td>
+            <td className="px-2 py-2 text-right text-xs font-bold">
+              <Qty value={footerTons} digits={4} />
+            </td>
+            <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{MoneyBdt(footerAmount)}</td>
+            <td className="px-2 py-2" />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
+  if (!lines.length) return null
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="border-b text-left text-xs text-muted-foreground">
+            <th className="px-2 py-1">Date</th>
+            <th className="px-2 py-1">Type</th>
+            <th className="px-2 py-1">Item</th>
+            <th className="px-2 py-1 text-right">Qty</th>
+            <th className="px-2 py-1 text-right">Sacks</th>
+            <th className="px-2 py-1 text-right">kg</th>
+            <th className="px-2 py-1 text-right">Tons</th>
+            <th className="px-2 py-1 text-right">Cost (BDT)</th>
+            <th className="px-2 py-1">Source / memo</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/70">
+          {lines.map((ln) => {
+            const kg = Number(ln.feed_weight_kg ?? 0)
+            const tons = kg > 0 ? kg / 1000 : 0
+            return (
+              <tr key={ln.id ?? `${ln.entry_date}-${ln.kind}-${ln.item_name}`}>
+                <td className="px-2 py-1.5 whitespace-nowrap">{ln.entry_date}</td>
+                <td className="px-2 py-1.5">{ln.kind_label || ln.kind}</td>
+                <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {ln.quantity != null ? `${ln.quantity}${ln.unit ? ` ${ln.unit}` : ''}` : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <Qty value={ln.feed_sack_count} />
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <Qty value={ln.feed_weight_kg} />
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <Qty value={tons || null} digits={4} />
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
+                <td className="px-2 py-1.5 text-muted-foreground">{ln.source_doc || ln.memo || '—'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function PondSection({ group }: { group: ConsumptionGroup }) {
+  const [showDetail, setShowDetail] = useState(false)
+  const dailyFeed = group.daily_feed || []
+  const dailyMed = group.daily_medicine || []
+  const detailLines = group.lines || []
+  const medLines = group.medicine_lines || detailLines.filter((l) => l.kind === 'medicine')
+
+  return (
+    <div className="rounded-lg border border-border bg-white shadow-sm">
+      <div className="border-b border-border/70 bg-cyan-50/80 px-4 py-3">
+        <h4 className="font-semibold text-cyan-950">{group.pond_name}</h4>
+        <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-cyan-900/80">
+          <span>
+            Feed: <Qty value={group.subtotal_feed_sacks} /> sacks · <Qty value={group.subtotal_feed_kg} /> kg ·{' '}
+            <Qty value={group.subtotal_feed_tons} digits={4} /> t
+          </span>
+          <span>Feed cost: {MoneyBdt(group.subtotal_feed_amount)}</span>
+          <span>Medicine: {MoneyBdt(group.subtotal_medicine_amount)}</span>
+          <span>
+            {group.feed_day_count ?? dailyFeed.length} feed day(s)
+            {(group.medicine_day_count ?? dailyMed.length) > 0
+              ? ` · ${group.medicine_day_count ?? dailyMed.length} medicine day(s)`
+              : ''}
+          </span>
+        </p>
+      </div>
+
+      <div className="space-y-4 p-3">
+        <div>
+          <h5 className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-amber-900">
+            Daily feed consumption
+          </h5>
+          <DailyFeedTable
+            rows={dailyFeed}
+            footerLabel={`Total — ${group.pond_name}`}
+            footerSacks={group.subtotal_feed_sacks}
+            footerKg={group.subtotal_feed_kg}
+            footerTons={group.subtotal_feed_tons}
+            footerAmount={group.subtotal_feed_amount}
+          />
+        </div>
+
+        {dailyMed.length > 0 || medLines.length > 0 ? (
+          <div>
+            <h5 className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-violet-900">
+              Medicine consumption
+            </h5>
+            {dailyMed.length > 0 ? (
+              <div className="mb-2 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="px-2 py-1.5">Date</th>
+                      <th className="px-2 py-1.5 text-right">Cost (BDT)</th>
+                      <th className="px-2 py-1.5 text-right">Entries</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/70">
+                    {dailyMed.map((row) => (
+                      <tr key={`med-${row.date}`}>
+                        <td className="px-2 py-1.5 whitespace-nowrap font-medium">{row.date}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(row.amount)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+                          {row.entry_count ?? '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-violet-50/60">
+                    <tr>
+                      <td className="px-2 py-2 text-xs font-semibold">Medicine total — {group.pond_name}</td>
+                      <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+                        {MoneyBdt(group.subtotal_medicine_amount)}
+                      </td>
+                      <td className="px-2 py-2" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : null}
+            {medLines.length > 0 ? (
+              <div className="rounded border border-violet-100 bg-violet-50/30 p-2">
+                <p className="mb-1 text-[11px] font-medium text-violet-900/80">Medicine entries</p>
+                <EntryDetailTable lines={medLines} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowDetail((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            {showDetail ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            {showDetail ? 'Hide' : 'Show'} entry detail ({detailLines.length} line
+            {detailLines.length === 1 ? '' : 's'})
+          </button>
+          {showDetail ? (
+            <div className="mt-2 rounded border border-border/70 bg-muted/20 p-2">
+              <EntryDetailTable lines={detailLines} />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AquacultureFeedMedicineConsumptionPanel({
   data,
   hasPeriod,
@@ -110,6 +383,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
 }: AquacultureFeedMedicineConsumptionPanelProps) {
   const period = (data.period as { start_date?: string; end_date?: string }) || {}
   const groups = (Array.isArray(data.groups) ? data.groups : []) as ConsumptionGroup[]
+  const farmDaily = (Array.isArray(data.farm_daily_feed) ? data.farm_daily_feed : []) as DailyFeedRow[]
   const totals = (data.totals as Record<string, unknown>) || {}
   const summary = (data.summary as Record<string, unknown>) || {}
 
@@ -117,8 +391,12 @@ export function AquacultureFeedMedicineConsumptionPanel({
   const totalMed = Number(totals.total_medicine_amount ?? summary.total_medicine_amount_bdt ?? 0)
   const totalAmount = Number(totals.total_amount ?? summary.total_amount_bdt ?? 0)
   const totalFeedKg = Number(totals.total_feed_kg ?? summary.total_feed_kg ?? 0)
+  const totalFeedSacks = Number(totals.total_feed_sacks ?? summary.total_feed_sacks ?? 0)
+  const totalFeedTons = Number(totals.total_feed_tons ?? summary.total_feed_tons ?? 0)
   const lineCount = Number(summary.line_count ?? totals.line_count ?? 0)
   const pondCount = Number(summary.pond_group_count ?? groups.length)
+  const feedDayCount = Number(totals.feed_day_count ?? summary.feed_day_count ?? farmDaily.length)
+  const showFarmDaily = !pondScopeLabel && groups.length > 1 && farmDaily.length > 0
 
   return (
     <div className="space-y-8">
@@ -127,13 +405,13 @@ export function AquacultureFeedMedicineConsumptionPanel({
           period,
           dateRange,
           reportType,
-          hint: 'Consumption date within this range. Use Pond filter for one pond or leave empty for all ponds.',
+          hint: 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Leave pond filter empty for all ponds.',
         })}
 
       <div>
         <p className="text-sm font-medium text-foreground/85">
-          Feed and medicine consumed from pond warehouses — costs in <strong>BDT</strong> at inventory value when
-          used.
+          Standard pond feed &amp; medicine consumption — daily feed ledger with{' '}
+          <strong>sacks</strong>, <strong>kg</strong>, <strong>tons</strong>, and cost (BDT at inventory value).
           {pondScopeLabel ? (
             <>
               {' '}
@@ -146,16 +424,32 @@ export function AquacultureFeedMedicineConsumptionPanel({
         ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8">
         <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
             <Package className="h-4 w-4" aria-hidden />
             Feed cost
           </div>
           <p className="mt-2 text-xl font-bold tabular-nums text-amber-950">{MoneyBdt(totalFeed)}</p>
-          {totalFeedKg > 0 ? (
-            <p className="mt-1 text-xs text-amber-800/80">{formatNumber(totalFeedKg, 2)} kg recorded</p>
-          ) : null}
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Feed sacks</p>
+          <p className="mt-2 text-xl font-bold tabular-nums text-amber-950">
+            <Qty value={totalFeedSacks} />
+          </p>
+        </div>
+        <div className="rounded-lg border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed kg</p>
+          <p className="mt-2 text-xl font-bold tabular-nums text-cyan-950">
+            <Qty value={totalFeedKg} />
+          </p>
+        </div>
+        <div className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed tons</p>
+          <p className="mt-2 text-xl font-bold tabular-nums text-cyan-950">
+            <Qty value={totalFeedTons} digits={4} />
+          </p>
+          <p className="mt-1 text-[11px] text-cyan-800/70">1 t = 1,000 kg</p>
         </div>
         <div className="rounded-lg border border-violet-200 bg-violet-50/80 p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-900">
@@ -165,7 +459,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
           <p className="mt-2 text-xl font-bold tabular-nums text-violet-950">{MoneyBdt(totalMed)}</p>
         </div>
         <div className="rounded-lg border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Total consumption</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Total cost</p>
           <p className="mt-2 text-xl font-bold tabular-nums text-rose-950">{MoneyBdt(totalAmount)}</p>
         </div>
         <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
@@ -173,85 +467,43 @@ export function AquacultureFeedMedicineConsumptionPanel({
           <p className="mt-2 text-xl font-bold tabular-nums text-foreground">{pondCount}</p>
         </div>
         <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Consumption lines</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-foreground">{lineCount}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feed days</p>
+          <p className="mt-2 text-xl font-bold tabular-nums text-foreground">{feedDayCount}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">{lineCount} entries</p>
         </div>
-        {totalFeedKg > 0 ? (
-          <div className="rounded-lg border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed weight</p>
-            <p className="mt-2 text-xl font-bold tabular-nums text-cyan-950">
-              {formatNumber(totalFeedKg, 2)} kg
+      </div>
+
+      {showFarmDaily ? (
+        <div className="rounded-lg border border-border bg-white shadow-sm">
+          <div className="border-b border-border/70 bg-slate-50 px-4 py-2">
+            <h4 className="font-semibold text-foreground">Farm daily feed — all ponds</h4>
+            <p className="text-xs text-muted-foreground">
+              Combined feed used each day across every pond with consumption in the period.
             </p>
           </div>
-        ) : null}
-      </div>
+          <div className="p-3">
+            <DailyFeedTable
+              rows={farmDaily}
+              footerLabel="Grand total — all ponds"
+              footerSacks={totals.total_feed_sacks ?? totalFeedSacks}
+              footerKg={totals.total_feed_kg ?? totalFeedKg}
+              footerTons={totals.total_feed_tons ?? totalFeedTons}
+              footerAmount={totals.total_feed_amount ?? totalFeed}
+              showPondCount
+            />
+          </div>
+        </div>
+      ) : null}
 
       {groups.length === 0 ? (
         <p className="text-sm text-muted-foreground">No feed or medicine consumption in this period.</p>
       ) : (
-        groups.map((g) => (
-          <div
-            key={`fmc-${g.pond_id}`}
-            className="rounded-lg border border-border bg-white shadow-sm"
-          >
-            <div className="border-b border-border/70 bg-cyan-50/80 px-4 py-2">
-              <h4 className="font-semibold text-cyan-950">{g.pond_name}</h4>
-              <p className="text-xs text-cyan-900/70">
-                Feed {MoneyBdt(g.subtotal_feed_amount)} · Medicine {MoneyBdt(g.subtotal_medicine_amount)}
-                {g.subtotal_feed_kg && Number(g.subtotal_feed_kg) > 0
-                  ? ` · ${formatNumber(Number(g.subtotal_feed_kg), 2)} kg feed`
-                  : ''}
-              </p>
-            </div>
-            <div className="overflow-x-auto p-2">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="px-2 py-1">Date</th>
-                    <th className="px-2 py-1">Type</th>
-                    <th className="px-2 py-1">Item</th>
-                    <th className="px-2 py-1 text-right">Qty</th>
-                    <th className="px-2 py-1 text-right">Feed (kg)</th>
-                    <th className="px-2 py-1 text-right">Cost (BDT)</th>
-                    <th className="px-2 py-1">Source / memo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/70">
-                  {(g.lines || []).map((ln) => (
-                    <tr key={ln.id ?? `${g.pond_id}-${ln.entry_date}-${ln.kind}`}>
-                      <td className="px-2 py-1.5 whitespace-nowrap">{ln.entry_date}</td>
-                      <td className="px-2 py-1.5">{ln.kind_label || ln.kind}</td>
-                      <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {ln.quantity != null ? `${ln.quantity}${ln.unit ? ` ${ln.unit}` : ''}` : '—'}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {ln.feed_weight_kg ? formatNumber(Number(ln.feed_weight_kg), 2) : '—'}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
-                      <td className="px-2 py-1.5 text-muted-foreground">
-                        {ln.source_doc || ln.memo || '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-muted/40">
-                  <tr>
-                    <td colSpan={5} className="px-2 py-2 text-right text-xs font-semibold text-foreground">
-                      Sub-total — {g.pond_name}
-                    </td>
-                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-foreground">
-                      {MoneyBdt(g.subtotal_amount)}
-                    </td>
-                    <td className="px-2 py-2 text-right text-xs text-muted-foreground">
-                      Feed {MoneyBdt(g.subtotal_feed_amount)} · Medicine {MoneyBdt(g.subtotal_medicine_amount)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        ))
+        <div className="space-y-6">
+          <h3 className="text-sm font-semibold text-foreground">Per-pond daily feed</h3>
+          {groups.map((g) => (
+            <PondSection key={`fmc-${g.pond_id}`} group={g} />
+          ))}
+        </div>
       )}
 
       <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3 space-y-2">
@@ -260,9 +512,11 @@ export function AquacultureFeedMedicineConsumptionPanel({
           <span className="tabular-nums">{MoneyBdt(totals.total_amount ?? totalAmount)}</span>
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-          <span>Feed: {MoneyBdt(totals.total_feed_amount ?? totalFeed)}</span>
+          <span>
+            Feed: <Qty value={totalFeedSacks} /> sacks · <Qty value={totalFeedKg} /> kg ·{' '}
+            <Qty value={totalFeedTons} digits={4} /> t · {MoneyBdt(totals.total_feed_amount ?? totalFeed)}
+          </span>
           <span>Medicine: {MoneyBdt(totals.total_medicine_amount ?? totalMed)}</span>
-          {totalFeedKg > 0 ? <span>Feed weight: {formatNumber(totalFeedKg, 2)} kg</span> : null}
           <span>{lineCount} consumption line(s)</span>
         </div>
       </div>

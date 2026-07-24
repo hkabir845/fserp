@@ -356,12 +356,75 @@ function lineToCsvCells(line: Record<string, unknown>): string[] {
   return cells
 }
 
-/** Feed & medicine consumption report — one row per consumption line. */
+/** Feed & medicine consumption — daily feed ledger + entry detail. */
 export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): string {
   const groups = Array.isArray(data.groups) ? (data.groups as Record<string, unknown>[]) : []
-  if (!groups.length) return ''
-  let out =
-    'Pond,Date,Type,Item,Quantity,Unit,Feed kg,Cost BDT,Source,Memo\n'
+  const farmDaily = Array.isArray(data.farm_daily_feed)
+    ? (data.farm_daily_feed as Record<string, unknown>[])
+    : []
+  const totals = (data.totals as Record<string, unknown>) ?? {}
+  if (!groups.length && !farmDaily.length) return ''
+
+  let out = ''
+
+  if (farmDaily.length) {
+    out += 'Farm daily feed (all ponds)\n'
+    out += 'Date,Ponds,Sacks,kg,Tons,Cost BDT,Entries\n'
+    farmDaily.forEach((row) => {
+      out += [
+        escapeCsvValue(row.date),
+        escapeCsvValue(row.pond_count),
+        escapeCsvValue(row.sacks),
+        escapeCsvValue(row.kg),
+        escapeCsvValue(row.tons),
+        escapeCsvValue(row.amount),
+        escapeCsvValue(row.entry_count),
+      ].join(',')
+      out += '\n'
+    })
+    out += [
+      'TOTAL',
+      '',
+      escapeCsvValue(totals.total_feed_sacks),
+      escapeCsvValue(totals.total_feed_kg),
+      escapeCsvValue(totals.total_feed_tons),
+      escapeCsvValue(totals.total_feed_amount),
+      '',
+    ].join(',')
+    out += '\n\n'
+  }
+
+  out += 'Per-pond daily feed\n'
+  out += 'Pond,Date,Sacks,kg,Tons,Cost BDT,Entries\n'
+  groups.forEach((g) => {
+    const pond = String(g.pond_name ?? '')
+    const daily = Array.isArray(g.daily_feed) ? (g.daily_feed as Record<string, unknown>[]) : []
+    daily.forEach((row) => {
+      out += [
+        escapeCsvValue(pond),
+        escapeCsvValue(row.date),
+        escapeCsvValue(row.sacks),
+        escapeCsvValue(row.kg),
+        escapeCsvValue(row.tons),
+        escapeCsvValue(row.amount),
+        escapeCsvValue(row.entry_count),
+      ].join(',')
+      out += '\n'
+    })
+    out += [
+      escapeCsvValue(`${pond} TOTAL`),
+      '',
+      escapeCsvValue(g.subtotal_feed_sacks),
+      escapeCsvValue(g.subtotal_feed_kg),
+      escapeCsvValue(g.subtotal_feed_tons),
+      escapeCsvValue(g.subtotal_feed_amount),
+      '',
+    ].join(',')
+    out += '\n'
+  })
+
+  out += '\nEntry detail\n'
+  out += 'Pond,Date,Type,Item,Quantity,Unit,Sacks,kg,Cost BDT,Source,Memo\n'
   groups.forEach((g) => {
     const pond = String(g.pond_name ?? '')
     const lines = Array.isArray(g.lines) ? (g.lines as Record<string, unknown>[]) : []
@@ -373,6 +436,7 @@ export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): 
         escapeCsvValue(ln.item_name),
         escapeCsvValue(ln.quantity),
         escapeCsvValue(ln.unit),
+        escapeCsvValue(ln.feed_sack_count),
         escapeCsvValue(ln.feed_weight_kg),
         escapeCsvValue(ln.amount),
         escapeCsvValue(ln.source_doc),
@@ -380,13 +444,15 @@ export function buildFeedMedicineConsumptionCsv(data: Record<string, unknown>): 
       ].join(',')
       out += '\n'
     })
-    if (g.subtotal_amount != null) {
-      out += `${escapeCsvValue(pond)},,,,,,Subtotal,${g.subtotal_amount},Feed ${g.subtotal_feed_amount ?? ''} · Med ${g.subtotal_medicine_amount ?? ''},\n`
-    }
   })
-  const totals = (data.totals as Record<string, unknown>) ?? {}
+
   if (totals.total_amount != null) {
-    out += `\nGrand total,,,,,,,${totals.total_amount},Feed ${totals.total_feed_amount ?? ''} · Med ${totals.total_medicine_amount ?? ''},\n`
+    out += `\nGrand total feed sacks,${totals.total_feed_sacks ?? ''}\n`
+    out += `Grand total feed kg,${totals.total_feed_kg ?? ''}\n`
+    out += `Grand total feed tons,${totals.total_feed_tons ?? ''}\n`
+    out += `Grand total feed cost BDT,${totals.total_feed_amount ?? ''}\n`
+    out += `Grand total medicine cost BDT,${totals.total_medicine_amount ?? ''}\n`
+    out += `Grand total cost BDT,${totals.total_amount}\n`
   }
   return out
 }

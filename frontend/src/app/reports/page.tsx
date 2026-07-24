@@ -690,7 +690,7 @@ const reports: ReportCard[] = [
     id: 'aquaculture-feed-medicine-consumption',
     title: 'Aquaculture — Feed & medicine consumption',
     description:
-      'Feed and medicine used from pond warehouses in the period — quantities, cost per entry, and totals by pond (BDT)',
+      'Per-pond daily feed ledger (sacks, kg, metric tons) with medicine use, entry detail, and farm totals (BDT)',
     icon: Package,
     category: 'aquaculture',
   },

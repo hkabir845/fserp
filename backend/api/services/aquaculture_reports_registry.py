@@ -80,6 +80,15 @@ def _money_q(d: Decimal) -> Decimal:
     return d.quantize(Decimal("0.01"))
 
 
+def _qty_q(d: Decimal, places: str = "0.01") -> Decimal:
+    return d.quantize(Decimal(places))
+
+
+def _tons_from_kg(kg: Decimal) -> Decimal:
+    """Metric tons from kilograms (1 t = 1,000 kg)."""
+    return _qty_q(kg / Decimal("1000"), "0.0001")
+
+
 def _decimal(s: str) -> Decimal:
     try:
         return Decimal(str(s))
@@ -1314,6 +1323,12 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
 def _report_feed_medicine_consumption(
     company_id: int, start: date, end: date, request: HttpRequest
 ) -> dict[str, Any] | JsonResponse:
+    """
+    Pond-warehouse feed & medicine consumption.
+
+    Primary view: per-pond daily feed totals (sacks, kg, metric tons, cost) with
+    pond and farm grand totals. Line-level detail is retained under each group.
+    """
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
@@ -1331,6 +1346,13 @@ def _report_feed_medicine_consumption(
     grand_feed = Decimal("0")
     grand_med = Decimal("0")
     grand_feed_kg = Decimal("0")
+    grand_feed_sacks = Decimal("0")
+    # Farm-wide daily feed rollup
+    farm_daily_sacks: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    farm_daily_kg: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    farm_daily_amount: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    farm_daily_entries: dict[str, int] = defaultdict(int)
+    farm_daily_ponds: dict[str, set[int]] = defaultdict(set)
 
     for r in rows:
         pid = int(r["pond_id"])
@@ -1339,8 +1361,17 @@ def _report_feed_medicine_consumption(
         amt = _decimal(r["amount"])
         if r.get("kind") == "feed":
             grand_feed += amt
-            if r.get("feed_weight_kg"):
-                grand_feed_kg += _decimal(r["feed_weight_kg"])
+            kg = _decimal(r["feed_weight_kg"]) if r.get("feed_weight_kg") else Decimal("0")
+            sacks = _decimal(r["feed_sack_count"]) if r.get("feed_sack_count") else Decimal("0")
+            grand_feed_kg += kg
+            grand_feed_sacks += sacks
+            day = r.get("entry_date") or ""
+            if day:
+                farm_daily_sacks[day] += sacks
+                farm_daily_kg[day] += kg
+                farm_daily_amount[day] += amt
+                farm_daily_entries[day] += 1
+                farm_daily_ponds[day].add(pid)
         else:
             grand_med += amt
 
@@ -1350,48 +1381,137 @@ def _report_feed_medicine_consumption(
         sub_feed = Decimal("0")
         sub_med = Decimal("0")
         sub_feed_kg = Decimal("0")
+        sub_feed_sacks = Decimal("0")
+        feed_lines: list[dict] = []
+        medicine_lines: list[dict] = []
+        daily_feed_map: dict[str, dict[str, Decimal | int]] = defaultdict(
+            lambda: {
+                "sacks": Decimal("0"),
+                "kg": Decimal("0"),
+                "amount": Decimal("0"),
+                "entry_count": 0,
+            }
+        )
+        daily_med_map: dict[str, dict[str, Decimal | int]] = defaultdict(
+            lambda: {"amount": Decimal("0"), "entry_count": 0}
+        )
+
         for ln in lines:
             amt = _decimal(ln["amount"])
+            day = ln.get("entry_date") or ""
             if ln.get("kind") == "feed":
                 sub_feed += amt
-                if ln.get("feed_weight_kg"):
-                    sub_feed_kg += _decimal(ln["feed_weight_kg"])
+                kg = _decimal(ln["feed_weight_kg"]) if ln.get("feed_weight_kg") else Decimal("0")
+                sacks = (
+                    _decimal(ln["feed_sack_count"]) if ln.get("feed_sack_count") else Decimal("0")
+                )
+                sub_feed_kg += kg
+                sub_feed_sacks += sacks
+                feed_lines.append(ln)
+                if day:
+                    d = daily_feed_map[day]
+                    d["sacks"] = _decimal(d["sacks"]) + sacks
+                    d["kg"] = _decimal(d["kg"]) + kg
+                    d["amount"] = _decimal(d["amount"]) + amt
+                    d["entry_count"] = int(d["entry_count"]) + 1
             else:
                 sub_med += amt
+                medicine_lines.append(ln)
+                if day:
+                    d = daily_med_map[day]
+                    d["amount"] = _decimal(d["amount"]) + amt
+                    d["entry_count"] = int(d["entry_count"]) + 1
+
+        daily_feed = [
+            {
+                "date": day,
+                "sacks": str(_qty_q(_decimal(vals["sacks"]))),
+                "kg": str(_qty_q(_decimal(vals["kg"]))),
+                "tons": str(_tons_from_kg(_decimal(vals["kg"]))),
+                "amount": str(_money_q(_decimal(vals["amount"]))),
+                "entry_count": int(vals["entry_count"]),
+            }
+            for day, vals in sorted(daily_feed_map.items())
+        ]
+        daily_medicine = [
+            {
+                "date": day,
+                "amount": str(_money_q(_decimal(vals["amount"]))),
+                "entry_count": int(vals["entry_count"]),
+            }
+            for day, vals in sorted(daily_med_map.items())
+        ]
         sub_total = _money_q(sub_feed + sub_med)
         groups.append(
             {
                 "pond_id": pid,
                 "pond_name": pond_names.get(pid, f"Pond #{pid}"),
+                "daily_feed": daily_feed,
+                "daily_medicine": daily_medicine,
+                "feed_lines": feed_lines,
+                "medicine_lines": medicine_lines,
                 "lines": lines,
                 "subtotal_feed_amount": str(_money_q(sub_feed)),
                 "subtotal_medicine_amount": str(_money_q(sub_med)),
                 "subtotal_amount": str(sub_total),
-                "subtotal_feed_kg": str(_money_q(sub_feed_kg)),
+                "subtotal_feed_kg": str(_qty_q(sub_feed_kg)),
+                "subtotal_feed_sacks": str(_qty_q(sub_feed_sacks)),
+                "subtotal_feed_tons": str(_tons_from_kg(sub_feed_kg)),
+                "feed_day_count": len(daily_feed),
+                "medicine_day_count": len(daily_medicine),
                 "line_count": len(lines),
+                "feed_line_count": len(feed_lines),
+                "medicine_line_count": len(medicine_lines),
             }
         )
 
+    farm_daily_feed = [
+        {
+            "date": day,
+            "sacks": str(_qty_q(farm_daily_sacks[day])),
+            "kg": str(_qty_q(farm_daily_kg[day])),
+            "tons": str(_tons_from_kg(farm_daily_kg[day])),
+            "amount": str(_money_q(farm_daily_amount[day])),
+            "entry_count": farm_daily_entries[day],
+            "pond_count": len(farm_daily_ponds[day]),
+        }
+        for day in sorted(farm_daily_kg.keys())
+    ]
+
     grand_total = _money_q(grand_feed + grand_med)
+    grand_tons = _tons_from_kg(grand_feed_kg)
     summary = {
         "line_count": len(rows),
         "pond_group_count": len(groups),
+        "feed_day_count": len(farm_daily_feed),
         "total_feed_amount_bdt": float(_money_q(grand_feed)),
         "total_medicine_amount_bdt": float(_money_q(grand_med)),
         "total_amount_bdt": float(grand_total),
-        "total_feed_kg": float(_money_q(grand_feed_kg)),
+        "total_feed_kg": float(_qty_q(grand_feed_kg)),
+        "total_feed_sacks": float(_qty_q(grand_feed_sacks)),
+        "total_feed_tons": float(grand_tons),
     }
     out: dict[str, Any] = {
         "period": _period_block(start, end),
         "currency_code": BDT,
+        "units": {
+            "mass": "kg",
+            "mass_large": "t",
+            "sack": "sack",
+            "tons_note": "1 metric ton (t) = 1,000 kg",
+        },
         "summary": summary,
+        "farm_daily_feed": farm_daily_feed,
         "groups": groups,
         "totals": {
             "line_count": len(rows),
+            "feed_day_count": len(farm_daily_feed),
             "total_feed_amount": str(_money_q(grand_feed)),
             "total_medicine_amount": str(_money_q(grand_med)),
             "total_amount": str(grand_total),
-            "total_feed_kg": str(_money_q(grand_feed_kg)),
+            "total_feed_kg": str(_qty_q(grand_feed_kg)),
+            "total_feed_sacks": str(_qty_q(grand_feed_sacks)),
+            "total_feed_tons": str(grand_tons),
         },
         "accounting_note": note_feed_medicine_consumption(company_id),
     }

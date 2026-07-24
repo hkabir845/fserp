@@ -424,51 +424,61 @@ export function AquacultureFeedMedicineConsumptionPanel({
         ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-8">
-        <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(11.5rem,1fr))]">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/80 p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
-            <Package className="h-4 w-4" aria-hidden />
+            <Package className="h-4 w-4 shrink-0" aria-hidden />
             Feed cost
           </div>
-          <p className="mt-2 text-xl font-bold tabular-nums text-amber-950">{MoneyBdt(totalFeed)}</p>
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
+            {MoneyBdt(totalFeed)}
+          </p>
         </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">Feed sacks</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-amber-950">
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
             <Qty value={totalFeedSacks} />
           </p>
         </div>
-        <div className="rounded-lg border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed kg</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-cyan-950">
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-cyan-950 sm:text-lg">
             <Qty value={totalFeedKg} />
           </p>
         </div>
-        <div className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-cyan-200 bg-cyan-50/50 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-cyan-900">Feed tons</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-cyan-950">
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-cyan-950 sm:text-lg">
             <Qty value={totalFeedTons} digits={4} />
           </p>
           <p className="mt-1 text-[11px] text-cyan-800/70">1 t = 1,000 kg</p>
         </div>
-        <div className="rounded-lg border border-violet-200 bg-violet-50/80 p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-violet-200 bg-violet-50/80 p-4 shadow-sm">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-900">
-            <Pill className="h-4 w-4" aria-hidden />
+            <Pill className="h-4 w-4 shrink-0" aria-hidden />
             Medicine cost
           </div>
-          <p className="mt-2 text-xl font-bold tabular-nums text-violet-950">{MoneyBdt(totalMed)}</p>
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-violet-950 sm:text-lg">
+            {MoneyBdt(totalMed)}
+          </p>
         </div>
-        <div className="rounded-lg border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Total cost</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-rose-950">{MoneyBdt(totalAmount)}</p>
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-rose-950 sm:text-lg">
+            {MoneyBdt(totalAmount)}
+          </p>
         </div>
-        <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ponds</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-foreground">{pondCount}</p>
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-foreground sm:text-lg">
+            {pondCount}
+          </p>
         </div>
-        <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Feed days</p>
-          <p className="mt-2 text-xl font-bold tabular-nums text-foreground">{feedDayCount}</p>
+          <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-foreground sm:text-lg">
+            {feedDayCount}
+          </p>
           <p className="mt-1 text-[11px] text-muted-foreground">{lineCount} entries</p>
         </div>
       </div>

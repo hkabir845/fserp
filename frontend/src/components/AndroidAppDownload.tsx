@@ -4,10 +4,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { Download, Smartphone } from 'lucide-react'
 import {
   ANDROID_APP_LABEL,
+  fetchPublishedAndroidVersion,
   getAndroidApkUrl,
+  getNativeAppInfo,
   isAndroidBrowser,
+  isAndroidUpdateAvailable,
   isCapacitorNativeApp,
   isStandaloneDisplay,
+  type AndroidPublishedVersion,
 } from '@/lib/androidApp'
 import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
 
@@ -24,6 +28,7 @@ const btnSecondary =
 
 /**
  * Login-screen Android download / install — all SaaS tenants, mobile-first touch targets.
+ * Inside the Capacitor shell, shows an update action when a newer APK is published.
  */
 export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainFlow?: boolean }) {
   const apkUrl = getAndroidApkUrl()
@@ -31,6 +36,9 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
   const [installed, setInstalled] = useState(false)
   const [android, setAndroid] = useState(false)
   const [nativeApp, setNativeApp] = useState(false)
+  const [published, setPublished] = useState<AndroidPublishedVersion | null>(null)
+  const [installedBuild, setInstalledBuild] = useState<string | null>(null)
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null)
 
   useEffect(() => {
     setAndroid(isAndroidBrowser())
@@ -49,6 +57,16 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
 
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
     window.addEventListener('appinstalled', onInstalled)
+
+    void (async () => {
+      const [pub, info] = await Promise.all([fetchPublishedAndroidVersion(), getNativeAppInfo()])
+      setPublished(pub)
+      if (info) {
+        setInstalledBuild(info.build)
+        setInstalledVersion(info.version)
+      }
+    })()
+
     return () => {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall)
       window.removeEventListener('appinstalled', onInstalled)
@@ -63,8 +81,42 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
     setInstallPrompt(null)
   }, [installPrompt])
 
-  if (nativeApp) return null
   if (hideForBrainFlow) return null
+
+  const updateAvailable = nativeApp && isAndroidUpdateAvailable(installedBuild, published)
+
+  if (nativeApp) {
+    if (!updateAvailable) {
+      return (
+        <p className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Smartphone className="h-4 w-4 shrink-0" aria-hidden />
+          {ANDROID_APP_LABEL}
+          {installedVersion ? ` v${installedVersion}` : ''} — up to date
+        </p>
+      )
+    }
+
+    return (
+      <div className="mt-5 border-t border-border/80 pt-5">
+        <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-amber-700">
+          App update available
+        </p>
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center">
+          <a
+            href={apkUrl}
+            download={apkUrl.startsWith('/') ? 'fserp.apk' : undefined}
+            className={btnPrimary}
+          >
+            <Download className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+            Update to v{published?.versionName}
+          </a>
+        </div>
+        <p className="mt-2.5 text-center text-xs leading-relaxed text-muted-foreground">
+          You have v{installedVersion}. Download and open the file, then tap Update — no uninstall needed.
+        </p>
+      </div>
+    )
+  }
 
   if (installed) {
     return (
@@ -88,6 +140,7 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
         >
           <Download className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
           Download Android app
+          {published?.versionName ? ` v${published.versionName}` : ''}
         </a>
         {android && installPrompt ? (
           <button type="button" onClick={() => void handlePwaInstall()} className={btnSecondary}>
@@ -101,7 +154,9 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
       </p>
       {android ? (
         <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
-          After download, open the file and tap <span className="font-medium">Install</span>. If Android asks, allow installs from your browser for this step only. If you already have an older FS ERP install, uninstall it first, then install this build.
+          After download, open the file and tap <span className="font-medium">Install</span> or{' '}
+          <span className="font-medium">Update</span>. If Android asks, allow installs from your browser for
+          this step only. Existing FS ERP installs update in place — no uninstall needed.
         </p>
       ) : null}
     </div>

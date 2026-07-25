@@ -63,7 +63,13 @@ Users tap **Download Android app** on `/login`, install the APK, and open the ap
 
 ### Updating the app later
 
-Build a new signed APK, replace `fserp.apk` on the server, and ask users to download and install again (Android will upgrade in place if the signing key matches).
+1. Bump `versionCode` and `versionName` in `android/app/build.gradle` (versionCode must increase).
+2. Build a new **signed** APK with the same keystore.
+3. Replace `frontend/public/downloads/fserp.apk`.
+4. Update `frontend/public/downloads/android-version.json` to match the new version.
+5. Deploy the frontend.
+
+Existing installs upgrade in place (same signing key + higher versionCode). The login page and in-app banner show **Update** when `android-version.json` is newer than the installed build.
 
 Signing uses a local `android/key.properties` + `android/fserp-release.jks` (both gitignored). Copy `key.properties.example` to `key.properties` on a new machine. **Back up the `.jks` and passwords** — losing them forces a new key and users must uninstall before reinstalling.
 

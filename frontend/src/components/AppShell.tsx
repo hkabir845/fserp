@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { AndroidAppUpdateBanner } from '@/components/AndroidAppUpdateBanner'
 import { Layout } from '@/components/Layout'
 
 /**
@@ -13,8 +14,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>
   }
   if (pathname.startsWith('/platform')) {
-    return <>{children}</>
+    return (
+      <>
+        <AndroidAppUpdateBanner />
+        {children}
+      </>
+    )
   }
 
-  return <Layout>{children}</Layout>
+  return (
+    <>
+      <AndroidAppUpdateBanner />
+      <Layout>{children}</Layout>
+    </>
+  )
 }

@@ -71,7 +71,8 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
     }
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 2000)
+    // Mobile networks often need more than 2s to reach the API.
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
 
     try {
       const serverBase = getBackendOrigin()
@@ -101,7 +102,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
       clearTimeout(timeoutId)
       setBackendConnected(false)
       setShowConnectionError(true)
-      if (err instanceof Error && err.name !== 'AbortError') {
+      if (showLoading && err instanceof Error && err.name !== 'AbortError') {
         setError(`Cannot connect to backend server. Please ensure the backend is running on ${backendOrigin}`)
       }
       return false
@@ -243,7 +244,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
             continue endpointLoop
           }
           // Wrong password / forbidden — stop. Other errors may be transport (e.g. FormData via CapacitorHttp).
-          if (response.status === 401 || response.status === 403) {
+          if (response.status === 401 || response.status === 403 || response.status === 429) {
             break endpointLoop
           }
           response = null
@@ -304,6 +305,15 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
       localStorage.setItem('refresh_token', String(refresh_token || '').trim())
       localStorage.setItem('user', JSON.stringify(user))
       setAuthApiOriginStamp()
+      // Tenant sessions always use FSMS ERP nav (Aquaculture + ERP). SaaS tab is super-admin only.
+      try {
+        const role = String(user?.role || '').toLowerCase()
+        if (role !== 'super_admin') {
+          localStorage.setItem('sidebar_mode', 'fsms_erp')
+        }
+      } catch {
+        /* ignore */
+      }
 
       router.push(
         loginRedirectAfterAuth(
@@ -371,10 +381,10 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
           {isBrain ? <BrainAppInstallPrompt language="bn" defaultExpanded /> : null}
 
           <form onSubmit={handleLogin} className="space-y-6">
-            {backendConnected === false && showConnectionError && (
+            {backendConnected === false && showConnectionError && !error && (
               <div className="rounded border border-destructive/25 bg-destructive/5 px-4 py-3 text-destructive">
                 <p className="font-semibold">Cannot connect to backend server</p>
-                <p className="mt-1 text-sm">{error || `Ensure the backend is running on ${backendOrigin}`}</p>
+                <p className="mt-1 text-sm">{`Ensure the backend is reachable at ${backendOrigin}`}</p>
                 <button
                   type="button"
                   onClick={() => void testConnection(true)}
@@ -385,13 +395,23 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
                 </button>
               </div>
             )}
-            {backendConnected === true && error && (
+            {error && (
               <div className="rounded border border-destructive/25 bg-destructive/5 px-4 py-3 text-destructive">
                 <p className="font-semibold">Login Failed</p>
                 <p className="mt-1 text-sm">{error}</p>
+                {backendConnected === false ? (
+                  <button
+                    type="button"
+                    onClick={() => void testConnection(true)}
+                    disabled={checkingConnection}
+                    className="mt-3 rounded bg-destructive px-3 py-1.5 text-sm text-white hover:bg-destructive/90 disabled:opacity-50"
+                  >
+                    {checkingConnection ? 'Checking...' : 'Retry Connection'}
+                  </button>
+                ) : null}
               </div>
             )}
-            {(backendConnected === null || checkingConnection) && (
+            {(backendConnected === null || checkingConnection) && !error && (
               <div className="flex items-center rounded border border-primary/25 bg-blue-50 px-4 py-3 text-primary">
                 <div className="mr-2 h-4 w-4 animate-spin rounded-full border-b-2 border-primary" />
                 <span>Checking backend connection...</span>

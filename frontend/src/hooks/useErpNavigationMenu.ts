@@ -126,7 +126,9 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
 
   useEffect(() => {
     const fetchAq = async () => {
-      if (mode !== 'fsms_erp') {
+      // Only platform super-admin on the SaaS tab should hide Aquaculture.
+      // Tenant users (and fresh Android WebViews) must still resolve company AQ flags.
+      if (mode === 'saas_dashboard' && userRole === 'super_admin') {
         setAquacultureEnabled(false)
         return
       }
@@ -153,7 +155,7 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
     const onSaved = () => void fetchAq()
     window.addEventListener('fserp-company-settings-saved', onSaved)
     return () => window.removeEventListener('fserp-company-settings-saved', onSaved)
-  }, [mode, selectedCompany?.id, pathname, forceAquacultureUnlock])
+  }, [mode, userRole, selectedCompany?.id, pathname, forceAquacultureUnlock])
 
   const isSuperAdmin = userRole === 'super_admin'
   const navReady = isClientReady && navSessionReady

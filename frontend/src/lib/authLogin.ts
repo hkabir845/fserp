@@ -83,7 +83,7 @@ export async function performLogin(username: string, password: string): Promise<
         } catch {
           msg = response.statusText || 'Login failed'
         }
-        if (response.status === 401 || response.status === 403) {
+        if (response.status === 401 || response.status === 403 || response.status === 429) {
           throw new Error(msg)
         }
         lastError = new Error(msg)
@@ -95,6 +95,14 @@ export async function performLogin(username: string, password: string): Promise<
       localStorage.setItem('refresh_token', String(data.refresh_token || '').trim())
       localStorage.setItem('user', JSON.stringify(data.user))
       setAuthApiOriginStamp()
+      try {
+        const role = String((data.user as { role?: string })?.role || '').toLowerCase()
+        if (role !== 'super_admin') {
+          localStorage.setItem('sidebar_mode', 'fsms_erp')
+        }
+      } catch {
+        /* ignore */
+      }
       return data as LoginResult
     } catch (err) {
       lastError = err instanceof Error ? err : new Error('Login failed')

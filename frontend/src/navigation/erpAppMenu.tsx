@@ -302,7 +302,9 @@ export function getFilteredMenuItems(
     return fsmsErpMenuItems
   }
 
-  if (effectivePermissions != null && mode === 'fsms_erp') {
+  // Permission menu applies whenever we show FSMS items (not only when mode says fsms_erp).
+  // Tenant users may briefly have a stale saas_dashboard mode on fresh Android WebViews.
+  if (effectivePermissions != null && !(isSuperAdmin && mode === 'saas_dashboard')) {
     return fsmsErpMenuItems.filter((item) => menuItemAllowedByPermissions(item.href, effectivePermissions))
   }
 
@@ -464,7 +466,8 @@ export function filterAquacultureMenuWhenDisabled(
 }
 
 /**
- * True when Aquaculture workspace routes may load: module enabled, FSMS ERP mode, and user has access.
+ * True when Aquaculture workspace routes may load: module enabled and user has access.
+ * SaaS mode only blocks platform super-admins (their SaaS tab); tenant users are always on FSMS.
  */
 export function isAquacultureNavUnlocked(
   userRole: string | null,
@@ -474,7 +477,7 @@ export function isAquacultureNavUnlocked(
   aquacultureEnabled: boolean,
   forceUnlock = false
 ): boolean {
-  if (mode !== 'fsms_erp') return false
+  if (isSuperAdmin && mode === 'saas_dashboard') return false
   if (!(aquacultureEnabled || forceUnlock)) return false
   if (forceUnlock || isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return true
   if (userPermissions != null && hasAnyAquacultureModuleInList(userPermissions)) return true

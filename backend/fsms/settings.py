@@ -257,6 +257,7 @@ _LOCAL = [
 _PROD_ORIGINS = [
     "https://mahasoftcorporation.com",
     "https://www.mahasoftcorporation.com",
+    "https://adib.mahasoftcorporation.com",
 ]
 # Capacitor Android/iOS WebView origins (API calls from the native app shell).
 _CAPACITOR_ORIGINS = [

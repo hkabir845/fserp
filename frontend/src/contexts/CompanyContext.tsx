@@ -22,9 +22,22 @@ interface CompanyContextType {
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined)
 
+function readStoredUserRole(): string | null {
+  try {
+    const raw = localStorage.getItem('user')
+    if (!raw || raw === 'undefined' || raw === 'null') return null
+    const parsed = JSON.parse(raw) as { role?: string }
+    return typeof parsed.role === 'string' ? parsed.role.toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
 export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Default FSMS ERP — SaaS tab is only for platform super-admins. Fresh Capacitor
+  // WebViews must not stay on saas_dashboard or Aquaculture (and ERP unlock) never loads.
   const [selectedCompany, setSelectedCompanyState] = useState<Company | null>(null)
-  const [mode, setModeState] = useState<'fsms_erp' | 'saas_dashboard'>('saas_dashboard')
+  const [mode, setModeState] = useState<'fsms_erp' | 'saas_dashboard'>('fsms_erp')
   const [mounted, setMounted] = useState(false)
 
   // Load from localStorage on mount (client-side only) - CRITICAL: Only after mount to prevent hydration errors
@@ -57,10 +70,20 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       }
       
-      // Load mode
+      const role = readStoredUserRole()
+      const isSuperAdmin = role === 'super_admin'
+      // Load mode — tenant users always use FSMS ERP (ignore stale saas_dashboard from WebView).
       const savedMode = localStorage.getItem('sidebar_mode')
-      if (savedMode === 'fsms_erp' || savedMode === 'saas_dashboard') {
+      if (!isSuperAdmin) {
+        setModeState('fsms_erp')
+        if (savedMode !== 'fsms_erp') {
+          localStorage.setItem('sidebar_mode', 'fsms_erp')
+        }
+      } else if (savedMode === 'fsms_erp' || savedMode === 'saas_dashboard') {
         setModeState(savedMode)
+      } else {
+        setModeState('saas_dashboard')
+        localStorage.setItem('sidebar_mode', 'saas_dashboard')
       }
     } catch (error) {
       // Silently handle any localStorage errors - don't break the app

@@ -100,8 +100,10 @@ export default function CompanyPage() {
   const [activeStationCount, setActiveStationCount] = useState<number | null>(null)
   const [aquacultureLicensed, setAquacultureLicensed] = useState(false)
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [aquaculturePermanent, setAquaculturePermanent] = useState(false)
   const [capitalizeConsumptionToBioasset, setCapitalizeConsumptionToBioasset] = useState(false)
   const [canEditAquacultureToggle, setCanEditAquacultureToggle] = useState(false)
+  const [canEditAquacultureSettings, setCanEditAquacultureSettings] = useState(false)
 
   const currencies = useMemo(() => getUniqueCurrencies(), [])
 
@@ -121,8 +123,10 @@ export default function CompanyPage() {
         active_station_count?: number
         aquaculture_licensed?: boolean
         aquaculture_enabled?: boolean
+        aquaculture_permanent?: boolean
         aquaculture_capitalize_pond_consumption_to_bioasset?: boolean
         can_edit_aquaculture_toggle?: boolean
+        can_edit_aquaculture_settings?: boolean
       }
       setCanEditStationMode(Boolean(ext.can_edit_station_mode))
       setActiveStationCount(
@@ -130,8 +134,10 @@ export default function CompanyPage() {
       )
       setAquacultureLicensed(Boolean(ext.aquaculture_licensed))
       setAquacultureEnabled(Boolean(ext.aquaculture_enabled))
+      setAquaculturePermanent(Boolean(ext.aquaculture_permanent))
       setCapitalizeConsumptionToBioasset(Boolean(ext.aquaculture_capitalize_pond_consumption_to_bioasset))
       setCanEditAquacultureToggle(Boolean(ext.can_edit_aquaculture_toggle))
+      setCanEditAquacultureSettings(Boolean(ext.can_edit_aquaculture_settings))
       setFormData({
         company_name: String(data.company_name || data.name || ''),
         legal_name: String(data.legal_name ?? ''),
@@ -221,6 +227,8 @@ export default function CompanyPage() {
       }
       if (aquacultureLicensed && canEditAquacultureToggle) {
         payload.aquaculture_enabled = aquacultureEnabled
+      }
+      if (aquacultureLicensed && canEditAquacultureSettings) {
         payload.aquaculture_capitalize_pond_consumption_to_bioasset = capitalizeConsumptionToBioasset
       }
 
@@ -575,41 +583,49 @@ export default function CompanyPage() {
                       <div className="min-w-0 flex-1">
                         <h3 className="text-lg font-semibold text-foreground">Aquaculture</h3>
                         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                          Your organization is licensed for Aquaculture. Turn it on here to show Aquaculture in the app
-                          menu and use ponds, sales, sampling, and pond P&amp;L.                           New ponds receive a POS customer automatically for Cashier on-account sales; inventoried
-                          supplies to ponds should flow through POS. Fuel-only sites can leave this off.
+                          {aquaculturePermanent
+                            ? 'Aquaculture is permanently available for this company (menu, ponds, sales, sampling, and pond P&L). It cannot be turned off.'
+                            : 'Your organization is licensed for Aquaculture. Turn it on here to show Aquaculture in the app menu and use ponds, sales, sampling, and pond P&L. New ponds receive a POS customer automatically for Cashier on-account sales; inventoried supplies to ponds should flow through POS. Fuel-only sites can leave this off.'}
                         </p>
-                        {!canEditAquacultureToggle ? (
-                          <p className="mt-3 text-sm text-warning-foreground/90 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
-                            Only the company <span className="font-medium">Admin</span> can enable or disable
-                            Aquaculture in these settings.
+                        {aquaculturePermanent ? (
+                          <p className="mt-4 text-sm font-medium text-primary">
+                            Status: Always on
                           </p>
-                        ) : null}
-                        {canEditAquacultureToggle ? (
-                          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 hover:bg-muted/40">
-                            <input
-                              type="checkbox"
-                              className="mt-1"
-                              checked={aquacultureEnabled}
-                              onChange={(e) => setAquacultureEnabled(e.target.checked)}
-                            />
-                            <div>
-                              <p className="font-medium text-foreground">Use Aquaculture in this company</p>
-                              <p className="text-sm leading-relaxed text-muted-foreground">
-                                When checked, Aquaculture appears for the Admin in the sidebar and apps. Other roles
-                                continue with fuel station and retail only.
-                              </p>
-                            </div>
-                          </label>
                         ) : (
-                          <p className="mt-4 text-sm font-medium text-foreground/85">
-                            Status:{' '}
-                            <span className={aquacultureEnabled ? 'text-primary' : 'text-muted-foreground'}>
-                              {aquacultureEnabled ? 'On' : 'Off'}
-                            </span>
-                          </p>
+                          <>
+                            {!canEditAquacultureToggle ? (
+                              <p className="mt-3 text-sm text-warning-foreground/90 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+                                Only the company <span className="font-medium">Admin</span> can enable or disable
+                                Aquaculture in these settings.
+                              </p>
+                            ) : null}
+                            {canEditAquacultureToggle ? (
+                              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-border p-4 hover:bg-muted/40">
+                                <input
+                                  type="checkbox"
+                                  className="mt-1"
+                                  checked={aquacultureEnabled}
+                                  onChange={(e) => setAquacultureEnabled(e.target.checked)}
+                                />
+                                <div>
+                                  <p className="font-medium text-foreground">Use Aquaculture in this company</p>
+                                  <p className="text-sm leading-relaxed text-muted-foreground">
+                                    When checked, Aquaculture appears for the Admin in the sidebar and apps. Other roles
+                                    continue with fuel station and retail only.
+                                  </p>
+                                </div>
+                              </label>
+                            ) : (
+                              <p className="mt-4 text-sm font-medium text-foreground/85">
+                                Status:{' '}
+                                <span className={aquacultureEnabled ? 'text-primary' : 'text-muted-foreground'}>
+                                  {aquacultureEnabled ? 'On' : 'Off'}
+                                </span>
+                              </p>
+                            )}
+                          </>
                         )}
-                        {aquacultureEnabled && canEditAquacultureToggle ? (
+                        {aquacultureEnabled && canEditAquacultureSettings ? (
                           <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-primary/25 bg-accent/40 p-4">
                             <input
                               type="checkbox"

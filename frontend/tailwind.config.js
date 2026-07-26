@@ -65,9 +65,12 @@ module.exports = {
           fg: 'hsl(var(--sidebar-fg))',
           'fg-muted': 'hsl(var(--sidebar-fg-muted))',
           'fg-subtle': 'hsl(var(--sidebar-fg-subtle))',
+          section: 'hsl(var(--sidebar-section))',
           hover: 'hsl(var(--sidebar-hover))',
           accent: 'hsl(var(--sidebar-accent))',
           'accent-fg': 'hsl(var(--sidebar-accent-fg))',
+          active: 'hsl(var(--sidebar-active))',
+          'active-fg': 'hsl(var(--sidebar-active-fg))',
         },
       },
       borderRadius: {

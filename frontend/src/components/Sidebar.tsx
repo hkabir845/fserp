@@ -386,10 +386,10 @@ export default function Sidebar() {
       >
         <Icon
           className={`${depth > 0 ? 'h-3.5 w-3.5' : 'h-4 w-4'} shrink-0 ${
-            isActive ? 'text-white' : 'opacity-80 group-hover:opacity-100'
+            isActive ? 'text-[hsl(var(--sidebar-active-fg))]' : 'opacity-90 group-hover:opacity-100'
           }`}
         />
-        <span className={`min-w-0 flex-1 truncate font-medium ${depth > 0 ? 'text-xs' : 'text-sm'}`}>
+        <span className={`min-w-0 flex-1 truncate ${depth > 0 ? 'text-xs font-medium' : 'text-sm font-medium'}`}>
           {item.label}
         </span>
       </Link>
@@ -554,12 +554,12 @@ export default function Sidebar() {
               section.id === 'aquaculture' && sectionItems.some((i) => i.subGroupId)
 
             return (
-              <div key={section.id} className="mb-3">
-                <h3 className="erp-sidebar-label mb-1 px-1.5 py-0.5">
+              <div key={section.id} className="mb-3.5">
+                <h3 className="erp-sidebar-label mb-1.5 px-1.5 py-1">
                   {section.label}
                 </h3>
                 {hasSubGroups ? (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {(() => {
                       const groups: { id: string; label: string; items: typeof sectionItems }[] = []
                       for (const item of sectionItems) {
@@ -575,17 +575,17 @@ export default function Sidebar() {
                       return groups.map((g) => (
                         <div key={g.id}>
                           {g.label ? (
-                            <p className="erp-sidebar-sublabel mb-0.5 px-1.5">
+                            <p className="erp-sidebar-sublabel mb-1 px-1.5 py-0.5">
                               {g.label}
                             </p>
                           ) : null}
-                          <div className="space-y-px">{g.items.map(renderNavItem)}</div>
+                          <div className="space-y-0.5">{g.items.map(renderNavItem)}</div>
                         </div>
                       ))
                     })()}
                   </div>
                 ) : (
-                  <div className="space-y-px">{sectionItems.map(renderNavItem)}</div>
+                  <div className="space-y-0.5">{sectionItems.map(renderNavItem)}</div>
                 )}
               </div>
             )

@@ -84,17 +84,20 @@
     --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
     --shadow-elevated: 0 4px 6px -1px rgb(15 23 42 / 0.06), 0 10px 20px -5px rgb(15 23 42 / 0.08);
     --shadow-glow: 0 0 0 1px hsl(var(--primary) / 0.08), 0 8px 24px -4px hsl(var(--primary) / 0.16);
-    /* Sidebar — deep midnight nav with purple active state */
-    --sidebar-bg: 224 47% 9%;
-    --sidebar-bg-elevated: 225 50% 5%;
-    --sidebar-border: 224 30% 18%;
-    --sidebar-fg: 220 20% 97%;
-    --sidebar-fg-muted: 220 12% 74%;
-    --sidebar-fg-subtle: 220 10% 54%;
-    --sidebar-hover: 224 35% 14%;
-    --sidebar-accent: 270 58% 55%;
-    --sidebar-accent-fg: 0 0% 100%;
-    --sidebar-search-bg: 224 35% 12%;
+    /* Sidebar — clear blue nav, white text, high-salience active + section heads */
+    --sidebar-bg: 214 68% 28%;
+    --sidebar-bg-elevated: 214 72% 22%;
+    --sidebar-border: 214 42% 40%;
+    --sidebar-fg: 210 40% 99%;
+    --sidebar-fg-muted: 210 32% 92%;
+    --sidebar-fg-subtle: 205 45% 78%;
+    --sidebar-section: 199 92% 84%;
+    --sidebar-hover: 214 58% 34%;
+    --sidebar-accent: 199 88% 62%;
+    --sidebar-accent-fg: 214 72% 14%;
+    --sidebar-active: 42 96% 58%;
+    --sidebar-active-fg: 28 72% 12%;
+    --sidebar-search-bg: 214 55% 20%;
     /* Hero gradient stops — teal page headers */
     --hero-from: 168 45% 16%;
     --hero-via: 170 42% 20%;
@@ -143,7 +146,19 @@
     --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2), 0 1px 3px rgb(0 0 0 / 0.25);
     --shadow-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.25), 0 10px 20px -5px rgb(0 0 0 / 0.35);
     --shadow-glow: 0 0 0 1px hsl(var(--primary) / 0.15), 0 8px 24px -4px hsl(var(--primary) / 0.22);
-    --sidebar-accent: 270 55% 62%;
+    --sidebar-bg: 214 62% 22%;
+    --sidebar-bg-elevated: 214 66% 16%;
+    --sidebar-border: 214 38% 32%;
+    --sidebar-fg: 210 36% 98%;
+    --sidebar-fg-muted: 210 28% 90%;
+    --sidebar-fg-subtle: 205 40% 74%;
+    --sidebar-section: 199 88% 80%;
+    --sidebar-hover: 214 52% 28%;
+    --sidebar-accent: 199 82% 64%;
+    --sidebar-accent-fg: 214 70% 12%;
+    --sidebar-active: 42 94% 56%;
+    --sidebar-active-fg: 28 72% 12%;
+    --sidebar-search-bg: 214 50% 14%;
     --hero-from: 168 40% 12%;
     --hero-via: 170 38% 16%;
     --hero-to: 172 42% 22%;
@@ -245,22 +260,29 @@
 
   .erp-sidebar-nav-idle:hover {
     color: hsl(var(--sidebar-fg));
-    background: hsl(var(--sidebar-hover) / 0.9);
-    border-color: hsl(var(--sidebar-border));
+    background: hsl(var(--sidebar-hover) / 0.95);
+    border-color: hsl(var(--sidebar-border) / 0.65);
   }
 
+  /* Amber select block on blue — high luminance contrast, readable at a distance */
   .erp-sidebar-nav-active {
-    color: hsl(var(--sidebar-accent-fg));
-    background: hsl(var(--sidebar-accent));
-    border-color: hsl(var(--sidebar-accent));
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+    color: hsl(var(--sidebar-active-fg));
+    background: hsl(var(--sidebar-active));
+    border-color: hsl(var(--sidebar-active));
+    box-shadow:
+      inset 3px 0 0 hsl(28 80% 28%),
+      0 1px 3px rgb(0 0 0 / 0.22);
+    font-weight: 600;
   }
 
   .erp-sidebar-nav-active-saas {
-    color: hsl(var(--sidebar-accent-fg));
-    background: hsl(var(--sidebar-accent));
-    border-color: hsl(var(--sidebar-accent));
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+    color: hsl(var(--sidebar-active-fg));
+    background: hsl(var(--sidebar-active));
+    border-color: hsl(var(--sidebar-active));
+    box-shadow:
+      inset 3px 0 0 hsl(28 80% 28%),
+      0 1px 3px rgb(0 0 0 / 0.22);
+    font-weight: 600;
   }
 
   /* ── Workspace surfaces & metrics ── */
@@ -630,14 +652,19 @@
     box-shadow: 0 0 0 2px hsl(var(--sidebar-accent) / 0.35);
   }
 
+  /* Section heads — ice-blue on blue, larger type for far scanning */
   .erp-sidebar-label {
-    color: hsl(var(--sidebar-fg-subtle));
-    @apply text-[10px] font-semibold uppercase tracking-wider;
+    color: hsl(var(--sidebar-section));
+    letter-spacing: 0.07em;
+    text-shadow: 0 1px 0 rgb(0 0 0 / 0.18);
+    @apply text-[11px] font-bold uppercase;
   }
 
   .erp-sidebar-sublabel {
-    color: hsl(var(--sidebar-fg-subtle) / 0.85);
-    @apply text-[9px] font-medium uppercase tracking-wider;
+    color: hsl(var(--sidebar-section) / 0.95);
+    letter-spacing: 0.06em;
+    text-shadow: 0 1px 0 rgb(0 0 0 / 0.14);
+    @apply text-[10px] font-semibold uppercase;
   }
 
   .erp-sidebar-footer {

@@ -48,7 +48,7 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
   },
   {
     id: 'site',
-    label: 'Site & lease',
+    label: 'Site & Lease',
     description: 'Ponds, water area, and landlord contracts',
     items: [
       { href: '/aquaculture/ponds', label: 'Ponds', icon: MapPin },
@@ -57,7 +57,7 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
   },
   {
     id: 'production',
-    label: 'Fish production',
+    label: 'Fish Production',
     description: 'Cycles, movements, inventory, and biology',
     items: [
       {

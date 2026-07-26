@@ -117,8 +117,8 @@ const SECTION_LABELS: Record<ErpNavSectionId, Row> = {
 
 const AQUACULTURE_GROUP_LABELS: Record<string, Row> = {
   overview: { en: 'Overview', bn: 'সংক্ষিপ্ত বিবরণ' },
-  site: { en: 'Site & lease', bn: 'সাইট ও লিজ' },
-  production: { en: 'Fish production', bn: 'মাছ উৎপাদন' },
+  site: { en: 'Site & Lease', bn: 'সাইট ও লিজ' },
+  production: { en: 'Fish Production', bn: 'মাছ উৎপাদন' },
   economics: { en: 'Economics', bn: 'অর্থনীতি' },
   archive: { en: 'Archive', bn: 'আর্কাইভ' },
 }

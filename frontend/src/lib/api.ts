@@ -301,6 +301,7 @@ export type CurrentCompanyPayload = {
   station_mode?: string
   language?: string
   aquaculture_enabled?: boolean
+  aquaculture_permanent?: boolean
   currency?: string
 }
 

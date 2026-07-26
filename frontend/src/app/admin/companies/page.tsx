@@ -135,6 +135,8 @@ interface Company {
   aquaculture_licensed?: boolean
   /** Tenant Admin: Aquaculture on in ERP (menu, APIs). Requires aquaculture_licensed. */
   aquaculture_enabled?: boolean
+  /** Hard-locked on for specific tenants (e.g. Adib Filling Station). */
+  aquaculture_permanent?: boolean
 }
 
 function CompaniesPageContent() {
@@ -1264,12 +1266,17 @@ function CompaniesPageContent() {
                                   Subscribed
                                 </span>
                               )}
-                              {company.aquaculture_licensed && !company.aquaculture_enabled && (
+                              {company.aquaculture_permanent && (
+                                <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary sm:px-3 sm:py-1">
+                                  Aquaculture permanent
+                                </span>
+                              )}
+                              {!company.aquaculture_permanent && company.aquaculture_licensed && !company.aquaculture_enabled && (
                                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground/85 sm:px-3 sm:py-1">
                                   Aquaculture licensed
                                 </span>
                               )}
-                              {company.aquaculture_enabled && (
+                              {!company.aquaculture_permanent && company.aquaculture_enabled && (
                                 <span className="flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-xs font-semibold text-primary sm:px-3 sm:py-1">
                                   <Fish className="mr-1 h-3 w-3 shrink-0" aria-hidden />
                                   Aquaculture on
@@ -1738,9 +1745,11 @@ function CompaniesPageContent() {
                           <p
                             className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_licensed ? 'text-primary' : 'text-muted-foreground'}`}
                           >
-                            {viewingCompany.aquaculture_licensed
-                              ? 'Licensed — tenant Admin may enable in Company settings'
-                              : 'Not licensed'}
+                            {viewingCompany.aquaculture_permanent
+                              ? 'Permanently licensed'
+                              : viewingCompany.aquaculture_licensed
+                                ? 'Licensed — tenant Admin may enable in Company settings'
+                                : 'Not licensed'}
                           </p>
                         </div>
                         <div>
@@ -1748,9 +1757,11 @@ function CompaniesPageContent() {
                           <p
                             className={`text-base font-semibold mt-1 ${viewingCompany.aquaculture_enabled ? 'text-primary' : 'text-muted-foreground'}`}
                           >
-                            {viewingCompany.aquaculture_enabled
-                              ? 'On in ERP (menu and features)'
-                              : 'Off'}
+                            {viewingCompany.aquaculture_permanent
+                              ? 'Always on in ERP (cannot be turned off)'
+                              : viewingCompany.aquaculture_enabled
+                                ? 'On in ERP (menu and features)'
+                                : 'Off'}
                           </p>
                         </div>
                       </div>
@@ -2390,14 +2401,21 @@ function CompaniesPageContent() {
 
                     <div className="rounded-lg border border-primary/25 bg-accent/60 p-4">
                       <p className="text-xs font-semibold uppercase tracking-wide text-primary">Tenant modules</p>
-                      <label className="mt-3 flex cursor-pointer items-start gap-3">
+                      <label
+                        className={`mt-3 flex items-start gap-3 ${
+                          editingCompany?.aquaculture_permanent ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'
+                        }`}
+                      >
                         <input
                           type="checkbox"
-                          checked={companyFormData.aquaculture_licensed}
+                          checked={
+                            Boolean(editingCompany?.aquaculture_permanent) || companyFormData.aquaculture_licensed
+                          }
+                          disabled={Boolean(editingCompany?.aquaculture_permanent)}
                           onChange={(e) =>
                             setCompanyFormData({ ...companyFormData, aquaculture_licensed: e.target.checked })
                           }
-                          className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-teal-500"
+                          className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-teal-500 disabled:opacity-60"
                         />
                         <span>
                           <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
@@ -2405,9 +2423,9 @@ function CompaniesPageContent() {
                             License Aquaculture
                           </span>
                           <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                            When you grant this license, Aquaculture turns on in ERP for that company (menu and APIs).
-                            The tenant Admin can turn it off under Company settings. Revoking the license turns
-                            Aquaculture off immediately.
+                            {editingCompany?.aquaculture_permanent
+                              ? 'This company has Aquaculture permanently licensed and enabled; the license cannot be revoked.'
+                              : 'When you grant this license, Aquaculture turns on in ERP for that company (menu and APIs). The tenant Admin can turn it off under Company settings. Revoking the license turns Aquaculture off immediately.'}
                           </span>
                         </span>
                       </label>

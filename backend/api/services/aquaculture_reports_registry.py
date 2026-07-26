@@ -28,6 +28,7 @@ from api.models import (
     ItemStationStock,
     Station,
 )
+from api.services.aquaculture_company_flags import effective_aquaculture_enabled
 from api.services.aquaculture_constants import (
     STOCK_LEDGER_ENTRY_KIND_LABELS,
     STOCK_LEDGER_LOSS_REASON_LABELS,
@@ -136,8 +137,12 @@ def _cycle_filter(company_id: int, raw: str | None) -> tuple[int | None, Aquacul
 
 
 def aquaculture_gate(company_id: int, user) -> JsonResponse | None:
-    c = Company.objects.filter(pk=company_id).only("aquaculture_enabled").first()
-    if not c or not getattr(c, "aquaculture_enabled", False):
+    c = (
+        Company.objects.filter(pk=company_id)
+        .only("aquaculture_enabled", "company_code", "name")
+        .first()
+    )
+    if not c or not effective_aquaculture_enabled(c):
         return JsonResponse(
             {"detail": "Aquaculture is not enabled for this company."},
             status=403,

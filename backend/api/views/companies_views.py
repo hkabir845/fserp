@@ -17,6 +17,12 @@ from api.utils.auth import (
 from api.models import Company, Organization, User
 from api.chart_templates.fuel_station import seed_fuel_station_if_empty
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+from api.services.aquaculture_company_flags import (
+    effective_aquaculture_enabled,
+    effective_aquaculture_licensed,
+    ensure_permanent_aquaculture_db_flags,
+    is_permanent_aquaculture_company,
+)
 from api.services.aquaculture_medicine_catalog_seed import ensure_aquaculture_medicine_catalog_items
 from api.services.aquaculture_empty_sack_service import ensure_empty_feed_sack_catalog_item
 from api.services.permission_service import normalize_role_key
@@ -45,14 +51,20 @@ def _company_station_api_context(request, company: Company) -> dict:
     user = getattr(request, "api_user", None) or get_user_from_request(request)
     is_super = bool(user and user_is_super_admin(user))
     is_admin = bool(user and normalize_role_key(getattr(user, "role", None)) == "admin")
-    licensed = bool(getattr(company, "aquaculture_licensed", False))
-    can_toggle_aquaculture = licensed and (is_super or is_admin)
+    permanent_aq = is_permanent_aquaculture_company(company)
+    licensed = effective_aquaculture_licensed(company)
+    can_edit_aq_settings = licensed and (is_super or is_admin)
+    # Permanent tenants cannot turn Aquaculture off (license or enable).
+    can_edit_module = is_super and not permanent_aq
+    can_toggle_aquaculture = can_edit_aq_settings and not permanent_aq
     return {
         "can_edit_station_mode": is_super,
         # Super Admin only: grant/revoke Aquaculture license (SaaS). Tenant uses Company settings for on/off.
-        "can_edit_aquaculture_module": is_super,
+        "can_edit_aquaculture_module": can_edit_module,
         "aquaculture_licensed": licensed,
+        "aquaculture_permanent": permanent_aq,
         "can_edit_aquaculture_toggle": can_toggle_aquaculture,
+        "can_edit_aquaculture_settings": can_edit_aq_settings,
         "active_station_count": active_station_count(company.id),
     }
 
@@ -299,8 +311,9 @@ def _company_to_json(c: Company) -> dict:
         "time_zone": (getattr(c, "time_zone", None) or "Asia/Dhaka")[:64],
         "language": _coerce_language(getattr(c, "language", None)),
         "station_mode": (getattr(c, "station_mode", None) or "single")[:16],
-        "aquaculture_licensed": bool(getattr(c, "aquaculture_licensed", False)),
-        "aquaculture_enabled": bool(getattr(c, "aquaculture_enabled", False)),
+        "aquaculture_licensed": effective_aquaculture_licensed(c),
+        "aquaculture_enabled": effective_aquaculture_enabled(c),
+        "aquaculture_permanent": is_permanent_aquaculture_company(c),
         "aquaculture_capitalize_pond_consumption_to_bioasset": bool(
             getattr(c, "aquaculture_capitalize_pond_consumption_to_bioasset", False)
         ),
@@ -368,6 +381,8 @@ def companies_current(request):
             },
             status=403,
         )
+    if ensure_permanent_aquaculture_db_flags(company):
+        company.save(update_fields=["aquaculture_licensed", "aquaculture_enabled", "updated_at"])
     payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
     _enrich_company_group_context(payload, company, getattr(request, "api_user", None))
     return JsonResponse(payload)
@@ -738,28 +753,56 @@ def company_detail(request, company_id: int):
                             status=400,
                         )
                 company.station_mode = sm
+            permanent_aq = is_permanent_aquaculture_company(company)
             if "aquaculture_licensed" in body:
-                if not is_super:
+                if permanent_aq:
+                    # Adib Filling Station (and other permanent tenants): license always on.
+                    if not bool(body.get("aquaculture_licensed")):
+                        return JsonResponse(
+                            {
+                                "detail": (
+                                    "Aquaculture is permanently licensed for this company and cannot be revoked."
+                                ),
+                            },
+                            status=400,
+                        )
+                    company.aquaculture_licensed = True
+                elif not is_super:
                     return JsonResponse(
                         {
                             "detail": "Only a platform Super Admin may grant or revoke the Aquaculture license for a tenant.",
                         },
                         status=403,
                     )
-                prev_lic = bool(getattr(company, "aquaculture_licensed", False))
-                new_lic = bool(body.get("aquaculture_licensed"))
-                company.aquaculture_licensed = new_lic
-                if not new_lic and prev_lic:
-                    company.aquaculture_enabled = False
-                elif new_lic and not prev_lic:
-                    # First-time license: turn module on so ERP menu/APIs match operator expectation.
-                    # Tenant Admin may still disable under Company settings.
-                    if not bool(getattr(company, "aquaculture_enabled", False)):
-                        company.aquaculture_enabled = True
-                        should_seed_aquaculture_coa = True
+                else:
+                    prev_lic = bool(getattr(company, "aquaculture_licensed", False))
+                    new_lic = bool(body.get("aquaculture_licensed"))
+                    company.aquaculture_licensed = new_lic
+                    if not new_lic and prev_lic:
+                        company.aquaculture_enabled = False
+                    elif new_lic and not prev_lic:
+                        # First-time license: turn module on so ERP menu/APIs match operator expectation.
+                        # Tenant Admin may still disable under Company settings.
+                        if not bool(getattr(company, "aquaculture_enabled", False)):
+                            company.aquaculture_enabled = True
+                            should_seed_aquaculture_coa = True
             if "aquaculture_enabled" in body:
                 new_en = bool(body.get("aquaculture_enabled"))
-                if is_super:
+                if permanent_aq:
+                    if not new_en:
+                        return JsonResponse(
+                            {
+                                "detail": (
+                                    "Aquaculture is permanently enabled for this company and cannot be turned off."
+                                ),
+                            },
+                            status=400,
+                        )
+                    prev_aq = bool(company.aquaculture_enabled)
+                    company.aquaculture_enabled = True
+                    if not prev_aq:
+                        should_seed_aquaculture_coa = True
+                elif is_super:
                     prev_aq = bool(company.aquaculture_enabled)
                     company.aquaculture_enabled = new_en
                     if new_en and not prev_aq:
@@ -779,13 +822,15 @@ def company_detail(request, company_id: int):
                         },
                         status=403,
                     )
+            if permanent_aq:
+                ensure_permanent_aquaculture_db_flags(company)
             if "aquaculture_capitalize_pond_consumption_to_bioasset" in body:
                 if not (is_super or tenant_admin):
                     return JsonResponse(
                         {"detail": "Only Admin may change aquaculture biological asset GL settings."},
                         status=403,
                     )
-                if not bool(getattr(company, "aquaculture_licensed", False)):
+                if not effective_aquaculture_licensed(company):
                     return JsonResponse(
                         {"detail": "Aquaculture license required for this setting."},
                         status=400,

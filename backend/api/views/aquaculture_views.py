@@ -44,6 +44,7 @@ from api.models import (
     Station,
 )
 from api.views.journal_entries_views import _entry_to_json
+from api.services.aquaculture_company_flags import effective_aquaculture_enabled
 from api.services.aquaculture_feeding_advice_service import build_feeding_advice_payload, effective_advice_text
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_nursing_finalize_service import maybe_transfer_nursing_warehouse_when_empty
@@ -773,8 +774,12 @@ def _aquaculture_access(request) -> JsonResponse | None:
     Tenant must have the module enabled (superuser). Only the tenant Admin account or a
     platform super-admin may use aquaculture APIs.
     """
-    c = Company.objects.filter(pk=request.company_id).only("aquaculture_enabled").first()
-    if not c or not getattr(c, "aquaculture_enabled", False):
+    c = (
+        Company.objects.filter(pk=request.company_id)
+        .only("aquaculture_enabled", "company_code", "name")
+        .first()
+    )
+    if not c or not effective_aquaculture_enabled(c):
         return JsonResponse(
             {
                 "detail": "Aquaculture is not enabled for this company. Ask a platform administrator to turn it on in Company settings.",

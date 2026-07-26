@@ -79,6 +79,7 @@ Signing uses a local `android/key.properties` + `android/fserp-release.jks` (bot
 - **PWA manifest**: PNG icons at `frontend/public/icons/` for optional “install web app” in Chrome (also not Play Store).
 - **Capacitor WebView**: `adjustResize` so the keyboard does not cover login fields.
 - **In-app ERP**: existing mobile sidebar, `100dvh` shell, and safe-area CSS in `globals.css`.
+- **Aquaculture (Adib Filling Station)**: the APK has no separate module gate — it loads the deployed site. Aquaculture is permanently available for Adib (`FS-000002`) via backend `aquaculture_company_flags` and frontend `aquacultureCompanyFlags` (same unlock as desktop). Redeploy the site after those changes; rebuilding the APK is only needed for native shell updates.
 
 ## App ID
 

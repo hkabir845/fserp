@@ -19,6 +19,7 @@ import { useEmployeesT } from '@/lib/moduleI18n/employees'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateLong } from '@/utils/date'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 
 interface Employee {
@@ -216,8 +217,14 @@ export default function EmployeesPage() {
 
   const fetchAquacultureContext = async () => {
     try {
-      const res = await api.get<{ aquaculture_enabled?: boolean }>('/companies/current/', { timeout: 8000 })
-      const enabled = Boolean(res.data?.aquaculture_enabled)
+      const res = await api.get<{
+        aquaculture_enabled?: boolean
+        aquaculture_permanent?: boolean
+        company_code?: string
+        name?: string
+        company_name?: string
+      }>('/companies/current/', { timeout: 8000 })
+      const enabled = resolveAquacultureEnabled(res.data)
       setAquacultureEnabled(enabled)
       if (!enabled) {
         setAquaculturePonds([])

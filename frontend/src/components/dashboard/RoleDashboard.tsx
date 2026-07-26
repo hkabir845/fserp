@@ -27,6 +27,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { aquacultureT, aquacultureTFormat } from '@/lib/aquacultureI18n'
 import { formatCurrency } from '@/utils/currency'
 import { formatDate } from '@/utils/date'
@@ -164,7 +165,14 @@ export default function RoleDashboard() {
       try {
         const [statsRes, companyRes, broadcastRes] = await Promise.all([
           api.get<DashboardStats>('/dashboard/stats'),
-          api.get<{ currency?: string; aquaculture_enabled?: boolean }>('/companies/current/'),
+          api.get<{
+            currency?: string
+            aquaculture_enabled?: boolean
+            aquaculture_permanent?: boolean
+            company_code?: string
+            name?: string
+            company_name?: string
+          }>('/companies/current/'),
           api.get('/broadcasts/my?unread_only=true').catch(() => ({ data: [] })),
         ])
         if (cancelled) return
@@ -172,7 +180,7 @@ export default function RoleDashboard() {
         if (companyRes.data?.currency) {
           setCurrencyCode(String(companyRes.data.currency).toUpperCase())
         }
-        setAquacultureEnabled(Boolean(companyRes.data?.aquaculture_enabled))
+        setAquacultureEnabled(resolveAquacultureEnabled(companyRes.data))
         if (Array.isArray(broadcastRes.data)) setBroadcasts(broadcastRes.data)
       } catch (err) {
         safeLogError('Dashboard load:', err)

@@ -25,6 +25,7 @@ import Link from 'next/link'
 import { useToast } from '@/components/Toast'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import api from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { formatCurrency } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import {
@@ -260,7 +261,7 @@ export default function FixedAssetsPage() {
         setCurrencyCode(companyRes.value.data.currency)
       }
       if (companyRes.status === 'fulfilled') {
-        setAquacultureEnabled(Boolean(companyRes.value.data?.aquaculture_enabled))
+        setAquacultureEnabled(resolveAquacultureEnabled(companyRes.value.data))
       }
       if (pondsRes.status === 'rejected') {
         setPonds([])

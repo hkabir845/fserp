@@ -24,6 +24,7 @@ import {
 import { useToast } from '@/components/Toast'
 import { useCompany } from '@/contexts/CompanyContext'
 import api, { isSuperAdminRole, isTenantAdminRole } from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { connectionErrorUserMessage, isConnectionError } from '@/utils/connectionError'
 import type { ReportStationForSegment } from '@/app/reports/reportBusinessSegment'
@@ -218,7 +219,13 @@ export default function ReportingCategoriesPage() {
       api.get<
         { id: number; name: string; pond_role?: string; is_active?: boolean }[]
       >('/aquaculture/ponds/'),
-      api.get<{ aquaculture_enabled?: boolean }>('/companies/current'),
+      api.get<{
+        aquaculture_enabled?: boolean
+        aquaculture_permanent?: boolean
+        company_code?: string
+        name?: string
+        company_name?: string
+      }>('/companies/current'),
     ]).then(([stRes, pondRes, coRes]) => {
       if (cancelled) return
       if (stRes.status === 'fulfilled') {
@@ -251,7 +258,7 @@ export default function ReportingCategoriesPage() {
         setPonds([])
       }
       if (coRes.status === 'fulfilled') {
-        setAquacultureEnabled(coRes.value.data?.aquaculture_enabled !== false)
+        setAquacultureEnabled(resolveAquacultureEnabled(coRes.value.data))
       } else {
         setAquacultureEnabled(null)
       }

@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { isOffsetPagedPayload, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import { CatalogItemCombobox } from '@/components/reference/CatalogItemCombobox'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -656,6 +657,10 @@ function InventoryContent() {
         const d = coRes.value.data as {
           station_mode?: string
           aquaculture_enabled?: boolean
+          aquaculture_permanent?: boolean
+          company_code?: string
+          name?: string
+          company_name?: string
           currency?: string
         }
         if (d?.currency) {
@@ -665,8 +670,8 @@ function InventoryContent() {
           .toLowerCase()
           .trim()
         setStationMode(sm === 'single' ? 'single' : 'multi')
-        setAquacultureEnabled(Boolean(d?.aquaculture_enabled))
-        const aqOn = Boolean(d?.aquaculture_enabled)
+        const aqOn = resolveAquacultureEnabled(d)
+        setAquacultureEnabled(aqOn)
         if (aqOn) {
           try {
             const pr = await api.get('/aquaculture/ponds/')

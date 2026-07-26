@@ -20,6 +20,7 @@ import {
   hasPermission,
 } from '@/utils/rbac'
 import api, { getApiBaseUrl } from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { formatDate, formatDateOnly, formatDateRange, localDateISO, toDateInputValue } from '@/utils/date'
 import { formatAmountPlain, formatCurrency, formatNumber } from '@/utils/formatting'
 import { escapeHtml, printDocument } from '@/utils/printDocument'
@@ -1633,7 +1634,9 @@ function ReportsPageContent() {
         const d = res.data as {
           name?: string
           company_name?: string
+          company_code?: string
           aquaculture_enabled?: boolean
+          aquaculture_permanent?: boolean
           fiscal_year_start?: string
         }
         const label = [d.name, d.company_name]
@@ -1643,11 +1646,7 @@ function ReportsPageContent() {
         const fy = String(d.fiscal_year_start || '01-01').trim().slice(0, 5) || '01-01'
         setCompanyFiscalYearStart(fy)
         setAquacultureDateRange(defaultAquacultureReportRange(fy))
-        if (typeof d.aquaculture_enabled === 'boolean') {
-          setCompanyAquacultureEnabled(d.aquaculture_enabled)
-        } else {
-          setCompanyAquacultureEnabled(false)
-        }
+        setCompanyAquacultureEnabled(resolveAquacultureEnabled(d))
       })
       .catch(() => {})
     return () => {

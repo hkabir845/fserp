@@ -3,6 +3,7 @@
  * SSR-safe: All browser API access is guarded
  */
 import axios from 'axios'
+import { withEffectiveAquacultureFlags } from '@/lib/aquacultureCompanyFlags'
 import { isAccessTokenExpired, readStoredAccessToken } from '@/lib/authSession'
 
 /**
@@ -292,6 +293,8 @@ export type CurrentCompanyGroupRow = {
 export type CurrentCompanyPayload = {
   id?: number
   name?: string
+  company_name?: string
+  company_code?: string
   is_master?: string | boolean
   can_switch_group_company?: boolean
   group_companies?: CurrentCompanyGroupRow[]
@@ -349,8 +352,10 @@ export async function fetchCurrentCompany(options?: { force?: boolean }): Promis
     const token = await ensureAccessTokenFresh()
     if (!token) throw new axios.Cancel('Not authenticated')
     const res = await api.get<CurrentCompanyPayload>('/companies/current/')
-    currentCompanyCache = { data: res.data, at: Date.now() }
-    return res.data
+    // Permanent tenants (e.g. Adib Filling Station) — effective for web + Capacitor Android.
+    const data = withEffectiveAquacultureFlags(res.data || {}) as CurrentCompanyPayload
+    currentCompanyCache = { data, at: Date.now() }
+    return data
   })()
 
   try {

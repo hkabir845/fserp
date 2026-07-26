@@ -14,6 +14,7 @@ import { usePageMeta } from '@/hooks/usePageMeta'
 import { getCurrencySymbol, formatNumber, formatAmountPlain } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import api, { readApiErrorDetail } from '@/lib/api'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import axios from 'axios'
 import { useCompany } from '@/contexts/CompanyContext'
 import { formatBankRegisterLabel } from '@/lib/bankAccountDisplay'
@@ -460,8 +461,14 @@ export default function PayrollPage() {
     async (opts?: { preservePondsOnPondApiError?: boolean }): Promise<PondOption[]> => {
       let en = false
       try {
-        const { data: cj } = await api.get<{ aquaculture_enabled?: boolean }>('/companies/current/')
-        en = Boolean(cj.aquaculture_enabled)
+        const { data: cj } = await api.get<{
+          aquaculture_enabled?: boolean
+          aquaculture_permanent?: boolean
+          company_code?: string
+          name?: string
+          company_name?: string
+        }>('/companies/current/')
+        en = resolveAquacultureEnabled(cj)
         setAquacultureEnabled(en)
       } catch {
         return []

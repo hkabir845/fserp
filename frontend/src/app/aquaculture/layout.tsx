@@ -8,6 +8,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import api, { fetchCurrentCompany } from '@/lib/api'
 import { aquacultureT } from '@/lib/aquacultureI18n'
+import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { isAquacultureNavUnlocked } from '@/navigation/erpAppMenu'
 import { ShieldAlert } from 'lucide-react'
 
@@ -58,7 +59,7 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
     const isSuperAdmin = role === 'super_admin'
     try {
       const data = await fetchCurrentCompany()
-      const aq = Boolean(data?.aquaculture_enabled)
+      const aq = resolveAquacultureEnabled(data)
       setEnabled(aq)
       setNavUnlocked(isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, aq))
     } catch {

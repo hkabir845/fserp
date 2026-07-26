@@ -28,6 +28,11 @@ function isAdibPortalHost(): boolean {
   return host === 'adib.mahasoftcorporation.com' || host.startsWith('adib.')
 }
 
+/** Shared multi-tenant APK — also the SSR-safe default before the tenant build is resolved. */
+export function getSharedAndroidApkUrl(): string {
+  return process.env.NEXT_PUBLIC_ANDROID_APK_URL?.trim() || DEFAULT_APK_PATH
+}
+
 /** Public URL to the signed release APK (Adib portal prefers the dedicated APK). */
 export function getAndroidApkUrl(): string {
   if (isAdibPortalHost()) {
@@ -35,9 +40,7 @@ export function getAndroidApkUrl(): string {
     if (adibEnv) return adibEnv
     return DEFAULT_ADIB_APK_PATH
   }
-  const fromEnv = process.env.NEXT_PUBLIC_ANDROID_APK_URL?.trim()
-  if (fromEnv) return fromEnv
-  return DEFAULT_APK_PATH
+  return getSharedAndroidApkUrl()
 }
 
 /** Public URL to published APK version metadata. */
@@ -58,6 +61,59 @@ export function getAndroidVersionUrl(): string {
     return apkUrl.replace(/\/[^/]*$/, '/android-version.json')
   }
   return DEFAULT_VERSION_PATH
+}
+
+export type AndroidDownload = {
+  apkUrl: string
+  versionUrl: string
+  /** True only when the dedicated Adib build is actually published. */
+  adib: boolean
+}
+
+async function urlExists(url: string): Promise<boolean> {
+  try {
+    const head = await fetch(url, { method: 'HEAD', cache: 'no-store' })
+    if (head.ok) return true
+    // Some hosts reject HEAD; a tiny GET still proves the file is published.
+    if (head.status === 405 || head.status === 501) {
+      const get = await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { Range: 'bytes=0-0' },
+      })
+      return get.ok || get.status === 206
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve the APK to offer.
+ * - Apex (mahasoftcorporation.com): always the shared working `fserp.apk`.
+ * - Adib portal: prefer dedicated build, fall back to shared so the link never 404s.
+ */
+export async function resolveAndroidDownload(): Promise<AndroidDownload> {
+  // Main SaaS login — never point at a missing dedicated tenant APK.
+  if (!isAdibPortalHost()) {
+    return {
+      apkUrl: getSharedAndroidApkUrl(),
+      versionUrl: getAndroidVersionUrl(),
+      adib: false,
+    }
+  }
+
+  const apkUrl = getAndroidApkUrl()
+  const versionUrl = getAndroidVersionUrl()
+  const dedicatedReady =
+    apkUrl !== DEFAULT_ADIB_APK_PATH || // absolute env URL assumed published
+    (await urlExists(apkUrl))
+
+  if (!dedicatedReady) {
+    return { apkUrl: getSharedAndroidApkUrl(), versionUrl: DEFAULT_VERSION_PATH, adib: false }
+  }
+  return { apkUrl, versionUrl, adib: true }
 }
 
 export function isAndroidBrowser(): boolean {
@@ -105,9 +161,11 @@ export async function getNativeAppInfo(): Promise<NativeAppInfo | null> {
   }
 }
 
-export async function fetchPublishedAndroidVersion(): Promise<AndroidPublishedVersion | null> {
+export async function fetchPublishedAndroidVersion(
+  versionUrl?: string
+): Promise<AndroidPublishedVersion | null> {
   try {
-    const res = await fetch(getAndroidVersionUrl(), { cache: 'no-store' })
+    const res = await fetch(versionUrl || getAndroidVersionUrl(), { cache: 'no-store' })
     if (!res.ok) return null
     const data = (await res.json()) as Partial<AndroidPublishedVersion>
     const versionCode = Number(data.versionCode)

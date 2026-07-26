@@ -1,9 +1,12 @@
-"""Cache-backed rate limits for unauthenticated auth endpoints (LocMem or Redis)."""
+"""Cache-backed rate limits for unauthenticated auth endpoints (LocMem, Redis, or DB)."""
 from __future__ import annotations
 
+import logging
 import os
 
 from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
 
 
 def auth_rate_limits_enabled() -> bool:
@@ -27,17 +30,22 @@ def rate_limit_exceeded(*, key: str, limit: int, period_seconds: int) -> bool:
     """
     Count one attempt for ``key``. Return True if the limit is already reached (reject with 429).
 
-    Compatible with Django LocMemCache and RedisCache.
+    Compatible with LocMemCache, RedisCache and DatabaseCache. Fails **open**: an unreachable
+    cache (e.g. missing DatabaseCache table, Redis down) must never lock users out of login.
     """
-    n = cache.get(key)
-    if n is None:
-        cache.set(key, 1, period_seconds)
-        return False
     try:
-        n_int = int(n)
-    except (TypeError, ValueError):
-        n_int = 0
-    if n_int >= limit:
-        return True
-    cache.incr(key)
-    return False
+        n = cache.get(key)
+        if n is None:
+            cache.set(key, 1, period_seconds)
+            return False
+        try:
+            n_int = int(n)
+        except (TypeError, ValueError):
+            n_int = 0
+        if n_int >= limit:
+            return True
+        cache.incr(key)
+        return False
+    except Exception:
+        logger.warning("Rate limit cache unavailable; allowing request for %s", key, exc_info=True)
+        return False

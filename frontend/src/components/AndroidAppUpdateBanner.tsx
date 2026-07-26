@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
 import {
   fetchPublishedAndroidVersion,
-  getAndroidApkUrl,
   getNativeAppInfo,
+  getSharedAndroidApkUrl,
   isAndroidUpdateAvailable,
   isCapacitorNativeApp,
+  resolveAndroidDownload,
   type AndroidPublishedVersion,
 } from '@/lib/androidApp'
 
@@ -20,12 +21,18 @@ export function AndroidAppUpdateBanner() {
   const [published, setPublished] = useState<AndroidPublishedVersion | null>(null)
   const [installedVersion, setInstalledVersion] = useState<string | null>(null)
   const [show, setShow] = useState(false)
+  const [apkUrl, setApkUrl] = useState(getSharedAndroidApkUrl)
 
   useEffect(() => {
     if (!isCapacitorNativeApp()) return
 
     void (async () => {
-      const [pub, info] = await Promise.all([fetchPublishedAndroidVersion(), getNativeAppInfo()])
+      const download = await resolveAndroidDownload()
+      setApkUrl(download.apkUrl)
+      const [pub, info] = await Promise.all([
+        fetchPublishedAndroidVersion(download.versionUrl),
+        getNativeAppInfo(),
+      ])
       if (!info || !isAndroidUpdateAvailable(info.build, pub)) return
       try {
         if (sessionStorage.getItem(DISMISS_KEY) === String(pub?.versionCode)) return
@@ -39,8 +46,6 @@ export function AndroidAppUpdateBanner() {
   }, [])
 
   if (!show || !published) return null
-
-  const apkUrl = getAndroidApkUrl()
 
   return (
     <div className="sticky top-0 z-50 border-b border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">

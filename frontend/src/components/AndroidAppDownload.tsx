@@ -6,15 +6,15 @@ import {
   ADIB_ANDROID_APP_LABEL,
   ANDROID_APP_LABEL,
   fetchPublishedAndroidVersion,
-  getAndroidApkUrl,
   getNativeAppInfo,
+  getSharedAndroidApkUrl,
   isAndroidBrowser,
   isAndroidUpdateAvailable,
   isCapacitorNativeApp,
   isStandaloneDisplay,
+  resolveAndroidDownload,
   type AndroidPublishedVersion,
 } from '@/lib/androidApp'
-import { isAdibTenantHost } from '@/lib/adibAndroidApp'
 import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
 
 type BeforeInstallPromptEvent = Event & {
@@ -33,7 +33,7 @@ const btnSecondary =
  * Inside the Capacitor shell, shows an update action when a newer APK is published.
  */
 export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainFlow?: boolean }) {
-  const apkUrl = getAndroidApkUrl()
+  const [apkUrl, setApkUrl] = useState(getSharedAndroidApkUrl)
   const [adibPortal, setAdibPortal] = useState(false)
   const appLabel = adibPortal ? ADIB_ANDROID_APP_LABEL : ANDROID_APP_LABEL
   const apkFileName = adibPortal ? 'fserp-adib.apk' : 'fserp.apk'
@@ -46,7 +46,6 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
   const [installedVersion, setInstalledVersion] = useState<string | null>(null)
 
   useEffect(() => {
-    setAdibPortal(isAdibTenantHost())
     setAndroid(isAndroidBrowser())
     setInstalled(isStandaloneDisplay())
     setNativeApp(isCapacitorNativeApp())
@@ -65,7 +64,13 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
     window.addEventListener('appinstalled', onInstalled)
 
     void (async () => {
-      const [pub, info] = await Promise.all([fetchPublishedAndroidVersion(), getNativeAppInfo()])
+      const download = await resolveAndroidDownload()
+      setApkUrl(download.apkUrl)
+      setAdibPortal(download.adib)
+      const [pub, info] = await Promise.all([
+        fetchPublishedAndroidVersion(download.versionUrl),
+        getNativeAppInfo(),
+      ])
       setPublished(pub)
       if (info) {
         setInstalledBuild(info.build)
@@ -158,7 +163,7 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
       <p className="mt-2.5 text-center text-xs leading-relaxed text-muted-foreground">
         {adibPortal
           ? 'Dedicated Adib Filling Station app — Aquaculture is always available. Not on Google Play.'
-          : 'Direct download from this site — not on Google Play. Same login for every company.'}
+          : 'Direct download — not on Google Play. Same app and login for every company, including Adib Filling Station.'}
       </p>
       {android ? (
         <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">

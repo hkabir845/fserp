@@ -27,7 +27,10 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
-import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
+import {
+  isPermanentAquacultureCompany,
+  resolveAquacultureEnabled,
+} from '@/lib/aquacultureCompanyFlags'
 import {
   resolveIsAdibDedicatedAndroidApp,
   shouldForceAquacultureUnlock,
@@ -138,6 +141,9 @@ export default function RoleDashboard() {
   const [currencyCode, setCurrencyCode] = useState('BDT')
   const [loading, setLoading] = useState(true)
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [forceAquacultureUnlock, setForceAquacultureUnlock] = useState(() =>
+    shouldForceAquacultureUnlock()
+  )
   const [broadcasts, setBroadcasts] = useState<
     { id: number; title: string; message: string; priority: string; created_at: string }[]
   >([])
@@ -185,7 +191,10 @@ export default function RoleDashboard() {
           setCurrencyCode(String(companyRes.data.currency).toUpperCase())
         }
         const forceUnlock =
-          shouldForceAquacultureUnlock() || (await resolveIsAdibDedicatedAndroidApp())
+          shouldForceAquacultureUnlock() ||
+          (await resolveIsAdibDedicatedAndroidApp()) ||
+          isPermanentAquacultureCompany(companyRes.data)
+        setForceAquacultureUnlock(forceUnlock)
         setAquacultureEnabled(forceUnlock || resolveAquacultureEnabled(companyRes.data))
         if (Array.isArray(broadcastRes.data)) setBroadcasts(broadcastRes.data)
       } catch (err) {
@@ -220,12 +229,12 @@ export default function RoleDashboard() {
       isSuperAdmin,
       permissions,
       {
-        forceUnlock: shouldForceAquacultureUnlock(),
+        forceUnlock: forceAquacultureUnlock,
         allFsmsItems: getFsmsErpMenuItems(lang),
       }
     )
     return pickQuickApps(items, config.prioritizeHrefs, config.maxQuickApps)
-  }, [role, permissions, mode, aquacultureEnabled, config, lang])
+  }, [role, permissions, mode, aquacultureEnabled, forceAquacultureUnlock, config, lang])
 
   const statValues: Record<DashboardStatKey, { value: string; hint?: string }> = useMemo(() => {
     const s = stats

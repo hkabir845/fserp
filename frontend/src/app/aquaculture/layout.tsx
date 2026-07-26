@@ -8,7 +8,10 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import api, { fetchCurrentCompany } from '@/lib/api'
 import { aquacultureT } from '@/lib/aquacultureI18n'
-import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
+import {
+  isPermanentAquacultureCompany,
+  resolveAquacultureEnabled,
+} from '@/lib/aquacultureCompanyFlags'
 import {
   resolveIsAdibDedicatedAndroidApp,
   shouldForceAquacultureUnlock,
@@ -61,17 +64,19 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
     }
     const { role, permissions } = readSessionRoleAndPermissions()
     const isSuperAdmin = role === 'super_admin'
-    const forceUnlock =
+    const hostOrAppUnlock =
       shouldForceAquacultureUnlock() || (await resolveIsAdibDedicatedAndroidApp())
     try {
-      const data = forceUnlock ? null : await fetchCurrentCompany()
-      const aq = forceUnlock ? true : resolveAquacultureEnabled(data)
+      // Always load company so permanent tenants (Adib on mahasoftcorporation.com) unlock AQ.
+      const data = await fetchCurrentCompany()
+      const forceUnlock = hostOrAppUnlock || isPermanentAquacultureCompany(data)
+      const aq = forceUnlock || resolveAquacultureEnabled(data)
       setEnabled(aq)
       setNavUnlocked(
         isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, aq, forceUnlock)
       )
     } catch {
-      if (forceUnlock) {
+      if (hostOrAppUnlock) {
         setEnabled(true)
         setNavUnlocked(
           isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, true, true)

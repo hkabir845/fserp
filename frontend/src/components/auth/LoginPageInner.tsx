@@ -227,7 +227,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
               headers: endpoint.headers,
               body: endpoint.body as BodyInit,
             },
-            3000
+            12000
           )
 
           response = endpointResponse

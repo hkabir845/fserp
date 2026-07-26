@@ -420,27 +420,47 @@ function isAquacultureHref(href: string): boolean {
 
 /**
  * Hide Aquaculture when the company flag is off, or when the user has no aquaculture permission.
+ * When `forceUnlock` is true (Adib dedicated Android app / permanent tenant UI), keep AQ items
+ * and re-attach any role filter removed.
  */
 export function filterAquacultureMenuWhenDisabled(
   items: ErpAppMenuItem[],
   aquacultureEnabled: boolean,
   userRole: string | null,
   isSuperAdmin: boolean,
-  effectivePermissions?: string[] | null
+  effectivePermissions?: string[] | null,
+  options?: {
+    forceUnlock?: boolean
+    /** Full FSMS menu — used to restore AQ entries stripped by role allow-lists. */
+    allFsmsItems?: ErpAppMenuItem[]
+  }
 ): ErpAppMenuItem[] {
-  if (!aquacultureEnabled) {
+  const forceUnlock = Boolean(options?.forceUnlock)
+  const enabled = aquacultureEnabled || forceUnlock
+
+  if (!enabled) {
     return items.filter((i) => !isAquacultureHref(i.href))
   }
-  if (isTenantAdminAquacultureUser(userRole, isSuperAdmin)) {
-    return items
+
+  let next = items
+  if (forceUnlock && options?.allFsmsItems?.length) {
+    const have = new Set(next.map((i) => i.href))
+    const missing = options.allFsmsItems.filter((i) => isAquacultureHref(i.href) && !have.has(i.href))
+    if (missing.length) {
+      next = [...next, ...missing]
+    }
+  }
+
+  if (forceUnlock || isTenantAdminAquacultureUser(userRole, isSuperAdmin)) {
+    return next
   }
   if (effectivePermissions != null) {
     if (hasAnyAquacultureModuleInList(effectivePermissions)) {
-      return items
+      return next
     }
-    return items.filter((i) => !isAquacultureHref(i.href))
+    return next.filter((i) => !isAquacultureHref(i.href))
   }
-  return items.filter((i) => !isAquacultureHref(i.href))
+  return next.filter((i) => !isAquacultureHref(i.href))
 }
 
 /**
@@ -451,10 +471,12 @@ export function isAquacultureNavUnlocked(
   isSuperAdmin: boolean,
   mode: 'fsms_erp' | 'saas_dashboard',
   userPermissions: string[] | null,
-  aquacultureEnabled: boolean
+  aquacultureEnabled: boolean,
+  forceUnlock = false
 ): boolean {
-  if (!aquacultureEnabled || mode !== 'fsms_erp') return false
-  if (isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return true
+  if (mode !== 'fsms_erp') return false
+  if (!(aquacultureEnabled || forceUnlock)) return false
+  if (forceUnlock || isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return true
   if (userPermissions != null && hasAnyAquacultureModuleInList(userPermissions)) return true
   return false
 }

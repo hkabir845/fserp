@@ -2,7 +2,14 @@
 
 The Android app is a **WebView shell** that loads your deployed FSERP site. Distribution is **direct APK download** from the login page — **no Google Play Store** required.
 
-All SaaS tenants share the same APK. Users download it once, install (sideload), and sign in with their usual credentials.
+## Flavors
+
+| Flavor | Command | Package id | Opens | Aquaculture |
+|--------|---------|------------|-------|-------------|
+| **Adib** (dedicated) | `npm run sync:adib` / `npm run build:android:adib` | `com.mahasoft.fserp.adib` | `https://adib.mahasoftcorporation.com/login` | **Always on** |
+| Standard (multi-tenant) | `npm run sync` / `npm run build:android` | `com.mahasoft.fserp` | `https://mahasoftcorporation.com/login` | Per company flag |
+
+Prefer the **Adib** APK for Adib Filling Station so Aquaculture cannot disappear from the menu.
 
 ## Prerequisites
 
@@ -16,72 +23,52 @@ All SaaS tenants share the same APK. Users download it once, install (sideload),
 cd mobile
 npm install
 npx cap add android   # first time only
-npx cap sync android
+npm run sync:adib     # Adib dedicated build
 ```
 
-## Point at your deployment
-
-Default URL: `https://mahasoftcorporation.com`
-
-```bash
-# Linux / macOS
-FSERP_APP_URL=https://your-domain.com npm run sync
-
-# Windows PowerShell
-$env:FSERP_APP_URL="https://your-domain.com"; npm run sync
-```
-
-## Build signed APK (sideload)
-
-You only need an **APK**, not an AAB (Play Store bundle).
+## Build signed Adib APK
 
 ```bash
 cd mobile
-npm run sync
+npm run sync:adib
 npx cap open android
 ```
 
 In Android Studio: **Build → Generate Signed Bundle / APK → APK → release**.
 
-Or from CLI (after `local.properties` exists):
+Or:
 
 ```bash
-cd mobile/android
-./gradlew assembleRelease
-# APK: android/app/build/outputs/apk/release/app-release-unsigned.apk
+cd mobile
+npm run build:android:adib
+# APK: android/app/build/outputs/apk/release/app-release.apk (or unsigned)
 ```
 
-Sign the APK before distributing (Android Studio signed build, or `apksigner`).
+### Host Adib APK for download
 
-## Host APK for the login download button
+1. Copy the signed APK to `frontend/public/downloads/fserp-adib.apk`
+2. Keep `frontend/public/downloads/android-adib-version.json` in sync (`versionCode` / `versionName`)
+3. Deploy the frontend — Adib login (`adib.mahasoftcorporation.com`) shows **Download Adib FS ERP**
 
-1. Copy the signed APK to `frontend/public/downloads/fserp.apk`
-2. Or set `NEXT_PUBLIC_ANDROID_APK_URL=https://your-domain.com/downloads/fserp.apk` in `frontend/.env`
-3. Redeploy the frontend
+## Point at another host
 
-Users tap **Download Android app** on `/login`, install the APK, and open the app.
+```bash
+# Windows PowerShell
+$env:FSERP_APP_FLAVOR="adib"
+$env:FSERP_APP_URL="https://adib.mahasoftcorporation.com"
+npm run sync:adib
+```
 
-### Updating the app later
+## How Aquaculture stays available
 
-1. Bump `versionCode` and `versionName` in `android/app/build.gradle` (versionCode must increase).
-2. Build a new **signed** APK with the same keystore.
-3. Replace `frontend/public/downloads/fserp.apk`.
-4. Update `frontend/public/downloads/android-version.json` to match the new version.
-5. Deploy the frontend.
+1. Backend: Adib (`FS-000002`) is a permanent aquaculture company.
+2. Dedicated APK package id `com.mahasoft.fserp.adib` forces Aquaculture in the web UI.
+3. App opens the Adib tenant subdomain so company context is always Adib.
+4. Permanent-tenant users are allowed to call aquaculture APIs.
 
-Existing installs upgrade in place (same signing key + higher versionCode). The login page and in-app banner show **Update** when `android-version.json` is newer than the installed build.
+Redeploy the **website** after frontend/backend changes. Rebuild the APK only when changing the native shell (package id, start URL, splash).
 
-Signing uses a local `android/key.properties` + `android/fserp-release.jks` (both gitignored). Copy `key.properties.example` to `key.properties` on a new machine. **Back up the `.jks` and passwords** — losing them forces a new key and users must uninstall before reinstalling.
+## App IDs
 
-## Mobile / Android compatibility
-
-- **Login page**: scrolls on small screens, 44px+ touch targets, 16px inputs (no zoom on focus), safe-area padding for notched phones.
-- **PWA manifest**: PNG icons at `frontend/public/icons/` for optional “install web app” in Chrome (also not Play Store).
-- **Capacitor WebView**: `adjustResize` so the keyboard does not cover login fields.
-- **In-app ERP**: existing mobile sidebar, `100dvh` shell, and safe-area CSS in `globals.css`.
-- **Aquaculture (Adib Filling Station)**: the APK has no separate module gate — it loads the deployed site. Aquaculture is permanently available for Adib (`FS-000002`) via backend `aquaculture_company_flags` and frontend `aquacultureCompanyFlags` (same unlock as desktop). Redeploy the site after those changes; rebuilding the APK is only needed for native shell updates.
-
-## App ID
-
-- Package: `com.mahasoft.fserp`
-- Change in `capacitor.config.ts` only if you need a different package name for your organization.
+- Standard: `com.mahasoft.fserp`
+- Adib: `com.mahasoft.fserp.adib`

@@ -9,6 +9,10 @@ import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import api, { fetchCurrentCompany } from '@/lib/api'
 import { aquacultureT } from '@/lib/aquacultureI18n'
 import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
+import {
+  resolveIsAdibDedicatedAndroidApp,
+  shouldForceAquacultureUnlock,
+} from '@/lib/adibAndroidApp'
 import { isAquacultureNavUnlocked } from '@/navigation/erpAppMenu'
 import { ShieldAlert } from 'lucide-react'
 
@@ -57,14 +61,25 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
     }
     const { role, permissions } = readSessionRoleAndPermissions()
     const isSuperAdmin = role === 'super_admin'
+    const forceUnlock =
+      shouldForceAquacultureUnlock() || (await resolveIsAdibDedicatedAndroidApp())
     try {
-      const data = await fetchCurrentCompany()
-      const aq = resolveAquacultureEnabled(data)
+      const data = forceUnlock ? null : await fetchCurrentCompany()
+      const aq = forceUnlock ? true : resolveAquacultureEnabled(data)
       setEnabled(aq)
-      setNavUnlocked(isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, aq))
+      setNavUnlocked(
+        isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, aq, forceUnlock)
+      )
     } catch {
-      setEnabled(false)
-      setNavUnlocked(false)
+      if (forceUnlock) {
+        setEnabled(true)
+        setNavUnlocked(
+          isAquacultureNavUnlocked(role, isSuperAdmin, mode, permissions, true, true)
+        )
+      } else {
+        setEnabled(false)
+        setNavUnlocked(false)
+      }
     } finally {
       setReady(true)
     }

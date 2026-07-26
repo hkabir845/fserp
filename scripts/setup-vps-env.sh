@@ -83,4 +83,39 @@ if [[ "$db_is_placeholder" -eq 1 ]]; then
   fi
 fi
 
+# --- Production HTTPS / email acknowledgements (silence check --deploy when intentional) ---
+ensure_default_var() {
+  local key="$1"
+  local value="$2"
+  local current
+  current="$(get_var "$key")"
+  if [[ -z "$current" ]]; then
+    set_var "$key" "$value"
+    echo "Set $key=$value in $ENV_FILE"
+  fi
+}
+
+# Site is served over HTTPS via nginx; enable Django hardening unless already configured.
+ensure_default_var "FSERP_SECURE_SSL_REDIRECT" "1"
+ensure_default_var "FSERP_SECURE_HSTS_SECONDS" "31536000"
+ensure_default_var "FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS" "1"
+
+# Prefer Redis when available; otherwise settings.py uses DatabaseCache (createcachetable on deploy).
+cache_url="$(get_var DJANGO_CACHE_URL)"
+redis_url="$(get_var REDIS_URL)"
+if [[ -z "$cache_url" && -z "$redis_url" ]]; then
+  if command -v redis-cli >/dev/null 2>&1 && redis-cli ping >/dev/null 2>&1; then
+    ensure_default_var "DJANGO_CACHE_URL" "redis://127.0.0.1:6379/1"
+  else
+    echo "NOTE: Redis not detected — production will use DatabaseCache (no LocMem warning)."
+  fi
+fi
+
+email_host="$(get_var EMAIL_HOST)"
+if [[ -z "$email_host" ]]; then
+  ensure_default_var "FSERP_ALLOW_CONSOLE_EMAIL" "1"
+  echo "WARNING: EMAIL_HOST is unset — password-reset emails go to the server console only." >&2
+  echo "  Add SMTP settings in $ENV_FILE when ready, then remove FSERP_ALLOW_CONSOLE_EMAIL." >&2
+fi
+
 echo "backend/.env OK for deployment."

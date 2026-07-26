@@ -15,11 +15,11 @@ set DJANGO_SECRET_KEY=<paste-50+-char-random>   # Windows; use export on Linux/m
 python manage.py check --deploy
 ```
 
-Custom **FSERP deploy warnings** (non-fatal, registered in `api/checks.py`): **fserp.W001** SQLite without `FSERP_USE_SQLITE=1`, **fserp.W002** LocMem cache without Redis, **fserp.W003** missing `EMAIL_HOST`, **fserp.W004** WhiteNoise missing while static is not offloaded (`FSERP_DISABLE_WHITENOISE`). Fix in `.env` / `pip install` or silence a specific id via `FSERP_SILENCED_SYSTEM_CHECKS` (e.g. `fserp.W002` for single-worker hosts).
+Custom **FSERP deploy warnings** (non-fatal, registered in `api/checks.py`): **fserp.W001** SQLite without `FSERP_USE_SQLITE=1`, **fserp.W002** LocMem cache (production uses DatabaseCache when Redis is unset; prefer `DJANGO_CACHE_URL`), **fserp.W003** missing `EMAIL_HOST` (set SMTP or `FSERP_ALLOW_CONSOLE_EMAIL=1`), **fserp.W004** WhiteNoise missing while static is not offloaded (`FSERP_DISABLE_WHITENOISE`). HTTPS: production defaults enable `SECURE_SSL_REDIRECT` and HSTS unless opted out.
 
 **Dependencies:** `pip install -r requirements.txt` includes WhiteNoise for static files under Gunicorn. Use `pip install -r requirements-prod.txt` on the API host to add Gunicorn.
 
-You may see **warnings** until HTTPS is fully configured (`FSERP_SECURE_SSL_REDIRECT`, `FSERP_SECURE_HSTS_SECONDS`) — resolve those on the real host behind TLS.
+HTTPS hardening defaults on for non-`runserver` deploys; override with `FSERP_SECURE_SSL_REDIRECT=0` / `FSERP_SECURE_HSTS_SECONDS=0` if needed.
 
 ```bash
 # Frontend
@@ -31,10 +31,10 @@ npm run build
 
 ## 2. Forgot password (production)
 
-- Configure **SMTP** in `.env` (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`, …). Without `EMAIL_HOST`, Django uses the **console** backend and no email is delivered.
+- Configure **SMTP** in `.env` (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`, …). Without `EMAIL_HOST`, Django uses the **console** backend and no email is delivered (`FSERP_ALLOW_CONSOLE_EMAIL=1` acknowledges this for `check --deploy`).
 - For **port 465** (implicit SSL), set **`EMAIL_USE_SSL=1`** and usually **`EMAIL_USE_TLS=false`** (see `backend/env.example`).
 - Set **`FRONTEND_BASE_URL`** to your live Next.js origin (no trailing slash). **Link** resets use `{FRONTEND_BASE_URL}/reset-password?token=…`. **OTP** resets complete on `/forgot-password` and do not need this URL for delivery.
-- **OTP codes** are stored in PostgreSQL (`password_reset_token`), so they work across multiple Gunicorn workers even without Redis; **`DJANGO_CACHE_URL` / `REDIS_URL`** is still recommended for shared rate limits and OTP lockout counters (**fserp.W002** if missing).
+- **OTP codes** are stored in PostgreSQL (`password_reset_token`), so they work across multiple Gunicorn workers even without Redis; rate-limit counters use Redis when `DJANGO_CACHE_URL` / `REDIS_URL` is set, otherwise **DatabaseCache** (deploy runs `createcachetable`).
 - Users must have a **deliverable address**: username that looks like an email, or a non-empty profile **`email`** (see `ensure_platform_owner_email` / user admin for platform accounts).
 
 ## 3. Tenant backup & restore

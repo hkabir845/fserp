@@ -79,7 +79,10 @@ def check_shared_cache_for_workers(app_configs, **kwargs):
     return [
         Warning(
             "Cache backend is in-process (LocMem). Multiple API workers will not share OTP / rate-limit state.",
-            hint="Set DJANGO_CACHE_URL or REDIS_URL to a Redis URL for production (see env.example).",
+            hint=(
+                "Set DJANGO_CACHE_URL or REDIS_URL for Redis, or omit both so production uses "
+                "DatabaseCache (see env.example). Run `manage.py createcachetable` after deploy."
+            ),
             id="fserp.W002",
         )
     ]
@@ -91,10 +94,15 @@ def check_smtp_for_password_reset(app_configs, **kwargs):
         return []
     if (os.environ.get("EMAIL_HOST") or "").strip():
         return []
+    if _truthy_env("FSERP_ALLOW_CONSOLE_EMAIL"):
+        return []
     return [
         Warning(
             "EMAIL_HOST is not set; Django uses the console email backend and password-reset emails are not delivered.",
-            hint="Configure SMTP in .env (EMAIL_HOST, …) and set FRONTEND_BASE_URL for reset links.",
+            hint=(
+                "Configure SMTP in .env (EMAIL_HOST, …) and set FRONTEND_BASE_URL for reset links. "
+                "Or set FSERP_ALLOW_CONSOLE_EMAIL=1 to acknowledge console-only email in production."
+            ),
             id="fserp.W003",
         )
     ]

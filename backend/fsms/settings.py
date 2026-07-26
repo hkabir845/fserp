@@ -334,6 +334,7 @@ DEFAULT_FROM_EMAIL = (os.environ.get("DEFAULT_FROM_EMAIL") or "FS ERP <noreply@m
 
 _cache_url = (os.environ.get("DJANGO_CACHE_URL") or os.environ.get("REDIS_URL") or "").strip()
 _cache_prefix = (os.environ.get("FSERP_CACHE_KEY_PREFIX") or "fserp")[:32]
+_is_pytest = "pytest" in sys.modules
 if _cache_url:
     CACHES = {
         "default": {
@@ -342,11 +343,22 @@ if _cache_url:
             "KEY_PREFIX": _cache_prefix,
         }
     }
-else:
+elif _is_runserver or _is_pytest:
+    # Dev / tests: in-process cache is fine (single process).
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "fsms-password-reset",
+        }
+    }
+else:
+    # Production without Redis: DB-backed cache is shared across Gunicorn workers.
+    # Deploy runs `manage.py createcachetable` (idempotent).
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": "fserp_django_cache",
+            "KEY_PREFIX": _cache_prefix,
         }
     }
 
@@ -358,13 +370,25 @@ X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_SECURE = not _is_runserver
 CSRF_COOKIE_SECURE = not _is_runserver
 
-if _truthy("FSERP_SECURE_SSL_REDIRECT") and not _is_runserver:
-    SECURE_SSL_REDIRECT = True
-_hsts = int((os.environ.get("FSERP_SECURE_HSTS_SECONDS") or "0").strip() or "0")
-if _hsts > 0 and not _is_runserver:
-    SECURE_HSTS_SECONDS = _hsts
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = _truthy("FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS")
-    SECURE_HSTS_PRELOAD = _truthy("FSERP_SECURE_HSTS_PRELOAD")
+# Production HTTPS defaults (nginx terminates TLS; proxy sets X-Forwarded-Proto).
+# Opt out: FSERP_SECURE_SSL_REDIRECT=0 / FSERP_SECURE_HSTS_SECONDS=0
+if not _is_runserver and not _is_pytest:
+    if "FSERP_SECURE_SSL_REDIRECT" in os.environ:
+        SECURE_SSL_REDIRECT = _truthy("FSERP_SECURE_SSL_REDIRECT")
+    else:
+        SECURE_SSL_REDIRECT = True
+    _hsts_raw = (os.environ.get("FSERP_SECURE_HSTS_SECONDS") or "").strip()
+    if _hsts_raw == "":
+        _hsts = 31536000
+    else:
+        _hsts = int(_hsts_raw or "0")
+    if _hsts > 0:
+        SECURE_HSTS_SECONDS = _hsts
+        if "FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS" in os.environ:
+            SECURE_HSTS_INCLUDE_SUBDOMAINS = _truthy("FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS")
+        else:
+            SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+        SECURE_HSTS_PRELOAD = _truthy("FSERP_SECURE_HSTS_PRELOAD")
 
 SILENCED_SYSTEM_CHECKS = _csv("FSERP_SILENCED_SYSTEM_CHECKS")
 

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">FS ERP</string>
-    <string name="title_activity_main">FS ERP</string>
-    <string name="package_name">com.mahasoft.fserp</string>
-    <string name="custom_url_scheme">com.mahasoft.fserp</string>
+    <string name="app_name">Adib FS ERP</string>
+    <string name="title_activity_main">Adib FS ERP</string>
+    <string name="package_name">com.mahasoft.fserp.adib</string>
+    <string name="custom_url_scheme">com.mahasoft.fserp.adib</string>
 </resources>

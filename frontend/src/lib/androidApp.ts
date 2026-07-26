@@ -3,9 +3,12 @@
  */
 
 const DEFAULT_APK_PATH = '/downloads/fserp.apk'
+const DEFAULT_ADIB_APK_PATH = '/downloads/fserp-adib.apk'
 const DEFAULT_VERSION_PATH = '/downloads/android-version.json'
+const DEFAULT_ADIB_VERSION_PATH = '/downloads/android-adib-version.json'
 
 export const ANDROID_APP_LABEL = 'FS ERP'
+export const ADIB_ANDROID_APP_LABEL = 'Adib FS ERP'
 
 export type AndroidPublishedVersion = {
   versionCode: number
@@ -19,8 +22,19 @@ export type NativeAppInfo = {
   name: string
 }
 
-/** Public URL to the signed release APK (same for all SaaS tenants). */
+function isAdibPortalHost(): boolean {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname.toLowerCase()
+  return host === 'adib.mahasoftcorporation.com' || host.startsWith('adib.')
+}
+
+/** Public URL to the signed release APK (Adib portal prefers the dedicated APK). */
 export function getAndroidApkUrl(): string {
+  if (isAdibPortalHost()) {
+    const adibEnv = process.env.NEXT_PUBLIC_ANDROID_ADIB_APK_URL?.trim()
+    if (adibEnv) return adibEnv
+    return DEFAULT_ADIB_APK_PATH
+  }
   const fromEnv = process.env.NEXT_PUBLIC_ANDROID_APK_URL?.trim()
   if (fromEnv) return fromEnv
   return DEFAULT_APK_PATH
@@ -28,6 +42,15 @@ export function getAndroidApkUrl(): string {
 
 /** Public URL to published APK version metadata. */
 export function getAndroidVersionUrl(): string {
+  if (isAdibPortalHost()) {
+    const adibEnv = process.env.NEXT_PUBLIC_ANDROID_ADIB_VERSION_URL?.trim()
+    if (adibEnv) return adibEnv
+    const apkUrl = getAndroidApkUrl()
+    if (apkUrl.startsWith('http')) {
+      return apkUrl.replace(/\/[^/]*$/, '/android-adib-version.json')
+    }
+    return DEFAULT_ADIB_VERSION_PATH
+  }
   const fromEnv = process.env.NEXT_PUBLIC_ANDROID_VERSION_URL?.trim()
   if (fromEnv) return fromEnv
   const apkUrl = getAndroidApkUrl()

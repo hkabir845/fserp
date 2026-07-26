@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import api, { fetchCurrentCompany } from '@/lib/api'
+import {
+  isPermanentAquacultureCompany,
+  resolveAquacultureEnabled,
+} from '@/lib/aquacultureCompanyFlags'
+import {
+  resolveIsAdibDedicatedAndroidApp,
+  shouldForceAquacultureUnlock,
+} from '@/lib/adibAndroidApp'
 import { useCompany } from '@/contexts/CompanyContext'
 import { isConnectionError, safeLogError } from '@/utils/connectionError'
 import { resolveActiveNavHref } from '@/utils/navPath'
@@ -38,8 +46,17 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
   const [companiesCount, setCompaniesCount] = useState(0)
   const [usersCount, setUsersCount] = useState(0)
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
+  const [forceAquacultureUnlock, setForceAquacultureUnlock] = useState(() =>
+    shouldForceAquacultureUnlock()
+  )
 
   const excludeSet = useMemo(() => new Set(excludeHrefs), [excludeHrefs])
+
+  useEffect(() => {
+    void resolveIsAdibDedicatedAndroidApp().then((adib) => {
+      if (adib) setForceAquacultureUnlock(true)
+    })
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -113,6 +130,11 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
         setAquacultureEnabled(false)
         return
       }
+      if (forceAquacultureUnlock || shouldForceAquacultureUnlock()) {
+        setForceAquacultureUnlock(true)
+        setAquacultureEnabled(true)
+        return
+      }
       const token = localStorage.getItem('access_token')
       if (!token) {
         setAquacultureEnabled(false)
@@ -120,16 +142,18 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
       }
       try {
         const data = await fetchCurrentCompany()
-        setAquacultureEnabled(Boolean(data?.aquaculture_enabled))
+        const permanent = isPermanentAquacultureCompany(data)
+        if (permanent) setForceAquacultureUnlock(true)
+        setAquacultureEnabled(resolveAquacultureEnabled(data))
       } catch {
-        setAquacultureEnabled(false)
+        setAquacultureEnabled(forceAquacultureUnlock)
       }
     }
     void fetchAq()
     const onSaved = () => void fetchAq()
     window.addEventListener('fserp-company-settings-saved', onSaved)
     return () => window.removeEventListener('fserp-company-settings-saved', onSaved)
-  }, [mode, selectedCompany?.id, pathname])
+  }, [mode, selectedCompany?.id, pathname, forceAquacultureUnlock])
 
   const isSuperAdmin = userRole === 'super_admin'
   const navReady = isClientReady && navSessionReady
@@ -157,7 +181,11 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
       aquacultureEnabled,
       userRole,
       isSuperAdmin,
-      userPermissions
+      userPermissions,
+      {
+        forceUnlock: forceAquacultureUnlock,
+        allFsmsItems: fsmsErpMenuItems,
+      }
     )
     if (!excludeSet.size) return items
     return items.filter((item) => !excludeSet.has(item.href))
@@ -169,6 +197,7 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
     fsmsErpMenuItems,
     saasMenuItems,
     aquacultureEnabled,
+    forceAquacultureUnlock,
     excludeSet,
   ])
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Download, Smartphone } from 'lucide-react'
 import {
+  ADIB_ANDROID_APP_LABEL,
   ANDROID_APP_LABEL,
   fetchPublishedAndroidVersion,
   getAndroidApkUrl,
@@ -13,6 +14,7 @@ import {
   isStandaloneDisplay,
   type AndroidPublishedVersion,
 } from '@/lib/androidApp'
+import { isAdibTenantHost } from '@/lib/adibAndroidApp'
 import { registerPwaServiceWorker } from '@/lib/pwaServiceWorker'
 
 type BeforeInstallPromptEvent = Event & {
@@ -32,6 +34,9 @@ const btnSecondary =
  */
 export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainFlow?: boolean }) {
   const apkUrl = getAndroidApkUrl()
+  const [adibPortal, setAdibPortal] = useState(false)
+  const appLabel = adibPortal ? ADIB_ANDROID_APP_LABEL : ANDROID_APP_LABEL
+  const apkFileName = adibPortal ? 'fserp-adib.apk' : 'fserp.apk'
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(false)
   const [android, setAndroid] = useState(false)
@@ -41,6 +46,7 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
   const [installedVersion, setInstalledVersion] = useState<string | null>(null)
 
   useEffect(() => {
+    setAdibPortal(isAdibTenantHost())
     setAndroid(isAndroidBrowser())
     setInstalled(isStandaloneDisplay())
     setNativeApp(isCapacitorNativeApp())
@@ -104,7 +110,7 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
         <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center">
           <a
             href={apkUrl}
-            download={apkUrl.startsWith('/') ? 'fserp.apk' : undefined}
+            download={apkUrl.startsWith('/') ? apkFileName : undefined}
             className={btnPrimary}
           >
             <Download className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
@@ -122,7 +128,7 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
     return (
       <p className="mt-4 flex items-center justify-center gap-2 text-sm text-emerald-700">
         <Smartphone className="h-4 w-4 shrink-0" aria-hidden />
-        {ANDROID_APP_LABEL} is installed on this device.
+        {appLabel} is installed on this device.
       </p>
     )
   }
@@ -135,11 +141,11 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
       <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-center">
         <a
           href={apkUrl}
-          download={apkUrl.startsWith('/') ? 'fserp.apk' : undefined}
+          download={apkUrl.startsWith('/') ? apkFileName : undefined}
           className={btnPrimary}
         >
           <Download className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
-          Download Android app
+          Download {appLabel}
           {published?.versionName ? ` v${published.versionName}` : ''}
         </a>
         {android && installPrompt ? (
@@ -150,13 +156,18 @@ export function AndroidAppDownload({ hideForBrainFlow = false }: { hideForBrainF
         ) : null}
       </div>
       <p className="mt-2.5 text-center text-xs leading-relaxed text-muted-foreground">
-        Direct download from this site — not on Google Play. Same login for every company.
+        {adibPortal
+          ? 'Dedicated Adib Filling Station app — Aquaculture is always available. Not on Google Play.'
+          : 'Direct download from this site — not on Google Play. Same login for every company.'}
       </p>
       {android ? (
         <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
           After download, open the file and tap <span className="font-medium">Install</span> or{' '}
           <span className="font-medium">Update</span>. If Android asks, allow installs from your browser for
-          this step only. Existing FS ERP installs update in place — no uninstall needed.
+          this step only.
+          {adibPortal
+            ? ' This Adib build is separate from the multi-tenant FS ERP app.'
+            : ' Existing FS ERP installs update in place — no uninstall needed.'}
         </p>
       ) : null}
     </div>

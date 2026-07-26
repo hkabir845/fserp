@@ -1,19 +1,29 @@
+/**
+ * Capacitor config — shared FS ERP shell or Adib Filling Station dedicated APK.
+ *
+ * Standard (all tenants):
+ *   npm run sync
+ *
+ * Adib-only (Aquaculture always available, opens adib tenant portal):
+ *   npm run sync:adib
+ */
 import type { CapacitorConfig } from '@capacitor/cli'
 
-/**
- * Remote WebView shell — the APK opens your deployed Next.js site (all SaaS tenants use the same login URL).
- *
- * Override at build time:
- *   FSERP_APP_URL=https://mahasoftcorporation.com npm run sync
- */
-const appUrl = (process.env.FSERP_APP_URL || 'https://mahasoftcorporation.com').replace(/\/+$/, '')
+const flavor = (process.env.FSERP_APP_FLAVOR || 'standard').trim().toLowerCase()
+const isAdib = flavor === 'adib'
+
+const defaultUrl = isAdib
+  ? 'https://adib.mahasoftcorporation.com'
+  : 'https://mahasoftcorporation.com'
+
+const appUrl = (process.env.FSERP_APP_URL || defaultUrl).replace(/\/+$/, '')
 
 const config: CapacitorConfig = {
-  appId: 'com.mahasoft.fserp',
-  appName: 'FS ERP',
+  appId: isAdib ? 'com.mahasoft.fserp.adib' : 'com.mahasoft.fserp',
+  appName: isAdib ? 'Adib FS ERP' : 'FS ERP',
   webDir: 'www',
   server: {
-    /** Open login directly — remote WebView shell for all SaaS tenants. */
+    /** Adib build opens the tenant subdomain so company context is always Adib. */
     url: `${appUrl}/login`,
     androidScheme: 'https',
     cleartext: false,
@@ -23,19 +33,18 @@ const config: CapacitorConfig = {
     captureInput: true,
   },
   plugins: {
-    /** Native HTTP for API calls — avoids WebView CORS blocking login on Android. */
     CapacitorHttp: {
       enabled: true,
     },
     SplashScreen: {
       launchShowDuration: 1200,
-      backgroundColor: '#1d4ed8',
+      backgroundColor: isAdib ? '#0b5cab' : '#1d4ed8',
       showSpinner: true,
       spinnerColor: '#ffffff',
     },
     StatusBar: {
       style: 'LIGHT',
-      backgroundColor: '#1d4ed8',
+      backgroundColor: isAdib ? '#0b5cab' : '#1d4ed8',
     },
   },
 }

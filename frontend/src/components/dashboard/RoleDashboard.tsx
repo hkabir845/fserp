@@ -28,6 +28,10 @@ import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import api from '@/lib/api'
 import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
+import {
+  resolveIsAdibDedicatedAndroidApp,
+  shouldForceAquacultureUnlock,
+} from '@/lib/adibAndroidApp'
 import { aquacultureT, aquacultureTFormat } from '@/lib/aquacultureI18n'
 import { formatCurrency } from '@/utils/currency'
 import { formatDate } from '@/utils/date'
@@ -180,7 +184,9 @@ export default function RoleDashboard() {
         if (companyRes.data?.currency) {
           setCurrencyCode(String(companyRes.data.currency).toUpperCase())
         }
-        setAquacultureEnabled(resolveAquacultureEnabled(companyRes.data))
+        const forceUnlock =
+          shouldForceAquacultureUnlock() || (await resolveIsAdibDedicatedAndroidApp())
+        setAquacultureEnabled(forceUnlock || resolveAquacultureEnabled(companyRes.data))
         if (Array.isArray(broadcastRes.data)) setBroadcasts(broadcastRes.data)
       } catch (err) {
         safeLogError('Dashboard load:', err)
@@ -212,7 +218,11 @@ export default function RoleDashboard() {
       aquacultureEnabled,
       role,
       isSuperAdmin,
-      permissions
+      permissions,
+      {
+        forceUnlock: shouldForceAquacultureUnlock(),
+        allFsmsItems: getFsmsErpMenuItems(lang),
+      }
     )
     return pickQuickApps(items, config.prioritizeHrefs, config.maxQuickApps)
   }, [role, permissions, mode, aquacultureEnabled, config, lang])

@@ -3,6 +3,8 @@
  * Keep in sync with backend `api.services.aquaculture_company_flags`.
  */
 
+import { shouldForceAquacultureUnlock } from '@/lib/adibAndroidApp'
+
 export const PERMANENT_AQUACULTURE_COMPANY_CODES = new Set(['FS-000002'])
 export const PERMANENT_AQUACULTURE_COMPANY_NAMES = new Set(['adib filling station'])
 
@@ -26,6 +28,7 @@ export function isPermanentAquacultureCompany(company: AquacultureCompanyFlagsIn
 
 /** True when Aquaculture menu/routes should be available for this company. */
 export function resolveAquacultureEnabled(company: AquacultureCompanyFlagsInput): boolean {
+  if (shouldForceAquacultureUnlock()) return true
   if (!company) return false
   return Boolean(company.aquaculture_enabled) || isPermanentAquacultureCompany(company)
 }
@@ -35,7 +38,8 @@ export function withEffectiveAquacultureFlags<T extends Record<string, unknown>>
   aquaculture_enabled: boolean
   aquaculture_permanent: boolean
 } {
-  const permanent = isPermanentAquacultureCompany(data as AquacultureCompanyFlagsInput)
+  const permanent =
+    shouldForceAquacultureUnlock() || isPermanentAquacultureCompany(data as AquacultureCompanyFlagsInput)
   return {
     ...data,
     aquaculture_enabled: resolveAquacultureEnabled(data as AquacultureCompanyFlagsInput),

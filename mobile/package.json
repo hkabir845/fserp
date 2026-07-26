@@ -1,12 +1,15 @@
 {
   "name": "fserp-mobile",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
-  "description": "Capacitor Android shell for FSERP (loads the live web app)",
+  "description": "Capacitor Android shell for FSERP (standard SaaS + Adib Filling Station dedicated APK)",
   "scripts": {
-    "sync": "cap sync android",
+    "apply-flavor": "node scripts/apply-flavor.js",
+    "sync": "cross-env FSERP_APP_FLAVOR=standard cap sync android && cross-env FSERP_APP_FLAVOR=standard node scripts/apply-flavor.js",
+    "sync:adib": "cross-env FSERP_APP_FLAVOR=adib cap sync android && cross-env FSERP_APP_FLAVOR=adib node scripts/apply-flavor.js",
     "open:android": "cap open android",
-    "build:android": "cap sync android && cd android && ./gradlew assembleRelease"
+    "build:android": "npm run sync && cd android && ./gradlew assembleRelease",
+    "build:android:adib": "npm run sync:adib && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.0",
@@ -17,6 +20,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.0",
+    "cross-env": "^7.0.3",
     "typescript": "^5.7.2"
   }
 }

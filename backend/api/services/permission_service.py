@@ -540,6 +540,9 @@ def user_may_access_aquaculture_api(user) -> bool:
     """
     Aquaculture requires company module enablement. Platform super-admins, tenant Admins, and
     any user granted ``app.aquaculture`` (e.g. Manager or a custom role) may call aquaculture APIs.
+
+    Permanent aquaculture tenants (e.g. Adib Filling Station): any authenticated user of that
+    company may call aquaculture APIs so the dedicated Android app never blocks the module.
     """
     if not user:
         return False
@@ -547,6 +550,21 @@ def user_may_access_aquaculture_api(user) -> bool:
         return True
     if normalize_role_key(getattr(user, "role", None)) == "admin":
         return True
+    try:
+        from api.models import Company
+        from api.services.aquaculture_company_flags import is_permanent_aquaculture_company
+
+        cid = getattr(user, "company_id", None)
+        if cid:
+            co = (
+                Company.objects.filter(pk=cid)
+                .only("company_code", "name", "aquaculture_enabled", "aquaculture_licensed")
+                .first()
+            )
+            if is_permanent_aquaculture_company(co):
+                return True
+    except Exception:
+        pass
     return has_aquaculture_module_permission(resolve_user_permissions(user))
 
 

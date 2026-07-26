@@ -20,6 +20,8 @@ pip install -r requirements-prod.txt
 
 echo "==> Backend: migrate + static"
 python manage.py migrate --noinput
+# Shared cache table when DJANGO_CACHE_URL/REDIS_URL is unset (DatabaseCache).
+python manage.py createcachetable || true
 python manage.py collectstatic --noinput
 
 echo "==> Backend: database sanity check"

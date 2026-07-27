@@ -70,6 +70,7 @@ from api.models import (
     BroadcastRead,
     ChartOfAccount,
     Company,
+    CompanyJobType,
     CompanyRole,
     Contract,
     Customer,
@@ -139,6 +140,7 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.company",
     "api.contract",
     "api.companyrole",
+    "api.companyjobtype",
     "api.tenantplatformreleaseevent",
     "api.user",
     "api.broadcast",
@@ -561,6 +563,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     Broadcast.objects.filter(company_id=cid).delete()
     User.objects.filter(company_id=cid).delete()
     Contract.objects.filter(company_id=cid).delete()
+    CompanyJobType.objects.filter(company_id=cid).delete()
     CompanyRole.objects.filter(company_id=cid).delete()
     TenantReportingCategory.objects.filter(company_id=cid).delete()
     TenantPlatformReleaseEvent.objects.filter(company_id=cid).delete()
@@ -667,6 +670,7 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, Company.objects.filter(pk=cid))
     _serialize_many(records, Contract.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, CompanyRole.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, CompanyJobType.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, TenantPlatformReleaseEvent.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, User.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, Broadcast.objects.filter(company_id=cid).order_by("id"))

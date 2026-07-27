@@ -226,6 +226,42 @@ class CompanyRole(models.Model):
         return f"{self.name} (company {self.company_id})"
 
 
+class CompanyJobType(models.Model):
+    """
+    Company job type: custom titles and optional access-profile allowlists.
+
+    Built-in job type keys (cashier, admin, …) may have an override row to enable
+    access-profile restrictions without changing global defaults. Custom keys are
+    additional User.role values for that company only.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="job_types")
+    key = models.CharField(max_length=64)
+    label = models.CharField(max_length=120)
+    hint = models.CharField(max_length=500, blank=True)
+    # Built-in key used for POS flags / default permissions when this is a custom job type.
+    inherits_from = models.CharField(max_length=64, blank=True, default="")
+    is_custom = models.BooleanField(default=True)
+    access_profile_enabled = models.BooleanField(default=False)
+    allowed_roles = models.ManyToManyField(
+        CompanyRole,
+        blank=True,
+        related_name="enabled_job_types",
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=200)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        db_table = "company_job_type"
+        unique_together = [["company", "key"]]
+        ordering = ["company_id", "sort_order", "label"]
+
+    def __str__(self):
+        return f"{self.label} ({self.key}, company {self.company_id})"
+
+
 class Contract(models.Model):
     """SaaS contract per company. Super Admin manages via /api/contracts/."""
     contract_number = models.CharField(max_length=64, unique=True)

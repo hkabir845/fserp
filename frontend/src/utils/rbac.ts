@@ -8,6 +8,8 @@ import {
   LIMITED_POS_REGISTER_ROLES,
   ROLES_REQUIRING_HOME_STATION,
   TENANT_JOB_TYPE_OPTIONS,
+  effectiveBuiltinRoleKey,
+  type TenantJobTypeOption,
 } from '@/constants/tenantJobTypes'
 import { PAGE_PERMISSION_PARENT_BY_ID } from '@/navigation/appPagePermissions'
 
@@ -57,7 +59,7 @@ export function getPosSaleScope(): PosSaleScope {
 export function getPosHomeStationId(): number | null {
   if (typeof window === 'undefined') return null
   const role = getCurrentUserRole()
-  if (!role || !ROLES_REQUIRING_HOME_STATION.has(role)) return null
+  if (!role || !ROLES_REQUIRING_HOME_STATION.has(effectiveBuiltinRoleKey(role))) return null
   const userStr = localStorage.getItem('user')
   if (!userStr || userStr === 'undefined' || userStr === 'null') return null
   try {
@@ -225,7 +227,7 @@ export function getCurrentUserRole(): UserRole | null {
 /** Register staff limited to New sale + Donation on POS (not full cashier tools). */
 export function isLimitedPosRegisterUser(): boolean {
   const role = getCurrentUserRole()
-  return role != null && LIMITED_POS_REGISTER_ROLES.has(role)
+  return role != null && LIMITED_POS_REGISTER_ROLES.has(effectiveBuiltinRoleKey(role))
 }
 
 export function getRoleDisplayName(role: UserRole | string | null): string {
@@ -264,8 +266,11 @@ export function getAccessProfileSeedOptionLabel(seedKey: string): string {
   return seedKey
 }
 
-export function isPosStaffRole(role: string | null | undefined): boolean {
-  return !!role && ROLES_REQUIRING_HOME_STATION.has(role.toLowerCase())
+export function isPosStaffRole(
+  role: string | null | undefined,
+  options?: TenantJobTypeOption[]
+): boolean {
+  return !!role && ROLES_REQUIRING_HOME_STATION.has(effectiveBuiltinRoleKey(role, options))
 }
 
 export function getRoleBadgeColor(role: UserRole | string | null): string {

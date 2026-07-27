@@ -13,6 +13,7 @@ from api.services.app_page_permissions import (
 from api.services.tenant_job_types import (
     DEFAULT_POS_SALE_SCOPE_BY_ROLE,
     ROLES_WITH_POS_SALE_SCOPE,
+    effective_builtin_role_key,
     tenant_job_type_seed_keys,
 )
 from api.utils.auth import user_is_super_admin
@@ -568,8 +569,8 @@ def user_may_access_aquaculture_api(user) -> bool:
     return has_aquaculture_module_permission(resolve_user_permissions(user))
 
 
-def default_permissions_for_role(role: str | None) -> list[str]:
-    rk = normalize_role_key(role)
+def default_permissions_for_role(role: str | None, company_id: int | None = None) -> list[str]:
+    rk = effective_builtin_role_key(role, company_id) if company_id else normalize_role_key(role)
     if rk in _DEFAULT_ROLE_PERMS:
         return list(_DEFAULT_ROLE_PERMS[rk])
     if rk in ("user", "staff", "employee", ""):
@@ -591,7 +592,12 @@ def resolve_user_permissions(user) -> list[str]:
         if isinstance(perms, dict):
             # allow {"report.inventory_sku": true, ...} shape
             return _dedupe_keep_order([k for k, v in perms.items() if v])
-    return _dedupe_keep_order(default_permissions_for_role(getattr(user, "role", None)))
+    return _dedupe_keep_order(
+        default_permissions_for_role(
+            getattr(user, "role", None),
+            getattr(user, "company_id", None),
+        )
+    )
 
 
 def has_aquaculture_module_permission(effective: list[str], module_id: str | None = None) -> bool:
@@ -652,7 +658,10 @@ def user_pos_sale_scope(user) -> str:
     What the user may sell at POST /api/cashier/pos/: general lines, fuel lines, or both.
     Exposed in login / user JSON. Non-POS job types always 'both' (ignores column).
     """
-    rk = normalize_role_key(getattr(user, "role", None))
+    rk = effective_builtin_role_key(
+        getattr(user, "role", None),
+        getattr(user, "company_id", None),
+    )
     if rk not in ROLES_WITH_POS_SALE_SCOPE:
         return "both"
     fallback = DEFAULT_POS_SALE_SCOPE_BY_ROLE.get(rk, "both")

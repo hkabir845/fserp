@@ -39,8 +39,11 @@ import api, { getApiBaseUrl } from '@/lib/api'
 import { formatDate } from '@/utils/date'
 import {
   BUILTIN_JOB_TYPE_SEEDS,
+  allowedAccessProfileIdsForJobType,
   defaultPosScopeForRole,
+  effectiveBuiltinRoleKey,
   jobTypeHint,
+  jobTypeRequiresAccessProfile,
   mergeJobTypesFromApi,
   ROLES_WITH_POS_SALE_SCOPE,
   TENANT_JOB_TYPE_OPTIONS,
@@ -166,6 +169,38 @@ export default function UsersPage() {
   const hasAccessContext =
     isCompanyOwner || (isSuperAdminSession && formData.company_id !== '' && formData.company_id != null)
 
+  const effectivePosRole = useMemo(
+    () => effectiveBuiltinRoleKey(formData.role, jobTypeOptions),
+    [formData.role, jobTypeOptions]
+  )
+
+  const accessProfileRequired = useMemo(
+    () => jobTypeRequiresAccessProfile(formData.role, jobTypeOptions),
+    [formData.role, jobTypeOptions]
+  )
+
+  const allowedProfileIds = useMemo(
+    () => allowedAccessProfileIdsForJobType(formData.role, jobTypeOptions),
+    [formData.role, jobTypeOptions]
+  )
+
+  const selectableCompanyRoles = useMemo(() => {
+    if (!allowedProfileIds) return companyRoles
+    const allow = new Set(allowedProfileIds)
+    return companyRoles.filter((cr) => allow.has(cr.id))
+  }, [companyRoles, allowedProfileIds])
+
+  useEffect(() => {
+    if (!allowedProfileIds) return
+    const cur =
+      formData.custom_role_id === '' || formData.custom_role_id == null
+        ? null
+        : Number(formData.custom_role_id)
+    if (cur != null && !Number.isNaN(cur) && !allowedProfileIds.includes(cur)) {
+      setFormData((fd) => ({ ...fd, custom_role_id: '' }))
+    }
+  }, [allowedProfileIds, formData.custom_role_id])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!isCompanyOwner && !isSuperAdminSession) return
@@ -210,7 +245,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     if (!showModal) return
-    if (!isPosStaffRole(formData.role)) return
+    if (!isPosStaffRole(formData.role, jobTypeOptions)) return
     if (!hasAccessContext) return
     if (stationOptions.length !== 1) return
     const onlyId = stationOptions[0].id
@@ -542,11 +577,23 @@ export default function UsersPage() {
 
     if (
       hasAccessContext &&
-      isPosStaffRole(formData.role) &&
+      isPosStaffRole(formData.role, jobTypeOptions) &&
       stationOptions.length > 1
     ) {
       if (formData.home_station_id === '' || formData.home_station_id == null) {
         toast.error('Select a location for this POS staff member (shopkeeper, cashier, pump attendant, or operator).')
+        return
+      }
+    }
+
+    if (hasAccessContext && accessProfileRequired) {
+      if (formData.custom_role_id === '' || formData.custom_role_id == null) {
+        toast.error('Select an approved access profile for this job type.')
+        return
+      }
+      const crid = Number(formData.custom_role_id)
+      if (allowedProfileIds && !allowedProfileIds.includes(crid)) {
+        toast.error('The selected access profile is not approved for this job type.')
         return
       }
     }
@@ -571,7 +618,7 @@ export default function UsersPage() {
               : formData.custom_role_id
         }
       }
-      if (isPosStaffRole(formData.role)) {
+      if (ROLES_WITH_POS_SALE_SCOPE.has(effectivePosRole)) {
         payload.pos_sale_scope = formData.pos_sale_scope || 'both'
       }
       if (hasAccessContext) {
@@ -639,11 +686,23 @@ export default function UsersPage() {
 
     if (
       hasAccessContext &&
-      isPosStaffRole(formData.role) &&
+      isPosStaffRole(formData.role, jobTypeOptions) &&
       stationOptions.length > 1
     ) {
       if (formData.home_station_id === '' || formData.home_station_id == null) {
         toast.error('Select a location for this POS staff member (shopkeeper, cashier, pump attendant, or operator).')
+        return
+      }
+    }
+
+    if (hasAccessContext && accessProfileRequired) {
+      if (formData.custom_role_id === '' || formData.custom_role_id == null) {
+        toast.error('Select an approved access profile for this job type.')
+        return
+      }
+      const crid = Number(formData.custom_role_id)
+      if (allowedProfileIds && !allowedProfileIds.includes(crid)) {
+        toast.error('The selected access profile is not approved for this job type.')
         return
       }
     }
@@ -669,7 +728,7 @@ export default function UsersPage() {
               ? parseInt(String(formData.custom_role_id), 10)
               : formData.custom_role_id
       }
-      if (isPosStaffRole(formData.role)) {
+      if (ROLES_WITH_POS_SALE_SCOPE.has(effectivePosRole)) {
         updateData.pos_sale_scope = formData.pos_sale_scope || 'both'
       } else {
         updateData.pos_sale_scope = 'both'
@@ -1464,11 +1523,13 @@ export default function UsersPage() {
                         value={formData.role}
                         onChange={(e) => {
                           const role = e.target.value
+                          const eff = effectiveBuiltinRoleKey(role, jobTypeOptions)
                           setFormData((fd) => ({
                             ...fd,
                             role,
-                            ...(ROLES_WITH_POS_SALE_SCOPE.has(role)
-                              ? { pos_sale_scope: defaultPosScopeForRole(role) }
+                            custom_role_id: '',
+                            ...(ROLES_WITH_POS_SALE_SCOPE.has(eff)
+                              ? { pos_sale_scope: defaultPosScopeForRole(role, jobTypeOptions) }
                               : { pos_sale_scope: 'both' }),
                           }))
                         }}
@@ -1482,10 +1543,10 @@ export default function UsersPage() {
                       </select>
                       <p className="mt-1.5 flex items-start gap-1 text-xs text-muted-foreground">
                         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                        {jobTypeHint(formData.role) ||
+                        {jobTypeHint(formData.role, jobTypeOptions) ||
                           'Default app areas apply when no custom profile is selected.'}
                       </p>
-                      {ROLES_WITH_POS_SALE_SCOPE.has(formData.role) && (
+                      {ROLES_WITH_POS_SALE_SCOPE.has(effectivePosRole) && (
                         <div className="mt-4 max-w-4xl rounded-xl border border-border bg-muted/40/80 p-4">
                           <PosSaleScopeSelector
                             name="tenant-user-pos-scope"
@@ -1497,7 +1558,7 @@ export default function UsersPage() {
                         </div>
                       )}
                       {hasAccessContext &&
-                        isPosStaffRole(formData.role) && (
+                        isPosStaffRole(formData.role, jobTypeOptions) && (
                           <div className="mt-4 max-w-xl">
                             <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
                               <MapPin className="h-4 w-4 text-amber-600" />
@@ -1544,7 +1605,7 @@ export default function UsersPage() {
                           </div>
                         )}
                       {hasAccessContext &&
-                        !isPosStaffRole(formData.role) &&
+                        !isPosStaffRole(formData.role, jobTypeOptions) &&
                         stationOptions.length > 0 && (
                           <div className="mt-4 max-w-xl">
                             <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground/85">
@@ -1579,10 +1640,18 @@ export default function UsersPage() {
                     </div>
                     {hasAccessContext && (
                       <div className="space-y-3 border-t border-border/70 pt-3">
-                        <h4 className="text-sm font-semibold text-foreground">Custom access (optional)</h4>
+                        <h4 className="text-sm font-semibold text-foreground">
+                          {accessProfileRequired ? 'Access profile (required)' : 'Custom access (optional)'}
+                        </h4>
                         <p className="text-xs text-muted-foreground">
-                          If you pick a profile, expand <strong>Advanced</strong> to change which modules that profile
-                          includes (saved with the user). Leave empty to use job-type defaults only.
+                          {accessProfileRequired
+                            ? 'This job type only allows the approved access profiles listed below. Manage approvals on Roles → Job types.'
+                            : (
+                              <>
+                                If you pick a profile, expand <strong>Advanced</strong> to change which modules that profile
+                                includes (saved with the user). Leave empty to use job-type defaults only.
+                              </>
+                            )}
                         </p>
                         {roleSharedUserCount != null && roleSharedUserCount > 1 && rolePermsDirty && formData.custom_role_id ? (
                           <p className="text-xs text-warning-foreground bg-warning/10 border border-amber-100 rounded-lg px-3 py-2">
@@ -1593,7 +1662,9 @@ export default function UsersPage() {
                         ) : null}
                         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                           <div className="min-w-0 flex-1">
-                            <label className="mb-2 block text-sm font-medium text-foreground">Access profile (optional)</label>
+                            <label className="mb-2 block text-sm font-medium text-foreground">
+                              Access profile{accessProfileRequired ? ' *' : ' (optional)'}
+                            </label>
                             <select
                               value={
                                 formData.custom_role_id === '' || formData.custom_role_id == null
@@ -1609,9 +1680,11 @@ export default function UsersPage() {
                               className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                             >
                               <option value="">
-                                — None: use the job role&apos;s default permissions (above) —
+                                {accessProfileRequired
+                                  ? '— Select an approved access profile —'
+                                  : "— None: use the job role's default permissions (above) —"}
                               </option>
-                              {companyRoles.map((cr) => (
+                              {selectableCompanyRoles.map((cr) => (
                                 <option key={cr.id} value={cr.id}>
                                   {cr.name}
                                 </option>

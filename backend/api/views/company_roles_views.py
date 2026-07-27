@@ -75,7 +75,7 @@ def permission_catalog(request):
         {
             "permissions": PERMISSION_CATALOG,
             "role_defaults": role_default_permissions_for_catalog(),
-            "job_types": tenant_job_types_for_api(),
+            "job_types": tenant_job_types_for_api(int(request.company_id)),
         }
     )
 

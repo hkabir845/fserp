@@ -234,8 +234,8 @@ const P: Record<string, PageMetaRow> = {
   '/roles': {
     title: { en: 'Roles & access', bn: 'রোল ও অ্যাক্সেস' },
     description: {
-      en: 'Create named roles and allow or block each app in the launcher, plus reports and aquaculture modules. Use section shortcuts (e.g. "All station apps") or tick individual apps. Assign a role on the Users page; unchecked items are hidden in the app launcher and sidebar.',
-      bn: 'নামকরা রোল তৈরি করুন এবং লঞ্চারের প্রতিটি অ্যাপ, রিপোর্ট ও অ্যাকোয়াকালচার মডিউল অনুমতি দিন বা ব্লক করুন। সেকশন শর্টকাট (যেমন "সব স্টেশন অ্যাপ") বা পৃথক অ্যাপ টিক দিন। Users পৃষ্ঠায় রোল বরাদ্দ করুন; টিক না থাকা আইটেম লঞ্চার ও সাইডবারে লুকানো থাকে।',
+      en: 'Manage access profiles and job types. Access profiles control which apps users see. Job types can require specific approved profiles so staff only get access you select.',
+      bn: 'অ্যাক্সেস প্রোফাইল ও job type পরিচালনা করুন। অ্যাক্সেস প্রোফাইল কোন অ্যাপ দেখাবে নিয়ন্ত্রণ করে। Job type-এ অনুমোদিত প্রোফাইল বাধ্যতামূলক করা যায় যাতে স্টাফ শুধু আপনার নির্বাচিত অ্যাক্সেস পায়।',
     },
   },
   '/backup': {

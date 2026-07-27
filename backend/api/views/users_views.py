@@ -12,12 +12,14 @@ from api.utils.password_reset_tokens import (
 )
 from api.utils.recovery_email import profile_allows_password_recovery
 from api.models import BroadcastRead, Company, CompanyRole, Station, User
-from api.services.permission_service import user_client_dict, POS_SALE_SCOPES, normalize_role_key
+from api.services.permission_service import user_client_dict, POS_SALE_SCOPES
 from api.services.tenant_job_types import (
     DEFAULT_POS_SALE_SCOPE_BY_ROLE,
     ROLES_REQUIRING_HOME_STATION,
     ROLES_WITH_POS_SALE_SCOPE,
-    TENANT_USER_ROLES,
+    effective_builtin_role_key,
+    is_allowed_tenant_role,
+    validate_access_profile_for_job_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,7 @@ _POS_STAFF_LABEL = "cashier, shopkeeper, pump attendant, or operator"
 
 def _set_pos_sale_scope_cashier_operator(user: User, data: dict, force_default: bool) -> "JsonResponse|None":
     """Set User.pos_sale_scope. force_default: create user when key omitted (role default)."""
-    r = normalize_role_key(user.role)
+    r = effective_builtin_role_key(user.role, getattr(user, "company_id", None))
     if r not in ROLES_WITH_POS_SALE_SCOPE:
         user.pos_sale_scope = "both"
         return None
@@ -75,7 +77,7 @@ def _ensure_pos_staff_home_station(user: User, company_id: int | None) -> "JsonR
     Cashier/operator must be bound to a location (home station) when the tenant has multiple
     active sites; if there is exactly one site, assign it when unset.
     """
-    rk = normalize_role_key(user.role)
+    rk = effective_builtin_role_key(user.role, company_id)
     if rk not in ROLES_REQUIRING_HOME_STATION:
         return None
     if company_id is None:
@@ -138,6 +140,13 @@ def _set_custom_role_from_request(user: User, data: dict, api_user, company_id: 
             status=400,
         )
     user.custom_role = cr
+    return None
+
+
+def _validate_job_type_access_profile(user: User) -> "JsonResponse|None":
+    msg = validate_access_profile_for_job_type(user)
+    if msg:
+        return JsonResponse({"detail": msg}, status=400)
     return None
 
 
@@ -236,13 +245,12 @@ def users_list_or_create(request):
 
     if _is_company_admin(api_user):
         company_id = api_user.company_id
-        if role not in TENANT_USER_ROLES:
+        if not is_allowed_tenant_role(role, company_id):
             return JsonResponse(
                 {
                     "detail": (
-                        "Role must be one of: "
-                        + ", ".join(sorted(TENANT_USER_ROLES))
-                        + " for company users."
+                        "Role must be a built-in job type or an active custom job type "
+                        "for this company."
                     ),
                 },
                 status=400,
@@ -285,6 +293,9 @@ def users_list_or_create(request):
         err = _set_custom_role_from_request(user, data, api_user, company_id)
         if err is not None:
             return err
+        err_ap = _validate_job_type_access_profile(user)
+        if err_ap is not None:
+            return err_ap
         err2 = _set_pos_sale_scope_cashier_operator(user, data, force_default=True)
         if err2 is not None:
             return err2
@@ -379,11 +390,14 @@ def user_detail(request, user_id):
 
         if _is_company_admin(api_user):
             new_role = (data.get("role") or user.role or "").strip()
-            if data.get("role") is not None and new_role not in TENANT_USER_ROLES:
+            if data.get("role") is not None and not is_allowed_tenant_role(
+                new_role, user.company_id or api_user.company_id
+            ):
                 return JsonResponse(
                     {
                         "detail": (
-                            "Role must be one of: " + ", ".join(sorted(TENANT_USER_ROLES)) + "."
+                            "Role must be a built-in job type or an active custom job type "
+                            "for this company."
                         ),
                     },
                     status=400,
@@ -414,6 +428,10 @@ def user_detail(request, user_id):
             err = _set_custom_role_from_request(user, data, api_user, user.company_id)
             if err is not None:
                 return err
+        if {"role", "custom_role_id"} & data.keys():
+            err_ap = _validate_job_type_access_profile(user)
+            if err_ap is not None:
+                return err_ap
         if "home_station_id" in data:
             her = _set_home_station_from_request(user, data, user.company_id)
             if her is not None:

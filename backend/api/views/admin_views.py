@@ -182,9 +182,9 @@ def admin_users(request):
         created = getattr(u, "created_at", None)
         rlow = (getattr(u, "role", "user") or "user").strip().lower()
         pss = getattr(u, "pos_sale_scope", None) or "both"
-        from api.services.tenant_job_types import ROLES_WITH_POS_SALE_SCOPE
+        from api.services.tenant_job_types import ROLES_WITH_POS_SALE_SCOPE, effective_builtin_role_key
 
-        if rlow not in ROLES_WITH_POS_SALE_SCOPE:
+        if effective_builtin_role_key(rlow, getattr(u, "company_id", None)) not in ROLES_WITH_POS_SALE_SCOPE:
             pss = "both"
         hs_id = getattr(u, "home_station_id", None)
         hs = getattr(u, "home_station", None)

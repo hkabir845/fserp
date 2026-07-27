@@ -4,8 +4,7 @@ from __future__ import annotations
 from django.http import JsonResponse
 
 from api.models import Station, User
-from api.services.permission_service import normalize_role_key
-from api.services.tenant_job_types import ROLES_REQUIRING_HOME_STATION
+from api.services.tenant_job_types import ROLES_REQUIRING_HOME_STATION, effective_builtin_role_key
 
 
 def enforce_pos_home_station(
@@ -71,7 +70,7 @@ def effective_report_station_id(request, company_id: int) -> tuple[int | None, J
             )
         return int(hid), None
 
-    rk = normalize_role_key(getattr(u, "role", None))
+    rk = effective_builtin_role_key(getattr(u, "role", None), getattr(u, "company_id", None))
     n_active = Station.objects.filter(company_id=company_id, is_active=True).count()
     if rk in ROLES_REQUIRING_HOME_STATION and n_active == 0:
         return None, JsonResponse(

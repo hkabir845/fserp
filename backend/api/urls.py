@@ -22,6 +22,7 @@ from api.views import (
     admin_brain_views,
     users_views,
     company_roles_views,
+    company_job_types_views,
     contracts_views,
     station_views,
     tank_views,
@@ -179,6 +180,8 @@ urlpatterns = [
     path("permission-catalog/", company_roles_views.permission_catalog),
     path("company-roles/", company_roles_views.company_roles_list_or_create),
     path("company-roles/<int:role_id>/", company_roles_views.company_role_detail),
+    path("company-job-types/", company_job_types_views.company_job_types_list_or_create),
+    path("company-job-types/<int:job_type_id>/", company_job_types_views.company_job_type_detail),
     path(
         "reporting-categories/map-targets/",
         tenant_reporting_categories_views.reporting_category_map_targets,

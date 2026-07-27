@@ -114,8 +114,12 @@ def nozzles_details(request):
     )
     api_user = getattr(request, "api_user", None)
     if api_user:
-        rk = normalize_role_key(getattr(api_user, "role", None))
-        from api.services.tenant_job_types import ROLES_REQUIRING_HOME_STATION
+        from api.services.tenant_job_types import ROLES_REQUIRING_HOME_STATION, effective_builtin_role_key
+
+        rk = effective_builtin_role_key(
+            getattr(api_user, "role", None),
+            getattr(api_user, "company_id", None),
+        )
 
         if rk in ROLES_REQUIRING_HOME_STATION:
             uid = getattr(api_user, "id", None) or getattr(api_user, "pk", None)

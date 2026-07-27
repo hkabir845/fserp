@@ -31,8 +31,11 @@ export function getDefaultLandingHref(
       permissionsAllow(permissions, 'app.sales') ||
       permissionsAllow(permissions, 'app.inventory')
     if (hasAquaculture && !hasFuelOrShop) return '/aquaculture'
-    if (permissionsAllow(permissions, 'app.launcher')) return '/dashboard'
-    if (permissionsAllow(permissions, 'app.pos')) return '/cashier'
+    if (permissionsAllow(permissions, 'app.page.dashboard')) return '/dashboard'
+    if (permissionsAllow(permissions, 'app.launcher')) return '/apps'
+    if (permissionsAllow(permissions, 'app.pos') || permissionsAllow(permissions, 'app.page.cashier')) {
+      return '/cashier'
+    }
     if (hasAquaculture) return '/aquaculture'
     return '/login'
   }

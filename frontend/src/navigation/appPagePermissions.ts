@@ -11,7 +11,8 @@ export type AppPagePermissionDef = {
 }
 
 export const APP_PAGE_PERMISSIONS: AppPagePermissionDef[] = [
-  { id: 'app.page.dashboard', label: 'Dashboard', group: 'Apps — Main', parent: 'app.launcher', href: '/dashboard' },
+  // Dashboard is its own checkbox — app.launcher only opens /apps (not every Main tile).
+  { id: 'app.page.dashboard', label: 'Dashboard', group: 'Apps — Main', parent: '', href: '/dashboard' },
   { id: 'app.page.brain', label: 'Company Brain', group: 'Apps — Main', parent: 'app.brain', href: '/brain' },
   {
     id: 'app.page.brain_app',
@@ -108,18 +109,47 @@ export const APP_PAGE_PERMISSIONS: AppPagePermissionDef[] = [
 ]
 
 export const PAGE_PERMISSION_PARENT_BY_ID: Record<string, string> = Object.fromEntries(
-  APP_PAGE_PERMISSIONS.map((p) => [p.id, p.parent])
+  APP_PAGE_PERMISSIONS.filter((p) => Boolean(p.parent)).map((p) => [p.id, p.parent])
 )
 
 export function permissionKeysForAppHref(href: string): string[] {
   const keys: string[] = []
   const page = APP_PAGE_PERMISSIONS.find((p) => p.href === href)
   if (page) {
-    keys.push(page.id, page.parent)
+    keys.push(page.id)
+    if (page.parent) keys.push(page.parent)
   }
   if (href === '/customers') keys.push('app.sales')
   if (href === '/reports/analytics') keys.push('app.reports')
   return [...new Set(keys)]
+}
+
+/**
+ * Whether effective permission keys grant a nav/launcher href.
+ * Mirrors backend page parent grants and aquaculture parent `app.aquaculture`.
+ */
+export function permissionsAllowMenuHref(href: string, perms: string[]): boolean {
+  if (!perms?.length) return false
+  if (perms.includes('*')) return true
+  const anyOf = permissionKeysForAppHref(href)
+  if (href === '/apps') {
+    return perms.includes('app.launcher')
+  }
+  if (anyOf.length) {
+    return anyOf.some((k) => permissionKeySatisfied(perms, k))
+  }
+  return false
+}
+
+export function permissionKeySatisfied(perms: string[], key: string): boolean {
+  if (perms.includes('*') || perms.includes(key)) return true
+  if (key.startsWith('app.page.')) {
+    const parent = PAGE_PERMISSION_PARENT_BY_ID[key]
+    if (parent && perms.includes(parent)) return true
+    if (key === 'app.page.customers' && perms.includes('app.sales')) return true
+  }
+  if (key.startsWith('app.aquaculture.') && perms.includes('app.aquaculture')) return true
+  return false
 }
 
 export function buildAppPageHrefPermissionMap(): Record<string, string[]> {

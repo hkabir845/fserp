@@ -8,7 +8,8 @@ from __future__ import annotations
 
 APP_PAGE_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     # Main
-    {"id": "app.page.dashboard", "label": "Dashboard", "group": "Apps — Main", "parent": "app.launcher", "href": "/dashboard"},
+    # Dashboard is its own checkbox — app.launcher only opens /apps (not every Main tile).
+    {"id": "app.page.dashboard", "label": "Dashboard", "group": "Apps — Main", "parent": "", "href": "/dashboard"},
     {"id": "app.page.brain", "label": "Company Brain", "group": "Apps — Main", "parent": "app.brain", "href": "/brain"},
     {
         "id": "app.page.brain_app",
@@ -142,6 +143,8 @@ def permission_keys_for_href(href: str) -> list[str]:
         keys.append("app.sales")
     if href == "/reports/analytics":
         keys.append("app.reports")
+    if href == "/apps":
+        keys.append("app.launcher")
     return keys
 
 

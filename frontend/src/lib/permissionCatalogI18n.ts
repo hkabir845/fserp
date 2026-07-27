@@ -27,8 +27,8 @@ const AQUACULTURE_PERM_TO_HREF: Record<string, string> = {
 }
 
 const PERMISSION_LABEL_BN: Record<string, string> = {
-  'app.launcher': 'অ্যাপ লঞ্চার (সব Main অ্যাপ)',
-  'app.pos': 'POS / ক্যাশিয়ার (সব Main POS অ্যাক্সেস)',
+  'app.launcher': 'অ্যাপ লঞ্চার (/apps হোম)',
+  'app.pos': 'POS / ক্যাশিয়ার (সব POS অ্যাক্সেস)',
   'app.station': 'সব স্টেশন অ্যাপ (স্টেশন, ট্যাঙ্ক, আইল্যান্ড, ডিসপেন্সার, মিটার, নজল)',
   'app.operations': 'সব অপারেশন অ্যাপ (শিফট ও ট্যাঙ্ক ডিপ)',
   'app.accounting': 'সব হিসাব অ্যাপ (চার্ট, জার্নাল, ফান্ড ট্রান্সফার, ঋণ)',

@@ -30,7 +30,7 @@ import {
   Tags,
 } from 'lucide-react'
 
-import { buildAppPageHrefPermissionMap } from '@/navigation/appPagePermissions'
+import { buildAppPageHrefPermissionMap, permissionsAllowMenuHref } from '@/navigation/appPagePermissions'
 import { getAquacultureMenuItemsFlatWithGroup } from '@/navigation/aquacultureNavConfig'
 import { AQUACULTURE_STOCK_SUB_NAV } from '@/navigation/aquacultureStockNavConfig'
 import { hasAnyAquacultureModuleInList, menuHrefAllowedForAquaculture } from '@/navigation/aquaculturePermissions'
@@ -120,8 +120,8 @@ const APP_PAGE_HREF_PERMISSIONS = buildAppPageHrefPermissionMap()
 
 export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
   ...APP_PAGE_HREF_PERMISSIONS,
-  '/brain': ['app.brain', 'app.launcher'],
-  '/brain-app': ['app.brain', 'app.launcher'],
+  '/brain': ['app.brain', 'app.page.brain'],
+  '/brain-app': ['app.brain', 'app.page.brain_app'],
   '/aquaculture': ['app.aquaculture', 'app.aquaculture.dashboard'],
   '/aquaculture/ponds': ['app.aquaculture', 'app.aquaculture.ponds'],
   '/aquaculture/expenses': ['app.aquaculture', 'app.aquaculture.expenses'],
@@ -148,9 +148,17 @@ export const HREF_REQUIRED_PERMISSIONS: Record<string, string[]> = {
 
 function menuItemAllowedByPermissions(href: string, perms: string[]): boolean {
   if (perms.includes(PERM_WILDCARD)) return true
+  // App launcher pages: checked profile modules ↔ menubar (parent "all …" grants children).
+  if (href === '/apps' || APP_PAGE_HREF_PERMISSIONS[href]) {
+    return permissionsAllowMenuHref(href, perms)
+  }
   const anyOf = HREF_REQUIRED_PERMISSIONS[href]
   if (anyOf?.length) {
-    return anyOf.some((k) => perms.includes(k))
+    return anyOf.some(
+      (k) =>
+        perms.includes(k) ||
+        (k.startsWith('app.aquaculture.') && perms.includes('app.aquaculture'))
+    )
   }
   if (href.startsWith('/aquaculture') || href.includes('aquaculture-pl-management')) {
     return menuHrefAllowedForAquaculture(href, perms)

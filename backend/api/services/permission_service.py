@@ -338,10 +338,10 @@ def _build_permission_catalog() -> list[dict[str, str]]:
     return [
         {
             "id": "app.launcher",
-            "label": "App launcher (all Main apps)",
+            "label": "App launcher (/apps home)",
             "group": "Apps — Main",
         },
-        {"id": "app.pos", "label": "POS / Cashier (all Main POS access)", "group": "Apps — Main"},
+        {"id": "app.pos", "label": "POS / Cashier (all POS access)", "group": "Apps — Main"},
         {"id": "app.brain", "label": "Company Brain (AI advisor)", "group": "Apps — Main"},
         *page_permission_catalog_entries_for_group("Apps — Main"),
         {
@@ -441,7 +441,11 @@ def sanitize_tenant_role_permissions(raw: list | None) -> list[str]:
 
 
 # Custom access profile preset: pond/fish staff under a fuel+shop tenant (e.g. Premium Agro at Adib).
-AQUACULTURE_ONLY_DEFAULT_PERMISSIONS: list[str] = ["app.launcher", "app.aquaculture"]
+AQUACULTURE_ONLY_DEFAULT_PERMISSIONS: list[str] = [
+    "app.launcher",
+    "app.page.dashboard",
+    "app.aquaculture",
+]
 
 
 def _is_aquaculture_permission_id(pid: str) -> bool:
@@ -461,7 +465,7 @@ FUEL_ONLY_DEFAULT_PERMISSIONS: list[str] = _dedupe_keep_order(
 )
 
 # Generic tenant users (User.role default is "user") — launcher + POS only, not full admin.
-_GENERIC_USER_ROLE_PERMS: list[str] = ["app.launcher", "app.pos"]
+_GENERIC_USER_ROLE_PERMS: list[str] = ["app.launcher", "app.page.dashboard", "app.pos"]
 
 
 def role_default_permissions_for_catalog() -> dict[str, list[str]]:
@@ -478,6 +482,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     "admin": _dedupe_keep_order(p["id"] for p in PERMISSION_CATALOG),
     "accountant": [
         "app.launcher",
+        "app.page.dashboard",
         "app.pos",
         "app.operations",
         "app.accounting",
@@ -493,6 +498,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     ],
     "supervisor": [
         "app.launcher",
+        "app.page.dashboard",
         "app.aquaculture",
         "app.operations",
         "app.reports",
@@ -504,6 +510,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     ],
     "cashier": [
         "app.launcher",
+        "app.page.dashboard",
         "app.pos",
         "app.customers",
         "app.reports",
@@ -512,6 +519,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     "pump_attendant": ["app.pos"],
     "shopkeeper": [
         "app.launcher",
+        "app.page.dashboard",
         "app.pos",
         "app.customers",
         "app.inventory",
@@ -519,26 +527,31 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     ],
     "inventory_clerk": [
         "app.launcher",
+        "app.page.dashboard",
         "app.inventory",
         "report.inventory_sku",
     ],
     "sales_clerk": [
         "app.launcher",
+        "app.page.dashboard",
         "app.sales",
         "app.customers",
     ],
     "forecourt_supervisor": [
         "app.launcher",
+        "app.page.dashboard",
         "app.station",
         "app.operations",
         "app.reports",
     ],
     "hr_officer": [
         "app.launcher",
+        "app.page.dashboard",
         "app.hr",
     ],
     "auditor": [
         "app.launcher",
+        "app.page.dashboard",
         "app.accounting",
         "app.sales",
         "app.customers",

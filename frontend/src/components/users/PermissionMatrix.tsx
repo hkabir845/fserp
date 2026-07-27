@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { permissionItemMatchesQuery, localizePermissionGroup } from '@/lib/permissionCatalogI18n'
 import { useRolesT } from '@/lib/moduleI18n/roles'
+import { PAGE_PERMISSION_PARENT_BY_ID } from '@/navigation/appPagePermissions'
 
 export type PermItem = { id: string; label: string; group: string }
 
@@ -16,6 +17,26 @@ type Props = {
   className?: string
   listClassName?: string
   showTechnicalIds?: boolean
+}
+
+/** Parent key → child page / module keys (so "all X" checkboxes match the menubar). */
+function buildChildrenByParent(catalog: PermItem[]): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  const catalogIds = new Set(catalog.map((c) => c.id))
+
+  for (const [child, parent] of Object.entries(PAGE_PERMISSION_PARENT_BY_ID)) {
+    if (!parent || !catalogIds.has(child)) continue
+    const list = map.get(parent) || []
+    list.push(child)
+    map.set(parent, list)
+  }
+
+  const aqChildren = catalog
+    .map((c) => c.id)
+    .filter((id) => id.startsWith('app.aquaculture.') && id !== 'app.aquaculture')
+  if (aqChildren.length) map.set('app.aquaculture', aqChildren)
+
+  return map
 }
 
 export default function PermissionMatrix({
@@ -31,6 +52,8 @@ export default function PermissionMatrix({
   const { language } = useCompanyLocale()
   const rt = useRolesT()
 
+  const childrenByParent = useMemo(() => buildChildrenByParent(catalog), [catalog])
+
   const { permGroups, filteredCatalog } = useMemo(() => {
     const filtered = !q.trim()
       ? catalog
@@ -43,8 +66,20 @@ export default function PermissionMatrix({
 
   const toggle = (id: string) => {
     const s = new Set(selected)
-    if (s.has(id)) s.delete(id)
-    else s.add(id)
+    const children = childrenByParent.get(id) || []
+    const turningOn = !s.has(id)
+
+    if (turningOn) {
+      s.add(id)
+      for (const c of children) s.add(c)
+    } else {
+      s.delete(id)
+      for (const c of children) s.delete(c)
+      // Unchecking a child also clears its parent so the menubar stays in sync.
+      for (const [parent, kids] of childrenByParent.entries()) {
+        if (kids.includes(id)) s.delete(parent)
+      }
+    }
     onChange(Array.from(s))
   }
 
@@ -96,6 +131,10 @@ export default function PermissionMatrix({
       <p className="mb-2 text-[11px] text-muted-foreground">
         {rt('permAreasAllowed', { selected: selected.length, total: catalog.length })}
         {q ? rt('permFiltered', { count: filteredCatalog.length }) : ''}
+      </p>
+      <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
+        Checked modules appear in that user&apos;s menubar after you save the user and they sign in again.
+        Parent &quot;all …&quot; rows also select their child apps.
       </p>
       <div className={`space-y-3 overflow-y-auto pr-1 ${listClassName}`}>
         {permGroups.map((g) => {

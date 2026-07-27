@@ -518,11 +518,14 @@ export default function UsersPage() {
       })
       await loadCompanyRolesList()
       setFormData((fd) => ({ ...fd, custom_role_id: data.id }))
+      setSelectedProfilePerms(Array.isArray(data.permissions) ? data.permissions : newRolePerms)
+      setRolePermsDirty(false)
       setShowNewRoleModal(false)
       setNewRoleName('')
       setNewRoleDescription('')
-      toast.success('Access profile created. It is now selected for this user.')
-    } catch (e: unknown) {
+      toast.success(
+        'Access profile created and selected. Save this user, then they must sign in again to see the modules in their menubar.'
+      )    } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data
       toast.error((typeof d?.detail === 'string' ? d.detail : null) || 'Could not create access profile.')
     } finally {

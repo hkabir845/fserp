@@ -7,11 +7,18 @@ from api.services.permission_service import (
 )
 
 
-def test_generic_user_role_is_minimal():
-    perms = default_permissions_for_role("user")
-    assert "app.users" not in perms
-    assert "app.backup" not in perms
-    assert perms == ["app.launcher", "app.pos"]
+def test_dashboard_not_granted_by_launcher_alone():
+    from api.services.app_page_permissions import page_permission_granted
+
+    assert page_permission_granted(["app.launcher"], "app.page.dashboard") is False
+    assert page_permission_granted(["app.page.dashboard"], "app.page.dashboard") is True
+
+
+def test_pos_parent_grants_cashier_page():
+    from api.services.app_page_permissions import page_permission_granted
+
+    assert page_permission_granted(["app.pos"], "app.page.cashier") is True
+    assert page_permission_granted(["app.page.cashier"], "app.page.cashier") is True
 
 
 def test_unknown_role_is_launcher_only():

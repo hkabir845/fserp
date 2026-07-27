@@ -422,8 +422,9 @@ function isAquacultureHref(href: string): boolean {
 
 /**
  * Hide Aquaculture when the company flag is off, or when the user has no aquaculture permission.
- * When `forceUnlock` is true (Adib dedicated Android app / permanent tenant UI), keep AQ items
- * and re-attach any role filter removed.
+ *
+ * `forceUnlock` (permanent tenant / Adib app) only treats the **company module** as enabled.
+ * It must NOT grant Aquaculture to fuel-only or other staff who lack `app.aquaculture*`.
  */
 export function filterAquacultureMenuWhenDisabled(
   items: ErpAppMenuItem[],
@@ -433,7 +434,7 @@ export function filterAquacultureMenuWhenDisabled(
   effectivePermissions?: string[] | null,
   options?: {
     forceUnlock?: boolean
-    /** Full FSMS menu — used to restore AQ entries stripped by role allow-lists. */
+    /** Full FSMS menu — restore AQ entries for tenant admins when company module is on. */
     allFsmsItems?: ErpAppMenuItem[]
   }
 ): ErpAppMenuItem[] {
@@ -444,8 +445,12 @@ export function filterAquacultureMenuWhenDisabled(
     return items.filter((i) => !isAquacultureHref(i.href))
   }
 
+  const adminAq = isTenantAdminAquacultureUser(userRole, isSuperAdmin)
+
   let next = items
-  if (forceUnlock && options?.allFsmsItems?.length) {
+  // Only tenant/platform admins get AQ entries re-attached (role filters may have stripped them).
+  // Never re-attach for limited profiles — that leaked all Aquaculture to fuel-only users.
+  if (adminAq && options?.allFsmsItems?.length) {
     const have = new Set(next.map((i) => i.href))
     const missing = options.allFsmsItems.filter((i) => isAquacultureHref(i.href) && !have.has(i.href))
     if (missing.length) {
@@ -453,12 +458,15 @@ export function filterAquacultureMenuWhenDisabled(
     }
   }
 
-  if (forceUnlock || isTenantAdminAquacultureUser(userRole, isSuperAdmin)) {
+  if (adminAq) {
     return next
   }
   if (effectivePermissions != null) {
     if (hasAnyAquacultureModuleInList(effectivePermissions)) {
-      return next
+      return next.filter((i) => {
+        if (!isAquacultureHref(i.href)) return true
+        return menuHrefAllowedForAquaculture(i.href, effectivePermissions)
+      })
     }
     return next.filter((i) => !isAquacultureHref(i.href))
   }
@@ -468,6 +476,7 @@ export function filterAquacultureMenuWhenDisabled(
 /**
  * True when Aquaculture workspace routes may load: module enabled and user has access.
  * SaaS mode only blocks platform super-admins (their SaaS tab); tenant users are always on FSMS.
+ * Permanent-tenant `forceUnlock` enables the company module only — not every user.
  */
 export function isAquacultureNavUnlocked(
   userRole: string | null,
@@ -479,7 +488,7 @@ export function isAquacultureNavUnlocked(
 ): boolean {
   if (isSuperAdmin && mode === 'saas_dashboard') return false
   if (!(aquacultureEnabled || forceUnlock)) return false
-  if (forceUnlock || isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return true
+  if (isTenantAdminAquacultureUser(userRole, isSuperAdmin)) return true
   if (userPermissions != null && hasAnyAquacultureModuleInList(userPermissions)) return true
   return false
 }

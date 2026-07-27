@@ -86,6 +86,7 @@ export const TENANT_JOB_TYPE_OPTIONS: TenantJobTypeOption[] = [
 
 export const BUILTIN_JOB_TYPE_SEEDS = [
   'aquaculture_only',
+  'fuel_only',
   ...TENANT_JOB_TYPE_OPTIONS.map((o) => o.value),
 ] as const
 

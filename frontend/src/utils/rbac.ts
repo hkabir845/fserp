@@ -244,10 +244,13 @@ export function getRoleDisplayName(role: UserRole | string | null): string {
   return roleMap[role.toLowerCase()] || role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-/** Labels for optional access-profile seeds from ``/permission-catalog/`` (includes ``aquaculture_only``). */
+/** Labels for optional access-profile seeds from ``/permission-catalog/`` (includes ``aquaculture_only`` / ``fuel_only``). */
 export function getAccessProfileSeedLabel(seedKey: string): string {
   if (seedKey === 'aquaculture_only') {
     return 'Aquaculture only (ponds & fish — no fuel station or shop POS)'
+  }
+  if (seedKey === 'fuel_only') {
+    return 'Fuel station & shop only (no aquaculture)'
   }
   if ((BUILTIN_JOB_TYPE_SEEDS as readonly string[]).includes(seedKey)) {
     return `Same as ${getRoleDisplayName(seedKey)} default`
@@ -257,7 +260,7 @@ export function getAccessProfileSeedLabel(seedKey: string): string {
 
 /** Same seeds as {@link getAccessProfileSeedLabel}, for the Users “new access profile” dropdown. */
 export function getAccessProfileSeedOptionLabel(seedKey: string): string {
-  if (seedKey === 'aquaculture_only') {
+  if (seedKey === 'aquaculture_only' || seedKey === 'fuel_only') {
     return getAccessProfileSeedLabel(seedKey)
   }
   if ((BUILTIN_JOB_TYPE_SEEDS as readonly string[]).includes(seedKey)) {

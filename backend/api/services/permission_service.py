@@ -443,6 +443,23 @@ def sanitize_tenant_role_permissions(raw: list | None) -> list[str]:
 # Custom access profile preset: pond/fish staff under a fuel+shop tenant (e.g. Premium Agro at Adib).
 AQUACULTURE_ONLY_DEFAULT_PERMISSIONS: list[str] = ["app.launcher", "app.aquaculture"]
 
+
+def _is_aquaculture_permission_id(pid: str) -> bool:
+    p = (pid or "").strip()
+    if p == "app.aquaculture" or p.startswith("app.aquaculture."):
+        return True
+    if p.startswith("report.") and "aquaculture" in p:
+        return True
+    return False
+
+
+# Custom access profile preset: fuel station / shop staff with no pond modules.
+FUEL_ONLY_DEFAULT_PERMISSIONS: list[str] = _dedupe_keep_order(
+    p["id"]
+    for p in PERMISSION_CATALOG
+    if p["id"] != "app.users" and not _is_aquaculture_permission_id(p["id"])
+)
+
 # Generic tenant users (User.role default is "user") — launcher + POS only, not full admin.
 _GENERIC_USER_ROLE_PERMS: list[str] = ["app.launcher", "app.pos"]
 
@@ -452,6 +469,7 @@ def role_default_permissions_for_catalog() -> dict[str, list[str]]:
     out = {k: list(_DEFAULT_ROLE_PERMS[k]) for k in tenant_job_type_seed_keys() if k in _DEFAULT_ROLE_PERMS}
     out["user"] = list(_GENERIC_USER_ROLE_PERMS)
     out["aquaculture_only"] = list(AQUACULTURE_ONLY_DEFAULT_PERMISSIONS)
+    out["fuel_only"] = list(FUEL_ONLY_DEFAULT_PERMISSIONS)
     return out
 
 # Default permission sets (when user has no custom CompanyRole)
@@ -539,11 +557,12 @@ def normalize_role_key(role: str | None) -> str:
 
 def user_may_access_aquaculture_api(user) -> bool:
     """
-    Aquaculture requires company module enablement. Platform super-admins, tenant Admins, and
-    any user granted ``app.aquaculture`` (e.g. Manager or a custom role) may call aquaculture APIs.
+    Platform super-admins, tenant Admins, and users granted ``app.aquaculture`` (or a
+    sub-module key) may call aquaculture APIs.
 
-    Permanent aquaculture tenants (e.g. Adib Filling Station): any authenticated user of that
-    company may call aquaculture APIs so the dedicated Android app never blocks the module.
+    Company enablement (including permanent tenants like Adib) is checked separately.
+    Permanent tenants must still respect per-user permissions so fuel-only staff do not
+    get Aquaculture APIs.
     """
     if not user:
         return False
@@ -551,21 +570,6 @@ def user_may_access_aquaculture_api(user) -> bool:
         return True
     if normalize_role_key(getattr(user, "role", None)) == "admin":
         return True
-    try:
-        from api.models import Company
-        from api.services.aquaculture_company_flags import is_permanent_aquaculture_company
-
-        cid = getattr(user, "company_id", None)
-        if cid:
-            co = (
-                Company.objects.filter(pk=cid)
-                .only("company_code", "name", "aquaculture_enabled", "aquaculture_licensed")
-                .first()
-            )
-            if is_permanent_aquaculture_company(co):
-                return True
-    except Exception:
-        pass
     return has_aquaculture_module_permission(resolve_user_permissions(user))
 
 

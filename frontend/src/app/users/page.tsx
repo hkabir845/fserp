@@ -1487,8 +1487,8 @@ export default function UsersPage() {
                         </select>
                         <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
                           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          Assign the tenant company (e.g. Adib Filling Station). Aquaculture and Premium Agro pond work
-                          stay under that company—use an access profile on step 2 to limit users to aquaculture only.
+                          Assign the tenant company (e.g. Adib Filling Station). Fuel and aquaculture share this
+                          company—use an access profile on step 2 for Fuel only or Aquaculture only staff.
                         </p>
                       </div>
                     )}
@@ -1507,10 +1507,10 @@ export default function UsersPage() {
                     <p className="mb-3 flex items-start gap-2 rounded-lg border border-teal-100 bg-accent/90 px-3 py-2.5 text-sm text-teal-950">
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
                       <span>
-                        <strong>Aquaculture</strong> (including Premium Agro pond operations) is part of this same
-                        company—not a separate tenant. For staff who should only work ponds and fish farming, create or
-                        pick an access profile seeded as <strong>Aquaculture only</strong> (no fuel station, shop POS, or
-                        full accounting).
+                        Fuel and <strong>Aquaculture</strong> share this company. For pond-only staff, seed an access
+                        profile as <strong>Aquaculture only</strong>. For fuel/shop staff with no ponds, seed{' '}
+                        <strong>Fuel station &amp; shop only</strong> (or uncheck all aquaculture modules). POS
+                        &quot;Fuel only&quot; only limits the register lane—it does not hide Aquaculture.
                       </span>
                     </p>
                   )}

@@ -389,7 +389,11 @@ if not _is_runserver and not _is_pytest:
             SECURE_HSTS_INCLUDE_SUBDOMAINS = _truthy("FSERP_SECURE_HSTS_INCLUDE_SUBDOMAINS")
         else:
             SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-        SECURE_HSTS_PRELOAD = _truthy("FSERP_SECURE_HSTS_PRELOAD")
+        # Default on with HSTS (clears security.W021). Opt out: FSERP_SECURE_HSTS_PRELOAD=0
+        if "FSERP_SECURE_HSTS_PRELOAD" in os.environ:
+            SECURE_HSTS_PRELOAD = _truthy("FSERP_SECURE_HSTS_PRELOAD")
+        else:
+            SECURE_HSTS_PRELOAD = True
 
 SILENCED_SYSTEM_CHECKS = _csv("FSERP_SILENCED_SYSTEM_CHECKS")
 

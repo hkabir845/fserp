@@ -187,8 +187,12 @@ export default function UsersPage() {
   const selectableCompanyRoles = useMemo(() => {
     if (!allowedProfileIds) return companyRoles
     const allow = new Set(allowedProfileIds)
-    return companyRoles.filter((cr) => allow.has(cr.id))
-  }, [companyRoles, allowedProfileIds])
+    const cur =
+      formData.custom_role_id === '' || formData.custom_role_id == null
+        ? null
+        : Number(formData.custom_role_id)
+    return companyRoles.filter((cr) => allow.has(cr.id) || (cur != null && cr.id === cur))
+  }, [companyRoles, allowedProfileIds, formData.custom_role_id])
 
   useEffect(() => {
     if (!allowedProfileIds) return
@@ -196,10 +200,12 @@ export default function UsersPage() {
       formData.custom_role_id === '' || formData.custom_role_id == null
         ? null
         : Number(formData.custom_role_id)
-    if (cur != null && !Number.isNaN(cur) && !allowedProfileIds.includes(cur)) {
-      setFormData((fd) => ({ ...fd, custom_role_id: '' }))
-    }
-  }, [allowedProfileIds, formData.custom_role_id])
+    if (cur == null || Number.isNaN(cur)) return
+    if (allowedProfileIds.includes(cur)) return
+    // Keep a profile just created/selected on this form even if not yet on the job-type allow-list.
+    if (companyRoles.some((cr) => cr.id === cur)) return
+    setFormData((fd) => ({ ...fd, custom_role_id: '' }))
+  }, [allowedProfileIds, formData.custom_role_id, companyRoles])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -516,19 +522,41 @@ export default function UsersPage() {
         description: newRoleDescription.trim(),
         permissions: newRolePerms,
       })
-      await loadCompanyRolesList()
-      setFormData((fd) => ({ ...fd, custom_role_id: data.id }))
-      setSelectedProfilePerms(Array.isArray(data.permissions) ? data.permissions : newRolePerms)
-      setRolePermsDirty(false)
+      const newId = Number(data?.id)
+      if (!Number.isFinite(newId) || newId <= 0) {
+        throw new Error('Access profile was created but no id was returned.')
+      }
+      const perms = Array.isArray(data.permissions) ? data.permissions : newRolePerms
+      const roleName = (data.name || newRoleName).trim() || `Profile ${newId}`
+
+      // Close immediately so the user form (Save changes) is visible again.
       setShowNewRoleModal(false)
       setNewRoleName('')
       setNewRoleDescription('')
-      toast.success(
-        'Access profile created and selected. Save this user, then they must sign in again to see the modules in their menubar.'
-      )    } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data
-      toast.error((typeof d?.detail === 'string' ? d.detail : null) || 'Could not create access profile.')
-    } finally {
+      setSavingNewRole(false)
+
+      setCompanyRoles((prev) => {
+        if (prev.some((r) => r.id === newId)) return prev
+        return [...prev, { id: newId, name: roleName }].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      })
+      setFormData((fd) => ({ ...fd, custom_role_id: newId }))
+      setSelectedProfilePerms(perms)
+      setRolePermsDirty(false)
+      toast.success('Access profile created and selected. Click Save changes to apply it to this user.')
+
+      void loadCompanyRolesList().catch(() => {
+        /* list already updated optimistically */
+      })
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } }; message?: string })?.response
+        ?.data
+      const msg =
+        (typeof d?.detail === 'string' ? d.detail : null) ||
+        (e instanceof Error ? e.message : null) ||
+        'Could not create access profile.'
+      toast.error(msg)
       setSavingNewRole(false)
     }
   }
@@ -1961,7 +1989,11 @@ export default function UsersPage() {
               <button
                 type="button"
                 disabled={savingNewRole || !newRoleName.trim() || permCatalog.length === 0}
-                onClick={() => void submitNewAccessProfile()}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  void submitNewAccessProfile()
+                }}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-accent0 disabled:opacity-50"
               >
                 {savingNewRole ? 'Creating…' : 'Create & select'}

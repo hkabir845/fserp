@@ -269,11 +269,22 @@ export default function UsersPage() {
       const r = (res.data as { results?: { id: number; name: string }[] })?.results
       if (Array.isArray(r)) {
         setCompanyRoles(r.map((x) => ({ id: x.id, name: x.name })))
-      } else {
-        setCompanyRoles([])
+      }
+      // Keep any optimistic list if the payload shape is unexpected.
+    } catch {
+      // Do not wipe optimistic roles — Create & select may have just added one.
+    }
+  }, [])
+
+  const refreshJobTypeOptions = useCallback(async () => {
+    try {
+      const res = await api.get('/permission-catalog/')
+      const rows = (res.data as { job_types?: TenantJobTypeOption[] })?.job_types
+      if (Array.isArray(rows) && rows.length) {
+        setJobTypeOptions(mergeJobTypesFromApi(rows))
       }
     } catch {
-      setCompanyRoles([])
+      /* keep current options */
     }
   }, [])
 
@@ -502,6 +513,79 @@ export default function UsersPage() {
     setShowNewRoleModal(true)
   }
 
+  const applyCreatedAccessProfile = async (payload: {
+    id: number
+    name: string
+    permissions: string[]
+    approvedForJobType?: string
+  }) => {
+    const newId = Number(payload.id)
+    const roleName = (payload.name || '').trim() || `Profile ${newId}`
+    const perms = Array.isArray(payload.permissions) ? payload.permissions : []
+
+    // Close the nested dialog first so Save / Create user is visible again.
+    setShowNewRoleModal(false)
+    setNewRoleName('')
+    setNewRoleDescription('')
+    setSavingNewRole(false)
+    setShowAdvancedPerms(true)
+
+    setCompanyRoles((prev) => {
+      if (prev.some((r) => r.id === newId)) {
+        return prev.map((r) => (r.id === newId ? { ...r, name: roleName } : r))
+      }
+      return [...prev, { id: newId, name: roleName }].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      )
+    })
+
+    if (payload.approvedForJobType) {
+      const jtKey = payload.approvedForJobType
+      setJobTypeOptions((prev) =>
+        prev.map((jt) => {
+          if (jt.value !== jtKey) return jt
+          const ids = Array.isArray(jt.allowed_role_ids)
+            ? jt.allowed_role_ids.map((id) => Number(id))
+            : []
+          if (ids.includes(newId)) return jt
+          return {
+            ...jt,
+            access_profile_enabled: jt.access_profile_enabled || ids.length > 0,
+            allowed_role_ids: [...ids, newId],
+          }
+        })
+      )
+    }
+
+    setFormData((fd) => ({ ...fd, custom_role_id: newId }))
+    setSelectedProfilePerms(perms)
+    setRolePermsDirty(false)
+
+    // Editing an existing account: attach the profile now so it shows on the user card.
+    if (editingId) {
+      try {
+        await api.put(`/users/${editingId}/`, { custom_role_id: newId })
+        toast.success(
+          'Access profile saved on this user. They must sign in again to refresh their menubar.'
+        )
+        void fetchUsers()
+      } catch (err: unknown) {
+        const d = (err as { response?: { data?: { detail?: string } } })?.response?.data
+        toast.error(
+          (typeof d?.detail === 'string' ? d.detail : null) ||
+            'Profile created and selected — click Save changes to apply it to this user.'
+        )
+      }
+    } else {
+      toast.success(
+        'Access profile created and selected. Finish the form and click Create user to apply it.'
+      )
+    }
+
+    void loadCompanyRolesList()
+    void refreshJobTypeOptions()
+  }
+
   const submitNewAccessProfile = async () => {
     if (!newRoleName.trim()) {
       toast.error('Please enter a name for the access profile.')
@@ -512,42 +596,31 @@ export default function UsersPage() {
       return
     }
     setSavingNewRole(true)
+    const name = newRoleName.trim()
+    const description = newRoleDescription.trim()
+    const approveFor = (formData.role || '').trim()
     try {
       const { data } = await api.post<{
         id: number
         name: string
         permissions: string[]
+        approved_for_job_type?: string
       }>('/company-roles/', {
-        name: newRoleName.trim(),
-        description: newRoleDescription.trim(),
+        name,
+        description,
         permissions: newRolePerms,
+        upsert: true,
+        ...(approveFor ? { approve_for_job_type: approveFor } : {}),
       })
       const newId = Number(data?.id)
       if (!Number.isFinite(newId) || newId <= 0) {
         throw new Error('Access profile was created but no id was returned.')
       }
-      const perms = Array.isArray(data.permissions) ? data.permissions : newRolePerms
-      const roleName = (data.name || newRoleName).trim() || `Profile ${newId}`
-
-      // Close immediately so the user form (Save changes) is visible again.
-      setShowNewRoleModal(false)
-      setNewRoleName('')
-      setNewRoleDescription('')
-      setSavingNewRole(false)
-
-      setCompanyRoles((prev) => {
-        if (prev.some((r) => r.id === newId)) return prev
-        return [...prev, { id: newId, name: roleName }].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        )
-      })
-      setFormData((fd) => ({ ...fd, custom_role_id: newId }))
-      setSelectedProfilePerms(perms)
-      setRolePermsDirty(false)
-      toast.success('Access profile created and selected. Click Save changes to apply it to this user.')
-
-      void loadCompanyRolesList().catch(() => {
-        /* list already updated optimistically */
+      await applyCreatedAccessProfile({
+        id: newId,
+        name: (data.name || name).trim(),
+        permissions: Array.isArray(data.permissions) ? data.permissions : newRolePerms,
+        approvedForJobType: data.approved_for_job_type || undefined,
       })
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } }; message?: string })?.response
@@ -623,7 +696,11 @@ export default function UsersPage() {
         return
       }
       const crid = Number(formData.custom_role_id)
-      if (allowedProfileIds && !allowedProfileIds.includes(crid)) {
+      if (
+        allowedProfileIds &&
+        !allowedProfileIds.includes(crid) &&
+        !companyRoles.some((cr) => cr.id === crid)
+      ) {
         toast.error('The selected access profile is not approved for this job type.')
         return
       }
@@ -732,7 +809,11 @@ export default function UsersPage() {
         return
       }
       const crid = Number(formData.custom_role_id)
-      if (allowedProfileIds && !allowedProfileIds.includes(crid)) {
+      if (
+        allowedProfileIds &&
+        !allowedProfileIds.includes(crid) &&
+        !companyRoles.some((cr) => cr.id === crid)
+      ) {
         toast.error('The selected access profile is not approved for this job type.')
         return
       }
@@ -1899,19 +1980,21 @@ export default function UsersPage() {
       {showNewRoleModal && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/50 p-4 sm:items-center">
           <div
-            className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-white p-5 shadow-2xl"
+            className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-white shadow-2xl"
             role="dialog"
             aria-modal
             aria-labelledby="new-profile-title"
           >
-            <h3 id="new-profile-title" className="text-lg font-semibold text-foreground">
-              New access profile
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Saved as a company role. It will be selected for the user in this form; you can re-use the same profile
-              for other users later.
-            </p>
-            <div className="mt-4 space-y-3">
+            <div className="shrink-0 border-b border-border/70 px-5 pt-5 pb-3">
+              <h3 id="new-profile-title" className="text-lg font-semibold text-foreground">
+                New access profile
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Saved as a company role. It will be selected for the user in this form; you can re-use the same profile
+                for other users later.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Name</label>
                 <input
@@ -1974,7 +2057,7 @@ export default function UsersPage() {
                 <p className="text-xs text-warning-foreground">Loading permission list…</p>
               )}
             </div>
-            <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-border/70 pt-4">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border/70 bg-white px-5 py-4">
               <button
                 type="button"
                 onClick={() => {

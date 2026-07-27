@@ -15,7 +15,10 @@ from api.services.permission_service import (
     role_default_permissions_for_catalog,
     sanitize_tenant_role_permissions,
 )
-from api.services.tenant_job_types import tenant_job_types_for_api
+from api.services.tenant_job_types import (
+    approve_access_profile_for_job_type,
+    tenant_job_types_for_api,
+)
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import require_company_id
 
@@ -113,19 +116,34 @@ def company_roles_list_or_create(request):
         perms = []
     if not isinstance(perms, list):
         return JsonResponse({"detail": "permissions must be a list of strings"}, status=400)
-    if CompanyRole.objects.filter(company_id=cid, name__iexact=name).exists():
+    approve_for = (data.get("approve_for_job_type") or "").strip()
+    existing = CompanyRole.objects.filter(company_id=cid, name__iexact=name).first()
+    upsert = bool(data.get("upsert"))
+    if existing and not upsert:
         return JsonResponse(
             {"detail": "A role with this name already exists."},
             status=400,
         )
-    cr = CompanyRole(
-        company_id=cid,
-        name=name,
-        description=desc,
-        permissions=sanitize_tenant_role_permissions(perms),
-    )
-    cr.save()
-    return JsonResponse(_serialize_role(cr), status=201)
+    if existing and upsert:
+        cr = existing
+        if "description" in data:
+            cr.description = desc
+        cr.permissions = sanitize_tenant_role_permissions(perms)
+        cr.save()
+        status = 200
+    else:
+        cr = CompanyRole(
+            company_id=cid,
+            name=name,
+            description=desc,
+            permissions=sanitize_tenant_role_permissions(perms),
+        )
+        cr.save()
+        status = 201
+    out = _serialize_role(cr)
+    if approve_for and approve_access_profile_for_job_type(cid, approve_for, int(cr.id)):
+        out["approved_for_job_type"] = approve_for
+    return JsonResponse(out, status=status)
 
 
 @csrf_exempt
@@ -184,4 +202,8 @@ def company_role_detail(request, role_id: int):
             return JsonResponse({"detail": "permissions must be a list of strings"}, status=400)
         cr.permissions = sanitize_tenant_role_permissions(perms)
     cr.save()
-    return JsonResponse(_serialize_role(cr))
+    out = _serialize_role(cr)
+    approve_for = (data.get("approve_for_job_type") or "").strip()
+    if approve_for and approve_access_profile_for_job_type(cid, approve_for, int(cr.id)):
+        out["approved_for_job_type"] = approve_for
+    return JsonResponse(out)

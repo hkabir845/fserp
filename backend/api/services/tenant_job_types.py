@@ -285,6 +285,33 @@ def get_company_job_type(company_id: int | None, role: str | None):
         return None
 
 
+def approve_access_profile_for_job_type(
+    company_id: int | None, job_type_key: str | None, role_id: int
+) -> bool:
+    """
+    If the job type already uses a non-empty access-profile allow-list, add ``role_id`` to it.
+    Does not create a new allow-list from an empty one (that would suddenly restrict the job type).
+    Returns True when the role was (or already is) approved.
+    """
+    if not company_id or not job_type_key or not role_id:
+        return False
+    jt = get_company_job_type(company_id, job_type_key)
+    if not jt or not jt.access_profile_enabled:
+        return False
+    from api.models import CompanyRole
+
+    cr = CompanyRole.objects.filter(pk=int(role_id), company_id=int(company_id)).first()
+    if not cr:
+        return False
+    if jt.allowed_roles.filter(pk=cr.pk).exists():
+        return True
+    # Only extend an existing allow-list; never turn "enabled but empty" into a restriction.
+    if not jt.allowed_roles.exists():
+        return False
+    jt.allowed_roles.add(cr)
+    return True
+
+
 def validate_access_profile_for_job_type(user) -> str | None:
     """
     When access profiles are enabled for the user's job type and approved roles are set,

@@ -25,6 +25,7 @@ import {
   PosSaleScopeSelector,
   formatPosSaleScopeShort,
 } from '@/components/pos/PosSaleScopeSelector'
+import { defaultPosScopeForRole } from '@/constants/tenantJobTypes'
 
 interface AdminUser {
   id: number
@@ -618,6 +619,9 @@ function UsersPageContent() {
                             role,
                             company_id: role === 'super_admin' ? '' : userFormData.company_id,
                             home_station_id: keepHome ? userFormData.home_station_id : '',
+                            pos_sale_scope: keepHome
+                              ? defaultPosScopeForRole(role)
+                              : 'both',
                           })
                         }}
                         className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"

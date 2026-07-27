@@ -35,9 +35,11 @@ import {
   PlayCircle,
 } from 'lucide-react'
 import { useToast } from '@/components/Toast'
+import { PosSaleScopeSelector } from '@/components/pos/PosSaleScopeSelector'
 import api from '@/lib/api'
 import { messageForAdminListError } from '@/utils/adminApiErrors'
 import { formatCurrency, formatNumber } from '@/utils/currency'
+import { defaultPosScopeForRole } from '@/constants/tenantJobTypes'
 import { getCurrenciesByCountry } from '@/utils/currencies'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
@@ -238,6 +240,7 @@ function SuperAdminPageContent() {
     confirmPassword: '',
     company_id: '',
     home_station_id: '',
+    pos_sale_scope: 'both' as string,
   })
   const [adminStationOptions, setAdminStationOptions] = useState<
     { id: number; station_name: string }[]
@@ -708,6 +711,7 @@ function SuperAdminPageContent() {
       confirmPassword: '',
       company_id: '',
       home_station_id: '',
+      pos_sale_scope: 'both',
     })
     setShowUserModal(true)
     fetchCompanies()
@@ -727,6 +731,7 @@ function SuperAdminPageContent() {
         user.home_station_id != null && user.home_station_id > 0
           ? String(user.home_station_id)
           : '',
+      pos_sale_scope: user.pos_sale_scope || defaultPosScopeForRole(user.role),
     })
     setShowUserModal(true)
   }
@@ -780,7 +785,8 @@ function SuperAdminPageContent() {
       }
 
       if (posStaff && userFormData.company_id) {
-        userData.pos_sale_scope = 'both'
+        userData.pos_sale_scope =
+          userFormData.pos_sale_scope || defaultPosScopeForRole(userFormData.role)
         let hid: number | null = null
         if (userFormData.home_station_id) {
           hid = parseInt(String(userFormData.home_station_id), 10)
@@ -788,6 +794,8 @@ function SuperAdminPageContent() {
           hid = adminStationOptions[0].id
         }
         userData.home_station_id = hid
+      } else {
+        userData.pos_sale_scope = 'both'
       }
 
       if (editingUser) {
@@ -2562,7 +2570,17 @@ function SuperAdminPageContent() {
                         <select
                           required
                           value={userFormData.role}
-                          onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
+                          onChange={(e) => {
+                            const role = e.target.value
+                            setUserFormData({
+                              ...userFormData,
+                              role,
+                              pos_sale_scope:
+                                role === 'cashier' || role === 'operator'
+                                  ? defaultPosScopeForRole(role)
+                                  : 'both',
+                            })
+                          }}
                           className="w-full px-3 py-2 border border-border rounded-lg focus:ring-2 focus:ring-ring focus:border-ring"
                         >
                           <option value="super_admin">Super Admin</option>
@@ -2596,6 +2614,16 @@ function SuperAdminPageContent() {
 
                     {(userFormData.role === 'cashier' || userFormData.role === 'operator') &&
                       Boolean(userFormData.company_id) && (
+                        <div className="space-y-4">
+                        <div className="rounded-xl border border-border bg-muted/40 p-4">
+                          <PosSaleScopeSelector
+                            name="admin-dashboard-pos-scope"
+                            value={userFormData.pos_sale_scope}
+                            onChange={(next) =>
+                              setUserFormData((fd) => ({ ...fd, pos_sale_scope: next }))
+                            }
+                          />
+                        </div>
                         <div className="rounded-lg border border-amber-100 bg-warning/10/50 p-4">
                           <label className="mb-1.5 flex items-center gap-2 text-sm font-medium text-foreground">
                             <MapPin className="h-4 w-4 text-amber-600" />
@@ -2635,6 +2663,7 @@ function SuperAdminPageContent() {
                               </p>
                             </>
                           )}
+                        </div>
                         </div>
                       )}
 

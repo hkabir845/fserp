@@ -317,11 +317,11 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
     pos_scope = user_pos_sale_scope(api_user) if api_user is not None else "both"
     if pos_scope == "general" and fuel_entries:
         return _cashier_pos_error(
-            "This register is limited to general (non-fuel) items. Remove fuel lines or use a full-POS user."
+            "POS lane is General / shop only — fuel nozzle lines are not allowed for this login."
         )
     if pos_scope == "fuel" and lines_data:
         return _cashier_pos_error(
-            "This register is limited to fuel. Remove product lines or use a full-POS user."
+            "POS lane is Fuel only — shop / inventory lines are not allowed for this login."
         )
 
     if not lines_data and not fuel_entries:

@@ -1,6 +1,6 @@
 'use client'
 
-import { Droplets, Fuel, ShoppingBag } from 'lucide-react'
+import { Check, Droplets, Fuel, ShoppingBag, X } from 'lucide-react'
 
 export type PosSaleScopeValue = 'both' | 'general' | 'fuel'
 
@@ -8,24 +8,32 @@ const OPTIONS: {
   id: PosSaleScopeValue
   title: string
   subtitle: string
+  allows: string[]
+  denies: string[]
   Icon: typeof Fuel
 }[] = [
   {
     id: 'both',
     title: 'Fuel & general',
-    subtitle: 'Forecourt fuel plus shop / inventory lines — one cashier for pumps and store.',
+    subtitle: 'Combined register — one login for pumps and shop inventory.',
+    allows: ['Fuel nozzles', 'Shop / inventory lines'],
+    denies: [],
     Icon: Droplets,
   },
   {
     id: 'general',
     title: 'General / shop only',
-    subtitle: 'Shop lane or convenience register — no fuel nozzle sales for this login.',
+    subtitle: 'Convenience or shop lane — no forecourt fuel sales.',
+    allows: ['Shop / inventory lines'],
+    denies: ['Fuel nozzles'],
     Icon: ShoppingBag,
   },
   {
     id: 'fuel',
     title: 'Fuel only',
-    subtitle: 'Pump lane — fuel lines only; no general merchandise at this register.',
+    subtitle: 'Pump lane — fuel lines only at this register.',
+    allows: ['Fuel nozzles'],
+    denies: ['Shop / inventory lines'],
     Icon: Fuel,
   },
 ]
@@ -114,17 +122,30 @@ export function PosSaleScopeSelector({
                 </span>
                 <span className="text-sm font-semibold leading-tight text-foreground">{opt.title}</span>
               </span>
-              <span className="text-xs leading-snug text-muted-foreground">{opt.subtitle}</span>
+              <span className="mb-2 text-xs leading-snug text-muted-foreground">{opt.subtitle}</span>
+              <ul className="mt-auto space-y-1 text-[11px] leading-snug">
+                {opt.allows.map((line) => (
+                  <li key={`a-${line}`} className="flex items-start gap-1.5 text-emerald-800">
+                    <Check className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                    <span>{line}</span>
+                  </li>
+                ))}
+                {opt.denies.map((line) => (
+                  <li key={`d-${line}`} className="flex items-start gap-1.5 text-rose-700">
+                    <X className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
             </label>
           )
         })}
       </div>
 
-      <div className="rounded-lg border border-border/70 bg-muted/40/90 px-3 py-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Tip:</span> Use{' '}
-        <strong className="font-semibold text-foreground">Fuel & general</strong> for combined lanes,{' '}
-        <strong className="font-semibold text-foreground">General only</strong> for a separate shop POS, and{' '}
-        <strong className="font-semibold text-foreground">Fuel only</strong> for pump-only staff.
+      <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">Rules:</span> enforced on the cashier POS screen and at
+        checkout. This does not change company subscription or Aquaculture menus — use an access profile for
+        that.
       </div>
     </div>
   )

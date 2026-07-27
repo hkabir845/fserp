@@ -866,6 +866,10 @@ export default function CashierPOSPage() {
   }
 
   const addItemToCart = (item: POSItem) => {
+    if (posSaleScope === "fuel") {
+      toast.error("This POS lane is Fuel only — shop items are not allowed.")
+      return
+    }
     if (posItemIsOutOfStockAtSellingStation(item, posStationId)) {
       toast.error(
         `"${item.name}" has no stock at this site. Receive inventory in Items or switch selling location.`
@@ -1050,13 +1054,17 @@ export default function CashierPOSPage() {
   }, [customers, customerFilter, customerId])
 
   const applyQuickFuelQty = (qty: number) => {
+    if (posSaleScope === "general") {
+      toast.error("This POS lane is General / shop only — fuel is not allowed.")
+      return
+    }
     if (!selectedNozzle || qty <= 0) return
     handleQuantityChange(String(qty))
   }
 
   const handleUnifiedSale = async () => {
     const fuelLines: { nozzle_id: number; quantity: number; amount: number }[] = []
-    if (selectedNozzle && quantity) {
+    if (posSaleScope !== "general" && selectedNozzle && quantity) {
       const qty = parseFloat(quantity)
       const q = roundTwo(qty)
       const amt = roundTwo(amountNumber)
@@ -1069,18 +1077,30 @@ export default function CashierPOSPage() {
       }
     }
 
-    const validItems = cartEntries
-      .filter(entry => entry.quantity > 0)
-      .map(entry => ({
-        item_id: Number(entry.item.id),
-        quantity: roundTwo(entry.quantity),
-        unit_price: entry.unitPrice > 0 ? roundTwo(entry.unitPrice) : null,
-        discount_percent:
-          entry.item.item_type === "discount" ||
-          entry.item.item_type === "payment"
-            ? 0
-            : Math.min(Math.max(entry.discountPercent, 0), 100),
-      }))
+    const validItems =
+      posSaleScope === "fuel"
+        ? []
+        : cartEntries
+            .filter(entry => entry.quantity > 0)
+            .map(entry => ({
+              item_id: Number(entry.item.id),
+              quantity: roundTwo(entry.quantity),
+              unit_price: entry.unitPrice > 0 ? roundTwo(entry.unitPrice) : null,
+              discount_percent:
+                entry.item.item_type === "discount" ||
+                entry.item.item_type === "payment"
+                  ? 0
+                  : Math.min(Math.max(entry.discountPercent, 0), 100),
+            }))
+
+    if (posSaleScope === "general" && fuelLines.length > 0) {
+      toast.error("This POS lane is General / shop only — remove fuel before checkout.")
+      return
+    }
+    if (posSaleScope === "fuel" && cartEntries.some(e => e.quantity > 0)) {
+      toast.error("This POS lane is Fuel only — remove shop items before checkout.")
+      return
+    }
 
     const catalogIdSet = new Set(catalogItemsForSellingStation.map(p => Number(p.id)))
     if (validItems.some(row => !catalogIdSet.has(Number(row.item_id)))) {
@@ -1102,7 +1122,11 @@ export default function CashierPOSPage() {
 
     if (fuelLines.length === 0 && validItems.length === 0) {
       toast.error(
-        "Add fuel (nozzle + quantity) and/or products to the cart before completing the sale."
+        posSaleScope === "fuel"
+          ? "Add fuel (nozzle + quantity) before completing the sale."
+          : posSaleScope === "general"
+            ? "Add products to the cart before completing the sale."
+            : "Add fuel (nozzle + quantity) and/or products to the cart before completing the sale."
       )
       return
     }

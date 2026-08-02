@@ -4,8 +4,6 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-from django.db.models import Sum
-
 from api.models import Employee, EmployeeLedgerEntry, PayrollRun, PayrollRunEmployeeAllocation
 
 logger = logging.getLogger(__name__)
@@ -113,17 +111,13 @@ def backfill_missing_payroll_subledger_lines_for_employee(
 
 
 def refresh_employee_balance(employee_id: int) -> None:
-    """Recompute Employee.current_balance from opening_balance and ledger lines."""
-    emp = Employee.objects.filter(pk=employee_id).first()
+    """Recompute Employee.current_balance from payable subledger (same as ledger all-time closing)."""
+    emp = Employee.objects.filter(pk=employee_id).only("id", "company_id").first()
     if not emp:
         return
-    ob = emp.opening_balance or Decimal("0")
-    agg = EmployeeLedgerEntry.objects.filter(employee_id=employee_id).aggregate(
-        d=Sum("debit"), c=Sum("credit")
-    )
-    d = agg.get("d") or Decimal("0")
-    c = agg.get("c") or Decimal("0")
-    nb = _q(ob + d - c)
+    from api.services.contact_ledgers import employee_payable_balance
+
+    nb = _q(employee_payable_balance(int(emp.company_id), int(emp.id), backfill=False))
     Employee.objects.filter(pk=employee_id).update(current_balance=nb)
 
 

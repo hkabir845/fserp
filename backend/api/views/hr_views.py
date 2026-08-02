@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 from api.views.common import parse_json_body, require_company_id
 from api.services.contact_ledgers import build_employee_ledger, ledger_dates_and_search
 from api.utils.transaction_filters import filter_json_transactions
+from api.services.contact_ledgers import employee_payable_balance
 from api.services.employee_payroll_subledger import refresh_employee_balance
 from api.services.employee_payroll_allocations import (
     employee_allocations_for_payroll,
@@ -158,6 +159,7 @@ def parse_optional_aquaculture_pond_fk(company_id: int, raw) -> tuple[int | None
 
 
 def _employee_to_json(e: Employee) -> dict:
+    balance = employee_payable_balance(int(e.company_id), int(e.id), backfill=False)
     return {
         "id": e.id,
         "employee_number": e.employee_number or "",
@@ -173,7 +175,7 @@ def _employee_to_json(e: Employee) -> dict:
         "salary": float(e.salary) if e.salary is not None else None,
         "opening_balance": str(e.opening_balance),
         "opening_balance_date": _serialize_date(e.opening_balance_date),
-        "current_balance": str(e.current_balance),
+        "current_balance": str(balance),
         "is_active": e.is_active,
         "home_station_id": e.home_station_id,
         "home_station_name": (

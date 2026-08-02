@@ -414,7 +414,7 @@ def _align_stored_receivable_before_receipt(company_id: int, customer_id: int) -
 
 
 def _align_stored_ap_before_made_payment(company_id: int, vendor_id: int) -> None:
-    """If A/P in subledger exceeds stored vendor.current_balance, align it before a disbursement."""
+    """Refresh vendor.current_balance from A/P subledger before an on-account disbursement."""
     v = (
         Vendor.objects.filter(company_id=company_id, id=vendor_id)
         .select_for_update()
@@ -422,10 +422,9 @@ def _align_stored_ap_before_made_payment(company_id: int, vendor_id: int) -> Non
     )
     if not v:
         return
-    u = vendor_unbilled_payable(company_id, v)
-    cb0 = v.current_balance or Decimal("0")
-    if u > cb0 + Decimal("0.01"):
-        Vendor.objects.filter(pk=v.id).update(current_balance=u)
+    from api.services.party_balance_sync import refresh_vendor_balance
+
+    refresh_vendor_balance(company_id, int(v.id))
 
 
 def _is_on_account_allocation_row(row: dict) -> bool:

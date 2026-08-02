@@ -43,7 +43,12 @@ from api.services.gl_posting import (
     item_inventory_unit_cost,
     item_should_relieve_cogs,
 )
-from api.services.payment_allocation import bill_open_amount, invoice_open_amount
+from api.services.payment_allocation import (
+    bill_open_amount,
+    compute_customer_balance_due,
+    compute_vendor_balance_due,
+    invoice_open_amount,
+)
 from api.utils.pos_payment import is_on_account_payment
 from api.services.aquaculture_pond_pos_customer import pond_pos_customer_ids
 
@@ -1411,7 +1416,8 @@ def report_customer_balances(
         elif station_id is not None:
             bal = _customer_open_balance_at_station(company_id, c.id, station_id)
         else:
-            bal = c.current_balance or Decimal("0")
+            # Same A/R figure as customers list and customer ledger all-time closing.
+            bal = compute_customer_balance_due(company_id, c.id)
         if (station_id is not None or pond_id is not None) and bal == 0:
             continue
         rows.append(
@@ -1429,8 +1435,9 @@ def report_customer_balances(
             total_ar += bal
     net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
     note = (
-        "Subledger current_balance per customer. total_ar is the sum of positive balances only "
-        "(typical receivable exposure); credit balances are customer prepayments."
+        "A/R subledger per customer (opening + AR invoices − receipts; same as customer ledger "
+        "all-time closing). total_ar is the sum of positive balances only (typical receivable "
+        "exposure); credit balances are customer prepayments."
     )
     if pond_id is not None:
         note += (
@@ -1488,7 +1495,8 @@ def report_vendor_balances(
         elif station_id is not None:
             bal = _vendor_open_balance_at_station(company_id, v.id, station_id)
         else:
-            bal = v.current_balance or Decimal("0")
+            # Same A/P figure as vendors list and vendor ledger all-time closing.
+            bal = compute_vendor_balance_due(company_id, v.id)
         if (station_id is not None or pond_id is not None) and bal == 0:
             continue
         rows.append(
@@ -1506,7 +1514,8 @@ def report_vendor_balances(
             total_ap += bal
     net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
     note = (
-        "Subledger current_balance per vendor. total_ap is the sum of positive balances owed to vendors; "
+        "A/P subledger per vendor (opening + bills − payments; same as vendor ledger "
+        "all-time closing). total_ap is the sum of positive balances owed to vendors; "
         "negative balances may indicate vendor credits."
     )
     if pond_id is not None:

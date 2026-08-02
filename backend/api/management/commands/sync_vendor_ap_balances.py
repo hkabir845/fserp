@@ -1,9 +1,9 @@
 """
-Recalculate Vendor.current_balance from open bills and payment allocations, then
-set vendor_ap_incremented / vendor_ap_decremented so future incremental updates do not double-count.
+Recalculate Vendor.current_balance from the A/P subledger (same as vendor ledger
+all-time closing), then set vendor_ap_incremented / vendor_ap_decremented so future
+incremental updates do not double-count.
 
-Stores: current_balance = opening_balance + sum(unpaid bill amounts). Use opening_balance only for
-A/P that is not represented as bills in the system (otherwise you double-count).
+Stores: current_balance = opening + bills − payments made.
 
 Usage:
   python manage.py sync_vendor_ap_balances --company-id 1
@@ -11,8 +11,6 @@ Usage:
   python manage.py sync_vendor_ap_balances --company-id 1 --vendor-name Sumon
   python manage.py sync_vendor_ap_balances --company-id 1 --dry-run
 """
-
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -23,7 +21,7 @@ from api.services.payment_allocation import compute_vendor_balance_due
 
 
 class Command(BaseCommand):
-    help = "Set each vendor's current_balance to unpaid bill totals; sync AP subledger flags."
+    help = "Set each vendor's current_balance to A/P subledger total; sync AP flags."
 
     def add_arguments(self, parser):
         parser.add_argument("--company-id", type=int, required=True)
@@ -57,11 +55,9 @@ class Command(BaseCommand):
             return
 
         for v in rows:
-            owed = compute_vendor_balance_due(company_id, v.id)
-            opening = v.opening_balance or Decimal("0")
-            new_balance = opening + owed
+            new_balance = compute_vendor_balance_due(company_id, v.id)
             self.stdout.write(
-                f"Vendor {v.id} {v.company_name!r}: opening={opening} bills_owed={owed} -> current_balance {new_balance}"
+                f"Vendor {v.id} {v.company_name!r}: -> current_balance {new_balance}"
             )
             if dry:
                 continue

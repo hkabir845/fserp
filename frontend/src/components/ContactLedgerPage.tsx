@@ -311,7 +311,13 @@ export default function ContactLedgerPage({
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium uppercase text-muted-foreground">Stored profile balance</p>
+                    <p className="text-xs font-medium uppercase text-muted-foreground">
+                      {entity === 'vendors'
+                        ? 'Vendor balance (A/P)'
+                        : entity === 'employees'
+                          ? 'Employee balance'
+                          : 'Customer balance (A/R)'}
+                    </p>
                     <p className="text-lg font-semibold text-foreground/85">
                       {currencySymbol}
                       {parseFloat(data.stored_current_balance || '0').toLocaleString(undefined, {

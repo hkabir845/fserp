@@ -14,6 +14,7 @@ from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optio
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_pond_fk, parse_optional_station_fk
 from api.services.contact_ledgers import build_vendor_ledger, ledger_dates_and_search
+from api.services.payment_allocation import compute_vendor_balance_due
 from api.utils.transaction_filters import filter_json_transactions
 
 
@@ -23,7 +24,9 @@ def _serialize_date(d):
     return d.isoformat() if hasattr(d, "isoformat") else str(d)
 
 
-def _vendor_to_json(v):
+def _vendor_to_json(v, *, company_id: int | None = None):
+    cid = company_id if company_id is not None else v.company_id
+    balance = compute_vendor_balance_due(int(cid), int(v.id))
     return {
         "id": v.id,
         "vendor_number": v.vendor_number or "",
@@ -39,7 +42,7 @@ def _vendor_to_json(v):
         "bank_routing_number": v.bank_routing_number or "",
         "opening_balance": str(v.opening_balance),
         "opening_balance_date": _serialize_date(v.opening_balance_date),
-        "current_balance": str(v.current_balance),
+        "current_balance": str(balance),
         "is_active": v.is_active,
         "default_station_id": v.default_station_id,
         "default_station_name": (

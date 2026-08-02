@@ -207,43 +207,24 @@ def refresh_invoices_touched_by_payment(company_id: int, payment_id: int) -> Non
 
 def compute_customer_balance_due(company_id: int, customer_id: int) -> Decimal:
     """
-    Amount the customer owes (A/R): opening_balance plus unpaid invoice balances.
-    Paid invoices (including immediate cash POS) contribute zero open amount.
+    Amount the customer owes (A/R subledger), identical to customer ledger
+    closing_balance_all_time: opening + AR invoices − payments − invoice receipt settlements.
+    Negative means a customer credit / prepayment (not clamped to zero).
     """
-    c = Customer.objects.filter(pk=customer_id, company_id=company_id).first()
-    if not c or _is_walkin_customer(c):
-        return Decimal("0")
-    owed = Decimal("0")
-    for inv in Invoice.objects.filter(company_id=company_id, customer_id=customer_id).exclude(
-        status="draft"
-    ):
-        owed += invoice_balance_due(inv, company_id)
-    opening = c.opening_balance or Decimal("0")
-    balance = opening + owed
-    if balance <= 0 and opening == 0:
-        stored = c.current_balance or Decimal("0")
-        if stored > 0:
-            return stored.quantize(Decimal("0.01"))
-    if balance < 0:
-        balance = Decimal("0")
-    return balance.quantize(Decimal("0.01"))
+    from api.services.contact_ledgers import customer_ar_balance
+
+    return customer_ar_balance(company_id, customer_id)
 
 
 def compute_vendor_balance_due(company_id: int, vendor_id: int) -> Decimal:
     """
-    Unpaid bill totals for a vendor (sum of max(0, bill.total - allocated payments)).
-    Matches what Vendor.current_balance should show for A/P.
+    Amount owed to the vendor (A/P subledger), identical to vendor ledger
+    closing_balance_all_time: opening + bills − payments made.
+    Negative means a vendor credit / overpayment (not clamped to zero).
     """
-    owed = Decimal("0")
-    for b in Bill.objects.filter(company_id=company_id, vendor_id=vendor_id).exclude(
-        status="draft"
-    ):
-        total = b.total or Decimal("0")
-        if total <= 0:
-            continue
-        paid = total_allocated_to_bill(company_id, b.id)
-        owed += max(Decimal("0"), total - paid)
-    return owed
+    from api.services.contact_ledgers import vendor_ap_balance
+
+    return vendor_ap_balance(company_id, vendor_id)
 
 
 def total_allocated_to_bill(company_id: int, bill_id: int) -> Decimal:

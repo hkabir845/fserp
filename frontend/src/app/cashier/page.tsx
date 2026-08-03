@@ -571,7 +571,21 @@ export default function CashierPOSPage() {
     setPaymentMethod("ON_ACCOUNT")
     setAmountPaidNow("")
     setDepositBankId("")
-  }, [customerId, pondPosCustomerIds])
+    // Feed/medicine for ponds come from the shop hub (Premium Agro), not the fuel forecourt.
+    const shopHub = stations.find(s => s.operates_fuel_retail === false)
+    if (!shopHub) return
+    const lockSid = getPosHomeStationId()
+    if (lockSid == null) {
+      setPosStationId(shopHub.id)
+      return
+    }
+    const home = stations.find(s => Number(s.id) === Number(lockSid))
+    if (!home || home.operates_fuel_retail !== false) {
+      setPosStationId(shopHub.id)
+      return
+    }
+    setPosStationId(home.id)
+  }, [customerId, pondPosCustomerIds, stations])
 
   useEffect(() => {
     if (!printMenuOpen) return
@@ -2564,7 +2578,8 @@ export default function CashierPOSPage() {
                             <p className="rounded-md border border-primary/25/80 bg-accent px-3 py-2 text-xs text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
                               <strong>Aquaculture pond customer:</strong> shop feed and medicine are always{" "}
                               <strong>On account (A/R)</strong> so the pond is charged and costs hit pond P&amp;L.
-                              Collect cash later under <strong>Payments → Received</strong>.
+                              Selling site switches to the <strong>shop hub</strong> (e.g. Premium Agro) where feed
+                              stock is held. Collect cash later under <strong>Payments → Received</strong>.
                             </p>
                           ) : null}
                           <select

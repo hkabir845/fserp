@@ -97,6 +97,74 @@ def test_cashier_pos_rejects_cash_for_pond_customer(
 
 
 @pytest.mark.django_db
+def test_cashier_pond_feed_sale_uses_shop_hub_not_fuel_station(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Feed for pond customers must debit Premium Agro (shop) bins, not Adib fuel site."""
+    from api.models import Station
+    from api.services.station_stock import get_station_stock, set_station_stock
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    cid = company_master.id
+    fuel = Station.objects.create(
+        company_id=cid, station_name="Adib Fuel", operates_fuel_retail=True, is_active=True
+    )
+    shop = Station.objects.create(
+        company_id=cid, station_name="Premium Agro", operates_fuel_retail=False, is_active=True
+    )
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Digonto Pond", pond_role="grow_out", is_active=True
+    )
+    maybe_provision_auto_pos_customer(company_id=cid, pond=pond, skip_auto=False)
+    pond.refresh_from_db()
+    assert pond.pos_customer_id
+
+    item_r = api_client.post(
+        "/api/items/",
+        data=json.dumps(
+            {
+                "name": "Grower feed",
+                "item_type": "inventory",
+                "pos_category": "feed",
+                "category": "General",
+                "unit_price": "100",
+                "cost": "80",
+                "quantity_on_hand": "0",
+                "is_pos_available": True,
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert item_r.status_code == 201, item_r.content
+    item_id = json.loads(item_r.content)["id"]
+    set_station_stock(cid, shop.id, item_id, Decimal("5"))
+    set_station_stock(cid, fuel.id, item_id, Decimal("0"))
+
+    # Client mistakenly sends fuel station — backend must still sell from shop hub.
+    r = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {
+                "customer_id": pond.pos_customer_id,
+                "payment_method": "on_account",
+                "station_id": fuel.id,
+                "items": [{"item_id": item_id, "quantity": "2", "unit_price": "100"}],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert r.status_code == 201, r.content.decode()
+    inv = Invoice.objects.filter(company_id=cid).order_by("-id").first()
+    assert inv is not None
+    assert inv.station_id == shop.id
+    assert get_station_stock(cid, shop.id, item_id) == Decimal("3")
+    assert get_station_stock(cid, fuel.id, item_id) == Decimal("0")
+
+
+@pytest.mark.django_db
 def test_pond_pl_includes_pos_cogs_journal_debits(company_tenant_with_gl):
     from datetime import date
 

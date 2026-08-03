@@ -13,6 +13,7 @@ from api.utils.auth import auth_required, get_user_from_request
 from api.utils.pos_payment import is_on_account_payment, normalize_pos_payment_method
 from api.views.common import require_company_id, parse_json_body
 from api.models import (
+    AquaculturePond,
     BankAccount,
     Customer,
     Invoice,
@@ -44,7 +45,10 @@ from api.services.inventory_validation import (
     assert_pos_general_lines_within_qoh,
 )
 from api.services.station_scope import enforce_pos_home_station
-from api.services.aquaculture_pond_pos_customer import customer_is_linked_pond_pos
+from api.services.aquaculture_pond_pos_customer import (
+    customer_is_linked_pond_pos,
+    resolve_shop_station_for_pond,
+)
 from api.services.station_stock import (
     decrement_station_lines,
     get_or_create_default_station,
@@ -61,6 +65,40 @@ def _cashier_pos_error(detail: str, status: int = 400) -> JsonResponse:
     else:
         logger.warning("cashier/pos HTTP %s: %s", status, detail)
     return JsonResponse({"detail": detail}, status=status)
+
+
+def _enforce_home_station_for_pond_shop_sale(
+    company_id: int, shop_station_id: int, api_user
+) -> tuple[int | None, JsonResponse | None]:
+    """
+    Pond feed/medicine A/R sales post to the shop hub. If the user's home station is a fuel
+    forecourt, allow the shop hub; if home is another shop site, keep them on that home shop.
+    """
+    if not api_user:
+        return shop_station_id, None
+    uid = getattr(api_user, "id", None) or getattr(api_user, "pk", None)
+    if not uid:
+        return shop_station_id, None
+    u = User.objects.filter(pk=uid).only("home_station_id").first()
+    hid = int(u.home_station_id) if u and u.home_station_id else None
+    if not hid:
+        return shop_station_id, None
+    home = Station.objects.filter(pk=hid, company_id=company_id, is_active=True).first()
+    if not home:
+        return None, JsonResponse(
+            {
+                "detail": "Your user account’s home station is missing or inactive. "
+                "Ask a company admin to set Home station in Users, or clear it to use the default site."
+            },
+            status=403,
+        )
+    if int(hid) == int(shop_station_id):
+        return int(hid), None
+    # Fuel-site staff selling shop feed to a pond: use shop hub bins.
+    if bool(getattr(home, "operates_fuel_retail", True)):
+        return int(shop_station_id), None
+    # Home is a different shop — stay on home shop stock.
+    return int(hid), None
 
 
 def _get_or_create_walkin_customer(company_id: int) -> Customer:
@@ -429,7 +467,39 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
         sale_station_id, s_err = _resolve_pos_station_id(company_id, body, shift, station_hint)
     if s_err:
         return s_err
-    sale_station_id, h_err = enforce_pos_home_station(company_id, sale_station_id, api_user)
+
+    # Pond customers buy feed/medicine from the shop hub (e.g. Premium Agro), not the fuel forecourt.
+    # Auto-route shop-only pond A/R sales there so stock checks use the correct bins.
+    pond_shop_hub_sale = False
+    if (
+        customer_id
+        and customer_is_linked_pond_pos(company_id, int(customer_id))
+        and lines_data
+        and not fuel_entries
+    ):
+        pond_row = (
+            AquaculturePond.objects.filter(
+                company_id=company_id,
+                is_active=True,
+                pos_customer_id=int(customer_id),
+            )
+            .only("id")
+            .first()
+        )
+        shop_sid = resolve_shop_station_for_pond(
+            company_id=company_id,
+            pond_id=int(pond_row.id) if pond_row else None,
+        )
+        if shop_sid:
+            sale_station_id = int(shop_sid)
+            pond_shop_hub_sale = True
+
+    if pond_shop_hub_sale and sale_station_id is not None:
+        sale_station_id, h_err = _enforce_home_station_for_pond_shop_sale(
+            company_id, sale_station_id, api_user
+        )
+    else:
+        sale_station_id, h_err = enforce_pos_home_station(company_id, sale_station_id, api_user)
     if h_err:
         return h_err
     pm = pm_norm[:32]

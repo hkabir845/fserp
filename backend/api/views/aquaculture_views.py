@@ -3136,6 +3136,9 @@ def aquaculture_sales_list_or_create(request):
     if not pond:
         return JsonResponse({"detail": "Pond not found"}, status=404)
     sd = _parse_date(body.get("sale_date"))
+    if not sd:
+        return JsonResponse({"detail": "sale_date is required (YYYY-MM-DD)"}, status=400)
+    # Require a valid sale_date before lock check — undated checks hard-block year-closed ponds.
     lock_err = _pond_write_lock_response(cid, pond_id, sd)
     if lock_err:
         return lock_err
@@ -3154,8 +3157,6 @@ def aquaculture_sales_list_or_create(request):
             return JsonResponse({"detail": "Production cycle not found"}, status=404)
         if cycle_obj.pond_id != pond.id:
             return JsonResponse({"detail": "production_cycle_id does not belong to the selected pond"}, status=400)
-    if not sd:
-        return JsonResponse({"detail": "sale_date is required (YYYY-MM-DD)"}, status=400)
     wk = _decimal(body.get("weight_kg"))
     if wk <= 0:
         return JsonResponse({"detail": "weight_kg must be greater than zero"}, status=400)
@@ -3286,6 +3287,9 @@ def aquaculture_sale_detail(request, sale_id: int):
             sd = _parse_date(body.get("sale_date"))
             if not sd:
                 return JsonResponse({"detail": "Invalid sale_date"}, status=400)
+            lock_err = _pond_write_lock_response(cid, s.pond_id, sd)
+            if lock_err:
+                return lock_err
             s.sale_date = sd
         if "weight_kg" in body:
             wk = _decimal(body.get("weight_kg"))

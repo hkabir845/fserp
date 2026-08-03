@@ -92,13 +92,17 @@ def test_inter_pond_transfer_within_shared_group(api_client, company_tenant, aut
 
 
 @pytest.mark.django_db
-def test_inter_pond_transfer_rejects_mismatched_groups(api_client, company_tenant, auth_admin_headers):
+def test_inter_pond_transfer_allows_mismatched_or_mixed_groups(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Shared warehouse groups must not block real stock moves between ponds."""
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
     cid = company_tenant.id
     g1 = AquacultureWarehouseGroup.objects.create(company_id=cid, name="G1")
     g2 = AquacultureWarehouseGroup.objects.create(company_id=cid, name="G2")
     pond_a = AquaculturePond.objects.create(company_id=cid, name="A", warehouse_group=g1)
     pond_b = AquaculturePond.objects.create(company_id=cid, name="B", warehouse_group=g2)
+    pond_private = AquaculturePond.objects.create(company_id=cid, name="Digonto", is_active=True)
     feed = Item.objects.create(
         company_id=cid,
         name="F",
@@ -118,8 +122,25 @@ def test_inter_pond_transfer_rejects_mismatched_groups(api_client, company_tenan
         content_type="application/json",
         **auth_admin_headers,
     )
-    assert r.status_code == 400
-    assert "different shared warehouse groups" in r.content.decode().lower()
+    assert r.status_code == 201, r.content.decode()
+    assert ItemPondStock.objects.get(pond=pond_a, item=feed).quantity == Decimal("9.0000")
+    assert ItemPondStock.objects.get(pond=pond_b, item=feed).quantity == Decimal("1.0000")
+
+    r2 = api_client.post(
+        "/api/aquaculture/pond-warehouse-inter-pond-transfers/",
+        data=json.dumps(
+            {
+                "from_pond_id": pond_b.id,
+                "to_pond_id": pond_private.id,
+                "items": [{"item_id": feed.id, "quantity": "1"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r2.status_code == 201, r2.content.decode()
+    assert ItemPondStock.objects.get(pond=pond_b, item=feed).quantity == Decimal("0.0000")
+    assert ItemPondStock.objects.get(pond=pond_private, item=feed).quantity == Decimal("1.0000")
 
 
 @pytest.mark.django_db

@@ -26,6 +26,7 @@ from api.models import (
     User,
 )
 from api.exceptions import StockBusinessError
+from api.services.aquaculture_data_bank_service import pond_write_blocked_detail
 from api.services.aquaculture_pond_stock_service import (
     amend_pond_warehouse_stock_receipt,
     reverse_pond_warehouse_stock_receipt,
@@ -72,6 +73,14 @@ def _pond_receipt_visible_for_user(request, rec: PondWarehouseStockReceipt) -> b
     if h is None:
         return True
     return int(rec.from_station_id) == h
+
+
+def _pond_warehouse_lock_response(company_id: int, pond_id: int):
+    """Date-aware Data Bank lock for undated warehouse receipt/return edits (uses today)."""
+    detail = pond_write_blocked_detail(company_id, pond_id, timezone.localdate())
+    if detail:
+        return JsonResponse({"detail": detail, "code": "pond_data_locked"}, status=409)
+    return None
 
 
 def _pond_return_visible_for_user(request, ret: PondWarehouseStockReturn) -> bool:
@@ -524,6 +533,10 @@ def pond_warehouse_receipt_detail_or_amend(request, receipt_id: int):
         pond_id = int(raw_pid)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    for pid in {int(rec.pond_id), pond_id}:
+        lock_err = _pond_warehouse_lock_response(cid, pid)
+        if lock_err:
+            return lock_err
     items = body.get("items")
     if not isinstance(items, list) or not items:
         return JsonResponse({"detail": "items must be a non-empty array of { item_id, quantity }"}, status=400)
@@ -1114,6 +1127,9 @@ def pond_warehouse_receipt_reverse_view(request, receipt_id: int):
         return JsonResponse({"detail": "Receipt not found"}, status=404)
     if not _pond_receipt_visible_for_user(request, rec):
         return JsonResponse({"detail": "Receipt not found"}, status=404)
+    lock_err = _pond_warehouse_lock_response(cid, int(rec.pond_id))
+    if lock_err:
+        return lock_err
     try:
         reverse_pond_warehouse_stock_receipt(company_id=cid, receipt_id=receipt_id)
     except StockBusinessError as ex:
@@ -1155,6 +1171,9 @@ def pond_warehouse_return_reverse_view(request, return_id: int):
         return JsonResponse({"detail": "Return not found"}, status=404)
     if not _pond_return_visible_for_user(request, ret):
         return JsonResponse({"detail": "Return not found"}, status=404)
+    lock_err = _pond_warehouse_lock_response(cid, int(ret.pond_id))
+    if lock_err:
+        return lock_err
     try:
         reverse_pond_warehouse_stock_return(company_id=cid, return_id=return_id)
     except StockBusinessError as ex:

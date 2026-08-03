@@ -24,8 +24,8 @@ const strings: Record<string, Row> = {
   inventoryViews: { en: 'Inventory views', bn: 'ইনভেন্টরি ভিউ' },
   yourSite: { en: 'Your site:', bn: 'আপনার সাইট:' },
   yourSiteHint: {
-    en: 'Transfers list only moves involving {site}. Send from is fixed to your home site; choose any other site or pond warehouse as the destination (same list on both sides).',
-    bn: 'স্থানান্তর তালিকায় শুধু {site} সংশ্লিষ্ট চলাচল। পাঠানোর স্থান আপনার হোম সাইটে স্থির; গন্তব্য হিসেবে অন্য সাইট বা পুকুর গুদাম বেছে নিন (উভয় পাশে একই তালিকা)।',
+    en: 'Transfers list only moves involving {site}. Shop send-from is limited to your home site; you can also send from any pond warehouse to shops or other ponds.',
+    bn: 'স্থানান্তর তালিকায় শুধু {site} সংশ্লিষ্ট চলাচল। দোকান থেকে পাঠানো আপনার হোম সাইটে সীমিত; যেকোনো পুকুর গুদাম থেকে দোকান বা অন্য পুকুরেও পাঠাতে পারেন।',
   },
   loadingInventory: { en: 'Loading inventory', bn: 'ইনভেন্টরি লোড হচ্ছে' },
   loadingInventoryHint: { en: 'Sites, products, and transfer history', bn: 'সাইট, পণ্য ও স্থানান্তর ইতিহাস' },

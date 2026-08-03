@@ -25,24 +25,17 @@ def assert_ponds_allow_inter_warehouse_transfer(
     from_pond: AquaculturePond,
     to_pond: AquaculturePond,
 ) -> None:
+    """
+    Pond warehouse stock is always tracked per pond (ItemPondStock). Shared warehouse groups
+    are for pooled reporting / allocation labels — they must not block physical moves between
+    any two ponds (e.g. Ashari shared shed → Digonto private warehouse).
+    """
     from api.exceptions import StockBusinessError
 
     if from_pond.id == to_pond.id:
         raise StockBusinessError("Source and destination pond must be different.")
-    fg = from_pond.warehouse_group_id
-    tg = to_pond.warehouse_group_id
-    if fg and tg:
-        if fg != tg:
-            raise StockBusinessError(
-                "Ponds belong to different shared warehouse groups. "
-                "Only reallocate within the same group, or between ponds with no group."
-            )
-        return
-    if fg or tg:
-        raise StockBusinessError(
-            "One pond uses a shared warehouse group and the other does not. "
-            "Assign both to the same group, or clear the group on the member pond first."
-        )
+    if from_pond.company_id != company_id or to_pond.company_id != company_id:
+        raise StockBusinessError("Source or destination pond not found for this company.")
 
 
 def warehouse_group_pool_rows(company_id: int, *, group_id: int | None = None) -> list[dict]:

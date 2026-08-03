@@ -389,12 +389,13 @@ function renderTransferEndpointOptions(
       ? ponds.map(p => {
           const endpoint: TransferEndpoint = { kind: 'pond', id: p.id }
           const sameAsOther = transferEndpointsEqual(endpoint, other)
-          const homeLocked = side === 'from' && userHomeStation != null
+          // Pond warehouses stay selectable as From even when the user has a home shop —
+          // otherwise pond→pond and pond→shop returns are impossible for site staff.
           return (
             <option
               key={`p-${p.id}`}
               value={transferEndpointKey(endpoint)}
-              disabled={sameAsOther || homeLocked}
+              disabled={sameAsOther}
             >
               {p.name}{inventoryT('pondWarehouseSuffix', lang)}
             </option>
@@ -1374,16 +1375,12 @@ function InventoryContent() {
   }, [catalogItems, lookupTypeFilter, lookupItemId, typeFilteredCatalogItems])
 
   useEffect(() => {
-    if (loading) return
-    if (userHomeStation?.id) {
-      setFromEndpoint({ kind: 'station', id: userHomeStation.id })
-    }
-  }, [loading, userHomeStation])
-
-  useEffect(() => {
     if (loading || !canShowTransferForm) return
     if (fromEndpoint) return
-    if (userHomeStation?.id) return
+    if (userHomeStation?.id) {
+      setFromEndpoint({ kind: 'station', id: userHomeStation.id })
+      return
+    }
     if (activeStations.length === 1) {
       setFromEndpoint({ kind: 'station', id: activeStations[0].id })
     }
@@ -1935,8 +1932,6 @@ function InventoryContent() {
                           <select
                             id="inv-from-st"
                             className={selectClassName}
-                            disabled={Boolean(userHomeStation)}
-                            aria-disabled={Boolean(userHomeStation)}
                             value={transferEndpointKey(fromEndpoint)}
                             onChange={e =>
                               setFromEndpoint(parseTransferEndpointKey(e.target.value))

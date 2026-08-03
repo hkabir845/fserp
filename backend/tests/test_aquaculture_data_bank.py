@@ -306,3 +306,147 @@ def test_preview_station_close(company_tenant):
     )
     assert err is None
     assert len(result["closed"]) == 1
+
+
+@pytest.mark.django_db
+def test_locked_pond_allows_warehouse_transfer_after_period_end(
+    api_client, company_tenant, auth_admin_headers, monkeypatch
+):
+    """
+    Digonto-style year close must not block shop↔pond↔pond feed moves for the next season.
+    Undated lock checks treat any active close as a hard block; warehouse APIs use today.
+    """
+    from decimal import Decimal
+
+    from api.models import Item, ItemPondStock
+    from api.services.aquaculture_pond_stock_service import get_pond_item_stock
+    from api.services.station_stock import get_station_stock, set_station_stock
+    from django.utils import timezone as django_timezone
+
+    company_tenant.__class__.objects.filter(pk=company_tenant.id).update(
+        aquaculture_enabled=True, aquaculture_licensed=True
+    )
+    shop = Station.objects.create(
+        company_id=company_tenant.id,
+        station_name="Premium Agro",
+        operates_fuel_retail=False,
+        is_active=True,
+    )
+    digonto = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Digonto Pond", is_active=True
+    )
+    other_pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Ashari Pond", is_active=True
+    )
+    feed = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Feed bag",
+        item_type="inventory",
+        category="General",
+        cost=Decimal("50"),
+    )
+    set_station_stock(company_tenant.id, shop.id, feed.id, Decimal("40"))
+    ItemPondStock.objects.create(
+        company_id=company_tenant.id, pond=other_pond, item=feed, quantity=Decimal("10")
+    )
+
+    close, err = close_pond(
+        company_id=company_tenant.id,
+        pond_id=digonto.id,
+        period_end=date(2026, 2, 20),
+        period_start=date(2025, 5, 28),
+        user=None,
+    )
+    assert err is None
+    assert close is not None
+    assert pond_write_blocked_detail(company_tenant.id, digonto.id) is not None
+    assert (
+        pond_write_blocked_detail(company_tenant.id, digonto.id, date(2026, 1, 15)) is not None
+    )
+    assert pond_write_blocked_detail(company_tenant.id, digonto.id, date(2026, 8, 3)) is None
+
+    monkeypatch.setattr(django_timezone, "localdate", lambda: date(2026, 8, 3))
+
+    # Shop → Digonto pond warehouse
+    r = api_client.post(
+        "/api/aquaculture/pond-warehouse-transfer/",
+        data=json.dumps(
+            {
+                "station_id": shop.id,
+                "pond_id": digonto.id,
+                "items": [{"item_id": feed.id, "quantity": "5"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r.status_code == 201, r.content.decode()
+    assert get_station_stock(company_tenant.id, shop.id, feed.id) == Decimal("35")
+    assert get_pond_item_stock(company_tenant.id, digonto.id, feed.id) == Decimal("5")
+
+    # Pond → Digonto (inter-pond)
+    r_ip = api_client.post(
+        "/api/aquaculture/pond-warehouse-inter-pond-transfers/",
+        data=json.dumps(
+            {
+                "from_pond_id": other_pond.id,
+                "to_pond_id": digonto.id,
+                "items": [{"item_id": feed.id, "quantity": "3"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_ip.status_code == 201, r_ip.content.decode()
+    assert get_pond_item_stock(company_tenant.id, digonto.id, feed.id) == Decimal("8")
+
+    # Digonto → Pond (reverse inter-pond)
+    r_ip2 = api_client.post(
+        "/api/aquaculture/pond-warehouse-inter-pond-transfers/",
+        data=json.dumps(
+            {
+                "from_pond_id": digonto.id,
+                "to_pond_id": other_pond.id,
+                "items": [{"item_id": feed.id, "quantity": "2"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_ip2.status_code == 201, r_ip2.content.decode()
+    assert get_pond_item_stock(company_tenant.id, digonto.id, feed.id) == Decimal("6")
+    assert get_pond_item_stock(company_tenant.id, other_pond.id, feed.id) == Decimal("9")
+
+    # Digonto → shop return
+    r_ret = api_client.post(
+        "/api/aquaculture/pond-warehouse-return/",
+        data=json.dumps(
+            {
+                "station_id": shop.id,
+                "pond_id": digonto.id,
+                "items": [{"item_id": feed.id, "quantity": "2"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_ret.status_code == 201, r_ret.content.decode()
+    assert get_pond_item_stock(company_tenant.id, digonto.id, feed.id) == Decimal("4")
+    assert get_station_stock(company_tenant.id, shop.id, feed.id) == Decimal("37")
+
+    monkeypatch.setattr(django_timezone, "localdate", lambda: date(2026, 1, 15))
+    r_blocked = api_client.post(
+        "/api/aquaculture/pond-warehouse-transfer/",
+        data=json.dumps(
+            {
+                "station_id": shop.id,
+                "pond_id": digonto.id,
+                "items": [{"item_id": feed.id, "quantity": "1"}],
+            }
+        ),
+        content_type="application/json",
+        **auth_admin_headers,
+    )
+    assert r_blocked.status_code == 409
+    body = json.loads(r_blocked.content.decode())
+    assert body.get("code") == "pond_data_locked"

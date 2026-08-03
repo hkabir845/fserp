@@ -460,8 +460,8 @@ def transfer_pond_warehouse_between_ponds(
     memo: str = "",
 ) -> PondWarehouseInterPondTransfer:
     """
-    Move feed/medicine allocation from one pond warehouse to another (no GL).
-    Allowed between private ponds, or between members of the same shared warehouse group.
+    Move feed/medicine stock from one pond warehouse to another (no GL).
+    Allowed between any two ponds in the company (shared warehouse groups do not block moves).
     """
     from_pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).first()
     to_pond = AquaculturePond.objects.filter(pk=to_pond_id, company_id=company_id).first()

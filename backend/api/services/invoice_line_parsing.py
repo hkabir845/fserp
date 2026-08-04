@@ -149,7 +149,7 @@ def parse_invoice_line_row(company_id: int, row: dict) -> tuple[Optional[dict[st
             iid = int(item_id)
         except (TypeError, ValueError):
             return None, JsonResponse({"detail": "item_id must be an integer"}, status=400)
-        if not Item.objects.filter(pk=iid, company_id=company_id, is_deleted=False).exists():
+        if not Item.objects.filter(pk=iid, company_id=company_id, is_active=True).exists():
             return None, JsonResponse({"detail": f"Unknown item_id {iid}"}, status=400)
         item_id = iid
     else:

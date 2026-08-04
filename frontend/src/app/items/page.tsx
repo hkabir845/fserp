@@ -2075,7 +2075,9 @@ export default function ItemsPage() {
                   {(item.item_type.toUpperCase() === 'INVENTORY' || item.item_type.toLowerCase() === 'inventory') && (
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-muted-foreground shrink-0">
-                        {(item.pos_category || '').toLowerCase() === 'feed' ? 'Sacks on hand:' : 'On Hand:'}
+                        {(item.pos_category || '').toLowerCase() === 'feed'
+                          ? 'Sacks on hand (all sites):'
+                          : 'On hand (all sites):'}
                       </span>
                       <span className="font-medium text-foreground text-right">
                         {(item.pos_category || '').toLowerCase() === 'feed'
@@ -2087,6 +2089,9 @@ export default function ItemsPage() {
                             total
                           </span>
                         )}
+                        <span className="block text-[11px] font-normal text-muted-foreground mt-0.5">
+                          POS sells from one shop site — open the item to see per-location qty
+                        </span>
                       </span>
                     </div>
                   )}
@@ -2162,7 +2167,7 @@ export default function ItemsPage() {
                     Cost
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    On Hand
+                    On hand (all sites)
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     On-hand value

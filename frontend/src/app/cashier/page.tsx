@@ -209,6 +209,11 @@ type ShopStationStockAvailability =
         station_number: string
         quantity: string
       }[]
+      pond_warehouses?: {
+        pond_id: number
+        pond_name: string
+        quantity: string
+      }[]
     }
   | {
       item_id: number
@@ -242,6 +247,38 @@ function posItemStockQtyAtSellingStation(item: POSItem, stationId: number | null
 function posItemIsOutOfStockAtSellingStation(item: POSItem, stationId: number | null): boolean {
   const qty = posItemStockQtyAtSellingStation(item, stationId)
   return qty !== null && qty <= 0
+}
+
+/** Company-wide QOH (shop bins + pond warehouses) — same figure Items list shows. */
+function posItemCompanyQty(item: POSItem): number {
+  if (item.quantity_on_hand === undefined) return 0
+  const q = Number(item.quantity_on_hand)
+  return Number.isFinite(q) ? q : 0
+}
+
+/** Shop stations with qty > 0 for this SKU (from catalog location_stocks). */
+function posItemStationsWithStock(
+  item: POSItem
+): { station_id: number; station_name?: string; station_number?: string; quantity: number }[] {
+  const loc = item.location_stocks
+  if (!loc || !Array.isArray(loc) || loc.length === 0) return []
+  return loc
+    .map(l => ({
+      station_id: Number(l.station_id),
+      station_name: l.station_name,
+      station_number: l.station_number,
+      quantity: parseFloat(String(l.quantity)),
+    }))
+    .filter(r => Number.isFinite(r.station_id) && Number.isFinite(r.quantity) && r.quantity > 0)
+}
+
+/** Prefer shop hub (no fuel retail) so feed/medicine stock matches Items / receipts. */
+function preferShopSellingStationId(
+  stations: { id: number; operates_fuel_retail?: boolean }[],
+  fallback: number | null
+): number | null {
+  const shop = stations.find(s => s.operates_fuel_retail === false)
+  return shop?.id ?? fallback
 }
 
 type CartEntry = {
@@ -753,13 +790,18 @@ export default function CashierPOSPage() {
         const fromList = stationOptions[0]?.id ?? null
         const lockedInCompany =
           lockSid != null && stationOptions.some(s => Number(s.id) === Number(lockSid))
+        // Feed/medicine live on shop bins — prefer shop hub over fuel forecourt so POS matches Items.
+        const shopHub = preferShopSellingStationId(stationOptions, null)
         let nextPos: number | null
         if (scope === "fuel") {
           nextPos = fromNozzle ?? fromList
         } else if (lockedInCompany) {
           nextPos = lockSid
+        } else if (scope === "general") {
+          nextPos = shopHub ?? fromList
         } else {
-          nextPos = fromList
+          // both: shop hub first (feed stock), else nozzle station, else first site
+          nextPos = shopHub ?? fromNozzle ?? fromList
         }
         setPosStationId(nextPos)
       }
@@ -884,11 +926,51 @@ export default function CashierPOSPage() {
       toast.error("This POS lane is Fuel only — shop items are not allowed.")
       return
     }
+
     if (posItemIsOutOfStockAtSellingStation(item, posStationId)) {
-      toast.error(
-        `"${item.name}" has no stock at this site. Receive inventory in Items or switch selling location.`
-      )
-      return
+      const elsewhere = posItemStationsWithStock(item)
+      const companyQty = posItemCompanyQty(item)
+      const hasPendingFuel = Boolean(quantity && parseFloat(quantity) > 0)
+      const canSwitch =
+        !isPosStationLocked &&
+        !hasPendingFuel &&
+        elsewhere.length > 0 &&
+        elsewhere[0].station_id != null
+
+      if (canSwitch) {
+        const target = elsewhere[0]
+        setPosStationId(target.station_id)
+        const where =
+          (target.station_name || `Station #${target.station_id}`).trim() +
+          (target.station_number ? ` (${target.station_number})` : "")
+        toast.success(
+          `Selling location set to ${where} (${formatNumber(target.quantity)} ${item.unit || "units"} there).`
+        )
+      } else if (elsewhere.length > 0) {
+        const names = elsewhere
+          .slice(0, 3)
+          .map(r => {
+            const n = (r.station_name || `Station #${r.station_id}`).trim()
+            return `${n}: ${formatNumber(r.quantity)}`
+          })
+          .join("; ")
+        toast.error(
+          hasPendingFuel
+            ? `"${item.name}" has 0 at this fuel site. Finish or clear fuel first, then switch selling location (${names}).`
+            : `"${item.name}" has 0 at this site. Stock elsewhere — ${names}. Switch selling location or transfer in Inventory.`
+        )
+        return
+      } else if (companyQty > 0) {
+        toast.error(
+          `"${item.name}" has ${formatNumber(companyQty)} ${item.unit || "units"} company-wide, but none in shop bins here (may be in a pond warehouse). Transfer to a shop location in Inventory, then sell.`
+        )
+        return
+      } else {
+        toast.error(
+          `"${item.name}" has no stock at this site. Receive inventory in Items or switch selling location.`
+        )
+        return
+      }
     }
 
     // Set selected item for visual feedback
@@ -1148,9 +1230,20 @@ export default function CashierPOSPage() {
     for (const entry of cartEntries) {
       if (entry.quantity <= 0) continue
       if (!posItemIsOutOfStockAtSellingStation(entry.item, posStationId)) continue
-      toast.error(
-        `"${entry.item.name}" has no stock at this site. Receive inventory or remove it from the cart.`
-      )
+      const elsewhere = posItemStationsWithStock(entry.item)
+      if (elsewhere.length > 0) {
+        const names = elsewhere
+          .slice(0, 2)
+          .map(r => (r.station_name || `Station #${r.station_id}`).trim())
+          .join(", ")
+        toast.error(
+          `"${entry.item.name}" has no stock at this site (available at ${names}). Switch selling location or remove it from the cart.`
+        )
+      } else {
+        toast.error(
+          `"${entry.item.name}" has no stock at this site. Receive inventory or remove it from the cart.`
+        )
+      }
       return
     }
 
@@ -1932,15 +2025,13 @@ export default function CashierPOSPage() {
                   {filteredItems.map(item => {
                     const isSelected = selectedItem?.id === item.id
                     const outOfStock = posItemIsOutOfStockAtSellingStation(item, posStationId)
-                    const siteStockRow =
-                      posStationId != null && Number.isFinite(posStationId)
-                        ? item.location_stocks?.find(
-                            l => Number(l.station_id) === Number(posStationId)
-                          )
-                        : undefined
+                    const siteQty = posItemStockQtyAtSellingStation(item, posStationId)
+                    const companyQty = posItemCompanyQty(item)
+                    const elsewhere = outOfStock ? posItemStationsWithStock(item) : []
+                    const stockElsewhere = elsewhere.reduce((s, r) => s + r.quantity, 0)
                     const displayQty =
-                      siteStockRow != null
-                        ? parseFloat(String(siteStockRow.quantity))
+                      siteQty !== null
+                        ? siteQty
                         : item.quantity_on_hand !== undefined
                           ? Number(item.quantity_on_hand)
                           : undefined
@@ -2006,7 +2097,11 @@ export default function CashierPOSPage() {
                           </p>
                           {outOfStock && (
                             <p className="mt-2 text-xs font-medium text-destructive">
-                              Out of stock at this site
+                              {stockElsewhere > 0
+                                ? "Out of stock at this site"
+                                : companyQty > 0
+                                  ? "No shop stock at this site"
+                                  : "Out of stock at this site"}
                             </p>
                           )}
                           {displayQty !== undefined &&
@@ -2015,8 +2110,33 @@ export default function CashierPOSPage() {
                               <p
                                 className={`text-xs ${outOfStock ? "text-destructive/80" : "text-muted-foreground"}`}
                               >
-                                {siteStockRow != null ? "At this site: " : "In stock: "}
-                                {formatNumber(displayQty)} {item.unit || "units"}
+                                At this site: {formatNumber(displayQty)} {item.unit || "units"}
+                                {outOfStock && stockElsewhere > 0 && (
+                                  <span className="block text-amber-700 dark:text-amber-400">
+                                    {formatNumber(stockElsewhere)} {item.unit || "units"} at other
+                                    shop site
+                                    {elsewhere.length === 1 && elsewhere[0].station_name
+                                      ? ` (${elsewhere[0].station_name})`
+                                      : "s"}
+                                    {!isPosStationLocked
+                                      ? " — tap to sell from there"
+                                      : " — switch site or transfer"}
+                                  </span>
+                                )}
+                                {outOfStock && stockElsewhere <= 0 && companyQty > 0 && (
+                                  <span className="block text-amber-700 dark:text-amber-400">
+                                    Company total {formatNumber(companyQty)} {item.unit || "units"}{" "}
+                                    (e.g. pond warehouse) — not sellable until in a shop bin
+                                  </span>
+                                )}
+                                {!outOfStock &&
+                                  companyQty > displayQty + 0.0001 &&
+                                  Number.isFinite(companyQty) && (
+                                    <span className="block text-muted-foreground/90">
+                                      Company total: {formatNumber(companyQty)}{" "}
+                                      {item.unit || "units"}
+                                    </span>
+                                  )}
                                 {(() => {
                                   const kgp =
                                     item.content_weight_kg != null && item.content_weight_kg !== ""
@@ -2782,24 +2902,33 @@ export default function CashierPOSPage() {
                 )
               })()}
               <p className="text-xs text-muted-foreground">
-                Total on hand (company):{" "}
+                Total on hand (company — same as Items):{" "}
                 <span className="font-semibold tabular-nums text-foreground">
                   {formatNumber(Number(stationStockData.total_on_hand || 0))}{" "}
                   {stationStockData.unit || "units"}
                 </span>
               </p>
+              <p className="text-xs text-muted-foreground">
+                POS can only sell from a <span className="font-medium text-foreground">shop station</span>{" "}
+                bin below. Pond warehouse qty is company stock but not sellable until transferred back to a
+                shop.
+              </p>
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full min-w-[16rem] text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="px-3 py-2">Station</th>
+                      <th className="px-3 py-2">Shop station</th>
                       <th className="px-3 py-2 text-right">Qty</th>
+                      {!isPosStationLocked ? (
+                        <th className="px-3 py-2 text-right">Action</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {stationStockData.stations.length ? (
                       stationStockData.stations.map(row => {
                         const isThisRegister = posStationId != null && row.station_id === posStationId
+                        const qty = Number(row.quantity || 0)
                         return (
                           <tr
                             key={row.station_id}
@@ -2815,14 +2944,41 @@ export default function CashierPOSPage() {
                               )}
                             </td>
                             <td className="px-3 py-2.5 text-right tabular-nums font-medium text-foreground">
-                              {formatNumber(Number(row.quantity || 0))}
+                              {formatNumber(qty)}
                             </td>
+                            {!isPosStationLocked ? (
+                              <td className="px-3 py-2.5 text-right">
+                                {!isThisRegister && qty > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="text-xs font-medium text-primary hover:underline"
+                                    onClick={() => {
+                                      setPosStationId(row.station_id)
+                                      toast.success(
+                                        `Selling location set to ${row.station_name}${
+                                          row.station_number ? ` (${row.station_number})` : ""
+                                        }.`
+                                      )
+                                      setStationStockItem(null)
+                                      setStationStockData(null)
+                                    }}
+                                  >
+                                    Sell from here
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            ) : null}
                           </tr>
                         )
                       })
                     ) : (
                       <tr>
-                        <td colSpan={2} className="px-3 py-6 text-center text-muted-foreground">
+                        <td
+                          colSpan={isPosStationLocked ? 2 : 3}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
                           No station rows yet (quantities are zero or not initialized).
                         </td>
                       </tr>
@@ -2830,6 +2986,37 @@ export default function CashierPOSPage() {
                   </tbody>
                 </table>
               </div>
+              {Array.isArray(stationStockData.pond_warehouses) &&
+                stationStockData.pond_warehouses.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Pond warehouses (not sellable on POS)
+                    </p>
+                    <div className="overflow-x-auto rounded-lg border border-border">
+                      <table className="w-full min-w-[16rem] text-sm">
+                        <thead>
+                          <tr className="border-b border-border bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                            <th className="px-3 py-2">Pond</th>
+                            <th className="px-3 py-2 text-right">Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {stationStockData.pond_warehouses.map(row => (
+                            <tr key={row.pond_id}>
+                              <td className="px-3 py-2.5 text-foreground">{row.pond_name}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums font-medium text-foreground">
+                                {formatNumber(Number(row.quantity || 0))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Use Inventory → transfer pond warehouse back to a shop station before selling on POS.
+                    </p>
+                  </div>
+                )}
             </div>
           )}
         </div>

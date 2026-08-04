@@ -77,7 +77,7 @@ def parse_invoice_line_row(company_id: int, row: dict) -> tuple[Optional[dict[st
     """Normalize one invoice line from API JSON."""
     line_sid, sid_err = parse_optional_line_receipt_station_id(company_id, row)
     if sid_err:
-        return None, sid_err
+        return None, JsonResponse({"detail": sid_err}, status=400)
 
     pond_id, pond_err = _parse_optional_pond_id(company_id, row.get("aquaculture_pond_id"))
     if pond_err:

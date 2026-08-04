@@ -229,6 +229,24 @@ def invoices_list_or_create(request):
         if s_err:
             return JsonResponse({"detail": s_err}, status=400)
         assert station_id is not None
+
+        line_rows = list(body.get("lines") or body.get("line_items") or [])
+        parsed_lines: list[tuple[dict, int | None]] = []
+        for row in line_rows:
+            pl, parse_err = parse_invoice_line_row(cid, row)
+            if parse_err:
+                return parse_err
+            assert pl is not None
+            rid, rerr = parse_optional_chart_account_id(
+                cid,
+                pl.get("revenue_account_id"),
+                allowed_normalized_types=ALLOWED_INCOME,
+                field_label="revenue_account_id",
+            )
+            if rerr:
+                return JsonResponse({"detail": rerr}, status=400)
+            parsed_lines.append((pl, rid))
+
         inv = Invoice(
             company_id=cid,
             customer_id=customer_id,
@@ -244,21 +262,8 @@ def invoices_list_or_create(request):
             payment_method=pm,
         )
         inv.save()
-        line_rows = list(body.get("lines") or body.get("line_items") or [])
-        for row in line_rows:
-            pl, parse_err = parse_invoice_line_row(cid, row)
-            if parse_err:
-                return parse_err
-            assert pl is not None
+        for pl, rid in parsed_lines:
             amount = _decimal(pl.get("amount"), _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0))
-            rid, rerr = parse_optional_chart_account_id(
-                cid,
-                pl.get("revenue_account_id"),
-                allowed_normalized_types=ALLOWED_INCOME,
-                field_label="revenue_account_id",
-            )
-            if rerr:
-                return JsonResponse({"detail": rerr}, status=400)
             InvoiceLine.objects.create(
                 invoice=inv,
                 item_id=pl.get("item_id") or None,
@@ -273,7 +278,7 @@ def invoices_list_or_create(request):
                 aquaculture_income_category=pl.get("aquaculture_income_category") or "",
                 tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
             )
-        if line_rows:
+        if parsed_lines:
             _refresh_invoice_totals_from_lines(inv)
         inv.refresh_from_db()
         inv = (

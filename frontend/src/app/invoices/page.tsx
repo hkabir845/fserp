@@ -13,7 +13,7 @@ import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useT } from '@/lib/i18n'
 import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
-import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
+import api from '@/lib/api'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { escapeHtml } from '@/utils/printDocument'
@@ -717,13 +717,6 @@ export default function InvoicesPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        toast.error('Authentication required')
-        return
-      }
-      
-      const baseUrl = getApiBaseUrl()
       const { subtotal, taxAmount, total } = calculateTotals()
 
       // Ensure we have valid data
@@ -746,56 +739,16 @@ export default function InvoicesPage() {
           return serializeInvoiceLinePayload(line)
         })
       }
-      
 
-      const response = await fetch(`${baseUrl}/invoices/`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      })
-
-      if (response.ok) {
-        toast.success(tr('invoiceCreated'))
-        setShowModal(false)
-        resetForm()
-        void loadInvoices()
-      } else {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('Failed to create invoice:', response.status, errorData)
-        
-        // Extract error message
-        let errorMessage = 'Failed to create invoice'
-        if (errorData.detail) {
-          if (typeof errorData.detail === 'string') {
-            errorMessage = errorData.detail
-            // Try to extract more meaningful error from SQLite errors
-            if (errorMessage.includes('IntegrityError')) {
-              if (errorMessage.includes('UNIQUE constraint')) {
-                errorMessage = 'A record with this information already exists. Please check for duplicates.'
-              } else if (errorMessage.includes('NOT NULL constraint')) {
-                errorMessage = 'Required field is missing. Please check all required fields are filled.'
-              } else if (errorMessage.includes('FOREIGN KEY constraint')) {
-                errorMessage = 'Invalid reference. Please ensure all selected items and customers are valid.'
-              } else {
-                errorMessage = 'Database error: ' + errorMessage.split('(')[0] || errorMessage
-              }
-            }
-          } else if (Array.isArray(errorData.detail)) {
-            errorMessage = errorData.detail.map((err: any) => 
-              `${err.loc?.join('.')}: ${err.msg}`
-            ).join(', ')
-          }
-        }
-        
-        console.error('Invoice creation error details:', errorData)
-        toast.error(errorMessage)
-      }
-    } catch (error) {
+      // Use shared api client (tenant + company headers) — raw fetch omits them and fails on VPS.
+      await api.post('/invoices/', payload)
+      toast.success(tr('invoiceCreated'))
+      setShowModal(false)
+      resetForm()
+      void loadInvoices()
+    } catch (error: unknown) {
       console.error('Error creating invoice:', error)
-      toast.error('Error connecting to server')
+      toast.error(extractErrorMessage(error, tr('requestFailed')))
     }
   }
 

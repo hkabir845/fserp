@@ -246,6 +246,8 @@ AQUACULTURE_INCOME_TYPE_CHOICES: tuple[tuple[str, str], ...] = (
     ("fingerling_sale", "Fingerling / fry sale"),
     ("inter_pond_fingerling_transfer", "Inter-pond fingerling transfer (nursing)"),
     ("processing_value_add", "Processing / value-added"),
+    ("feed_sale", "Feed sale"),
+    ("medicine_sale", "Medicine sale"),
     ("empty_feed_sack_sale", "Empty feed sack sale"),
     ("used_material_sale", "Used / scrap material sale"),
     ("rejected_material_sale", "Rejected material sale"),
@@ -263,12 +265,17 @@ INCOME_TYPE_LABELS: dict[str, str] = {c: label for c, label in AQUACULTURE_INCOM
 # Pond revenue that is not fish biomass (do not subtract from implied fish kg/count in stock position).
 NON_BIOLOGICAL_POND_SALE_INCOME_TYPES: frozenset[str] = frozenset(
     {
+        "feed_sale",
+        "medicine_sale",
         "empty_feed_sack_sale",
         "used_material_sale",
         "rejected_material_sale",
         "used_equipment_sale",
     }
 )
+
+# Shop hub product sales (feed / medicine inventory) — roll to C-Store revenue when posting pond-linked books.
+SHOP_INVENTORY_SALE_INCOME_TYPES: frozenset[str] = frozenset({"feed_sale", "medicine_sale"})
 
 # Harvest line species (polyculture / mixed sales); stable keys in DB. Default tilapia for main culture.
 AQUACULTURE_FISH_SPECIES_CHOICES: tuple[tuple[str, str], ...] = (
@@ -498,6 +505,8 @@ def coa_account_code_for_aquaculture_income_type(income_type: str, company_id: i
         return "4241"
     if it == "processing_value_add":
         return "4242"
+    if it in SHOP_INVENTORY_SALE_INCOME_TYPES:
+        return "4200"
     if it in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
         return "4244"
     if it == "biological_count_gain":

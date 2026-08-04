@@ -119,6 +119,7 @@ AQUACULTURE_EXPENSE_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 AQUACULTURE_INCOME_MAP_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Fish & production sales", ("fish_harvest_sale", "fingerling_sale", "inter_pond_fingerling_transfer", "processing_value_add")),
+    ("Shop inventory sales", ("feed_sale", "medicine_sale")),
     (
         "By-products & scrap",
         ("empty_feed_sack_sale", "used_material_sale", "rejected_material_sale", "used_equipment_sale"),
@@ -207,6 +208,14 @@ AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
         "Internal nursing-to-grow-out fingerling transfer at fully loaded cost (nursing income)."
     ),
     "processing_value_add": "Smoked, filleted, or otherwise processed fish sold at a premium.",
+    "feed_sale": (
+        "Shop hub sales of fish feed bags/sacks (Premium Agro and similar). "
+        "Non-biological — does not reduce pond fish biomass; typically pairs with C-Store revenue (4200)."
+    ),
+    "medicine_sale": (
+        "Shop hub sales of aquaculture medicine and pond-care products. "
+        "Non-biological — does not reduce pond fish biomass; typically pairs with C-Store revenue (4200)."
+    ),
     "empty_feed_sack_sale": (
         "Non-biological byproduct income for this pond — empty sacks sold after feed consumption. "
         "Included in pond P&L revenue (with fish harvest sales); does not reduce fish biomass or bio-asset GL 1581."

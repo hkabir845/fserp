@@ -32,11 +32,58 @@ def fetch_knowledge_sources(*, tags: list[str] | None = None, limit: int = 8) ->
     ]
 
 
+def build_worldfish_species_pack(message: str = "") -> dict[str, Any]:
+    """Reference pack so Brain answers species questions from WorldFish/FAO + web."""
+    return {
+        "mode": "fish_species_research",
+        "instruction_bn": (
+            "এই প্রশ্ন মাছ/চিংড়ির প্রজাতি সম্পর্কিত। WorldFish, FAO ও ওয়েব গবেষণা দিয়ে উত্তর দিন — "
+            "শুধু ERP পোন্ড ডেটায় সীমাবদ্ধ থাকবেন না। বাংলাদেশ/দক্ষিণ এশিয়া চাষ প্রেক্ষাপট যোগ করুন। "
+            "কোম্পানির পোন্ডে সেই প্রজাতি থাকলে ERP সংখ্যা আলাদা লেবেল করুন।"
+        ),
+        "user_question": (message or "")[:500],
+        "primary_sources": [
+            {
+                "label": "WorldFish",
+                "url": "https://www.worldfishcenter.org/",
+                "kind": "web",
+            },
+            {
+                "label": "WorldFish Digital Archive",
+                "url": "https://digitalarchive.worldfishcenter.org/",
+                "kind": "web",
+            },
+            {
+                "label": "FAO Aquaculture / Fisheries",
+                "url": "https://www.fao.org/fishery/en",
+                "kind": "web",
+            },
+            {
+                "label": "FAO FishStat / species fact sheets",
+                "url": "https://www.fao.org/fishery/en/collection/culturespecies",
+                "kind": "web",
+            },
+        ],
+        "answer_topics_bn": [
+            "প্রজাতির পরিচিতি ও বৈজ্ঞানিক নাম",
+            "চাষ পদ্ধতি (নার্সারি → গ্রো-আউট)",
+            "স্টকিং ঘনত্ব / পানির মান / তাপমাত্রা",
+            "ফিড ও আনুমানিক FCR (WorldFish/FAO রেঞ্জ)",
+            "সাধারণ রোগ ও প্রতিরোধ",
+            "বাংলাদেশে বাজার/চাষ প্রাসঙ্গিকতা",
+        ],
+        "disclaimer_bn": (
+            "WorldFish/FAO/ওয়েব রেফারেন্স সাধারণ জ্ঞান — আপনার পোন্ডের ERP সংখ্যা আলাদা এবং authoritative।"
+        ),
+    }
+
+
 def build_external_comparison_context(
     company_id: int,
     *,
     intents: list[str] | None = None,
     include_web_note: bool = True,
+    message: str = "",
 ) -> dict[str, Any]:
     """
     Separate external/general knowledge from internal ERP data.
@@ -46,9 +93,10 @@ def build_external_comparison_context(
     snap = analytics.build_company_knowledge_snapshot(company_id)
     brief = build_decision_brief(snap or {}, message="")
     benchmark_notes = global_benchmark_notes(intent_set)
-    sources = fetch_knowledge_sources(
-        tags=list(intent_set)[:5] if intent_set else None,
-    )
+    tags = list(intent_set)[:5] if intent_set else None
+    if "fish_species" in intent_set:
+        tags = list({*(tags or []), "fish", "aquaculture", "worldfish", "species"})
+    sources = fetch_knowledge_sources(tags=tags)
 
     web_note = ""
     if include_web_note:
@@ -56,8 +104,13 @@ def build_external_comparison_context(
             "External comparison may use training knowledge and (on Growth/Enterprise) live web research. "
             "Clearly label external vs internal ERP figures. Cite source_url when available."
         )
+        if "fish_species" in intent_set:
+            web_note = (
+                "FISH SPECIES question: use WorldFish + FAO + live web research for the named species. "
+                "Cite WorldFish/FAO/web URLs (kind=web). Label ERP pond figures separately if present."
+            )
 
-    return {
+    out: dict[str, Any] = {
         "industry_benchmarks": {
             k: {
                 "label_bn": v.get("label_bn"),
@@ -75,3 +128,6 @@ def build_external_comparison_context(
             "বাইরের তুলনা সাধারণ industry best practice — আপনার কোম্পানির ERP সংখ্যা authoritative।"
         ),
     }
+    if "fish_species" in intent_set:
+        out["worldfish_species_pack"] = build_worldfish_species_pack(message)
+    return out

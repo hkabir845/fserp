@@ -149,6 +149,7 @@ _INTENT_TOPIC_LABELS: dict[str, str] = {
     "loans": "ঋণ",
     "fixed_assets": "স্থায়ী সম্পদ",
     "aquaculture_ops": "মৎস্য অপারেশন",
+    "fish_species": "মাছের প্রজাতি (WorldFish/ওয়েব)",
     "benchmark": "বেঞ্চমার্ক তুলনা",
     "decision": "সিদ্ধান্ত",
     "predict": "পূর্বাভাস",

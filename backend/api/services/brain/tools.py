@@ -32,6 +32,7 @@ from api.services.brain.intents import (
     wants_advisory_extras,
     wants_benchmark_or_decision_research,
     wants_execution_actions,
+    wants_fish_species_research,
 )
 from api.services.brain.decision_intelligence import build_decision_brief
 from api.services.brain.global_business_gaps import wants_global_gap_analysis, wants_solution_explanation
@@ -219,6 +220,38 @@ def _safe_block(label: str, fn, *args, **kwargs):
         return None
 
 
+_SALES_COMPETING_INTENTS = frozenset(
+    {
+        "profit",
+        "expense",
+        "hr",
+        "disease",
+        "job_cut",
+        "inventory",
+        "fuel",
+        "loans",
+        "accounting",
+        "payments",
+        "customer_ar",
+        "vendor_ap",
+        "fcr",
+        "density",
+        "biomass",
+        "harvest",
+        "feeding",
+        "pond",
+        "aquaculture_ops",
+        "benchmark",
+        "decision",
+        "predict",
+    }
+)
+
+
+def _is_sales_focused(intents: set[str]) -> bool:
+    return bool({"sales", "sales_today"} & intents) and not bool(intents & _SALES_COMPETING_INTENTS)
+
+
 def gather_context(
     company_id: int,
     message: str,
@@ -352,6 +385,39 @@ def gather_context(
         )
         if sales:
             context["sales"] = sales
+            inv_qs = (
+                Invoice.objects.filter(
+                    company_id=company_id,
+                    invoice_date__gte=period_start,
+                    invoice_date__lte=period_end,
+                )
+                .exclude(status__in=("draft", "void"))
+                .order_by("-invoice_date", "-id")
+            )
+            if station_id:
+                inv_qs = inv_qs.filter(station_id=station_id)
+            for inv in inv_qs[:12]:
+                all_refs.append(
+                    _ref(
+                        kind="erp",
+                        type_="invoice",
+                        id_=inv.id,
+                        label=inv.invoice_number or f"INV-{inv.id}",
+                        path="/invoices",
+                    )
+                )
+            for row in (sales.get("by_station") or [])[:8]:
+                sid = row.get("station_id")
+                if sid:
+                    all_refs.append(
+                        _ref(
+                            kind="erp",
+                            type_="station",
+                            id_=int(sid),
+                            label=row.get("station_name") or f"Station #{sid}",
+                            path="/invoices",
+                        )
+                    )
         if station_id:
             st = Station.objects.filter(pk=station_id, company_id=company_id).first()
             if st:
@@ -451,6 +517,24 @@ def gather_context(
             _ref(kind="erp", type_="medicine", id_=0, label="ঔষধ ক্যাটালগ", path="/aquaculture/medicine")
         )
 
+    if "fish_species" in intents or wants_fish_species_research(message):
+        from api.services.brain.external_knowledge import build_worldfish_species_pack
+
+        pack = build_worldfish_species_pack(message)
+        context["fish_species_research"] = pack
+        context["user_wants_advisory"] = True
+        for i, src in enumerate(pack.get("primary_sources") or []):
+            all_refs.append(
+                {
+                    "kind": "web",
+                    "type": "worldfish",
+                    "id": i + 1,
+                    "label": src.get("label") or "WorldFish",
+                    "path": "/aquaculture",
+                    "url": src.get("url") or "",
+                }
+            )
+
     if "feeding" in intents and not pond_id:
         missing_inputs.append({"key": "feeding_pond", "prompt_bn": "কোন পোন্ডের জন্য ফিড সুপারিশ চান?"})
 
@@ -503,7 +587,7 @@ def gather_context(
     context["missing_inputs"] = missing_inputs
     context["suggested_actions"] = suggested_actions
 
-    if not light_context and isinstance(business_snapshot, dict):
+    if not light_context and isinstance(business_snapshot, dict) and not _is_sales_focused(intents):
         mods = (business_snapshot.get("erp_modules") or {}) if not business_snapshot.get("partial") else {}
         if mods:
             ar = mods.get("sales_customers_ar") or {}
@@ -554,16 +638,22 @@ def gather_context(
         seen.add(key)
         unique_refs.append(r)
 
+    if _is_sales_focused(intents):
+        # Cite period sales only — not every pond / open AP bill.
+        unique_refs = [r for r in unique_refs if r.get("type") in ("company", "station", "invoice")]
+
     return context, unique_refs
 
 
 def should_use_web_research(message: str, plan: str) -> bool:
     """
     Paid plans: web-augmented model on every question (owner may ask anything).
-    Free: web when external knowledge, benchmarks, decision research, or help/how-to is needed.
+    Free: web when fish species, benchmarks, decision research, or help/how-to is needed.
     """
     from api.services.brain.plans import PLAN_FREE, WEB_RESEARCH_PLANS
 
+    if wants_fish_species_research(message):
+        return True
     if wants_benchmark_or_decision_research(message):
         return True
     if wants_global_gap_analysis(message) or wants_solution_explanation(message):
@@ -579,6 +669,8 @@ def should_use_web_research(message: str, plan: str) -> bool:
 
 def wants_web_research(message: str) -> bool:
     lower = (message or "").lower()
+    if wants_fish_species_research(message):
+        return True
     keywords = (
         "web",
         "internet",
@@ -632,5 +724,9 @@ def wants_web_research(message: str) -> bool:
         "পদ্ধতি",
         "সাহায্য",
         "ব্যাখ্যা",
+        "worldfish",
+        "species",
+        "প্রজাতি",
+        "মাছ চাষ",
     )
     return any(k in lower for k in keywords)

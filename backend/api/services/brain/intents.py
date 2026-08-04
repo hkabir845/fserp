@@ -206,6 +206,187 @@ def wants_benchmark_or_decision_research(message: str) -> bool:
     return any(k in lower for k in keywords)
 
 
+# Common aquaculture / fishery species (EN + BN + Banglish) — any mention → WorldFish/web research.
+_FISH_SPECIES_TOKENS: tuple[str, ...] = (
+    "tilapia",
+    "তেলাপিয়া",
+    "তেলাপিয়া",
+    "তিলাপিয়া",
+    "তিলাপিয়া",
+    "telapia",
+    "rohu",
+    "rui",
+    "রুই",
+    "catla",
+    "katla",
+    "কাতলা",
+    "মৃগেল",
+    "mrigal",
+    "mrigel",
+    "pangas",
+    "pangasius",
+    "পাঙ্গাস",
+    "পাঙ্গাশ",
+    "pungas",
+    "koi",
+    "কৈ",
+    "climbing perch",
+    "shing",
+    "শিং",
+    "magur",
+    "মাগুর",
+    "singhi",
+    "shrimp",
+    "prawn",
+    "চিংড়ি",
+    "চিংড়ি",
+    "bagda",
+    "বাগদা",
+    "galda",
+    "গলদা",
+    "tiger shrimp",
+    "white shrimp",
+    "carp",
+    "কার্প",
+    "silver carp",
+    "grass carp",
+    "common carp",
+    "bighead",
+    "hilsa",
+    "ইলিশ",
+    "ilish",
+    "tengra",
+    "টেংরা",
+    "puti",
+    "পুঁটি",
+    "সরপুঁটি",
+    "kalibaus",
+    "কালবাউশ",
+    "আইর",
+    "boal",
+    "বোয়াল",
+    "বোয়াল",
+    "shoal",
+    "শোল",
+    "শাল",
+    "গজার",
+    "gozar",
+    "baim",
+    "বাইম",
+    "barramundi",
+    "sea bass",
+    "seabass",
+    "asian seabass",
+    "trout",
+    "salmon",
+    "grouper",
+    "mullet",
+    "ভেটকি",
+    "bhetki",
+    "পারশে",
+    "khailsha",
+    "খৈলশা",
+    "snakehead",
+    "african catfish",
+    "clarias",
+    "oreochromis",
+    "labeo",
+    "cirrhinus",
+    "hypophthalmichthys",
+    "cyprinus",
+    "macrobrachium",
+    "penaeus",
+    "litopenaeus",
+)
+
+
+def wants_fish_species_research(message: str) -> bool:
+    """
+    Any question about a fish/shrimp species → answer via WorldFish + web research
+    (biology, culture, feed, disease, FCR norms) — not ERP-only.
+    """
+    lower = (message or "").lower().strip()
+    if not lower:
+        return False
+    if "worldfish" in lower or "world fish" in lower or "ওয়ার্ল্ডফিশ" in lower or "ওয়ার্ল্ডফিশ" in lower:
+        return True
+    if any(tok in lower for tok in _FISH_SPECIES_TOKENS):
+        return True
+    species_topic = any(
+        k in lower
+        for k in (
+            "species",
+            "প্রজাতি",
+            "fish culture",
+            "মাছ চাষ",
+            "মাছের চাষ",
+            "মৎস্য চাষ",
+            "fingerling",
+            "পোনা",
+            "fry",
+            "breeding",
+            "প্রজনন",
+            "hatchery",
+            "হ্যাচারি",
+            "aquaculture species",
+        )
+    )
+    if species_topic:
+        return True
+    fish_word = any(k in lower for k in ("fish", "মাছ", "মৎস্য", "shrimp", "prawn", "চিংড়ি", "চিংড়ি"))
+    if not fish_word:
+        return False
+    # Pure company fish-sale totals — keep ERP path (no forced species research).
+    if re.search(r"(বিক্রি|sales?|invoice|ইনভয়েস|আজকের\s*বিক্রি|ajker\s*sales)", lower) and not any(
+        tok in lower for tok in _FISH_SPECIES_TOKENS
+    ):
+        if not any(
+            k in lower for k in ("culture", "চাষ", "species", "প্রজাতি", "feed rate", "breeding", "disease of")
+        ):
+            return False
+    knowledge = any(
+        k in lower
+        for k in (
+            "culture",
+            "চাষ",
+            "how to",
+            "kivabe",
+            "কিভাবে",
+            "কীভাবে",
+            "what is",
+            "about",
+            "সম্পর্কে",
+            "তথ্য",
+            "information",
+            "habit",
+            "habitat",
+            "temperature",
+            "তাপমাত্রা",
+            "nutrition",
+            "পুষ্টি",
+            "grow",
+            "বাড়",
+            "বাড়",
+            "stocking density",
+            "ঘনত্ব",
+            "fcr",
+            "feed",
+            "ফিড",
+            "খাবার",
+            "disease",
+            "রোগ",
+            "spawn",
+            "larva",
+            "লার্ভা",
+            "best practice",
+            "standard",
+            "world",
+            "fao",
+        )
+    )
+    return knowledge
+
+
 def is_business_overview_question(message: str) -> bool:
     """Broad 'how is the business' questions — load ERP summary."""
     lower = (message or "").lower()
@@ -333,6 +514,7 @@ ERP_DATA_INTENTS = frozenset(
         "harvest",
         "feeding",
         "disease",
+        "fish_species",
         "sales",
         "sales_today",
         "profit",
@@ -650,6 +832,8 @@ def detect_intents(message: str) -> set[str]:
         intents.add("aquaculture_ops")
     if hit("asset", "depreciation", "fixed asset", "স্থায়ী সম্পদ", "ডিপ্রিসিয়েশন"):
         intents.add("fixed_assets")
+    if wants_fish_species_research(message):
+        intents.add("fish_species")
     if wants_benchmark_or_decision_research(message):
         intents.add("benchmark")
         intents.add("decision")

@@ -436,3 +436,88 @@ def test_gather_context_worldfish_audit(company_tenant):
     assert "worldfish_gap_audit" in ctx
     assert ctx["worldfish_gap_audit"].get("gaps")
     assert ctx.get("suggested_actions")
+
+
+def test_direct_answer_sales_today_shows_main_numbers():
+    ctx = {
+        "intents": ["sales_today"],
+        "user_question": "আজকের বিক্রি কত?",
+        "sales": {
+            "period": {"start": "2026-08-03", "end": "2026-08-03"},
+            "total_sales_bdt": "12,500.00",
+            "invoice_count": 3,
+            "by_station": [
+                {"station_name": "Premium Agro", "sales_bdt": "10,000.00", "invoice_count": 2},
+                {"station_name": "Adib Filling Station", "sales_bdt": "2,500.00", "invoice_count": 1},
+            ],
+        },
+    }
+    ans = compose_direct_answer(ctx)
+    assert ans is not None
+    body = ans["answer_bn"]
+    assert "### সারাংশ" in body
+    assert "### মূল সংখ্যা" in body
+    assert "৳12,500.00" in body
+    assert "Premium Agro" in body
+
+
+def test_merge_direct_keeps_erp_sales_totals_when_llm_omits_money():
+    from api.services.brain.chat import _merge_direct_with_llm
+
+    direct = {
+        "answer_bn": "### মূল সংখ্যা\n\n- মোট বিক্রি: **৳12,500.00**",
+        "reasoning_steps_bn": ["ইনভয়েস মোট।"],
+        "confidence": "high",
+        "sources": [],
+        "missing_inputs": [],
+        "suggested_actions": [],
+    }
+    llm = {
+        "answer_bn": "চাইলে বিক্রির পণ্যভিত্তিক / ক্যাশ-ক্রেডিট / ঘণ্টাভিত্তিক ভাগও বলতে পারি — যেটা লাগবে লিখুন।",
+        "reasoning_steps_bn": [],
+        "confidence": "high",
+        "sources": [],
+        "missing_inputs": [],
+        "suggested_actions": [],
+    }
+    merged = _merge_direct_with_llm(direct, llm)
+    assert "৳12,500.00" in merged["answer_bn"]
+    assert "চাইলে" in merged["answer_bn"]
+
+
+def test_sales_focused_refs_drop_ponds_and_bills():
+    from api.services.brain.tools import _is_sales_focused
+
+    assert _is_sales_focused({"sales_today"})
+    assert _is_sales_focused({"sales"})
+    assert not _is_sales_focused({"sales", "profit"})
+    assert not _is_sales_focused({"sales_today", "pond"})
+
+
+def test_pure_sales_totals_vs_manager_sales_question():
+    from api.services.brain.chat import _is_sales_totals_question
+
+    assert _is_sales_totals_question({"sales_today"}, "আজকের বিক্রি কত?")
+    assert _is_sales_totals_question({"sales"}, "ajker sales koto")
+    assert not _is_sales_totals_question({"sales_today"}, "আজকের বিক্রি কেমন, বাজারের সাথে তুলনা করো")
+    assert not _is_sales_totals_question({"sales"}, "sales improve korar advice dao")
+    assert not _is_sales_totals_question({"sales", "profit"}, "sales and profit koto")
+
+
+def test_fish_species_triggers_worldfish_web_research():
+    from api.services.brain.intents import detect_intents, wants_fish_species_research
+    from api.services.brain.question_router import TYPE_EXTERNAL_COMPARE, classify_question, route_question
+    from api.services.brain.tools import should_use_web_research
+
+    assert wants_fish_species_research("তেলাপিয়া চাষ কিভাবে করব?")
+    assert wants_fish_species_research("What is pangasius FCR according to WorldFish?")
+    assert wants_fish_species_research("রুই মাছের রোগ ও চিকিৎসা")
+    assert wants_fish_species_research("barramundi culture density")
+    assert "fish_species" in detect_intents("তেলাপিয়া species information dao")
+    assert classify_question("পাঙ্গাস চাষের best practice কী?") == TYPE_EXTERNAL_COMPARE
+    route = route_question("tilapia feeding rate WorldFish", plan="free")
+    assert route.include_external
+    assert route.model_role == "research"
+    assert should_use_web_research("কাতলা মাছ সম্পর্কে বলো", plan="free")
+    # Company fish sales totals should not force species research
+    assert not wants_fish_species_research("আজকের মাছ বিক্রি কত?")

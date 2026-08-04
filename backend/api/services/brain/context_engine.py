@@ -42,6 +42,7 @@ def build_company_context(
         context["external_knowledge"] = build_external_comparison_context(
             company_id,
             intents=context.get("intents") or [],
+            message=question,
         )
     if include_global_gaps:
         context["global_business_gaps"] = build_global_business_gap_analysis(context)

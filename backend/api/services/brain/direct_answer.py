@@ -530,13 +530,35 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
             period_label = f"**{p_start}**"
         else:
             period_label = f"**{p_start} – {p_end}**"
+        total = sales.get("total_sales_bdt", "0")
+        inv_count = sales.get("invoice_count", 0)
         parts.append(
-            f"**বিক্রি** ({period_label}): "
-            f"**৳{sales.get('total_sales_bdt', '0')}** ({sales.get('invoice_count', 0)} ইনভয়েস)।"
+            _md_section(
+                "সারাংশ",
+                f"এই সময়কালে ({period_label}) মোট বিক্রি **৳{total}** "
+                f"({inv_count} ইনভয়েস, ড্রাফট/ভয়েড বাদ)।",
+            )
         )
-        if wants_breakdown(question):
-            for row in (sales.get("by_station") or [])[:6]:
-                parts.append(f"  • {row.get('station_name')}: ৳{row.get('sales_bdt')}")
+        parts.append(
+            _md_section(
+                "মূল সংখ্যা",
+                _md_bullets(
+                    [
+                        f"মোট বিক্রি: **৳{total}**",
+                        f"ইনভয়েস সংখ্যা: **{inv_count}**",
+                        f"সময়কাল: {period_label}",
+                    ]
+                ),
+            )
+        )
+        by_station = sales.get("by_station") or []
+        if by_station and (wants_breakdown(question) or "sales_today" in intents or inv_count):
+            station_lines = [
+                f"{row.get('station_name')}: **৳{row.get('sales_bdt')}** "
+                f"({row.get('invoice_count', 0)} ইনভয়েস)"
+                for row in by_station[:8]
+            ]
+            parts.append(_md_section("স্টেশনভিত্তিক", _md_bullets(station_lines)))
         steps.append("ইনভয়েস মোট (ড্রাফট/ভয়েড বাদ)।")
 
     fin = context.get("financials")

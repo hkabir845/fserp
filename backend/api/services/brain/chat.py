@@ -14,7 +14,12 @@ from api.services.brain.advisory_envelope import enrich_structured_reply
 from api.services.brain.context_engine import build_company_context
 from api.services.brain.direct_answer import compose_direct_answer
 from api.services.brain.list_requests import detect_list_module
-from api.services.brain.intents import is_conversational_turn, is_greeting_message, wants_benchmark_or_decision_research
+from api.services.brain.intents import (
+    is_conversational_turn,
+    is_greeting_message,
+    wants_benchmark_or_decision_research,
+    wants_fish_species_research,
+)
 from api.services.brain.question_resolver import is_help_or_howto_question
 from api.services.brain.question_router import TYPE_ONBOARDING, route_question, route_to_dict
 from api.services.brain import prompts as brain_prompts
@@ -25,22 +30,26 @@ from api.services.brain import usage_logging as brain_usage
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are the Company Brain (কোম্পানি ব্রেইন) — the owner's trusted COO advisor and conversational AI
-for a Bangladeshi multi-business ERP (fuel stations, supershop, agro shop, restaurant, workshop, aquaculture ponds).
+SYSTEM_PROMPT = """You are the Company Brain (কোম্পানি ব্রেইন) — the owner's virtual business manager (ব্যবস্থাপক)
+and trusted COO for this Bangladeshi company (fuel stations, agro/shop, aquaculture ponds, and related ops).
 
-PERSONALITY: ChatGPT-style — warm, natural, multi-turn. You are a smart colleague, not a report bot.
+PERSONALITY: Warm, natural, multi-turn — like a sharp on-site manager who also knows the wider market. Not a report bot.
 
 ANSWER SCOPE (critical — highest priority):
-1. Answer ONLY what the user asked — lead with ### সারাংশ (1–3 sentences direct answer).
-2. Do NOT append comparison, advice, warnings, forecast, or roadmap unless the owner explicitly asked
-   (e.g. compare, recommend, predict, roadmap, audit, পরামর্শ, তুলনা, পূর্বাভাস, রোডম্যাপ).
-3. After a focused factual answer, you MAY end with one short line offering extras:
-   "চাইলে তুলনা / পরামর্শ / সতর্কতা / রোডম্যাপ বলতে পারি — যেটা লাগবে লিখুন।"
-4. Follow question_focus in ERP_CONTEXT for which ERP data to use first.
-5. Users often mention partial module/feature names (Banglish, typos) — infer the correct ERP module
-   from question_focus.matched_modules and erp_modules.module_index.
-6. For how-to or regulation questions: use WEB_RESEARCH_NOTE + global best practices; cite web sources.
-7. Do NOT dump unrelated module summaries — stay on topic.
+1. Answer ANY business question the owner asks — lead with ### সারাংশ (1–3 sentences direct answer).
+2. Company numbers come ONLY from ERP_CONTEXT (never invent ৳, kg, FCR, headcount, invoice totals).
+3. Combine ERP + outside knowledge when it helps manage the business (market prices, industry norms, Bangladesh
+   seasonality, fuel/fish/feed practice, regulations). Label clearly: **ERP** vs **বাইরের/বাজার রেফারেন্স**.
+4. For pure "কত?" number questions: put exact ERP totals in ### মূল সংখ্যা first; then optional short manager note.
+5. Full ### বিশ্ব/গ্লোবাল তুলনা, long roadmap, or heavy forecast sections when the owner asks for compare/advice/
+   predict/roadmap/audit — OR when a clear decision is needed. Otherwise keep interpretation brief.
+6. Follow question_focus in ERP_CONTEXT for which ERP data to use first; infer modules from Banglish/typos via
+   question_focus.matched_modules and erp_modules.module_index.
+7. How-to / regulation / market questions: use WEB_RESEARCH_NOTE + training knowledge; cite web sources (kind=web).
+8. Fish/shrimp SPECIES questions (any species worldwide): use WorldFish + FAO + whole-web research
+   (fish_species_research / EXTERNAL_KNOWLEDGE.worldfish_species_pack). Do not answer from ERP-only.
+9. Do NOT dump unrelated module summaries — stay on the owner's topic, but you MAY connect 1–2 related ERP facts
+   a real manager would mention (e.g. sales + AR, pond load + feed).
 
 LANGUAGE (critical):
 1. ALWAYS reply in fluent Bangla in answer_bn — even if the user writes English, Banglish, or romanized Bengali.
@@ -59,30 +68,29 @@ Write answer_bn as clean GitHub-style markdown so the UI renders like ChatGPT:
 6. Keep 3–6 scannable sections max; conversational but structured — like ChatGPT, not a report dump.
 7. answer_bn is markdown text inside JSON — do NOT wrap the whole answer in code fences.
 
-OPTIONAL ADVISORY (only when owner asks for compare / advice / warning / forecast / roadmap / decision):
-When requested, add these markdown sections using decision_brief, worldfish_gap_audit, and global knowledge:
+OPTIONAL ADVISORY (compare / advice / warning / forecast / roadmap / decision — or when a clear decision is needed):
+When relevant, add these markdown sections using decision_brief, worldfish_gap_audit, and global knowledge:
 - ### বিশ্ব/গ্লোবাল তুলনা — compare ERP numbers to WorldFish/FAO/industry/global benchmarks
 - ### সুপারিশ ও পরামর্শ — 2–5 prioritized actionable recommendations (decision_options + fixes)
 - ### ⚠️ সতর্কতা — risk_flags and gaps (or state no urgent warning)
 - ### পূর্বাভাস / রোডম্যাপ — outlook or next steps from projections; state assumptions
 End with brief disclaimer when predicting or recommending strongly.
-If NOT requested, skip these sections entirely — do not force them.
+For simple number lookups, prefer ERP ### মূল সংখ্যা + a short manager note — do not force full advisory sections.
 
 MODES:
-- Business questions: answer DIRECTLY from ERP data. NEVER say "open Reports" or "run a report".
-- Casual / general chat (ChatGPT mode): discuss ANY topic — world knowledge, tech, advice, writing, news
-  concepts, education, life, hobbies — naturally in Bangla. Do NOT force ERP data when the question is not
-  about this company. When the owner mixes general + company, answer both parts in one natural reply.
-- Company small-talk ("business kemon", "company er obostha"): use COMPANY overview lightly — friendly summary,
-  not a full report dump unless they ask for numbers or breakdowns.
-- Advisory / decision mode: ONLY when the owner asks to compare, predict, decide, audit, or wants advice —
-  then use decision_brief benchmarks, projections, and decision_options.
-- Execution: suggested_actions and requires_approval are for the owner to choose — never auto-execute.
-  Populate suggested_actions only when the owner asked for recommendations, decisions, disease Rx, harvest,
-  job cuts, or explicitly to act/approve. Otherwise return suggested_actions: [].
-- Predictions: use projections in decision_brief as estimates — state assumptions (run-rate, seasonality caveat).
-  Supplement with WEB_RESEARCH_NOTE for latest global/regional standards, disease alerts, fuel/fish market prices.
-- Casual chat: reply naturally in Bangla like ChatGPT; tie back to the business only when relevant.
+- Business manager mode (default for company questions): answer like you run this business day-to-day.
+  Use ERP first; add outside/industry context when useful. NEVER say "open Reports" or "run a report".
+- Mixed questions (company + outside): answer both in one Bangla reply — ERP facts + market/general knowledge.
+- Casual / general chat: discuss ANY topic (world knowledge, tech, writing, life) in Bangla; do not force ERP
+  when the question is not about this company.
+- Company small-talk ("business kemon", "company er obostha"): manager-style health check from overview +
+  key ERP pulse; offer deeper breakdown if needed.
+- Advisory / decision: when owner asks compare/predict/decide/audit/advice OR a decision is clearly needed —
+  use decision_brief, projections, and decision_options; state assumptions.
+- Execution: suggested_actions need owner approval — never auto-execute. Populate suggested_actions when the
+  owner wants recommendations, decisions, disease Rx, harvest, job cuts, or explicitly to act/approve.
+- Predictions: use decision_brief projections as estimates; supplement with WEB_RESEARCH_NOTE (markets, disease,
+  fuel/fish prices). State uncertainty.
 - Quote exact numbers (৳, kg, FCR, fish count, salaries) from JSON — never invent figures or names.
 
 BUSINESS RULES:
@@ -114,8 +122,8 @@ ADVISORY OUTPUT (when owner asks compare/predict/decide/advise/roadmap, WorldFis
 - suggested_actions: only when owner wants recommendations or execution; requires_approval true for operational changes.
 - Include decision_brief.disclaimer_bn when giving predictions or strong recommendations.
 
-SYNTHESIS: Only when the user asks for overview, advisory, or cross-module analysis — combine data like a human COO.
-For focused questions, stay on-topic; do not volunteer unrelated modules.
+SYNTHESIS: Act as the business manager — combine relevant ERP modules + outside context when it helps the decision.
+Stay on-topic; do not volunteer long unrelated module dumps.
 
 Return ONLY a single JSON object (no markdown fences):
 - answer_bn: string (conversational Bangla; lead with the direct answer)
@@ -126,9 +134,9 @@ Return ONLY a single JSON object (no markdown fences):
 - suggested_actions: array of {action, label_bn, requires_approval}"""
 
 CHAT_MODE_INSTRUCTION = (
-    "Conversational ChatGPT-style turn in Bangla. "
-    "Answer the question first (### সারাংশ). Add compare/advice/warning/forecast sections ONLY if the user asked. "
-    "You may discuss anything — general knowledge, advice, tech, life — not only business. "
+    "You are the owner's virtual business manager in Bangla. "
+    "Answer the question first (### সারাংশ). "
+    "Discuss anything — business, market, general knowledge — and combine company ERP with outside context when useful. "
     "Use COMPANY JSON when the question is about this company. "
     "If they mix general + company topics, answer both in one reply."
 )
@@ -153,6 +161,7 @@ def _trim_snapshot_for_llm(snap: Any) -> Any:
     return {
         "truncated": True,
         "financials_mtd": snap.get("financials_mtd") or {},
+        "sales_today": snap.get("sales_today"),
         "sales_mtd": snap.get("sales_mtd"),
         "expenses_mtd": snap.get("expenses_mtd"),
         "record_counts": snap.get("record_counts"),
@@ -260,6 +269,9 @@ def _trim_context_for_llm(context: dict[str, Any]) -> dict[str, Any]:
             "gaps": (wf.get("gaps") or [])[:12],
             "fixes": (wf.get("fixes") or [])[:10],
         }
+    fs = context.get("fish_species_research")
+    if isinstance(fs, dict):
+        trimmed["fish_species_research"] = fs
     gbg = context.get("global_business_gaps")
     if isinstance(gbg, dict):
         trimmed["global_business_gaps"] = {
@@ -298,17 +310,103 @@ def _erp_refs_as_sources(refs: list[dict[str, Any]], *, limit: int = 16) -> list
     return out
 
 
+def _answer_has_money(text: str) -> bool:
+    return "৳" in (text or "") or "BDT" in (text or "").upper()
+
+
 def _merge_direct_with_llm(direct: dict[str, Any], llm: dict[str, Any]) -> dict[str, Any]:
     """Prefer LLM narrative but keep ERP numbers from direct when LLM is thin."""
     out = dict(llm)
-    if not (out.get("answer_bn") or "").strip():
-        out["answer_bn"] = direct.get("answer_bn", "")
+    d_ans = (direct.get("answer_bn") or "").strip()
+    l_ans = (out.get("answer_bn") or "").strip()
+    if not l_ans:
+        out["answer_bn"] = d_ans
+    elif d_ans and _answer_has_money(d_ans) and not _answer_has_money(l_ans):
+        # LLM omitted ERP totals (e.g. only offered a breakdown) — keep ERP numbers first.
+        out["answer_bn"] = f"{d_ans}\n\n{l_ans}" if len(l_ans) < 500 else d_ans
+        out["confidence"] = direct.get("confidence") or out.get("confidence") or "high"
     if len(out.get("reasoning_steps_bn") or []) < 2 and direct.get("reasoning_steps_bn"):
         out["reasoning_steps_bn"] = direct["reasoning_steps_bn"]
     for key in ("missing_inputs", "suggested_actions"):
         if not out.get(key) and direct.get(key):
             out[key] = direct[key]
     return out
+
+
+def _is_sales_totals_question(intents: set[str], user_text: str = "") -> bool:
+    """Pure 'কত?' sales totals — ERP-direct. Manager-style sales questions use LLM."""
+    if not {"sales", "sales_today"} & intents:
+        return False
+    competing = {
+        "profit",
+        "expense",
+        "hr",
+        "disease",
+        "job_cut",
+        "inventory",
+        "fuel",
+        "loans",
+        "accounting",
+        "payments",
+        "customer_ar",
+        "vendor_ap",
+        "fcr",
+        "density",
+        "biomass",
+        "harvest",
+        "feeding",
+        "pond",
+        "aquaculture_ops",
+        "benchmark",
+        "decision",
+        "predict",
+    }
+    if intents & competing:
+        return False
+    if "fish_species" in intents:
+        return False
+    from api.services.brain.intents import wants_advisory_extras, wants_fish_species_research
+
+    if wants_fish_species_research(user_text):
+        return False
+    if wants_advisory_extras(user_text, intents):
+        return False
+    if wants_benchmark_or_decision_research(user_text):
+        return False
+    if is_help_or_howto_question(user_text):
+        return False
+    lower = (user_text or "").lower()
+    manager_kw = (
+        "kemon",
+        "কেমন",
+        "analysis",
+        "বিশ্লেষণ",
+        "opinion",
+        "মতামত",
+        "advice",
+        "পরামর্শ",
+        "suggest",
+        "recommend",
+        "market",
+        "বাজার",
+        "industry",
+        "compare",
+        "তুলনা",
+        "why",
+        "কেন",
+        "improve",
+        "উন্নতি",
+        "strategy",
+        "plan",
+        "কী করব",
+        "ki korbo",
+        "should",
+        "vs ",
+        "versus",
+    )
+    if any(k in lower for k in manager_kw):
+        return False
+    return True
 
 
 def _offline_response(
@@ -426,11 +524,12 @@ def _build_messages(
             "question_focus": context.get("question_focus") or {},
             "QUESTION_ROUTE": context.get("question_route") or {},
             "INSTRUCTION": (
-                "Answer like a human COO advisor in Bangla. User may write Banglish — understand it. "
-                "Structure answer_bn: ### সারাংশ → direct answer to the question ONLY. "
-                "Add ### বিশ্ব/গ্লোবাল তুলনা, ### সুপারিশ, ### ⚠️ সতর্কতা, ### পূর্বাভাস/রোডম্যাপ "
-                "ONLY if the owner explicitly asked for compare, advice, warning, forecast, roadmap, or decision. "
-                "Use decision_brief, forecast_pack, and external_knowledge when advisory was requested. "
+                "Answer like the owner's virtual business manager in Bangla. User may write Banglish — understand it. "
+                "Structure answer_bn: ### সারাংশ → direct answer; ### মূল সংখ্যা for ERP totals when relevant. "
+                "Combine ERP + useful outside/industry context; label ERP vs বাইরের রেফারেন্স. "
+                "Add full ### বিশ্ব/গ্লোবাল তুলনা, ### সুপারিশ, ### ⚠️ সতর্কতা, ### পূর্বাভাস/রোডম্যাপ "
+                "when the owner asked for compare/advice/forecast/roadmap/decision OR a clear decision is needed. "
+                "Use decision_brief, forecast_pack, and external_knowledge when present. "
                 "suggested_actions: [] unless owner asked for recommendations or to act/approve."
             ),
         }
@@ -580,6 +679,12 @@ def _generate_assistant_reply_inner(
 
     direct = compose_direct_answer(context, lang=company.language or "bn")
 
+    # Pure sales totals ("কত?"): ERP numbers are authoritative. Manager-style sales → LLM.
+    if direct and context.get("sales") and _is_sales_totals_question(intents_set, user_text):
+        structured = dict(direct)
+        structured["sources"] = _erp_refs_as_sources(refs, limit=16)
+        return enrich_structured_reply(structured, context), "erp-direct-sales"
+
     if conversational:
         if not gateway.openrouter_configured(plan=plan):
             structured = direct or _offline_response(context, refs, user_text, plan=plan)
@@ -671,6 +776,14 @@ def _generate_assistant_reply_inner(
             "Disease question on free tier: use medicine_catalog + aquaculture knowledge from training; "
             "note that Growth plan enables live web research for better accuracy."
         )
+    elif "fish_species" in (context.get("intents") or []) or wants_fish_species_research(user_text):
+        web_note = (
+            "FISH / SPECIES question: Answer from WorldFish + FAO + live web research for ANY fish or shrimp species. "
+            "Use fish_species_research / EXTERNAL_KNOWLEDGE.worldfish_species_pack primary_sources. "
+            "Cover culture method, stocking, water quality, feed/FCR ranges, common diseases, Bangladesh relevance. "
+            "Cite WorldFish/FAO/web URLs in sources (kind=web). "
+            "If the company has that species in ERP ponds, mention ERP numbers separately and label them."
+        )
     elif is_help_or_howto_question(user_text):
         web_note = (
             "Help/how-to question: provide a clear, professional step-by-step answer in Bangla. "
@@ -679,9 +792,10 @@ def _generate_assistant_reply_inner(
         )
     else:
         web_note = (
-            "Focused factual answer only — use ERP data for the specific question. "
-            "Do NOT add benchmark compare, recommendations, warnings, or forecast unless the user asked. "
-            "You may offer one line: owner can ask for compare/advice/roadmap if they want more."
+            "Answer as the owner's virtual business manager. Use ERP data for company numbers. "
+            "You may add a short business interpretation and useful outside/industry context "
+            "(label ERP vs বাইরের রেফারেন্স). Keep full compare/forecast/roadmap sections concise "
+            "unless the owner clearly wants a decision or asked for them."
         )
 
     messages = _build_messages(

@@ -13,6 +13,7 @@ from api.services.brain.intents import (
     is_owner_concern_question,
     wants_advisory_extras,
     wants_benchmark_or_decision_research,
+    wants_fish_species_research,
 )
 from api.services.brain.global_business_gaps import wants_global_gap_analysis, wants_solution_explanation
 from api.services.brain.list_requests import detect_list_module
@@ -121,6 +122,9 @@ def classify_question(text: str, *, intents: list[str] | None = None) -> str:
 
     if is_conversational_turn(intent_set) and not intent_set - {"chat", "greeting", "help"}:
         return TYPE_CONVERSATIONAL
+    # Any fish/shrimp species question → WorldFish + web research path.
+    if wants_fish_species_research(q) or "fish_species" in intent_set:
+        return TYPE_EXTERNAL_COMPARE
     if _FORECAST_RE.search(q) or wants_benchmark_or_decision_research(q):
         if _FORECAST_RE.search(q):
             return TYPE_FORECASTING
@@ -237,13 +241,13 @@ def route_question(
         TYPE_ADVISORY,
         TYPE_FORECASTING,
         TYPE_REPORT,
-    ) or wants_global_gap_analysis(q) or wants_solution_explanation(q) or is_owner_concern_question(q)
+    ) or wants_global_gap_analysis(q) or wants_solution_explanation(q) or is_owner_concern_question(q) or wants_fish_species_research(q)
 
     use_research = qtype in (
         TYPE_EXTERNAL_COMPARE,
         TYPE_GAP_ANALYSIS,
         TYPE_SOLUTION_EXPLAIN,
-    ) or (needs_global and plan in ("growth", "enterprise"))
+    ) or wants_fish_species_research(q) or (needs_global and plan in ("growth", "enterprise"))
 
     model_role = "research" if use_research else "reasoning"
     if qtype == TYPE_SIMPLE_DATA and not wants_advisory_extras(q) and not needs_global:

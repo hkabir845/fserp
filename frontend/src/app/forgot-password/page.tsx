@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getApiBaseUrl } from '@/lib/api'
-import { ArrowLeft, Loader2, Eye, EyeOff, Building2, KeyRound, Mail, Shield } from 'lucide-react'
+import { ArrowLeft, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
+  const otpRef = useRef<HTMLInputElement>(null)
   const [identifier, setIdentifier] = useState('')
   const [step, setStep] = useState<1 | 2>(1)
   const [otp, setOtp] = useState('')
@@ -17,6 +18,12 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (step === 2) {
+      otpRef.current?.focus()
+    }
+  }, [step])
 
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,10 +48,7 @@ export default function ForgotPasswordPage() {
         setError(detail || 'Something went wrong. Try again later.')
         return
       }
-      setMessage(
-        detail ||
-          'If an account exists, we sent a 6-digit code. Enter it below with your new password.'
-      )
+      setMessage('Check your inbox (and spam) for a 6-digit code. It expires in 5 minutes.')
       setStep(2)
       setOtp('')
     } catch {
@@ -102,50 +106,30 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl bg-white app-modal-pad shadow-xl border border-border/80">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-foreground text-white">
-          <KeyRound className="h-6 w-6" aria-hidden />
-        </div>
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">Reset your password</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {step === 1
-            ? 'Enter the email or username for your account. We will email a 6-digit one-time code (no reset link).'
-            : 'Enter the 6-digit code from your email, then choose a new password.'}
-        </p>
-
-        <div className="mt-4 flex gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
-          <Mail className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" aria-hidden />
-          <p>
-            <span className="font-medium text-foreground">Where we send the code: </span>
-            If you sign in with an email, we use that inbox. If you use a short username, we use the
-            <strong> profile email </strong>
-            on your user (ask your company administrator if it is missing).
-          </p>
-        </div>
-        <div className="mt-2 flex gap-2 rounded-lg border border-amber-100 bg-warning/10/50 px-3 py-2.5 text-xs text-warning-foreground/90">
-          <Building2 className="h-4 w-4 shrink-0 text-warning-foreground/80 mt-0.5" aria-hidden />
-          <p>
-            <span className="font-medium text-warning-foreground">Company owners &amp; staff: </span>
-            use the <strong>same</strong> email or username you enter on the sign-in page. Your organization should keep
-            your profile email up to date if you do not use an email as your username. After a successful reset, if
-            sign-in still fails, your <strong>organization account</strong> may be suspended—contact an administrator.
-          </p>
-        </div>
-        <div className="mt-2 flex gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs text-foreground/85">
-          <Shield className="h-4 w-4 shrink-0 text-primary mt-0.5" aria-hidden />
-          <p>
-            We never tell you whether an account exists, so the same message appears in every case. If the same
-            <strong> email is shared by several user accounts</strong> (rare and discouraged), use your
-            <strong> username</strong> here instead; password reset only matches a shared email unambiguously when it
-            is unique in the system.
-          </p>
+    <div className="min-h-[100dvh] flex items-start sm:items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 px-3 py-4 sm:px-4 sm:py-8 overflow-y-auto">
+      <div className="w-full max-w-md my-auto rounded-2xl bg-white p-5 sm:p-7 shadow-xl border border-border/80">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-white">
+            <KeyRound className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+              Reset your password
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {step === 1
+                ? 'We email a 6-digit code (no reset link).'
+                : 'Enter the code, then choose a new password.'}
+            </p>
+          </div>
         </div>
 
         {step === 1 ? (
-          <form onSubmit={handleRequestSubmit} className="mt-8 space-y-4">
+          <form onSubmit={handleRequestSubmit} className="mt-5 space-y-3.5">
             {error && (
-              <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>
+              <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+                {error}
+              </div>
             )}
 
             <div>
@@ -158,21 +142,28 @@ export default function ForgotPasswordPage() {
                 autoComplete="username"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-lg border border-border px-3 py-2.5 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-ring"
                 placeholder="you@company.com or your username"
                 disabled={loading}
+                autoFocus
               />
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              We email a <strong className="text-foreground">6-digit code</strong> that expires in 5 minutes. No
-              confirmation link is sent.
-            </p>
+            <details className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium text-foreground select-none">
+                Tips (optional)
+              </summary>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4">
+                <li>Use the same email or username you use on the sign-in page.</li>
+                <li>If you use a short username, the code goes to your profile email.</li>
+                <li>We never confirm whether an account exists (same message either way).</li>
+              </ul>
+            </details>
 
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
+              className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -185,18 +176,21 @@ export default function ForgotPasswordPage() {
             </button>
           </form>
         ) : (
-          <form onSubmit={handleOtpResetSubmit} className="mt-8 space-y-4">
+          <form onSubmit={handleOtpResetSubmit} className="mt-5 space-y-3.5">
             {message && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
                 {message}
               </div>
             )}
             {error && (
-              <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>
+              <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+                {error}
+              </div>
             )}
 
             <p className="text-xs text-muted-foreground">
-              Account: <span className="font-mono text-foreground">{identifier.trim() || '—'}</span>
+              Account:{' '}
+              <span className="font-mono text-foreground break-all">{identifier.trim() || '—'}</span>
             </p>
 
             <div>
@@ -204,13 +198,14 @@ export default function ForgotPasswordPage() {
                 6-digit code
               </label>
               <input
+                ref={otpRef}
                 id="otp"
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full rounded-lg border border-border px-3 py-2 font-mono text-lg tracking-widest text-foreground"
+                className="w-full rounded-lg border border-border px-3 py-3 font-mono text-xl tracking-[0.35em] text-center text-foreground"
                 placeholder="000000"
                 maxLength={6}
                 disabled={loading}
@@ -227,14 +222,14 @@ export default function ForgotPasswordPage() {
                   type={showPw ? 'text' : 'password'}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-foreground"
+                  className="w-full rounded-lg border border-border px-3 py-2.5 pr-10 text-foreground"
                   autoComplete="new-password"
                   minLength={8}
                   disabled={loading}
                 />
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground"
                   onClick={() => setShowPw((s) => !s)}
                   aria-label={showPw ? 'Hide password' : 'Show password'}
                 >
@@ -253,13 +248,13 @@ export default function ForgotPasswordPage() {
                 type={showPw ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-lg border border-border px-3 py-2 text-foreground"
+                className="w-full rounded-lg border border-border px-3 py-2.5 text-foreground"
                 autoComplete="new-password"
                 disabled={loading}
               />
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row pt-1">
               <button
                 type="button"
                 onClick={() => {
@@ -270,7 +265,7 @@ export default function ForgotPasswordPage() {
                   setNewPassword('')
                   setConfirmPassword('')
                 }}
-                className="rounded-lg border border-border py-2.5 text-sm font-medium text-foreground hover:bg-muted/40"
+                className="min-h-11 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 sm:w-auto"
                 disabled={loading}
               >
                 Back
@@ -278,7 +273,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
+                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
               >
                 {loading ? (
                   <>
@@ -295,18 +290,11 @@ export default function ForgotPasswordPage() {
 
         <Link
           href="/login"
-          className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80"
+          className="mt-5 inline-flex min-h-10 items-center gap-2 text-sm font-medium text-primary hover:text-primary/80"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to sign in
         </Link>
-
-        <p className="mt-8 text-xs leading-relaxed text-muted-foreground">
-          <strong className="font-medium text-muted-foreground">Operators:</strong> configure SMTP (
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">EMAIL_HOST</code>,{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">DEFAULT_FROM_EMAIL</code>) on the
-          server so OTP codes deliver to the inbox.
-        </p>
       </div>
     </div>
   )

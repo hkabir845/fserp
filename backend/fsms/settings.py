@@ -315,7 +315,7 @@ FRONTEND_BASE_URL = (
     or "https://mahasoftcorporation.com"
 )
 FSERP_PLATFORM_OWNER_EMAIL = (
-    (os.environ.get("FSERP_PLATFORM_OWNER_EMAIL") or "bismillah.filling@gmail.com").strip()
+    (os.environ.get("FSERP_PLATFORM_OWNER_EMAIL") or "hkabir845@gmail.com").strip()
 )
 FSERP_APP_DISPLAY_NAME = (os.environ.get("FSERP_APP_DISPLAY_NAME") or "FS ERP").strip() or "FS ERP"
 
@@ -331,7 +331,9 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("1", "true",
 EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "").strip().lower() in ("1", "true", "yes")
 EMAIL_HOST_USER = (os.environ.get("EMAIL_HOST_USER") or "").strip()
 EMAIL_HOST_PASSWORD = (os.environ.get("EMAIL_HOST_PASSWORD") or "").strip()
-DEFAULT_FROM_EMAIL = (os.environ.get("DEFAULT_FROM_EMAIL") or "FS ERP <noreply@mahasoftcorporation.com>").strip()
+DEFAULT_FROM_EMAIL = (
+    os.environ.get("DEFAULT_FROM_EMAIL") or "FS ERP <hkabir845@gmail.com>"
+).strip()
 
 _cache_url = (os.environ.get("DJANGO_CACHE_URL") or os.environ.get("REDIS_URL") or "").strip()
 _cache_prefix = (os.environ.get("FSERP_CACHE_KEY_PREFIX") or "fserp")[:32]

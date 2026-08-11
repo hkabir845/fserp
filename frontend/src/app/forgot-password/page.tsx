@@ -6,12 +6,9 @@ import { useRouter } from 'next/navigation'
 import { getApiBaseUrl } from '@/lib/api'
 import { ArrowLeft, Loader2, Eye, EyeOff, Building2, KeyRound, Mail, Shield } from 'lucide-react'
 
-type ResetMethod = 'link' | 'otp'
-
 export default function ForgotPasswordPage() {
   const router = useRouter()
   const [identifier, setIdentifier] = useState('')
-  const [method, setMethod] = useState<ResetMethod>('otp')
   const [step, setStep] = useState<1 | 2>(1)
   const [otp, setOtp] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -36,7 +33,7 @@ export default function ForgotPasswordPage() {
       const res = await fetch(`${base}/auth/forgot-password/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ email: trimmed, method }),
+        body: JSON.stringify({ email: trimmed, method: 'otp' }),
       })
       const data = await res.json().catch(() => ({}))
       const detail = typeof data?.detail === 'string' ? data.detail : null
@@ -44,19 +41,12 @@ export default function ForgotPasswordPage() {
         setError(detail || 'Something went wrong. Try again later.')
         return
       }
-      if (method === 'otp') {
-        setMessage(
-          detail ||
-            'If an account exists, we sent a 6-digit code. Enter it below with your new password.'
-        )
-        setStep(2)
-        setOtp('')
-        return
-      }
       setMessage(
         detail ||
-          'If an account exists for that address, we sent a confirmation link. Open it in your email to set a new password.'
+          'If an account exists, we sent a 6-digit code. Enter it below with your new password.'
       )
+      setStep(2)
+      setOtp('')
     } catch {
       setError('Cannot reach the server. Check that the backend is running.')
     } finally {
@@ -120,14 +110,14 @@ export default function ForgotPasswordPage() {
         <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">Reset your password</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           {step === 1
-            ? 'Enter the email or username for your account. We will send a secure link or a one-time code to the mailbox on file for that user.'
+            ? 'Enter the email or username for your account. We will email a 6-digit one-time code (no reset link).'
             : 'Enter the 6-digit code from your email, then choose a new password.'}
         </p>
 
         <div className="mt-4 flex gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
           <Mail className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" aria-hidden />
           <p>
-            <span className="font-medium text-foreground">Where we send the message: </span>
+            <span className="font-medium text-foreground">Where we send the code: </span>
             If you sign in with an email, we use that inbox. If you use a short username, we use the
             <strong> profile email </strong>
             on your user (ask your company administrator if it is missing).
@@ -139,7 +129,7 @@ export default function ForgotPasswordPage() {
             <span className="font-medium text-warning-foreground">Company owners &amp; staff: </span>
             use the <strong>same</strong> email or username you enter on the sign-in page. Your organization should keep
             your profile email up to date if you do not use an email as your username. After a successful reset, if
-            sign-in still fails, your             <strong>organization account</strong> may be suspended—contact an administrator.
+            sign-in still fails, your <strong>organization account</strong> may be suspended—contact an administrator.
           </p>
         </div>
         <div className="mt-2 flex gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-xs text-foreground/85">
@@ -154,14 +144,6 @@ export default function ForgotPasswordPage() {
 
         {step === 1 ? (
           <form onSubmit={handleRequestSubmit} className="mt-8 space-y-4">
-            {message && method === 'link' && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                {message}
-                <p className="mt-2 text-xs text-emerald-800">
-                  The email contains a link to confirm the reset, then you choose a new password. Check spam.
-                </p>
-              </div>
-            )}
             {error && (
               <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>
             )}
@@ -182,43 +164,10 @@ export default function ForgotPasswordPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <span className="text-sm font-medium text-foreground/85">How to reset</span>
-              <div className="space-y-2 text-sm text-foreground">
-                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3 has-[:checked]:border-blue-400 has-[:checked]:bg-blue-50/50">
-                  <input
-                    type="radio"
-                    name="method"
-                    className="mt-1"
-                    checked={method === 'link'}
-                    onChange={() => setMethod('link')}
-                    disabled={loading}
-                  />
-                  <span>
-                    <strong>Confirmation link (recommended)</strong>
-                    <span className="block text-xs text-muted-foreground mt-0.5">
-                      You open the link from email to confirm you want to reset, then set a new password on the site.
-                    </span>
-                  </span>
-                </label>
-                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border p-3 has-[:checked]:border-blue-400 has-[:checked]:bg-blue-50/50">
-                  <input
-                    type="radio"
-                    name="method"
-                    className="mt-1"
-                    checked={method === 'otp'}
-                    onChange={() => setMethod('otp')}
-                    disabled={loading}
-                  />
-                  <span>
-                    <strong>One-time code</strong>
-                    <span className="block text-xs text-muted-foreground mt-0.5">
-                      We email a 6-digit code; you enter it here with your new password. Code expires in 5 minutes.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              We email a <strong className="text-foreground">6-digit code</strong> that expires in 5 minutes. No
+              confirmation link is sent.
+            </p>
 
             <button
               type="submit"
@@ -230,8 +179,6 @@ export default function ForgotPasswordPage() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Sending…
                 </>
-              ) : method === 'link' ? (
-                'Send confirmation link'
               ) : (
                 'Send code'
               )}
@@ -357,9 +304,8 @@ export default function ForgotPasswordPage() {
         <p className="mt-8 text-xs leading-relaxed text-muted-foreground">
           <strong className="font-medium text-muted-foreground">Operators:</strong> configure SMTP (
           <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">EMAIL_HOST</code>,{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">DEFAULT_FROM_EMAIL</code>) and{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">FRONTEND_BASE_URL</code> on the
-          server so messages deliver and links open in this app.
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">DEFAULT_FROM_EMAIL</code>) on the
+          server so OTP codes deliver to the inbox.
         </p>
       </div>
     </div>

@@ -37,16 +37,14 @@ def test_forgot_password_unknown_user_still_200(api_client):
     assert "detail" in data
 
 
-@override_settings(
-    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-    FRONTEND_BASE_URL="https://app.example.com",
-)
-def test_forgot_password_link_then_reset_password(api_client, company_tenant):
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_forgot_password_forces_otp_even_if_client_requests_link(api_client, company_tenant):
+    """Forgot-password always emails a 6-digit OTP; link method is ignored."""
     mail.outbox.clear()
     u = User(
-        username="pw_reset_link@test.com",
-        email="pw_reset_link@test.com",
-        full_name="PW Reset Link",
+        username="pw_reset_force_otp@test.com",
+        email="pw_reset_force_otp@test.com",
+        full_name="PW Reset Force OTP",
         role="manager",
         is_active=True,
         company_id=company_tenant.id,
@@ -64,12 +62,15 @@ def test_forgot_password_link_then_reset_password(api_client, company_tenant):
     combined = mail.outbox[0].body
     if mail.outbox[0].alternatives:
         combined += str(mail.outbox[0].alternatives[0][0])
-    m = re.search(r"token=([A-Za-z0-9_-]+)", combined)
+    assert "token=" not in combined
+    m = re.search(r"\b(\d{6})\b", combined)
     assert m, combined[:800]
 
     r2 = api_client.post(
         "/api/auth/reset-password/",
-        data=json.dumps({"token": m.group(1), "new_password": "AfterReset#2"}),
+        data=json.dumps(
+            {"email": u.username, "otp": m.group(1), "new_password": "AfterReset#2"}
+        ),
         content_type="application/json",
     )
     assert r2.status_code == 200, r2.content.decode()

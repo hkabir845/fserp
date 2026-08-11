@@ -241,16 +241,14 @@ def _find_active_user_by_identifier(identifier: str) -> User | None:
 @require_http_methods(["POST"])
 def forgot_password(request):
     """
-    Request password reset: email a confirmation link and/or a one-time code.
+    Request password reset: always emails a 6-digit OTP (never a reset link).
 
     Body:
       - email: sign-in email or username (required)
-      - method: "link" (default) | "otp"
+      - method: ignored if present (OTP only)
 
-    Link: user must open the link to confirm they want to reset; then they set a new password.
-    OTP: a 6-digit code is sent and stored in the database (works across multiple API workers);
-         user completes reset with POST /auth/reset-password/ using email, otp, new_password
-         (see reset_password).
+    OTP is stored in the database (works across multiple API workers).
+    Complete with POST /auth/reset-password/ using email, otp, new_password.
 
     Always returns a generic success when no user matches (anti-enumeration).
     """
@@ -266,10 +264,6 @@ def forgot_password(request):
         key=f"rl:pwreset_ip_v1:{ip}", limit=25, period_seconds=3600
     ):
         return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
-
-    method = (body.get("method") or "link").strip().lower()
-    if method not in ("link", "otp"):
-        return JsonResponse({"detail": 'method must be "link" or "otp".'}, status=400)
 
     throttle_key = f"pwreset_throttle:{email.lower()}"
     if cache.get(throttle_key):
@@ -287,70 +281,34 @@ def forgot_password(request):
 
     display = getattr(user, "full_name", None) or user.username
 
-    if method == "otp":
-        # Store OTP in the database so password reset works with multiple Gunicorn workers
-        # (LocMem cache is not shared across processes).
-        token_row = None
-        raw_otp = f"{secrets.randbelow(900000) + 100000:06d}"
-        otp_hash = _hash_otp(user.id, raw_otp)
-        expires = timezone.now() + timedelta(seconds=OTP_TTL_SEC)
-        with transaction.atomic():
-            PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(
-                used_at=timezone.now()
-            )
-            try:
-                token_row = PasswordResetToken.objects.create(
-                    user=user, token_hash=otp_hash, expires_at=expires
-                )
-            except Exception:
-                logger.exception("password reset: failed to store OTP token for user id=%s", user.id)
-                cache.delete(throttle_key)
-                return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
-        try:
-            _send_password_reset_otp_email(to_addr, raw_otp, display)
-        except Exception:
-            logger.exception("password reset OTP: email send failed for user id=%s", user.id)
-            if token_row is not None:
-                PasswordResetToken.objects.filter(pk=token_row.pk).delete()
-            cache.delete(throttle_key)
-            return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
-        if settings.DEBUG:
-            logger.info("password reset OTP (dev) user id=%s: sent to %s", user.id, to_addr)
-        return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
-
-    # method == "link"
+    # Store OTP in the database so password reset works with multiple Gunicorn workers
+    # (LocMem cache is not shared across processes).
     token_row = None
+    raw_otp = f"{secrets.randbelow(900000) + 100000:06d}"
+    otp_hash = _hash_otp(user.id, raw_otp)
+    expires = timezone.now() + timedelta(seconds=OTP_TTL_SEC)
     with transaction.atomic():
         PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(
             used_at=timezone.now()
         )
-        raw_token = secrets.token_urlsafe(48)
-        token_hash = _hash_token(raw_token)
-        expires = timezone.now() + timedelta(minutes=RESET_LINK_VALIDITY_MINUTES)
         try:
             token_row = PasswordResetToken.objects.create(
-                user=user, token_hash=token_hash, expires_at=expires
+                user=user, token_hash=otp_hash, expires_at=expires
             )
         except Exception:
-            logger.exception("password reset: failed to store token for user id=%s", user.id)
+            logger.exception("password reset: failed to store OTP token for user id=%s", user.id)
             cache.delete(throttle_key)
             return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
-
-    frontend = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
-    reset_link = f"{frontend}/reset-password?token={raw_token}"
-
     try:
-        _send_password_reset_link_email(to_addr, reset_link, display)
+        _send_password_reset_otp_email(to_addr, raw_otp, display)
     except Exception:
-        logger.exception("password reset: email send failed for user id=%s", user.id)
+        logger.exception("password reset OTP: email send failed for user id=%s", user.id)
         if token_row is not None:
             PasswordResetToken.objects.filter(pk=token_row.pk).delete()
         cache.delete(throttle_key)
         return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
-
     if settings.DEBUG:
-        logger.info("password reset link (dev) user id=%s: %s", user.id, reset_link)
-
+        logger.info("password reset OTP (dev) user id=%s: sent to %s", user.id, to_addr)
     return JsonResponse(FORGOT_GENERIC_RESPONSE, status=200)
 
 

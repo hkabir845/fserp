@@ -1,0 +1,23 @@
+---
+description: Always commit and push local code changes to GitHub
+alwaysApply: true
+---
+
+# Always update GitHub
+
+When you change project files on the local PC, **always commit and push to `origin`** in the same turn (unless the user explicitly says not to).
+
+## Required flow
+
+1. Make the code/config changes.
+2. Run the repo’s normal git safety checks (`status`, `diff`, `log`).
+3. Stage relevant files (never secrets: `.env`, credentials, App Passwords).
+4. Commit with a clear message (PowerShell-safe `-m` is fine on Windows).
+5. `git push origin HEAD` (or the current branch’s upstream).
+6. Tell the user the commit SHA / that GitHub is updated, and the usual VPS `git pull` + deploy if production needs it.
+
+## Exceptions
+
+- Do **not** push if the user says “local only”, “don’t push”, or “don’t commit”.
+- Do **not** commit `.env`, keys, or passwords.
+- Do **not** force-push to `main`/`master` unless the user explicitly requests it.

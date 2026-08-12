@@ -59,6 +59,7 @@ export type InvoiceExport = {
   pos_receipt_number?: string | null
   source?: string
   invoice_date?: string
+  created_at?: string | null
   due_date?: string | null
   status?: string
   customer_name?: string
@@ -130,7 +131,7 @@ export function buildInvoicePrintHtml(
   opts: {
     currencySymbol: string
     formatDateOnly: (iso: string) => string
-    formatDateTime: (d: Date) => string
+    formatDateTime: (d: Date | string) => string
     resolveCustomer: (inv: InvoiceExport) => string
     resolveItemLabel: (line: InvoiceLineExport) => string
     formatNumber: (n: number) => string
@@ -140,6 +141,10 @@ export function buildInvoicePrintHtml(
   const cust = opts.resolveCustomer(inv)
   const lines = inv.line_items || []
   const sym = opts.currencySymbol
+  const dateStamp = inv.created_at
+    ? opts.formatDateTime(inv.created_at)
+    : opts.formatDateOnly(inv.invoice_date || '')
+  const dateLabel = inv.created_at ? 'Date / Time' : 'Date'
   const lineRows = lines
     .map(
       (item) => `<tr>
@@ -167,8 +172,8 @@ export function buildInvoicePrintHtml(
     <h1>Invoice / receipt</h1>
     <div class="period">
       <strong>Invoice #</strong> ${escapeHtml(displayNo)}<br/>
-      <strong>Status:</strong> ${escapeHtml(inv.status || '')} · <strong>Date:</strong> ${escapeHtml(
-        opts.formatDateOnly(inv.invoice_date || ''),
+      <strong>Status:</strong> ${escapeHtml(inv.status || '')} · <strong>${dateLabel}:</strong> ${escapeHtml(
+        dateStamp,
       )}${inv.due_date ? ` · <strong>Due:</strong> ${escapeHtml(opts.formatDateOnly(inv.due_date))}` : ''}
       <br/>Printed ${escapeHtml(opts.formatDateTime(new Date()))}
     </div>

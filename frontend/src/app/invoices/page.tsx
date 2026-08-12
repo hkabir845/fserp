@@ -73,6 +73,8 @@ interface Invoice {
   customer_id: number
   customer_name?: string
   invoice_date: string
+  /** Sale/create timestamp (ISO); used for Date/Time like POS preview. */
+  created_at?: string | null
   due_date: string
   subtotal: number
   tax_amount: number
@@ -153,8 +155,12 @@ function normalizeInvoiceLinesFromApi(raw: Record<string, unknown>): InvoiceLine
 function normalizeInvoiceFromApi(raw: Record<string, unknown>): Invoice {
   const r = raw as Record<string, unknown>
   const base = { ...(raw as unknown as Invoice) }
+  const createdRaw = r.created_at
+  const created_at =
+    typeof createdRaw === 'string' && createdRaw.trim() ? createdRaw.trim() : null
   return {
     ...base,
+    created_at,
     subtotal: Number(r.subtotal ?? 0),
     tax_amount: Number(r.tax_amount ?? r.tax_total ?? 0),
     total_amount: Number(r.total_amount ?? r.total ?? 0),
@@ -166,6 +172,12 @@ function normalizeInvoiceFromApi(raw: Record<string, unknown>): Invoice {
         : undefined,
     line_items: normalizeInvoiceLinesFromApi(r),
   }
+}
+
+/** Match POS: show date + time from created_at when available. */
+function formatInvoiceDateTimeStamp(inv: Pick<Invoice, 'invoice_date' | 'created_at'>): string {
+  if (inv.created_at) return formatDate(inv.created_at, true)
+  return formatDateOnly(inv.invoice_date)
 }
 
 export default function InvoicesPage() {
@@ -980,7 +992,7 @@ export default function InvoicesPage() {
         (inv) => `<tr>
         <td>${escapeHtml(getDisplayNumber(inv))}</td>
         <td>${escapeHtml(String(inv.source || '—'))}</td>
-        <td>${escapeHtml(formatDateOnly(inv.invoice_date))}</td>
+        <td>${escapeHtml(formatInvoiceDateTimeStamp(inv))}</td>
         <td>${escapeHtml(inv.due_date ? formatDateOnly(inv.due_date) : '—')}</td>
         <td>${escapeHtml(resolveInvoiceCustomerLabel(inv))}</td>
         <td class="right">${escapeHtml(currencySymbol)}${escapeHtml(formatNumber(Number(inv.total_amount || 0)))}</td>
@@ -1252,7 +1264,7 @@ export default function InvoicesPage() {
                         {getSourceBadge(invoice.source)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground/85">
-                        {formatDateOnly(invoice.invoice_date)}
+                        {formatInvoiceDateTimeStamp(invoice)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground/85">
                         {invoice.due_date ? formatDateOnly(invoice.due_date) : <span className="text-muted-foreground/70">—</span>}
@@ -1539,8 +1551,10 @@ export default function InvoicesPage() {
                     </span>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Invoice Date</p>
-                    <p className="text-lg">{formatDateOnly(viewingInvoice.invoice_date)}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {viewingInvoice.created_at ? 'Date / Time' : 'Invoice Date'}
+                    </p>
+                    <p className="text-lg">{formatInvoiceDateTimeStamp(viewingInvoice)}</p>
                   </div>
                   {viewingInvoice.due_date && (
                     <div>

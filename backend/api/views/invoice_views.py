@@ -15,7 +15,12 @@ from api.utils.transaction_filters import (
     apply_transaction_amount_range,
     apply_transaction_date_range,
 )
-from api.views.common import parse_json_body, require_company_id, _serialize_quantity
+from api.views.common import (
+    parse_json_body,
+    require_company_id,
+    _serialize_datetime,
+    _serialize_quantity,
+)
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
 from api.services.document_posting_lifecycle import (
@@ -65,6 +70,7 @@ def _invoice_to_json(inv, company_id: int):
         "invoice_number": inv.invoice_number,
         "invoice_date": _serialize_date(inv.invoice_date),
         "due_date": _serialize_date(inv.due_date),
+        "created_at": _serialize_datetime(getattr(inv, "created_at", None)),
         "customer_id": inv.customer_id,
         "customer_name": (
             customer_display_name(getattr(inv, "customer", None))

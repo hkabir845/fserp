@@ -352,11 +352,19 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
       className={
         isBrain
           ? 'auth-page-scroll fixed inset-0 z-0 overflow-y-auto overscroll-y-contain bg-gradient-to-br from-indigo-600 to-violet-700 px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:py-8'
-          : 'auth-page-scroll fixed inset-0 z-0 overflow-y-auto overscroll-y-contain bg-gradient-to-br from-accent to-accent px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:py-8'
+          : 'auth-page-scroll fixed inset-0 z-0 overflow-y-auto overscroll-y-contain bg-cover bg-center bg-no-repeat px-4 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:py-8'
+      }
+      style={
+        isBrain
+          ? undefined
+          : {
+              backgroundImage:
+                'linear-gradient(rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.55)), url(/images/login-bg.png)',
+            }
       }
     >
       <div className="mx-auto flex min-h-full w-full max-w-md items-center justify-center py-2">
-        <div className="w-full rounded-lg bg-white p-5 shadow-xl sm:p-8">
+        <div className="w-full rounded-lg bg-white/95 p-5 shadow-xl backdrop-blur-sm sm:p-8">
           <div className="mb-8 text-center">
             {isBrain ? (
               <>

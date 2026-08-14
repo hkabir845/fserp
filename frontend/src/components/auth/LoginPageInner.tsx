@@ -359,7 +359,8 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
           ? undefined
           : {
               backgroundImage:
-                'linear-gradient(rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.55)), url(/images/login-bg.png)',
+                'linear-gradient(rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.55)), url(/images/login-bg.png?v=2)',
+              backgroundPosition: 'center right',
             }
       }
     >

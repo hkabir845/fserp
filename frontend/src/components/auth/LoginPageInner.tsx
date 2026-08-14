@@ -360,12 +360,24 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
           : {
               backgroundImage:
                 'linear-gradient(rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.55)), url(/images/login-bg.png?v=2)',
-              backgroundPosition: 'center right',
+              backgroundPosition: 'left center',
             }
       }
     >
-      <div className="mx-auto flex min-h-full w-full max-w-md items-center justify-center py-2">
-        <div className="w-full rounded-lg bg-white/95 p-5 shadow-xl backdrop-blur-sm sm:p-8">
+      <div
+        className={
+          isBrain
+            ? 'mx-auto flex min-h-full w-full max-w-md items-center justify-center py-2'
+            : 'flex min-h-full w-full items-center justify-center py-2 md:justify-end md:pr-8 lg:pr-16 xl:pr-24'
+        }
+      >
+        <div
+          className={
+            isBrain
+              ? 'w-full rounded-lg bg-white p-5 shadow-xl sm:p-8'
+              : 'w-full max-w-md rounded-lg bg-white/95 p-5 shadow-xl backdrop-blur-sm sm:p-8'
+          }
+        >
           <div className="mb-8 text-center">
             {isBrain ? (
               <>

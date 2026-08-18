@@ -136,8 +136,8 @@ def test_bill_with_fry_item_pieces_per_kg_derives_dims_from_qty_kg(api_client, c
 
 
 @pytest.mark.django_db
-def test_bill_fish_line_with_ppk_derives_kg_from_heads(api_client, company_tenant, auth_admin_headers):
-    """User enters heads; kg and stored headcount derive from Line (client weight/qty may be wrong)."""
+def test_bill_fish_line_with_ppk_honours_typed_weight(api_client, company_tenant, auth_admin_headers):
+    """Heads / Line only prefills kg: a weight sent on the row wins so the owner can bill real kg."""
     h = auth_admin_headers
     v = api_client.post(
         "/api/vendors/",
@@ -175,12 +175,12 @@ def test_bill_fish_line_with_ppk_derives_kg_from_heads(api_client, company_tenan
                     {
                         "description": "Tilapia Fry Derive",
                         "item_id": fry.id,
-                        "quantity": "166.6667",
-                        "unit_cost": "2.2",
+                        "quantity": "950.5",
+                        "unit_cost": "0.3858",
                         "amount": "366.67",
                         "aquaculture_pond_id": pond.id,
                         "aquaculture_fish_species": "tilapia",
-                        "aquaculture_fish_weight_kg": "500000",
+                        "aquaculture_fish_weight_kg": "950.5",
                         "aquaculture_fish_count": 500000,
                     },
                 ],
@@ -191,7 +191,9 @@ def test_bill_fish_line_with_ppk_derives_kg_from_heads(api_client, company_tenan
     )
     assert bill_r.status_code == 201, bill_r.content.decode()
     line = json.loads(bill_r.content)["lines"][0]
-    assert line["aquaculture_fish_weight_kg"] == "166.6667"
+    # Typed weight is kept (heads / Line would have said 166.6667) and drives billing kg.
+    assert line["aquaculture_fish_weight_kg"] == "950.5000"
+    assert line["quantity"] == "950.50"
     assert line["aquaculture_fish_count"] == 500000
 
 

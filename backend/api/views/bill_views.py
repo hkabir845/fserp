@@ -314,8 +314,9 @@ def _parse_bill_line_aquaculture(company_id: int, row: dict):
 def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Optional[int]):
     """
     Weight (kg) and headcount are required for Item.pos_category == 'fish' lines (both must be > 0).
-    When the item has Line (pieces_per_kg), headcount and line amount are the user inputs: weight (kg)
-    is heads ÷ Line; billing quantity is that kg (stored on the line for AP).
+    When the item has Line (pieces_per_kg), heads ÷ Line fills weight (kg) only when the row leaves
+    weight blank — a weight sent by the client wins, so the owner can type the real vendor weight.
+    Billing quantity is that kg (stored on the line for AP).
     Ignored (stored null) for other items. Returns (kwargs_dict, error_response_or_None).
     """
     w_raw = row.get("aquaculture_fish_weight_kg")
@@ -392,12 +393,25 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
                 },
                 status=400,
             )
-        fish_kg = (Decimal(fish_n) / ppk).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-        if fish_kg <= 0:
-            return None, JsonResponse(
-                {"detail": "Derived weight (kg) must be greater than zero."},
-                status=400,
-            )
+        if w_raw in (None, ""):
+            fish_kg = (Decimal(fish_n) / ppk).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+            if fish_kg <= 0:
+                return None, JsonResponse(
+                    {"detail": "Derived weight (kg) must be greater than zero."},
+                    status=400,
+                )
+        else:
+            fish_kg = _decimal(w_raw, None)
+            if fish_kg is None:
+                return None, JsonResponse(
+                    {"detail": "aquaculture_fish_weight_kg must be a number"},
+                    status=400,
+                )
+            if fish_kg <= 0:
+                return None, JsonResponse(
+                    {"detail": "aquaculture_fish_weight_kg must be greater than zero"},
+                    status=400,
+                )
         return {
             "aquaculture_fish_weight_kg": fish_kg,
             "aquaculture_fish_count": fish_n,

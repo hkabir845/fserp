@@ -43,7 +43,6 @@ import {
 import { escapeHtml } from '@/utils/printDocument'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { printListView } from '@/utils/printListView'
-import { AMOUNT_READ_ONLY_INPUT_CLASS } from '@/utils/amountFieldStyles'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import {
   applyAquacultureCategoryToBillLine,
@@ -131,6 +130,14 @@ interface BillLineItem {
   /** Fish-type items: required species (fry/fingerling) stocked on this line. */
   aquaculture_fish_species?: string
   aquaculture_fish_species_other?: string
+  /** UI only: owner typed Weight/Qty by hand — stop refilling kg from heads ÷ Line (pcs/kg). */
+  fish_kg_manual?: boolean
+  /** UI only: per-line Line (pcs/kg) override used for derivations; blank falls back to the item catalog. */
+  fish_pcs_per_kg_override?: number | string
+  /** UI only: raw Cost / head entry — line Amount derives from it × heads. */
+  fish_cost_per_head_input?: number | string
+  /** UI only: owner typed Amount by hand on a standard line — don't overwrite it with Qty × Rate. */
+  amount_manual?: boolean
   /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
   aquaculture_pond_id?: number | '' | null
   pond_name?: string
@@ -423,7 +430,9 @@ function syncStandardBillLineAmount(line: BillLineItem): BillLineItem {
 
 function finalizeBillLinesForSave(lines: BillLineItem[], itemList: Item[]): BillLineItem[] {
   return lines.map((line) =>
-    isFishBillLineAutoMode(line, itemList) ? line : syncStandardBillLineAmount(line)
+    isFishBillLineAutoMode(line, itemList) || line.amount_manual
+      ? line
+      : syncStandardBillLineAmount(line)
   )
 }
 
@@ -435,9 +444,14 @@ function itemPiecesPerKg(item: Item | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function formatFishLinePcsPerKg(item: Item | undefined): string {
-  const pcs = itemPiecesPerKg(item)
-  return pcs != null ? formatNumber(pcs) : '—'
+/** pcs/kg driving this line's derivations: the typed per-line override, else the item catalog value. */
+function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): number | null {
+  const raw = line.fish_pcs_per_kg_override
+  if (raw !== undefined && raw !== null && String(raw) !== '') {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return itemPiecesPerKg(item)
 }
 
 function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): number | null {
@@ -579,6 +593,18 @@ function FishBillLineDimensionRow({
 }) {
   const speciesValue = (line.aquaculture_fish_species || '').trim()
   const costPerHead = fishCostPerHead(line)
+  const pcsPerKgOverride = line.fish_pcs_per_kg_override
+  const pcsPerKgValue =
+    pcsPerKgOverride !== undefined && pcsPerKgOverride !== null && String(pcsPerKgOverride) !== ''
+      ? pcsPerKgOverride
+      : itemPiecesPerKg(lineItem) ?? ''
+  const costPerHeadTyped = line.fish_cost_per_head_input
+  const costPerHeadValue =
+    costPerHeadTyped !== undefined && costPerHeadTyped !== null && String(costPerHeadTyped) !== ''
+      ? costPerHeadTyped
+      : costPerHead == null
+        ? ''
+        : Number(costPerHead.toFixed(4))
   return (
     <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-dashed border-border pt-2">
       <div className="w-[9rem] shrink-0">
@@ -615,11 +641,15 @@ function FishBillLineDimensionRow({
       <div className="w-[7.5rem] shrink-0">
         <label className="block text-xs font-medium text-foreground/85 mb-1">Line (pcs/kg)</label>
         <input
-          type="text"
-          readOnly
-          value={formatFishLinePcsPerKg(lineItem)}
-          title="From item catalog — Line (pieces per 1 kg)"
-          className="w-full px-2 py-1 text-sm border border-border rounded bg-muted/40 text-foreground tabular-nums"
+          type="number"
+          min={0}
+          step="0.0001"
+          value={pcsPerKgValue}
+          onChange={(e) =>
+            onFieldChange(index, 'fish_pcs_per_kg_override', e.target.value === '' ? '' : e.target.value)
+          }
+          title="Pieces per 1 kg used on this line. Prefilled from the item catalog — edit to override it here."
+          className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
         />
       </div>
       <div className="w-[7.5rem] shrink-0">
@@ -652,11 +682,9 @@ function FishBillLineDimensionRow({
       <div className="w-[7.5rem] shrink-0">
         <label className="block text-xs font-medium text-foreground/85 mb-1">Weight (kg)</label>
         <input
-          type={fishLineAuto ? 'text' : 'number'}
-          readOnly={fishLineAuto}
-          tabIndex={fishLineAuto ? -1 : undefined}
-          min={fishLineAuto ? undefined : 0}
-          step={fishLineAuto ? undefined : '0.0001'}
+          type="number"
+          min={0}
+          step="0.0001"
           value={
             line.aquaculture_fish_weight_kg === undefined ||
             line.aquaculture_fish_weight_kg === null ||
@@ -664,37 +692,42 @@ function FishBillLineDimensionRow({
               ? ''
               : line.aquaculture_fish_weight_kg
           }
-          onChange={
-            fishLineAuto
-              ? undefined
-              : (e) =>
-                  onFieldChange(index, 'aquaculture_fish_weight_kg', e.target.value === '' ? '' : e.target.value)
+          onChange={(e) =>
+            onFieldChange(index, 'aquaculture_fish_weight_kg', e.target.value === '' ? '' : e.target.value)
           }
-          className={
-            fishLineAuto
-              ? 'w-full px-2 py-1 text-sm border border-border rounded bg-muted/40 text-foreground tabular-nums cursor-default'
-              : 'w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white'
-          }
+          className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
           placeholder="—"
-          title={fishLineAuto ? 'Heads ÷ Line (pcs/kg); also used as billing Qty (kg)' : undefined}
+          title={
+            fishLineAuto
+              ? 'Prefilled as heads ÷ Line (pcs/kg) and used as billing Qty (kg) — type the real vendor weight to override it'
+              : undefined
+          }
         />
       </div>
       <div className="w-[8rem] shrink-0">
-        <label className="block text-xs font-medium text-foreground/85 mb-1">Cost / head</label>
+        <label className="block text-xs font-medium text-foreground/85 mb-1">
+          Cost / head ({currencySymbol})
+        </label>
         <input
-          type="text"
-          readOnly
-          tabIndex={-1}
-          value={costPerHead == null ? '—' : `${currencySymbol}${formatNumber(costPerHead, 4)}`}
-          title="Auto: line Amount ÷ total fish (heads) — cost per fry/fingerling"
-          className="w-full px-2 py-1 text-sm border border-border rounded bg-muted/40 text-foreground tabular-nums cursor-default"
+          type="number"
+          min={0}
+          step="0.0001"
+          value={costPerHeadValue}
+          onChange={(e) =>
+            onFieldChange(index, 'fish_cost_per_head_input', e.target.value === '' ? '' : e.target.value)
+          }
+          title="Line Amount ÷ total fish (heads). Type a per-fry price and the line Amount recalculates."
+          className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
+          placeholder="—"
         />
       </div>
       <p className="text-xs text-muted-foreground flex-1 min-w-[12rem] pb-1">
         {fishLineAuto ? (
           <>
-            Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total).{' '}
-            <strong>Qty (kg)</strong>, weight, and rate per kg fill from the item <strong>Line (pcs/kg)</strong>.
+            Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total) —{' '}
+            <strong>Qty (kg)</strong>, weight, and rate per kg prefill from{' '}
+            <strong>Line (pcs/kg)</strong>. Every field here is editable: type your own weight, qty, rate,
+            or cost/head and the rest recalculates around it.
           </>
         ) : (
           <>
@@ -714,40 +747,80 @@ function parseFishHeadCount(line: BillLineItem): number {
   return Number.isInteger(n) && n > 0 ? n : 0
 }
 
-/** Fish fry lines with Line on item: user enters heads + Amount; kg and rate derive from pcs/kg. */
+type FishBillLineCalcSource =
+  | 'heads'
+  | 'amount'
+  | 'unit_cost'
+  | 'weight'
+  | 'quantity'
+  | 'cost_per_head'
+  | 'pcs'
+
+/**
+ * Fish fry lines with Line on item: heads + Amount auto-fill kg and rate per kg, but every field is
+ * editable — the field the owner just typed is kept and only the dependent ones refill around it.
+ */
 function applyFishBillLineAutoCalc(
   line: BillLineItem,
   item: Item | undefined,
-  source: 'heads' | 'amount' | 'unit_cost'
+  source: FishBillLineCalcSource
 ): BillLineItem {
-  const pcs = itemPiecesPerKg(item)
-  if (!pcs) return line
   const next = { ...line }
+  const pcs = effectiveLinePiecesPerKg(next, item)
   const heads = parseFishHeadCount(next)
-  const amt = Number(next.amount ?? 0)
 
-  if (source === 'heads' || source === 'amount') {
-    if (heads > 0) {
-      const w = roundFishWeightKg(heads / pcs)
-      next.aquaculture_fish_weight_kg = w
-      next.quantity = w
-      next.aquaculture_fish_count = heads
-      if (w > 0 && amt >= 0) {
-        next.unit_cost = roundBillMoney(amt / w)
-      }
+  /** Weight (kg) and billing Qty (kg) are the same number on a fish line — keep them mirrored. */
+  const setKg = (kg: number) => {
+    const w = roundFishWeightKg(kg)
+    next.aquaculture_fish_weight_kg = w
+    next.quantity = w
+  }
+  const refillRate = () => {
+    const kg = Number(next.quantity ?? 0)
+    const amt = Number(next.amount ?? 0)
+    if (kg > 0 && Number.isFinite(amt) && amt >= 0) {
+      next.unit_cost = roundBillMoney(amt / kg)
+    }
+  }
+
+  if (source === 'weight' || source === 'quantity') {
+    const typed = Number(
+      (source === 'weight' ? next.aquaculture_fish_weight_kg : next.quantity) ?? 0
+    )
+    next.fish_kg_manual = true
+    if (Number.isFinite(typed) && typed > 0) {
+      setKg(typed)
+      refillRate()
     }
     return next
   }
 
   if (source === 'unit_cost') {
-    const w = Number(next.quantity ?? 0)
+    const kg = Number(next.quantity ?? 0)
     const uc = Number(next.unit_cost ?? 0)
-    if (w > 0 && uc >= 0) {
-      next.amount = billLineRowAmount(w, uc)
+    if (kg > 0 && Number.isFinite(uc) && uc >= 0) {
+      next.amount = billLineRowAmount(kg, uc)
+      next.fish_cost_per_head_input = undefined
     }
     return next
   }
 
+  if (source === 'cost_per_head') {
+    const raw = next.fish_cost_per_head_input
+    const cph = raw === undefined || raw === null || raw === '' ? NaN : Number(raw)
+    if (heads > 0 && Number.isFinite(cph) && cph >= 0) {
+      next.amount = roundBillMoney(cph * heads)
+      refillRate()
+    }
+    return next
+  }
+
+  // 'heads' | 'amount' | 'pcs': kg refills from heads ÷ pcs unless the owner typed their own kg.
+  if (pcs && heads > 0 && !next.fish_kg_manual) {
+    setKg(heads / pcs)
+    next.aquaculture_fish_count = heads
+  }
+  refillRate()
   return next
 }
 
@@ -786,6 +859,10 @@ function applyItemSelectionToBillLine(
     description: item.name,
     amount: billLineRowAmount(qty, uc),
   }
+  next.fish_kg_manual = undefined
+  next.fish_pcs_per_kg_override = undefined
+  next.fish_cost_per_head_input = undefined
+  next.amount_manual = undefined
   if (!isFishTypeItem(item)) {
     next.aquaculture_fish_weight_kg = undefined
     next.aquaculture_fish_count = undefined
@@ -823,7 +900,10 @@ function serializeBillLineForApi(
 ): Record<string, unknown> {
   const item = line.item_id ? itemList.find((i) => i.id === line.item_id) : undefined
   const fish = isFishTypeItem(item)
-  const normalized = isFishBillLineAutoMode(line, itemList) ? line : syncStandardBillLineAmount(line)
+  const normalized =
+    isFishBillLineAutoMode(line, itemList) || line.amount_manual
+      ? line
+      : syncStandardBillLineAmount(line)
   const w = normalized.aquaculture_fish_weight_kg
   const c = normalized.aquaculture_fish_count
   const weightPayload =
@@ -1986,10 +2066,13 @@ export default function BillsPage() {
       const fishLine = isFishTypeItem(lineItem)
       const fishLineAuto = fishLine && itemPiecesPerKg(lineItem) != null
 
-      if (field === 'aquaculture_fish_weight_kg' && fishLineAuto) {
-        return { ...prev, lines: newLines }
-      }
-      if (field === 'aquaculture_fish_count') {
+      if (field === 'fish_pcs_per_kg_override' && fishLine) {
+        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'pcs')
+      } else if (field === 'fish_cost_per_head_input' && fishLine) {
+        newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'cost_per_head')
+      } else if (field === 'aquaculture_fish_count') {
+        // Heads moved: the old per-head entry no longer describes this line.
+        newLines[index].fish_cost_per_head_input = undefined
         if (fishLineAuto) {
           newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'heads')
         } else if (fishLine) {
@@ -1998,37 +2081,46 @@ export default function BillsPage() {
             cRaw === undefined || cRaw === '' || cRaw === null
               ? NaN
               : parseInt(String(cRaw), 10)
-          const pcs = itemPiecesPerKg(lineItem)
+          const pcs = effectiveLinePiecesPerKg(newLines[index], lineItem)
           if (pcs != null && Number.isInteger(c) && c > 0) {
             newLines[index].aquaculture_fish_weight_kg = roundFishWeightKg(c / pcs)
           }
         }
       } else if (field === 'aquaculture_fish_weight_kg' && fishLine) {
-        const wRaw = newLines[index].aquaculture_fish_weight_kg
-        const w = wRaw === undefined || wRaw === '' || wRaw === null ? NaN : Number(wRaw)
-        if (Number.isFinite(w) && w > 0) {
-          const pcs = itemPiecesPerKg(lineItem)
-          newLines[index].aquaculture_fish_count =
-            pcs != null ? Math.max(1, Math.round(w * pcs)) : newLines[index].aquaculture_fish_count
+        if (fishLineAuto) {
+          newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'weight')
+        } else {
+          const wRaw = newLines[index].aquaculture_fish_weight_kg
+          const w = wRaw === undefined || wRaw === '' || wRaw === null ? NaN : Number(wRaw)
+          if (Number.isFinite(w) && w > 0) {
+            const pcs = effectiveLinePiecesPerKg(newLines[index], lineItem)
+            newLines[index].aquaculture_fish_count =
+              pcs != null ? Math.max(1, Math.round(w * pcs)) : newLines[index].aquaculture_fish_count
+          }
         }
       } else if (field === 'amount') {
+        newLines[index].fish_cost_per_head_input = undefined
         if (fishLineAuto) {
           newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'amount')
         } else {
           const quantity = Number(newLines[index].quantity ?? 0)
           const amount = parseFloat(value) || 0
           newLines[index].amount = amount
+          newLines[index].amount_manual = true
           if (quantity > 0) {
             newLines[index].unit_cost = roundBillMoney(amount / quantity)
           }
         }
       } else if (field === 'quantity' || field === 'unit_cost') {
         if (fishLineAuto) {
-          if (field === 'quantity') {
-            return { ...prev, lines: newLines }
-          }
-          newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'unit_cost')
+          newLines[index] = applyFishBillLineAutoCalc(
+            newLines[index],
+            lineItem,
+            field === 'quantity' ? 'quantity' : 'unit_cost'
+          )
         } else {
+          // Typing Qty or Rate hands Amount back to Qty × Rate.
+          newLines[index].amount_manual = false
           newLines[index] = syncStandardBillLineAmount(newLines[index])
         }
       } else if (
@@ -3451,24 +3543,19 @@ export default function BillsPage() {
                                 {fishLineAuto ? 'Qty (kg)' : 'Qty'}
                               </label>
                               <input
-                                type={fishLineAuto ? 'text' : 'number'}
-                                readOnly={fishLineAuto}
-                                tabIndex={fishLineAuto ? -1 : undefined}
-                                step={fishLineAuto ? undefined : '0.01'}
-                                min={fishLineAuto ? undefined : 0}
+                                type="number"
+                                step={fishLineAuto ? '0.0001' : '0.01'}
+                                min={0}
                                 value={fishLineAuto && !line.quantity ? '' : line.quantity}
-                                onChange={
-                                  fishLineAuto
-                                    ? undefined
-                                    : (e) =>
-                                        handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)
+                                onChange={(e) =>
+                                  handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)
                                 }
-                                className={
+                                className={BILL_LINE_NUM}
+                                title={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
-                                    : BILL_LINE_NUM
+                                    ? 'Prefilled as heads ÷ Line (pcs/kg) - type your own kg to override it'
+                                    : undefined
                                 }
-                                title={fishLineAuto ? 'Derived: heads ÷ Line (pcs/kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
@@ -3476,49 +3563,38 @@ export default function BillsPage() {
                                 {fishLineAuto ? 'Rate (per kg)' : 'Unit'}
                               </label>
                               <input
-                                type={fishLineAuto ? 'text' : 'number'}
-                                readOnly={fishLineAuto}
-                                tabIndex={fishLineAuto ? -1 : undefined}
-                                step={fishLineAuto ? undefined : '0.01'}
-                                min={fishLineAuto ? undefined : 0}
+                                type="number"
+                                step="0.01"
+                                min={0}
                                 value={line.unit_cost}
-                                onChange={
-                                  fishLineAuto
-                                    ? undefined
-                                    : (e) =>
-                                        handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
+                                onChange={(e) =>
+                                  handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
                                 }
-                                className={
+                                className={BILL_LINE_NUM}
+                                title={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
-                                    : BILL_LINE_NUM
+                                    ? 'Prefilled as Amount ÷ Qty (kg) - type a rate and Amount recalculates'
+                                    : undefined
                                 }
-                                title={fishLineAuto ? 'Derived: Amount ÷ Qty (kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">Amount</label>
-                              {fishLineAuto ? (
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={line.amount}
-                                  onChange={(e) =>
-                                    handleLineChange(index, 'amount', parseFloat(e.target.value) || 0)
-                                  }
-                                  className={BILL_LINE_NUM}
-                                  title="Vendor line total (BDT) — enter with total fish (heads)"
-                                />
-                              ) : (
-                                <input
-                                  type="text"
-                                  readOnly
-                                  value={formatNumber(line.amount)}
-                                  title={`${currencySymbol}${formatNumber(line.amount)}`}
-                                  className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
-                                />
-                              )}
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={line.amount}
+                                onChange={(e) =>
+                                  handleLineChange(index, 'amount', parseFloat(e.target.value) || 0)
+                                }
+                                className={BILL_LINE_NUM}
+                                title={
+                                  fishLineAuto
+                                    ? 'Vendor line total - enter with total fish (heads)'
+                                    : 'Prefilled as Qty × Rate - type a total and Rate recalculates'
+                                }
+                              />
                             </div>
                             <div className="col-span-12 sm:col-span-3 lg:col-span-1 flex justify-end lg:justify-center pb-0.5">
                               <button
@@ -3970,24 +4046,19 @@ export default function BillsPage() {
                                 {fishLineAuto ? 'Qty (kg)' : 'Qty'}
                               </label>
                               <input
-                                type={fishLineAuto ? 'text' : 'number'}
-                                readOnly={fishLineAuto}
-                                tabIndex={fishLineAuto ? -1 : undefined}
-                                step={fishLineAuto ? undefined : '0.01'}
-                                min={fishLineAuto ? undefined : 0}
+                                type="number"
+                                step={fishLineAuto ? '0.0001' : '0.01'}
+                                min={0}
                                 value={fishLineAuto && !line.quantity ? '' : line.quantity}
-                                onChange={
-                                  fishLineAuto
-                                    ? undefined
-                                    : (e) =>
-                                        handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)
+                                onChange={(e) =>
+                                  handleLineChange(index, 'quantity', parseFloat(e.target.value) || 0)
                                 }
-                                className={
+                                className={BILL_LINE_NUM}
+                                title={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
-                                    : BILL_LINE_NUM
+                                    ? 'Prefilled as heads ÷ Line (pcs/kg) - type your own kg to override it'
+                                    : undefined
                                 }
-                                title={fishLineAuto ? 'Derived: heads ÷ Line (pcs/kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
@@ -3995,24 +4066,19 @@ export default function BillsPage() {
                                 {fishLineAuto ? 'Rate (per kg)' : 'Rate'}
                               </label>
                               <input
-                                type={fishLineAuto ? 'text' : 'number'}
-                                readOnly={fishLineAuto}
-                                tabIndex={fishLineAuto ? -1 : undefined}
-                                step={fishLineAuto ? undefined : '0.01'}
-                                min={fishLineAuto ? undefined : 0}
+                                type="number"
+                                step="0.01"
+                                min={0}
                                 value={line.unit_cost}
-                                onChange={
-                                  fishLineAuto
-                                    ? undefined
-                                    : (e) =>
-                                        handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
+                                onChange={(e) =>
+                                  handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
                                 }
-                                className={
+                                className={BILL_LINE_NUM}
+                                title={
                                   fishLineAuto
-                                    ? `${BILL_LINE_NUM} bg-muted/40 cursor-default border-border`
-                                    : BILL_LINE_NUM
+                                    ? 'Prefilled as Amount ÷ Qty (kg) - type a rate and Amount recalculates'
+                                    : undefined
                                 }
-                                title={fishLineAuto ? 'Derived: Amount ÷ Qty (kg)' : undefined}
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5rem]">
@@ -4028,28 +4094,22 @@ export default function BillsPage() {
                             </div>
                             <div className="col-span-6 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">Amount</label>
-                              {fishLineAuto ? (
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={line.amount}
-                                  onChange={(e) =>
-                                    handleLineChange(index, 'amount', parseFloat(e.target.value) || 0)
-                                  }
-                                  className={BILL_LINE_NUM}
-                                  title="Vendor line total (BDT) — enter with total fish (heads)"
-                                />
-                              ) : (
-                                <input
-                                  type="text"
-                                  readOnly
-                                  inputMode="decimal"
-                                  value={formatNumber(Number(line.amount) || 0)}
-                                  title={`${currencySymbol}${formatNumber(Number(line.amount) || 0)}`}
-                                  className={`${AMOUNT_READ_ONLY_INPUT_CLASS} min-h-[2.25rem] py-1.5`}
-                                />
-                              )}
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                inputMode="decimal"
+                                value={line.amount}
+                                onChange={(e) =>
+                                  handleLineChange(index, 'amount', parseFloat(e.target.value) || 0)
+                                }
+                                className={BILL_LINE_NUM}
+                                title={
+                                  fishLineAuto
+                                    ? 'Vendor line total - enter with total fish (heads)'
+                                    : 'Prefilled as Qty × Rate - type a total and Rate recalculates'
+                                }
+                              />
                             </div>
                             <div className="col-span-6 sm:col-span-3 lg:col-span-1 flex justify-end lg:justify-center pb-0.5">
                               <button

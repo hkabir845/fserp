@@ -130,8 +130,6 @@ interface BillLineItem {
   /** Fish-type items: required species (fry/fingerling) stocked on this line. */
   aquaculture_fish_species?: string
   aquaculture_fish_species_other?: string
-  /** UI only: owner typed Weight/Qty by hand — stop refilling kg from heads ÷ Line (pcs/kg). */
-  fish_kg_manual?: boolean
   /** UI only: per-line Line (pcs/kg) override used for derivations; blank falls back to the item catalog. */
   fish_pcs_per_kg_override?: number | string
   /** UI only: raw Cost / head entry — line Amount derives from it × heads. */
@@ -676,7 +674,11 @@ function FishBillLineDimensionRow({
               : 'w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white'
           }
           placeholder="—"
-          title={fishLineAuto ? 'Fry/fingerling count from the vendor invoice' : undefined}
+          title={
+            fishLineAuto
+              ? 'Headcount from the vendor invoice — or leave it to fill from Weight (kg) × Line (pcs/kg)'
+              : undefined
+          }
         />
       </div>
       <div className="w-[7.5rem] shrink-0">
@@ -724,10 +726,10 @@ function FishBillLineDimensionRow({
       <p className="text-xs text-muted-foreground flex-1 min-w-[12rem] pb-1">
         {fishLineAuto ? (
           <>
-            Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total) —{' '}
-            <strong>Qty (kg)</strong>, weight, and rate per kg prefill from{' '}
-            <strong>Line (pcs/kg)</strong>. Every field here is editable: type your own weight, qty, rate,
-            or cost/head and the rest recalculates around it.
+            Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total) —
+            everything else fills in. <strong>Heads</strong> and <strong>Weight/Qty (kg)</strong> convert
+            into each other through <strong>Line (pcs/kg)</strong>, so typing either one refills the other.
+            Every field here is editable: the one you type last is kept.
           </>
         ) : (
           <>
@@ -787,9 +789,12 @@ function applyFishBillLineAutoCalc(
     const typed = Number(
       (source === 'weight' ? next.aquaculture_fish_weight_kg : next.quantity) ?? 0
     )
-    next.fish_kg_manual = true
     if (Number.isFinite(typed) && typed > 0) {
       setKg(typed)
+      if (pcs) {
+        next.aquaculture_fish_count = Math.max(1, Math.round(typed * pcs))
+        next.fish_cost_per_head_input = undefined
+      }
       refillRate()
     }
     return next
@@ -815,8 +820,17 @@ function applyFishBillLineAutoCalc(
     return next
   }
 
-  // 'heads' | 'amount' | 'pcs': kg refills from heads ÷ pcs unless the owner typed their own kg.
-  if (pcs && heads > 0 && !next.fish_kg_manual) {
+  if (source === 'amount') {
+    // Amount only drives the rate; kg fills in here just for a line that never had one.
+    if (pcs && heads > 0 && !(Number(next.quantity ?? 0) > 0)) {
+      setKg(heads / pcs)
+    }
+    refillRate()
+    return next
+  }
+
+  // 'heads' | 'pcs': heads is what the owner counted, so kg follows it.
+  if (pcs && heads > 0) {
     setKg(heads / pcs)
     next.aquaculture_fish_count = heads
   }
@@ -859,7 +873,6 @@ function applyItemSelectionToBillLine(
     description: item.name,
     amount: billLineRowAmount(qty, uc),
   }
-  next.fish_kg_manual = undefined
   next.fish_pcs_per_kg_override = undefined
   next.fish_cost_per_head_input = undefined
   next.amount_manual = undefined

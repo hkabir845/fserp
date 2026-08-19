@@ -1404,6 +1404,8 @@ def report_customer_balances(
     _ = start
     rows: list[dict[str, Any]] = []
     total_ar = Decimal("0")
+    total_ar_external = Decimal("0")
+    total_ar_internal = Decimal("0")
     for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
         "display_name"
     ):
@@ -1429,10 +1431,15 @@ def report_customer_balances(
                 "email": c.email or "",
                 "phone": c.phone or "",
                 "balance": _f(bal),
+                "is_internal": bool(c.is_internal),
             }
         )
         if bal > 0:
             total_ar += bal
+            if c.is_internal:
+                total_ar_internal += bal
+            else:
+                total_ar_external += bal
     net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
     note = (
         "A/R subledger per customer (opening + AR invoices − receipts; same as customer ledger "
@@ -1454,6 +1461,8 @@ def report_customer_balances(
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "customers": rows,
         "total_ar": _f(total_ar),
+        "total_ar_external": _f(total_ar_external),
+        "total_ar_internal": _f(total_ar_internal),
         "total_net_balance": _f(net_sum),
         "accounting_note": note,
     }
@@ -1474,6 +1483,8 @@ def report_vendor_balances(
     _ = start
     rows: list[dict[str, Any]] = []
     total_ap = Decimal("0")
+    total_ap_external = Decimal("0")
+    total_ap_internal = Decimal("0")
     for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
         "company_name"
     ):
@@ -1508,10 +1519,15 @@ def report_vendor_balances(
                 "email": v.email or "",
                 "phone": v.phone or "",
                 "balance": _f(bal),
+                "is_internal": bool(v.is_internal),
             }
         )
         if bal > 0:
             total_ap += bal
+            if v.is_internal:
+                total_ap_internal += bal
+            else:
+                total_ap_external += bal
     net_sum = sum((_d(r["balance"]) for r in rows), start=Decimal("0"))
     note = (
         "A/P subledger per vendor (opening + bills − payments; same as vendor ledger "
@@ -1533,6 +1549,8 @@ def report_vendor_balances(
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "vendors": rows,
         "total_ap": _f(total_ap),
+        "total_ap_external": _f(total_ap_external),
+        "total_ap_internal": _f(total_ap_internal),
         "total_net_balance": _f(net_sum),
         "accounting_note": note,
     }
@@ -1552,6 +1570,7 @@ def _party_row(
     name: str,
     balance: Decimal,
     sign: int,
+    is_internal: bool = False,
     **extra: Any,
 ) -> dict[str, Any]:
     """One consolidated balance row. ``sign`` is +1 when a positive balance is a company asset."""
@@ -1563,12 +1582,15 @@ def _party_row(
         "name": name,
         "balance": _f(balance),
         "net_position": _f(balance * sign),
+        "is_internal": bool(is_internal),
     }
     row.update(extra)
     return row
 
 
-def _party_section(title: str, key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _party_section(
+    title: str, key: str, rows: list[dict[str, Any]], *, internal: bool = False
+) -> dict[str, Any]:
     receivable = sum(
         (_d(r["net_position"]) for r in rows if _d(r["net_position"]) > 0), start=Decimal("0")
     )
@@ -1581,6 +1603,7 @@ def _party_section(title: str, key: str, rows: list[dict[str, Any]]) -> dict[str
         "title": title,
         "rows": rows,
         "count": len(rows),
+        "internal": bool(internal),
         "total_receivable": _f(receivable),
         "total_payable": _f(payable),
         "net_position": _f(net),
@@ -1611,6 +1634,7 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
                 name=(c.display_name or c.company_name or "").strip() or f"Customer #{c.id}",
                 balance=bal,
                 sign=1,
+                is_internal=bool(c.is_internal),
                 phone=c.phone or "",
                 email=c.email or "",
             )
@@ -1632,6 +1656,7 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
                 name=(v.display_name or v.company_name or "").strip() or f"Supplier #{v.id}",
                 balance=bal,
                 sign=-1,
+                is_internal=bool(v.is_internal),
                 phone=v.phone or "",
                 email=v.email or "",
             )
@@ -1690,15 +1715,49 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
             )
         )
 
-    sections = [
-        _party_section("Customers — receivable (A/R)", "customers", customer_rows),
-        _party_section("Suppliers — payable (A/P)", "vendors", vendor_rows),
+    def _split(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        return (
+            [r for r in rows if not r.get("is_internal")],
+            [r for r in rows if r.get("is_internal")],
+        )
+
+    ext_customers, int_customers = _split(customer_rows)
+    ext_vendors, int_vendors = _split(vendor_rows)
+
+    external_sections = [
+        _party_section("Customers — receivable (A/R)", "customers", ext_customers),
+        _party_section("Suppliers — payable (A/P)", "vendors", ext_vendors),
         _party_section("Bank & cash registers", "bank_accounts", bank_rows),
         _party_section("Loans — lent & borrowed", "loans", loan_rows),
     ]
+    internal_sections = [
+        _party_section(
+            "Internal — owed by other profit centres",
+            "internal_customers",
+            int_customers,
+            internal=True,
+        ),
+        _party_section(
+            "Internal — owed to other profit centres",
+            "internal_vendors",
+            int_vendors,
+            internal=True,
+        ),
+    ]
+    sections = external_sections + internal_sections
     all_rows = [r for s in sections for r in s["rows"]]
-    total_receivable = sum((_d(s["total_receivable"]) for s in sections), start=Decimal("0"))
-    total_payable = sum((_d(s["total_payable"]) for s in sections), start=Decimal("0"))
+    total_receivable = sum(
+        (_d(s["total_receivable"]) for s in external_sections), start=Decimal("0")
+    )
+    total_payable = sum(
+        (_d(s["total_payable"]) for s in external_sections), start=Decimal("0")
+    )
+    internal_receivable = sum(
+        (_d(s["total_receivable"]) for s in internal_sections), start=Decimal("0")
+    )
+    internal_payable = sum(
+        (_d(s["total_payable"]) for s in internal_sections), start=Decimal("0")
+    )
 
     return {
         "report_id": "party-balances",
@@ -1708,16 +1767,19 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
         "parties": all_rows,
         "summary": {
             "party_count": len(all_rows),
-            "customer_receivable": sections[0]["total_receivable"],
-            "customer_prepayments": sections[0]["total_payable"],
-            "vendor_payable": sections[1]["total_payable"],
-            "vendor_advances": sections[1]["total_receivable"],
-            "bank_cash_on_hand": sections[2]["net_position"],
-            "loans_lent_outstanding": sections[3]["total_receivable"],
-            "loans_borrowed_outstanding": sections[3]["total_payable"],
+            "customer_receivable": external_sections[0]["total_receivable"],
+            "customer_prepayments": external_sections[0]["total_payable"],
+            "vendor_payable": external_sections[1]["total_payable"],
+            "vendor_advances": external_sections[1]["total_receivable"],
+            "bank_cash_on_hand": external_sections[2]["net_position"],
+            "loans_lent_outstanding": external_sections[3]["total_receivable"],
+            "loans_borrowed_outstanding": external_sections[3]["total_payable"],
             "total_receivable": _f(total_receivable),
             "total_payable": _f(total_payable),
             "net_position": _f(total_receivable - total_payable),
+            "internal_receivable": _f(internal_receivable),
+            "internal_payable": _f(internal_payable),
+            "internal_net_position": _f(internal_receivable - internal_payable),
         },
         "accounting_note": (
             "One row per party the company holds a balance with. net_position is signed from the "
@@ -1727,7 +1789,10 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
             "customer/vendor ledgers — so they ignore the selected period. Bank and cash registers are "
             "GL balances as of the period end date. Loan rows are the stored outstanding principal from "
             "the loan register (current value, not restated to the end date) and exclude draft "
-            "facilities. Parties with a zero balance are omitted."
+            "facilities. Parties with a zero balance are omitted. Internal parties — the buying and "
+            "selling identities of aquaculture ponds — are listed separately and excluded from the "
+            "headline totals: they are the company trading with itself, and net to zero on "
+            "consolidation. Once inter-pond trade is settled, internal_net_position should be zero."
         ),
     }
 

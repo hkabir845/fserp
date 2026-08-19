@@ -163,6 +163,12 @@ from api.services.aquaculture_pond_pos_customer import (
     provision_missing_pond_pos_customers,
     sync_auto_pos_customer_from_pond,
 )
+from api.services.aquaculture_pond_internal_vendor import (
+    on_pond_deleted_internal_vendor,
+    provision_missing_pond_internal_vendors,
+    provision_pond_internal_parties,
+    sync_auto_internal_vendor_from_pond,
+)
 from api.services.aquaculture_sale_biomass_sync import sync_biomass_sample_from_fish_sale
 from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
 from api.services.aquaculture_sale_reference_service import last_fish_sale_reference_for_ledger
@@ -1348,6 +1354,11 @@ def aquaculture_ponds_list_or_create(request):
             prov_err = maybe_provision_auto_pos_customer(company_id=cid, pond=p, skip_auto=skip_auto)
             if prov_err:
                 raise ValueError(prov_err)
+            prov_err = provision_pond_internal_parties(
+                company_id=cid, pond=p, skip_auto=skip_auto
+            )
+            if prov_err:
+                raise ValueError(prov_err)
     except ValueError as ex:
         return JsonResponse({"detail": str(ex)}, status=400)
     p = (
@@ -1432,6 +1443,7 @@ def aquaculture_ponds_create_site_pair(request):
         nursing.save()
     for p in (nursing, grow):
         maybe_provision_auto_pos_customer(company_id=cid, pond=p, skip_auto=False)
+        provision_pond_internal_parties(company_id=cid, pond=p)
     nursing = (
         AquaculturePond.objects.filter(pk=nursing.pk)
         .select_related("linked_grow_out_pond", "warehouse_group")
@@ -1472,6 +1484,9 @@ def aquaculture_ponds_provision_pos_customers(request):
     if err:
         return err
     result = provision_missing_pond_pos_customers(company_id=request.company_id)
+    result["internal_vendors"] = provision_missing_pond_internal_vendors(
+        company_id=request.company_id
+    )
     return JsonResponse(result)
 
 
@@ -1959,6 +1974,8 @@ def aquaculture_pond_detail(request, pond_id: int):
                         new_customer_id=new_pc,
                     )
         sync_auto_pos_customer_from_pond(p)
+        sync_auto_internal_vendor_from_pond(p)
+        provision_pond_internal_parties(company_id=cid, pond=p)
         p = (
             AquaculturePond.objects.filter(pk=p.pk)
             .select_related(
@@ -1981,6 +1998,7 @@ def aquaculture_pond_detail(request, pond_id: int):
     if lock_err:
         return lock_err
     on_pond_deleted(company_id=cid, pond=p)
+    on_pond_deleted_internal_vendor(company_id=cid, pond=p)
     p.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 

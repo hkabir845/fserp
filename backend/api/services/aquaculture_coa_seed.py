@@ -181,6 +181,39 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
         "other_income",
         "Upward physical count vs books (Dr 1581 / Cr this account).",
     ),
+    (
+        "4245",
+        "Aquaculture — Inter-Pond Fish Sales (internal)",
+        "income",
+        "sales_of_product_income",
+        "Selling pond's revenue when fish or fingerlings move to another pond at market rate. "
+        "Internal trade: eliminated against 5245 in the company income statement.",
+    ),
+    (
+        "5245",
+        "Aquaculture — Inter-Pond Fish Cost of Sales (internal)",
+        "cost_of_goods_sold",
+        "supplies_materials_cogs",
+        "Selling pond's biomass relief on an inter-pond sale, at computed cost per kg. "
+        "Internal trade: eliminated against 4245 in the company income statement.",
+    ),
+    (
+        "1585",
+        "Aquaculture — Unrealized Margin in Biological Inventory",
+        "asset",
+        "other_current_assets",
+        "Contra to 1581. Holds inter-pond profit still sitting in unsold fish; released to cost of "
+        "sales when the buying pond sells the fish to a real outside customer.",
+    ),
+    (
+        "1595",
+        "Aquaculture — Inter-Pond Current Account",
+        "asset",
+        "other_current_assets",
+        "Running position between ponds. Inter-pond invoices and bills settle here instead of cash, "
+        "so no internal receivable or payable ages. Nets to zero across all ponds; the per-pond "
+        "balance is what a profit sweep to head office would clear.",
+    ),
 )
 
 

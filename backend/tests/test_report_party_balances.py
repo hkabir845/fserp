@@ -23,7 +23,7 @@ def _section(out: dict, key: str) -> dict:
 
 
 @pytest.mark.django_db
-def test_party_balances_has_all_four_sections(company_tenant):
+def test_party_balances_has_all_sections(company_tenant):
     out = report_party_balances(company_tenant.id, date(2026, 1, 1), date(2026, 1, 31))
     assert out["report_id"] == "party-balances"
     assert out["balances_as_of"] == "2026-01-31"
@@ -32,6 +32,16 @@ def test_party_balances_has_all_four_sections(company_tenant):
         "vendors",
         "bank_accounts",
         "loans",
+        "internal_customers",
+        "internal_vendors",
+    ]
+    assert [s["internal"] for s in out["sections"]] == [
+        False,
+        False,
+        False,
+        False,
+        True,
+        True,
     ]
     assert out["parties"] == []
     assert out["summary"]["net_position"] == 0.0

@@ -816,6 +816,22 @@ class Customer(models.Model):
         related_name="customer_openings",
         help_text="AUTO-CUST-OB-{customer id} when opening balance is posted to the G/L.",
     )
+    is_internal = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "Internal trading party representing another profit centre of this company "
+            "(e.g. an aquaculture pond). Excluded from external A/R-A/P totals and eliminated on consolidation."
+        ),
+    )
+    internal_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="internal_customers",
+        help_text="Pond this internal party stands for; set only when is_internal is true.",
+    )
     current_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -871,6 +887,22 @@ class Vendor(models.Model):
         on_delete=models.SET_NULL,
         related_name="vendor_openings",
         help_text="AUTO-VEND-OB-{vendor id} when opening balance is posted to the G/L.",
+    )
+    is_internal = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "Internal trading party representing another profit centre of this company "
+            "(e.g. an aquaculture pond). Excluded from external A/R-A/P totals and eliminated on consolidation."
+        ),
+    )
+    internal_pond = models.ForeignKey(
+        "AquaculturePond",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="internal_vendors",
+        help_text="Pond this internal party stands for; set only when is_internal is true.",
     )
     current_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
@@ -2395,6 +2427,21 @@ class AquaculturePond(models.Model):
     auto_pos_customer = models.BooleanField(
         default=False,
         help_text="When true, pos_customer was created for this pond; display name and active flag sync from pond.",
+    )
+    internal_vendor = models.ForeignKey(
+        "Vendor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="aquaculture_ponds_internal",
+        help_text=(
+            "Supplier identity of this pond when it sells fish or fingerlings to another pond; "
+            "the buying pond's bill is raised against this vendor."
+        ),
+    )
+    auto_internal_vendor = models.BooleanField(
+        default=False,
+        help_text="When true, internal_vendor was created for this pond; name and active flag sync from pond.",
     )
     default_feed_item = models.ForeignKey(
         Item,

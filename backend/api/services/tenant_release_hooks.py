@@ -148,6 +148,24 @@ def hook_aquaculture_pond_pos_customers(company_id: int) -> None:
             logger.exception(
                 "release hook pond POS failed pond=%s company=%s", pond.pk, company_id
             )
+
+    from api.services.aquaculture_pond_internal_vendor import (
+        provision_missing_pond_internal_vendors,
+    )
+
+    try:
+        result = provision_missing_pond_internal_vendors(company_id=company_id)
+        for e in result.get("errors") or []:
+            logger.warning(
+                "release hook pond internal vendor: pond=%s company=%s: %s",
+                e.get("pond_id"),
+                company_id,
+                e.get("detail"),
+            )
+    except Exception:
+        logger.exception(
+            "release hook pond internal vendor failed company=%s", company_id
+        )
     try:
         sync_aquaculture_customer_default_stations(company_id=company_id)
     except Exception:

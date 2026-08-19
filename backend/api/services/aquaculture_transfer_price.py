@@ -90,15 +90,23 @@ def _same_size_band(qs, size_kg_per_fish: Decimal | None):
         return None
     lo = size_kg_per_fish * (Decimal("1") - SIZE_BAND_TOLERANCE)
     hi = size_kg_per_fish * (Decimal("1") + SIZE_BAND_TOLERANCE)
+    # Compare weights, not a computed average: lo <= weight/count <= hi is the same test as
+    # lo*count <= weight <= hi*count, but multiplication behaves identically on PostgreSQL and
+    # SQLite. Dividing in the database silently matched nothing on SQLite, so every sized lookup
+    # fell through to the unbanded rate and fingerlings were priced as table fish.
     return (
         qs.filter(fish_count__isnull=False, fish_count__gt=0)
         .annotate(
-            avg_size_kg=ExpressionWrapper(
-                F("weight_kg") / F("fish_count"),
+            _band_lo_kg=ExpressionWrapper(
+                F("fish_count") * lo,
                 output_field=DecimalField(max_digits=20, decimal_places=8),
-            )
+            ),
+            _band_hi_kg=ExpressionWrapper(
+                F("fish_count") * hi,
+                output_field=DecimalField(max_digits=20, decimal_places=8),
+            ),
         )
-        .filter(avg_size_kg__gte=lo, avg_size_kg__lte=hi)
+        .filter(weight_kg__gte=F("_band_lo_kg"), weight_kg__lte=F("_band_hi_kg"))
     )
 
 

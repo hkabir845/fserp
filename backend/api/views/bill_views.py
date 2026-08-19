@@ -381,6 +381,20 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
     }
 
     ppk = getattr(item, "pieces_per_kg", None)
+    row_ppk = row.get("pieces_per_kg", row.get("fish_pcs_per_kg"))
+    if row_ppk not in (None, ""):
+        parsed_ppk = _decimal(row_ppk, None)
+        if parsed_ppk is None or parsed_ppk <= 0:
+            return None, JsonResponse(
+                {"detail": "pieces_per_kg must be a number greater than zero."},
+                status=400,
+            )
+        ppk = parsed_ppk
+        catalog = getattr(item, "pieces_per_kg", None)
+        if catalog is None or catalog != ppk:
+            Item.objects.filter(pk=item.pk, company_id=request_company_id).update(
+                pieces_per_kg=ppk
+            )
     if ppk is not None and ppk > 0:
         try:
             fish_n = int(c_raw)
@@ -482,6 +496,25 @@ def _bill_line_quantity_from_row(
     return qty
 
 
+def _bill_line_pieces_per_kg_display(l: BillLine, item) -> str | None:
+    """pcs/kg for this bill line: heads ÷ kg when both exist, else the catalog Item value."""
+    w = getattr(l, "aquaculture_fish_weight_kg", None)
+    c = getattr(l, "aquaculture_fish_count", None)
+    if w is not None and c is not None:
+        try:
+            wd = Decimal(str(w))
+            ci = int(c)
+            if wd > 0 and ci > 0:
+                return _serialize_quantity(
+                    (Decimal(ci) / wd).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                )
+        except (TypeError, ValueError, ArithmeticError):
+            pass
+    if item and getattr(item, "pieces_per_kg", None) is not None:
+        return _serialize_quantity(item.pieces_per_kg)
+    return None
+
+
 def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
     item = getattr(l, "item", None) if getattr(l, "item_id", None) else None
     pond = getattr(l, "aquaculture_pond", None) if getattr(l, "aquaculture_pond_id", None) else None
@@ -496,11 +529,7 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         "item_id": l.item_id,
         "item_name": ((item.name or "").strip() if item else ""),
         "item_pos_category": ((item.pos_category or "").strip() if item else ""),
-        "item_pieces_per_kg": (
-            _serialize_quantity(item.pieces_per_kg)
-            if item and getattr(item, "pieces_per_kg", None) is not None
-            else None
-        ),
+        "item_pieces_per_kg": _bill_line_pieces_per_kg_display(l, item),
         "description": l.description or "",
         "quantity": _serialize_quantity(l.quantity),
         "unit_price": str(l.unit_price),

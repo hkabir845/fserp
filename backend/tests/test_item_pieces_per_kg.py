@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -255,3 +256,125 @@ def test_bill_fish_line_heads_and_amount_derives_billing_kg(api_client, company_
     assert line["quantity"] == "166.67"
     assert line["aquaculture_fish_weight_kg"] == "166.67"
     assert line["aquaculture_fish_count"] == 500000
+
+
+@pytest.mark.django_db
+def test_bill_line_pieces_per_kg_updates_item_catalog(api_client, company_tenant, auth_admin_headers):
+    """A Line (pcs/kg) typed on the bill is stored on the line math and written onto the Item."""
+    h = auth_admin_headers
+    v = api_client.post(
+        "/api/vendors/",
+        data=json.dumps({"company_name": "Hatchery Pcs Override"}),
+        content_type="application/json",
+        **h,
+    )
+    assert v.status_code == 201
+    vendor_id = json.loads(v.content)["id"]
+
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing PPK4", pond_role="nursing", is_active=True
+    )
+    fry = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry Catalog",
+        item_type="inventory",
+        pos_category="fish",
+        unit="kg",
+        category="Aquaculture",
+        pieces_per_kg="400",
+    )
+
+    bill_r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "bill_date": "2026-05-16",
+                "subtotal": "5000.00",
+                "tax_total": "0",
+                "total": "5000.00",
+                "status": "draft",
+                "lines": [
+                    {
+                        "description": "Tilapia Fry Catalog",
+                        "item_id": fry.id,
+                        "quantity": "13.1579",
+                        "unit_cost": "380.00",
+                        "amount": "5000.00",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
+                        "aquaculture_fish_count": 5000,
+                        "pieces_per_kg": "380",
+                    },
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert bill_r.status_code == 201, bill_r.content.decode()
+    line = json.loads(bill_r.content)["lines"][0]
+    assert line["aquaculture_fish_weight_kg"] == "13.16"
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("380")
+
+
+@pytest.mark.django_db
+def test_bill_line_implied_pcs_per_kg_shown_not_catalog(api_client, company_tenant, auth_admin_headers):
+    """Viewing a bill shows Line (pcs/kg) from heads÷kg even when the catalog still differs."""
+    h = auth_admin_headers
+    v = api_client.post(
+        "/api/vendors/",
+        data=json.dumps({"company_name": "Hatchery Implied Pcs"}),
+        content_type="application/json",
+        **h,
+    )
+    assert v.status_code == 201
+    vendor_id = json.loads(v.content)["id"]
+
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing PPK5", pond_role="nursing", is_active=True
+    )
+    fry = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry Implied",
+        item_type="inventory",
+        pos_category="fish",
+        unit="kg",
+        category="Aquaculture",
+        pieces_per_kg="3000",
+    )
+
+    bill_r = api_client.post(
+        "/api/bills/",
+        data=json.dumps(
+            {
+                "vendor_id": vendor_id,
+                "bill_date": "2026-05-16",
+                "subtotal": "366.67",
+                "tax_total": "0",
+                "total": "366.67",
+                "status": "draft",
+                "lines": [
+                    {
+                        "description": "Tilapia Fry Implied",
+                        "item_id": fry.id,
+                        "quantity": "950.5",
+                        "unit_cost": "0.3858",
+                        "amount": "366.67",
+                        "aquaculture_pond_id": pond.id,
+                        "aquaculture_fish_species": "tilapia",
+                        "aquaculture_fish_weight_kg": "950.5",
+                        "aquaculture_fish_count": 500000,
+                    },
+                ],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert bill_r.status_code == 201, bill_r.content.decode()
+    line = json.loads(bill_r.content)["lines"][0]
+    # 500000 / 950.5 ≈ 526.04, not catalog 3000.
+    assert line["item_pieces_per_kg"] != "3000.00"
+    assert Decimal(line["item_pieces_per_kg"]) == Decimal("526.04")

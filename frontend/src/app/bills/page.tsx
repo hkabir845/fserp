@@ -131,8 +131,8 @@ interface BillLineItem {
   aquaculture_fish_species?: string
   aquaculture_fish_species_other?: string
   /**
-   * Per-line Line (pcs/kg). Prefills from the item catalog; when the owner edits it and saves the bill,
-   * the catalog Item.pieces_per_kg is updated to match (see syncFishPcsPerKgOverridesToItems).
+   * Per-line Line (pcs/kg). Prefills from this bill (heads÷kg) or the item catalog.
+   * Saving the bill writes the value onto Item.pieces_per_kg.
    */
   fish_pcs_per_kg_override?: number | string
   /** UI only: raw Cost / head entry — line Amount derives from it × heads. */
@@ -374,7 +374,7 @@ function validateFishTypeBillLines(lines: BillLineItem[], itemList: Item[]): str
     if (pondId === '' || pondId == null || !Number.isFinite(Number(pondId))) {
       return `Line ${i + 1} (${item?.name || 'Fish item'}): choose a destination pond (nursing pond suggested).`
     }
-    if (itemPiecesPerKg(item)) {
+    if (effectiveLinePiecesPerKg(line, item)) {
       const heads = parseFishHeadCount(line)
       if (heads <= 0) {
         return `Line ${i + 1} (${item?.name || 'Fish item'}): enter total fish (heads) greater than zero.`
@@ -419,7 +419,8 @@ function billLineRowAmount(quantity: number, unitCost: number): number {
 function isFishBillLineAutoMode(line: BillLineItem, itemList: Item[]): boolean {
   if (!line.item_id) return false
   const item = itemList.find((i) => i.id === line.item_id)
-  return isFishTypeItem(item) && itemPiecesPerKg(item) != null
+  if (!isFishTypeItem(item)) return false
+  return effectiveLinePiecesPerKg(line, item) != null
 }
 
 /** Recompute line amount from qty × unit cost (standard item/expense lines). */
@@ -445,74 +446,29 @@ function itemPiecesPerKg(item: Item | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-/** pcs/kg driving this line's derivations: the typed per-line override, else the item catalog value. */
+function impliedLinePiecesPerKg(line: BillLineItem): number | null {
+  const heads = parseFishHeadCount(line)
+  const w = line.aquaculture_fish_weight_kg
+  if (heads <= 0 || w == null || String(w) === '') return null
+  const wn = Number(w)
+  if (!Number.isFinite(wn) || wn <= 0) return null
+  return heads / wn
+}
+
+/** pcs/kg driving this line: typed override, else heads÷kg on this bill, else the item catalog. */
 function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): number | null {
   const raw = line.fish_pcs_per_kg_override
   if (raw !== undefined && raw !== null && String(raw) !== '') {
     const n = Number(raw)
     if (Number.isFinite(n) && n > 0) return n
   }
+  const implied = impliedLinePiecesPerKg(line)
+  if (implied != null) return implied
   return itemPiecesPerKg(item)
 }
 
-/**
- * When the owner edits Line (pcs/kg) on a fish bill line, persist that value onto the catalog Item
- * so the next open does not snap back to the old Item.pieces_per_kg.
- * Returns a map of item id → new pieces_per_kg for local state merge.
- */
-async function syncFishPcsPerKgOverridesToItems(
-  lines: BillLineItem[],
-  itemList: Item[]
-): Promise<Map<number, number>> {
-  const updates = new Map<number, number>()
-  for (const line of lines) {
-    if (!line.item_id) continue
-    const raw = line.fish_pcs_per_kg_override
-    if (raw === undefined || raw === null || String(raw).trim() === '') continue
-    const nextPcs = Number(raw)
-    if (!Number.isFinite(nextPcs) || nextPcs <= 0) continue
-    const item = itemList.find((i) => i.id === line.item_id)
-    if (!item || !isFishTypeItem(item)) continue
-    const current = itemPiecesPerKg(item)
-    if (current != null && Math.abs(current - nextPcs) < 1e-9) continue
-    // Last edited line wins if the same item appears twice.
-    updates.set(line.item_id, nextPcs)
-  }
-  await Promise.all(
-    [...updates.entries()].map(([itemId, pieces_per_kg]) =>
-      api.put(`/items/${itemId}/`, { pieces_per_kg })
-    )
-  )
-  return updates
-}
-
-/** Merge catalog pcs/kg updates into the in-memory item list used by the bill form. */
-function applyPiecesPerKgUpdatesToItems(
-  itemList: Item[],
-  updates: Map<number, number>
-): Item[] {
-  if (updates.size === 0) return itemList
-  return itemList.map((it) => {
-    const next = updates.get(it.id)
-    return next == null ? it : { ...it, pieces_per_kg: next }
-  })
-}
-
 function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): number | null {
-  const fromItem = itemPiecesPerKg(rowItem)
-  if (fromItem != null) return fromItem
-  const raw = line.item_pieces_per_kg
-  if (raw != null && raw !== '') {
-    const n = Number(raw)
-    if (Number.isFinite(n) && n > 0) return n
-  }
-  const w = line.aquaculture_fish_weight_kg
-  const heads = parseFishHeadCount(line)
-  if (heads > 0 && w != null && String(w) !== '') {
-    const wn = Number(w)
-    if (Number.isFinite(wn) && wn > 0) return heads / wn
-  }
-  return null
+  return effectiveLinePiecesPerKg(line, rowItem)
 }
 
 function formatBillLinePcsPerKg(line: BillLineItem, rowItem: Item | undefined): string {
@@ -637,11 +593,7 @@ function FishBillLineDimensionRow({
 }) {
   const speciesValue = (line.aquaculture_fish_species || '').trim()
   const costPerHead = fishCostPerHead(line)
-  const pcsPerKgOverride = line.fish_pcs_per_kg_override
-  const pcsPerKgValue =
-    pcsPerKgOverride !== undefined && pcsPerKgOverride !== null && String(pcsPerKgOverride) !== ''
-      ? pcsPerKgOverride
-      : itemPiecesPerKg(lineItem) ?? ''
+  const pcsPerKgValue = effectiveLinePiecesPerKg(line, lineItem) ?? ''
   const costPerHeadTyped = line.fish_cost_per_head_input
   const costPerHeadValue =
     costPerHeadTyped !== undefined && costPerHeadTyped !== null && String(costPerHeadTyped) !== ''
@@ -692,7 +644,7 @@ function FishBillLineDimensionRow({
           onChange={(e) =>
             onFieldChange(index, 'fish_pcs_per_kg_override', e.target.value === '' ? '' : e.target.value)
           }
-          title="Pieces per 1 kg. Prefills from the item catalog — edit and save the bill to update the Item Line (pcs/kg)."
+          title="Pieces per 1 kg on this bill line. Edit here — save writes it onto the Item catalog too."
           className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
         />
       </div>
@@ -1000,6 +952,10 @@ function serializeBillLineForApi(
             (line.aquaculture_fish_species || '').trim() === 'other'
               ? (line.aquaculture_fish_species_other || '').trim() || null
               : null,
+          pieces_per_kg: (() => {
+            const pcs = effectiveLinePiecesPerKg(normalized, item)
+            return pcs != null ? pcs : null
+          })(),
         }
       : {}),
     aquaculture_pond_id: (() => {
@@ -2123,7 +2079,7 @@ export default function BillsPage() {
         ? items.find((it) => it.id === newLines[index].item_id)
         : undefined
       const fishLine = isFishTypeItem(lineItem)
-      const fishLineAuto = fishLine && itemPiecesPerKg(lineItem) != null
+      const fishLineAuto = fishLine && effectiveLinePiecesPerKg(newLines[index], lineItem) != null
 
       if (field === 'fish_pcs_per_kg_override' && fishLine) {
         newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'pcs')
@@ -2243,21 +2199,6 @@ export default function BillsPage() {
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
       })),
     })
-
-    try {
-      const pcsUpdates = await syncFishPcsPerKgOverridesToItems(linesToSave, items)
-      if (pcsUpdates.size > 0) {
-        setItems((prev) => applyPiecesPerKgUpdatesToItems(prev, pcsUpdates))
-      }
-    } catch (pcsErr: unknown) {
-      console.error('Bill saved but Item Line (pcs/kg) could not be updated:', pcsErr)
-      toast.error(
-        extractErrorMessage(
-          pcsErr,
-          'Bill saved, but the Item Line (pcs/kg) was not updated. Edit the item catalog or try again.'
-        )
-      )
-    }
 
     toast.success(approveBill ? 'Bill approved and posted (Open).' : 'Bill saved as draft.')
     setShowModal(false)
@@ -2390,6 +2331,14 @@ export default function BillsPage() {
                 ? Number((line as BillLineItem & { line_receipt_station_id?: number }).line_receipt_station_id)
                 : '',
             station_cost_mode: 'direct',
+            fish_pcs_per_kg_override: (() => {
+              const fromApi = line.item_pieces_per_kg
+              if (fromApi != null && String(fromApi) !== '') {
+                const n = Number(fromApi)
+                if (Number.isFinite(n) && n > 0) return n
+              }
+              return impliedLinePiecesPerKg(line) ?? undefined
+            })(),
           })) || [],
         })
         setShowEditModal(true)
@@ -2447,21 +2396,6 @@ export default function BillsPage() {
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
       })),
     })
-
-    try {
-      const pcsUpdates = await syncFishPcsPerKgOverridesToItems(linesToSave, items)
-      if (pcsUpdates.size > 0) {
-        setItems((prev) => applyPiecesPerKgUpdatesToItems(prev, pcsUpdates))
-      }
-    } catch (pcsErr: unknown) {
-      console.error('Bill updated but Item Line (pcs/kg) could not be updated:', pcsErr)
-      toast.error(
-        extractErrorMessage(
-          pcsErr,
-          'Bill updated, but the Item Line (pcs/kg) was not updated. Edit the item catalog or try again.'
-        )
-      )
-    }
 
     toast.success(
       postDraftBillOnUpdate && editingBill.status === 'draft'
@@ -3528,7 +3462,8 @@ export default function BillsPage() {
                       const availableTanks = getTanksForItem(line.item_id)
                       const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
                       const showFishDims = isFishTypeItem(lineItem)
-                      const fishLineAuto = showFishDims && itemPiecesPerKg(lineItem) != null
+                      const fishLineAuto =
+                        showFishDims && effectiveLinePiecesPerKg(line, lineItem) != null
                       return (
                         <div
                           key={index}
@@ -4023,7 +3958,8 @@ export default function BillsPage() {
                           : undefined
                       const lineItem = line.item_id ? items.find((i) => i.id === line.item_id) : undefined
                       const showFishDims = isFishTypeItem(lineItem)
-                      const fishLineAuto = showFishDims && itemPiecesPerKg(lineItem) != null
+                      const fishLineAuto =
+                        showFishDims && effectiveLinePiecesPerKg(line, lineItem) != null
 
                       return (
                         <div

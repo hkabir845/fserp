@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q
 
@@ -188,7 +188,7 @@ def list_aquaculture_expense_register(
             total += Decimal(str(row.get("amount") or "0"))
         except Exception:
             pass
-    total = total.quantize(Decimal("0.01"))
+    total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     return {
         "rows": merged,

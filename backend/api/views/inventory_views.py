@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import Prefetch, Q, Sum
@@ -96,7 +96,7 @@ def _inventory_line_value_fields(item: Item | None, quantity: Decimal) -> dict:
     if qty <= 0 or unit_cost <= 0:
         line_value = Decimal("0")
     else:
-        line_value = (qty * unit_cost).quantize(Decimal("0.01"))
+        line_value = (qty * unit_cost).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return {
         "unit_cost": _serialize_decimal(unit_cost) if unit_cost > 0 else None,
         "line_value": _serialize_decimal(line_value),
@@ -130,7 +130,7 @@ def _pond_receipt_to_json(rec: PondWarehouseStockReceipt) -> dict:
         "pond_name": (rec.pond.name or "") if rec.pond_id else "",
         "to_station_id": None,
         "to_station_name": "",
-        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
+        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "lines": line_rows,
     }
 
@@ -163,7 +163,7 @@ def _pond_return_to_json(ret: PondWarehouseStockReturn) -> dict:
         "to_station_id": ret.to_station_id,
         "to_station_name": (ret.to_station.station_name or "") if ret.to_station_id else "",
         "memo": ret.memo or "",
-        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
+        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "lines": line_rows,
     }
 
@@ -197,7 +197,7 @@ def _transfer_to_json(tr: InventoryTransfer):
         "to_station_name": (tr.to_station.station_name or "") if tr.to_station_id else "",
         "posted_at": tr.posted_at.isoformat() if tr.posted_at else None,
         "auto_journal_entry_number": (f"AUTO-ISTR-{tr.id}" if posted else None),
-        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"))),
+        "total_value": _serialize_decimal(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "lines": line_rows,
     }
 

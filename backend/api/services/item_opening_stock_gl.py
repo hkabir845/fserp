@@ -10,7 +10,7 @@ opening (1581) and must not be double-booked.
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
@@ -35,7 +35,7 @@ def item_opening_stock_value(item: Item) -> Decimal:
     cost = item.opening_stock_unit_cost or Decimal("0")
     if qty <= 0 or cost <= 0:
         return Decimal("0")
-    return (qty * cost).quantize(_MONEY)
+    return (qty * cost).quantize(_MONEY, rounding=ROUND_HALF_UP)
 
 
 def item_opening_fields_for_api(item: Item) -> dict:

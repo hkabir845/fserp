@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from django.db.models import Prefetch
@@ -236,7 +236,7 @@ def customer_ar_balance(company_id: int, customer_id: int) -> Decimal:
         return Decimal("0.00")
     rows = _build_customer_ledger_rows(company_id, customer)
     bal = sum((r.debit - r.credit for r in rows), start=Decimal("0"))
-    return bal.quantize(Decimal("0.01"))
+    return bal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def build_customer_ledger(
@@ -416,7 +416,7 @@ def vendor_ap_balance(company_id: int, vendor_id: int) -> Decimal:
         return Decimal("0.00")
     rows = _build_vendor_ledger_rows(company_id, vendor)
     bal = sum((r.debit - r.credit for r in rows), start=Decimal("0"))
-    return bal.quantize(Decimal("0.01"))
+    return bal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def build_vendor_ledger(
@@ -561,7 +561,7 @@ def employee_payable_balance(
             )
     rows = _build_employee_ledger_rows(emp)
     bal = sum((r.debit - r.credit for r in rows), start=Decimal("0"))
-    return bal.quantize(Decimal("0.01"))
+    return bal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def build_employee_ledger(

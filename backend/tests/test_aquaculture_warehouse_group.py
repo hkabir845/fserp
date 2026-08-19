@@ -169,7 +169,7 @@ def test_warehouse_group_pool_sums_member_allocations(api_client, company_tenant
     assert r.status_code == 200
     rows = json.loads(r.content.decode())["rows"]
     assert len(rows) == 1
-    assert rows[0]["quantity"] == "12.0000"
+    assert rows[0]["quantity"] == "12.00"
     assert rows[0]["member_pond_count"] == 2
 
 

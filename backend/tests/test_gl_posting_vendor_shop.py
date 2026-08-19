@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.db.models import Sum
 
 from api.models import (
     Bill,
@@ -22,7 +23,7 @@ from api.services.gl_posting_audit import audit_company_gl_gaps, find_vendor_bil
 
 
 @pytest.mark.django_db
-def test_shop_bill_without_gl_does_not_increment_ap_only(company_tenant):
+def test_shop_bill_without_gl_does_not_increment_ap_only(company_tenant, monkeypatch):
     """Posted bills must not bump vendor A/P when the AUTO-BILL journal cannot be built."""
     shop = Station.objects.create(
         company_id=company_tenant.id,
@@ -47,7 +48,12 @@ def test_shop_bill_without_gl_does_not_increment_ap_only(company_tenant):
         tax_total=Decimal("0"),
         total=Decimal("1000.00"),
     )
-    # No COA seeded — journal build fails; A/P subledger must stay untouched.
+    # A/P and the bill journal move together or not at all. Core posting accounts (2000 A/P,
+    # the office expense fallback) now auto-provision, so an unseeded COA no longer blocks the
+    # journal; force the build to fail instead and assert the subledger stays untouched.
+    import api.services.gl_posting as gl
+
+    monkeypatch.setattr(gl, "_build_bill_journal_lines", lambda *a, **k: None)
     with pytest.raises(GlPostingError):
         post_bill_journal(company_tenant.id, bill)
     bill.refresh_from_db()
@@ -57,6 +63,19 @@ def test_shop_bill_without_gl_does_not_increment_ap_only(company_tenant):
     assert not JournalEntry.objects.filter(
         company_id=company_tenant.id, entry_number=f"AUTO-BILL-{bill.id}"
     ).exists()
+
+    # With the real builder, the same bill posts a balanced journal and A/P follows it.
+    monkeypatch.undo()
+    assert post_bill_journal(company_tenant.id, bill) is True
+    je = JournalEntry.objects.get(
+        company_id=company_tenant.id, entry_number=f"AUTO-BILL-{bill.id}"
+    )
+    agg = JournalEntryLine.objects.filter(journal_entry=je).aggregate(
+        d=Sum("debit"), c=Sum("credit")
+    )
+    assert agg["d"] == agg["c"] == Decimal("1000.00")
+    v.refresh_from_db()
+    assert v.current_balance == Decimal("1000.00")
 
 
 @pytest.mark.django_db

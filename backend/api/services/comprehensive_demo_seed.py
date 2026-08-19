@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, TextIO
 
 from django.db import transaction
@@ -461,7 +461,7 @@ def _ensure_fingerling_and_samples(company_id: int, stdout: TextIO, style: Any) 
             production_cycle=cy,
             sample_date=today - timedelta(days=7 + n),
             estimated_fish_count=count,
-            estimated_total_weight_kg=(avg * Decimal(count)).quantize(Decimal("0.0001")),
+            estimated_total_weight_kg=(avg * Decimal(count)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
             avg_weight_kg=avg,
             fish_species=species,
             notes=f"{TAG} COMP-DEMO-FINGERLING-SAMPLE — {pcs} pcs/kg, ~{avg_kg} kg/fish",
@@ -523,7 +523,7 @@ def _ensure_extra_harvests(company_id: int, stdout: TextIO, style: Any) -> None:
             sale_date=today - timedelta(days=days_ago),
             weight_kg=w_d,
             fish_count=int(cnt),
-            total_amount=(w_d * Decimal(price)).quantize(Decimal("0.01")),
+            total_amount=(w_d * Decimal(price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             buyer_name="COMP-DEMO Wholesale Buyer",
             memo=f"{TAG} COMP-DEMO-HARVEST — {species}",
         )
@@ -571,10 +571,10 @@ def _ensure_aquaculture_expenses(company_id: int, stdout: TextIO, style: Any) ->
         vendor_name="Rural Power Co-op",
     )
     n_share = min(len(ponds), 3)
-    base = (share_total / Decimal(n_share)).quantize(Decimal("0.01"))
+    base = (share_total / Decimal(n_share)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     running = Decimal("0")
     for i, p in enumerate(ponds[:n_share]):
-        slice_amt = base if i < n_share - 1 else (share_total - running).quantize(Decimal("0.01"))
+        slice_amt = base if i < n_share - 1 else (share_total - running).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         running += slice_amt
         AquacultureExpensePondShare.objects.create(expense=shared, pond=p, amount=slice_amt)
     stdout.write(style.SUCCESS(f"  + Aquaculture opex lines: {len(rows)} direct + 1 shared"))
@@ -747,8 +747,8 @@ def _ensure_payroll(company_id: int, stdout: TextIO, style: Any) -> None:
     period_end = today.replace(day=1) - timedelta(days=1)
     period_start = period_end.replace(day=1)
     gross = sum((e.salary or Decimal("0")) for e in employees)
-    deductions = (gross * Decimal("0.07")).quantize(Decimal("0.01"))
-    net = (gross - deductions).quantize(Decimal("0.01"))
+    deductions = (gross * Decimal("0.07")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    net = (gross - deductions).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     pr = PayrollRun.objects.create(
         company_id=company_id,
         payroll_number="COMP-DEMO-PAY-001",
@@ -767,9 +767,9 @@ def _ensure_payroll(company_id: int, stdout: TextIO, style: Any) -> None:
         allocated = Decimal("0")
         for i, pond in enumerate(ponds):
             if i == len(ponds) - 1:
-                amt = (net - allocated).quantize(Decimal("0.01"))
+                amt = (net - allocated).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             else:
-                amt = (net * weights[i]).quantize(Decimal("0.01"))
+                amt = (net * weights[i]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 allocated += amt
             PayrollRunPondAllocation.objects.create(payroll_run=pr, pond=pond, amount=amt)
     bank = BankAccount.objects.filter(company_id=company_id, is_active=True).order_by("id").first()
@@ -1222,7 +1222,7 @@ def _ensure_tank_dip_history(company_id: int, stdout: TextIO, style: Any) -> Non
             d = today - timedelta(days=days_ago)
             if TankDip.objects.filter(tank_id=t.id, dip_date=d).exists():
                 continue
-            vol = (base - Decimal(days_ago * 35)).quantize(Decimal("0.0001"))
+            vol = (base - Decimal(days_ago * 35)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
             TankDip.objects.create(
                 company_id=company_id,
                 tank_id=t.id,

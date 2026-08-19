@@ -14,7 +14,7 @@ Usage:
   python manage.py backfill_item_opening_stock_gl --company-id 1 --as-of 2026-01-01 --force-repost
 """
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -71,7 +71,7 @@ class Command(BaseCommand):
                 skipped_existing += 1
                 continue
 
-            value = (qty * cost).quantize(Decimal("0.01"))
+            value = (qty * cost).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             total_value += value
 
             if dry_run:

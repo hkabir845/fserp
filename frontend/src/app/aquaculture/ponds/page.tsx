@@ -554,7 +554,8 @@ export default function AquaculturePondsPage() {
     setCustomersLoading(true)
     try {
       const { data } = await api.get<CustomerOpt[]>('/customers/', {
-        params: { limit: REFERENCE_FETCH_LIMIT },
+        // This modal links a pond to its buying identity, so internal parties belong here.
+        params: { limit: REFERENCE_FETCH_LIMIT, include_internal: 1 },
       })
       const fromApi = Array.isArray(data) ? data : []
       const byId = new Map<number, CustomerOpt>()

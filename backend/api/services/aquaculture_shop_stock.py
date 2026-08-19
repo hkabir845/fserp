@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import F
@@ -63,7 +63,7 @@ def _parse_shop_issue_items(company_id: int, raw: list) -> list[dict]:
                 "quantity": q,
                 "unit_price": up,
                 "discount_percent": Decimal("0"),
-                "amount": (q * up).quantize(Decimal("0.01")),
+                "amount": (q * up).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             }
         )
     if not lines_data:
@@ -81,8 +81,8 @@ def _total_cost_at_issue(lines_data: list[dict]) -> Decimal:
             raise StockBusinessError(
                 f'Set a cost (or unit price) on "{it.name}" before issuing shop stock to a pond.'
             )
-        total += (q * uc).quantize(Decimal("0.01"))
-    return total.quantize(Decimal("0.01"))
+        total += (q * uc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _decrement_shop_stock(company_id: int, station_id: int, lines_data: list) -> None:

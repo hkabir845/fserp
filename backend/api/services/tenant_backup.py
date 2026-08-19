@@ -11,6 +11,11 @@ Schema v1 backups restore but omit aquaculture/stock modules (legacy).
 Intentionally excluded from tenant JSON backups (never exported or restored):
   - PasswordResetToken (single-use secrets; purged on tenant delete/restore)
   - BackupRestoreAudit (compliance log — restoring an old bundle must not rewrite history)
+  - Brain telemetry and audit rows: BrainUsageLog, BrainConversation, BrainInsight,
+    BrainPrediction, BrainActionLog. These are AI request logs, generated insights and an
+    action audit trail — derived data that regenerates, would bloat the bundle, and (like
+    BackupRestoreAudit) must not have its history rewritten by restoring an older bundle.
+    Authored Brain content — BrainCompanyDocument SOP files — IS exported.
 
 Export fails if any other company-scoped table has rows but is missing from the bundle.
 """
@@ -121,6 +126,7 @@ from api.models import (
     User,
     Vendor,
 )
+from api.models import BrainCompanyDocument, EmployeeHandoverProfile
 
 BACKUP_SCHEMA_VERSION = 2
 SUPPORTED_BACKUP_SCHEMA_VERSIONS = frozenset({1, 2})
@@ -131,6 +137,11 @@ BACKUP_EXCLUDED_MODELS: frozenset[str] = frozenset(
     {
         "api.passwordresettoken",
         "api.backuprestoreaudit",
+        "api.brainusagelog",
+        "api.brainconversation",
+        "api.braininsight",
+        "api.brainprediction",
+        "api.brainactionlog",
     }
 )
 
@@ -217,6 +228,8 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.aquaculturelandlordledgerentry",
     "api.taxrate",
     "api.employeeledgerentry",
+    "api.braincompanydocument",
+    "api.employeehandoverprofile",
 )
 
 # Nullable FKs to JournalEntry that may appear before journal rows in the backup stream.
@@ -783,6 +796,9 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
         EmployeeLedgerEntry.objects.filter(employee__company_id=cid).order_by("id"),
     )
     _serialize_many(records, TaxRate.objects.filter(tax__company_id=cid).order_by("id"))
+    # Authored Brain/HR knowledge content (not telemetry) - see BACKUP_EXCLUDED_MODELS above.
+    _serialize_many(records, BrainCompanyDocument.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, EmployeeHandoverProfile.objects.filter(company_id=cid).order_by("id"))
 
 
 def build_backup_bundle(company_id: int) -> dict[str, Any]:

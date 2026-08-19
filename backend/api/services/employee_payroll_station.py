@@ -1,7 +1,7 @@
 """Resolve payroll run site (station) from HR employee work-site assignments."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.models import Employee, PayrollRun
 from api.services.employee_pond_labor import (
@@ -13,7 +13,7 @@ from api.services.employee_pond_labor import (
 
 
 def _q(v: Decimal) -> Decimal:
-    return (v or Decimal("0")).quantize(Decimal("0.01"))
+    return (v or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def employee_work_site_label(employee: Employee) -> str:

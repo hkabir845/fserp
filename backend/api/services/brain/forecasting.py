@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.db.models import Count, Sum
@@ -27,9 +27,9 @@ def _run_rate_projection(mtd_value: Decimal, today: date) -> dict[str, Any]:
     daily = mtd_value / Decimal(day)
     projected = daily * Decimal(days_in_month)
     return {
-        "mtd": str(mtd_value.quantize(Decimal("0.01"))),
-        "daily_avg": str(daily.quantize(Decimal("0.01"))),
-        "projected_month_end": str(projected.quantize(Decimal("0.01"))),
+        "mtd": str(mtd_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "daily_avg": str(daily.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "projected_month_end": str(projected.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "days_elapsed": day,
         "days_in_month": days_in_month,
         "method": "run_rate",

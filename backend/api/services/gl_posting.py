@@ -14,7 +14,7 @@ import logging
 import uuid
 from collections import Counter, defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from django.db import transaction
@@ -83,6 +83,7 @@ from api.services.employee_payroll_subledger import (
     refresh_employee_balance,
     sync_payroll_run_to_employee_ledgers,
 )
+from api.utils.rounding import money
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,11 @@ def _unpack_gl_line(
     - 5-tuple: explicit per-line site (``None`` = leave line untagged when header is also null).
     """
     acc, debit, credit, desc = line[0], line[1], line[2], line[3]
+    # JournalEntryLine.debit/credit are DecimalField(decimal_places=2): quantize here so the
+    # balance check below tests exactly the numbers that will be stored. Checking unrounded
+    # values and letting the DB round on save can store an unbalanced entry that passed.
+    debit = money(debit)
+    credit = money(credit)
     if len(line) >= 5:
         s = line[4]
         sid = int(s) if s is not None else None
@@ -344,6 +350,18 @@ _STANDARD_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
     CODE_COGS_SHOP: ("Cost of C-Store Goods Sold", "cost_of_goods_sold", "cost_of_goods_sold"),
     CODE_INV_FUEL: ("Inventory — Fuel (Wet Stock at Cost)", "asset", "inventory"),
     CODE_INV_SHOP: ("Inventory — C-Store / Shop", "asset", "inventory"),
+    # Shrinkage: a stock write-off must reach the books. Without these the adjustment/dip
+    # journals skipped GL entirely and the inventory asset drifted away from physical stock.
+    CODE_SHRINK_FUEL: (
+        "Inventory Shrinkage — Fuel (Wet Loss / Variance)",
+        "cost_of_goods_sold",
+        "cost_of_goods_sold",
+    ),
+    CODE_SHRINK_SHOP: (
+        "Inventory Shrinkage — Shop / Other",
+        "cost_of_goods_sold",
+        "cost_of_goods_sold",
+    ),
 }
 
 # Cash, A/P, A/R, and a general expense line — required for vendor bills and payments.
@@ -357,6 +375,11 @@ _CORE_POSTING_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
         "expense",
         "office_general_administrative_expenses",
     ),
+    # Revenue must auto-provision for the same reason A/P and cash do: without it a company
+    # could always post a purchase but never a sale, so moving an invoice to sent/paid failed
+    # with "no revenue accounts" and the document was stuck out of the ledger.
+    CODE_FUEL_REV: ("Fuel Sales", "income", "sales_of_product_income"),
+    CODE_SHOP_REV: ("Shop & Merchandise Sales", "income", "sales_of_product_income"),
 }
 
 
@@ -712,7 +735,7 @@ def apply_weighted_average_cost_on_receipt(
         new_cost = received_value / received_qty
     else:
         new_cost = (old_qty * old_cost + received_value) / denom
-    new_cost = new_cost.quantize(Decimal("0.0001"))
+    new_cost = new_cost.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     if new_cost != (it.cost or Decimal("0")):
         Item.objects.filter(pk=item_id, company_id=company_id).update(cost=new_cost)
 
@@ -768,7 +791,7 @@ def recompute_item_average_cost(company_id: int, item_id: int) -> Optional[Decim
     if denom <= 0 or total_value <= 0:
         return None
 
-    new_cost = (total_value / denom).quantize(Decimal("0.0001"))
+    new_cost = (total_value / denom).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     if new_cost != (item.cost or Decimal("0")):
         Item.objects.filter(pk=item.id, company_id=company_id).update(cost=new_cost)
     return new_cost
@@ -794,7 +817,11 @@ def _wet_stock_variance_accounts(
     """
     inv_acc = _coa(company_id, CODE_INV_FUEL)
     cogs_acc = _coa(company_id, CODE_COGS_FUEL)
-    shrink_acc = _coa(company_id, CODE_SHRINK_FUEL) or cogs_acc
+    shrink_acc = (
+        _coa(company_id, CODE_SHRINK_FUEL)
+        or cogs_acc
+        or _ensure_standard_account(company_id, CODE_SHRINK_FUEL)
+    )
     return inv_acc, cogs_acc, shrink_acc
 
 
@@ -811,7 +838,7 @@ def _tank_dip_variance_journal_skip_reason(company_id: int, dip: TankDip) -> Opt
     rate = item_inventory_unit_cost(prod)
     if rate <= 0:
         return "item_cost_and_price_zero"
-    amount = (abs(var_liters) * rate).quantize(Decimal("0.01"))
+    amount = (abs(var_liters) * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if amount <= 0:
         return "rounded_zero"
     inv_acc, cogs_acc, _ = _wet_stock_variance_accounts(company_id)
@@ -863,7 +890,7 @@ def sync_tank_dip_variance_journal(company_id: int, dip_id: int) -> dict:
     var_liters = measured - book
     prod = dip.tank.product if dip.tank_id else None
     rate = item_inventory_unit_cost(prod)
-    amount = (abs(var_liters) * rate).quantize(Decimal("0.01"))
+    amount = (abs(var_liters) * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     inv_acc, cogs_acc, shrink_acc = _wet_stock_variance_accounts(company_id)
     if not inv_acc or not cogs_acc:
@@ -939,11 +966,22 @@ def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]
     if item:
         pos_cat = (item.pos_category or "").lower()
         if _is_fuel_item(item):
-            return _coa(company_id, CODE_FUEL_REV) or _coa(company_id, CODE_OTHER_REV)
+            return (
+                _coa(company_id, CODE_FUEL_REV)
+                or _coa(company_id, CODE_OTHER_REV)
+                or _ensure_core_posting_account(company_id, CODE_FUEL_REV)
+            )
         if pos_cat in ("shop", "c-store", "convenience", "general", "feed"):
-            return _coa(company_id, CODE_SHOP_REV) or _coa(company_id, CODE_OTHER_REV)
-    return _coa(company_id, CODE_SHOP_REV) or _coa(company_id, CODE_OTHER_REV) or _coa(
-        company_id, CODE_FUEL_REV
+            return (
+                _coa(company_id, CODE_SHOP_REV)
+                or _coa(company_id, CODE_OTHER_REV)
+                or _ensure_core_posting_account(company_id, CODE_SHOP_REV)
+            )
+    return (
+        _coa(company_id, CODE_SHOP_REV)
+        or _coa(company_id, CODE_OTHER_REV)
+        or _coa(company_id, CODE_FUEL_REV)
+        or _ensure_core_posting_account(company_id, CODE_SHOP_REV)
     )
 
 
@@ -992,7 +1030,7 @@ def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
         factor = inv.subtotal / total_lines
         scaled: dict[int, Decimal] = {}
         for aid, amt in amounts.items():
-            scaled[aid] = (amt * factor).quantize(Decimal("0.01"))
+            scaled[aid] = (amt * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         amounts = defaultdict(lambda: Decimal("0"), scaled)
     return dict(amounts)
 
@@ -1093,7 +1131,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         if cost <= 0:
             continue
         qty = line.quantity or Decimal("0")
-        amt = (qty * cost).quantize(Decimal("0.01"))
+        amt = (qty * cost).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amt <= 0:
             continue
         inv_acc = _inventory_account_for_item(company_id, it)
@@ -1144,7 +1182,10 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
             entry_number,
             _gl_invoice_journal_description(inv, "COGS"),
             lines,
-            gl_station_id=None,
+            # Same selling site as AUTO-INV-{id}-SALE. A station-tagged sale whose COGS journal
+            # header is untagged shows the site earning revenue at no cost when journals are
+            # filtered by site. Per-line stations above still override the header.
+            gl_station_id=_gl_station_id(company_id, inv.station_id),
             aquaculture_line_costing=aq_costing,
         )
         is not None
@@ -1230,7 +1271,7 @@ def post_aquaculture_shop_stock_issue_journal(
         if uc <= 0:
             continue
         q = qty if qty is not None else Decimal("0")
-        amt = (q * uc).quantize(Decimal("0.01"))
+        amt = (q * uc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amt <= 0:
             continue
         inv_acc = _inventory_account_for_item(company_id, it)
@@ -1337,7 +1378,7 @@ def post_aquaculture_pond_feed_consumption_journal(
         if uc <= 0:
             continue
         q = qty if qty is not None else Decimal("0")
-        amt = (q * uc).quantize(Decimal("0.01"))
+        amt = (q * uc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amt <= 0:
             continue
         inv_acc = _inventory_account_for_item(company_id, it)
@@ -1445,7 +1486,7 @@ def post_aquaculture_manual_expense_journal(
         return False
     if exp_row.pond_id is None:
         return False
-    amt = (exp_row.amount or Decimal("0")).quantize(Decimal("0.01"))
+    amt = (exp_row.amount or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if amt <= 0:
         return False
 
@@ -1541,7 +1582,7 @@ def post_aquaculture_fish_stock_ledger_journal(
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
         return JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
 
-    amt = book_value.quantize(Decimal("0.01"))
+    amt = book_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if amt <= 0:
         return None
 
@@ -1604,6 +1645,28 @@ def post_aquaculture_fish_stock_ledger_journal(
     )
 
 
+CODE_AQ_COGS_HARVEST = "5240"
+
+
+def _ensure_aquaculture_harvest_cogs_account(company_id: int) -> Optional[ChartOfAccount]:
+    """
+    Cost of fish sold (5240), created if the company predates the account.
+
+    Existing tenants seeded their aquaculture chart before 5240 existed, so provisioning here
+    means their next harvest books to COGS instead of falling back to the mortality line.
+    """
+    acc = _coa(company_id, CODE_AQ_COGS_HARVEST)
+    if acc:
+        return acc
+    return _provision_chart_account(
+        company_id,
+        CODE_AQ_COGS_HARVEST,
+        "Aquaculture — Cost of Fish Sold (Harvest)",
+        "cost_of_goods_sold",
+        "supplies_materials_cogs",
+    )
+
+
 def post_aquaculture_fish_sale_bio_relief_journal(
     company_id: int,
     sale_id: int,
@@ -1620,22 +1683,28 @@ def post_aquaculture_fish_sale_bio_relief_journal(
     """
     Idempotent entry_number AUTO-AQ-SALE-{sale_id}-BIO.
 
-    Harvest bio-asset relief at accumulated production cost/kg: Dr 6726 / Cr 1581.
+    Harvest bio-asset relief at accumulated production cost/kg: Dr 5240 / Cr 1581.
+
+    Selling fish is a cost of sale, not shrinkage. This used to debit 6726 "Mortality, Predation
+    & Shrinkage" because no aquaculture COGS account existed, which left harvest revenue in 4240
+    with no matching COGS - gross profit overstated by the whole cost of the fish, and a mortality
+    line inflated by every sale. 6726 is still used for genuine losses via the stock ledger.
     """
     entry_number = f"AUTO-AQ-SALE-{sale_id}-BIO"
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
         return JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
 
-    amt = relief_amount.quantize(Decimal("0.01"))
+    amt = relief_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if amt <= 0:
         return None
 
     bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
-    exp = ChartOfAccount.objects.filter(company_id=company_id, account_code="6726", is_active=True).first()
+    exp = _ensure_aquaculture_harvest_cogs_account(company_id)
     if not bio or not exp:
         logger.warning(
-            "skip aquaculture fish sale bio relief %s: missing COA (1581, 6726)",
+            "skip aquaculture fish sale bio relief %s: missing COA (1581, %s)",
             entry_number,
+            CODE_AQ_COGS_HARVEST,
         )
         return None
 
@@ -1652,7 +1721,7 @@ def post_aquaculture_fish_sale_bio_relief_journal(
         (exp, amt, Decimal("0"), line_memo),
         (bio, Decimal("0"), amt, line_memo),
     ]
-    desc = f"Aquaculture — harvest bio-asset relief ({pond_label})"[:500]
+    desc = f"Aquaculture — cost of fish sold ({pond_label})"[:500]
     return _create_posted_entry(
         company_id,
         entry_date,
@@ -1719,7 +1788,7 @@ def post_aquaculture_fish_pond_transfer_journal(
     lines: list[tuple] = []
     aq_costing: list[Optional[dict]] = []
     for ln, amt in line_posts:
-        amount = amt.quantize(Decimal("0.01"))
+        amount = amt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amount <= 0:
             continue
         to_pond_id = getattr(ln, "to_pond_id", None)
@@ -1898,9 +1967,9 @@ def post_invoice_sale_journal(
                 run = Decimal("0")
                 for j, (acc, amt, memo, line_st, meta) in enumerate(credit_rows):
                     if j == len(credit_rows) - 1:
-                        na = (sub - run).quantize(Decimal("0.01"))
+                        na = (sub - run).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     else:
-                        na = (amt * factor).quantize(Decimal("0.01"))
+                        na = (amt * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     scaled.append((acc, na, memo, line_st, meta))
                     run += na
                 credit_rows = scaled
@@ -1922,7 +1991,7 @@ def post_invoice_sale_journal(
                 raw = je_lines[i]
                 acc, d, c, desc = raw[0], raw[1], raw[2], raw[3]
                 if c > 0:
-                    nc = (c + diff).quantize(Decimal("0.01"))
+                    nc = (c + diff).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     if len(raw) >= 5:
                         je_lines[i] = (acc, d, nc, desc, raw[4])
                     else:
@@ -2696,7 +2765,7 @@ def _build_bill_journal_lines(
     if sum_lines < total:
         rem_meta, rem_st = _bill_remainder_gl_tags(debit_rows, company_id, bill)
         debit_rows.append(
-            (exp, (total - sum_lines).quantize(Decimal("0.01")), memo_ap, rem_meta, rem_st)
+            (exp, (total - sum_lines).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), memo_ap, rem_meta, rem_st)
         )
         sum_lines = total
     elif sum_lines > total:
@@ -2711,19 +2780,19 @@ def _build_bill_journal_lines(
         for j, row in enumerate(positive_rows):
             acc, amt, desc, meta, line_st = row
             if j == len(positive_rows) - 1:
-                na = (total - run).quantize(Decimal("0.01"))
+                na = (total - run).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             else:
-                na = (amt * factor).quantize(Decimal("0.01"))
+                na = (amt * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             scaled.append((acc, na, desc, meta, line_st))
             run += na
         debit_rows = scaled
         sum_lines = sum(row[1] for row in debit_rows)
 
     if sum_lines != total:
-        diff = (total - sum_lines).quantize(Decimal("0.01"))
+        diff = (total - sum_lines).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if debit_rows and abs(diff) <= Decimal("0.02"):
             acc, am, ds, mt, line_st = debit_rows[-1]
-            debit_rows[-1] = (acc, (am + diff).quantize(Decimal("0.01")), ds, mt, line_st)
+            debit_rows[-1] = (acc, (am + diff).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ds, mt, line_st)
         else:
             logger.warning(
                 "skip bill %s journal: debit sum %s != total %s",
@@ -3328,7 +3397,7 @@ def post_bank_deposit_journal(
                 p.id,
             )
             return False
-        pay_amt = (p.amount or Decimal("0")).quantize(Decimal("0.01"))
+        pay_amt = (p.amount or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if pay_amt <= 0:
             return False
         je_total = sum(s for _, s in buckets.values())
@@ -3336,7 +3405,7 @@ def post_bank_deposit_journal(
             return False
         scale = pay_amt / je_total
         for aid, (acc, dsum) in buckets.items():
-            part = (dsum * scale).quantize(Decimal("0.01"))
+            part = (dsum * scale).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             if aid not in credits:
                 credits[aid] = (acc, Decimal("0"))
             a0, s0 = credits[aid]
@@ -3349,7 +3418,7 @@ def post_bank_deposit_journal(
     ]
     credit_sum = Decimal("0")
     for acc, camt in credits.values():
-        camt = camt.quantize(Decimal("0.01"))
+        camt = camt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         lines.append((acc, Decimal("0"), camt, line_desc))
         credit_sum += camt
 
@@ -3455,9 +3524,9 @@ def post_payroll_salary(
         sync_payroll_run_to_employee_ledgers(company_id, pr)
         return pr.salary_journal, ""
 
-    gross = (pr.total_gross or Decimal("0")).quantize(Decimal("0.01"))
-    ded = (pr.total_deductions or Decimal("0")).quantize(Decimal("0.01"))
-    net = (pr.total_net or Decimal("0")).quantize(Decimal("0.01"))
+    gross = (pr.total_gross or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    ded = (pr.total_deductions or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    net = (pr.total_net or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if gross <= 0:
         return None, "Set payroll totals first (gross must be positive)."
     if abs(gross - ded - net) > Decimal("0.02"):
@@ -3515,8 +3584,8 @@ def post_payroll_salary(
         if not isinstance(amt, Decimal):
             amt = Decimal(str(amt))
         alloc_gross += amt
-    alloc_gross = alloc_gross.quantize(Decimal("0.01"))
-    company_gross = max(gross - alloc_gross, Decimal("0")).quantize(Decimal("0.01"))
+    alloc_gross = alloc_gross.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    company_gross = max(gross - alloc_gross, Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     split_by_pond = bool(pond_alloc_rows) and alloc_gross > 0
     if split_by_pond and alloc_gross > gross + Decimal("0.02"):
         return None, f"Pond allocations ({alloc_gross}) exceed payroll gross ({gross})."
@@ -3579,7 +3648,7 @@ def post_payroll_salary(
     if split_by_pond:
         pond_debit_account = pond_exp or expense
         for row in pond_alloc_rows:
-            amt = (row.amount or Decimal("0")).quantize(Decimal("0.01"))
+            amt = (row.amount or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             if amt <= 0:
                 continue
             pname = (row.pond.name if row.pond else "").strip() or f"Pond #{row.pond_id}"
@@ -3755,7 +3824,7 @@ def post_inventory_transfer_journal(company_id: int, transfer_id: int) -> bool:
         qty = line.quantity or Decimal("0")
         if qty <= 0:
             continue
-        a = (qty * cost).quantize(Decimal("0.01"))
+        a = (qty * cost).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if a <= 0:
             continue
         acc = _inventory_account_for_item(company_id, it)
@@ -3825,9 +3894,14 @@ def post_inventory_adjustment_journal(company_id: int, adjustment_id: int) -> bo
     en = f"AUTO-INVADJ-{adjustment_id}"
     if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
         return True
-    shrink = _coa(company_id, CODE_SHRINK_SHOP) or _coa(company_id, CODE_COGS_SHOP)
+    shrink = (
+        _coa(company_id, CODE_SHRINK_SHOP)
+        or _coa(company_id, CODE_COGS_SHOP)
+        or _ensure_standard_account(company_id, CODE_SHRINK_SHOP)
+    )
     if not shrink:
-        # No shrinkage/COGS account configured: keep the physical stock change, skip GL.
+        # Should not happen now that shrinkage auto-provisions; keep the stock change either way
+        # rather than blocking a physical count that has already been taken.
         return True
 
     net_by_acc: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
@@ -3858,7 +3932,7 @@ def post_inventory_adjustment_journal(company_id: int, adjustment_id: int) -> bo
     desc = f"Inventory adjustment {adj.adjustment_number or adj.id} @ {st_name}"[:500]
     jlines: list[tuple] = []
     for acc_id, raw_net in sorted(net_by_acc.items()):
-        net = raw_net.quantize(Decimal("0.01"))
+        net = raw_net.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if net == 0:
             continue
         acc = acc_by_id[acc_id]
@@ -3910,7 +3984,7 @@ def sync_landlord_lease_payment_journal(
             None,
             "bank_account_id requires pond_id so lease expense posts to the correct pond.",
         )
-    mag = abs(ent.amount_signed or Decimal("0")).quantize(Decimal("0.01"))
+    mag = abs(ent.amount_signed or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if mag <= 0:
         return None, None
 

@@ -7,7 +7,7 @@ and runs sync_invoice_gl so AUTO-INV-{id}-SALE posts to aquaculture revenue COA 
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.db import transaction
@@ -65,8 +65,8 @@ def _build_sale_line_description(sale: AquacultureFishSale) -> str:
 def _refresh_invoice_totals(inv: Invoice) -> None:
     sub = inv.lines.aggregate(s=Sum("amount"))["s"] or Decimal("0")
     tax = inv.tax_total if inv.tax_total is not None else Decimal("0")
-    inv.subtotal = sub.quantize(Decimal("0.01"))
-    inv.total = (sub + tax).quantize(Decimal("0.01"))
+    inv.subtotal = sub.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    inv.total = (sub + tax).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     inv.save(update_fields=["subtotal", "total", "updated_at"])
 
 
@@ -104,7 +104,7 @@ def finalize_aquaculture_fish_sale_to_invoice(
                 return sale, _invoice_min_json(inv, company_id), None
             return None, None, "Linked invoice record is missing; contact support to repair this sale."
 
-        amt = (sale.total_amount or Decimal("0")).quantize(Decimal("0.01"))
+        amt = (sale.total_amount or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if amt <= 0:
             return None, None, "total_amount must be greater than zero to post"
 

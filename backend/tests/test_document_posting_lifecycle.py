@@ -132,8 +132,9 @@ def test_journal_put_blocked_when_posted(api_client, company_tenant, auth_admin_
 
     seed_min_gl_accounts(company_tenant)
     cid = company_tenant.id
-    cash = ChartOfAccount.objects.filter(company_id=cid, account_code="1000").first()
-    equity = ChartOfAccount.objects.filter(company_id=cid, account_code="3000").first()
+    # Codes come from seed_min_gl_accounts: cash is 1010 and equity is 3200.
+    cash = ChartOfAccount.objects.filter(company_id=cid, account_code="1010").first()
+    equity = ChartOfAccount.objects.filter(company_id=cid, account_code="3200").first()
     assert cash and equity
     je = JournalEntry.objects.create(
         company_id=cid,

@@ -399,6 +399,7 @@ urlpatterns = [
     path("vendors/<int:vendor_id>/", vendor_views.vendor_detail),
     # Accounting
     path("chart-of-accounts/templates/fuel-station/", chart_of_accounts_views.chart_of_accounts_template_fuel_station),
+    path("chart-of-accounts/examples/", chart_of_accounts_views.chart_of_accounts_examples),
     path("chart-of-accounts/erp-defaults/", chart_of_accounts_views.chart_of_accounts_erp_defaults),
     path("chart-of-accounts/seed-template/", chart_of_accounts_views.chart_of_accounts_seed_template),
     path(

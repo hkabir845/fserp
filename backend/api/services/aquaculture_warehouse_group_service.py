@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Sum
 
@@ -105,7 +105,7 @@ def warehouse_group_pool_rows(company_id: int, *, group_id: int | None = None) -
                 "quantity": format_measured_quantity_for_api(q),
                 "pos_category": (getattr(it, "pos_category", None) or "general").strip().lower(),
                 "reporting_category": (getattr(it, "category", None) or "").strip() or "General",
-                "unit_cost": str(uc.quantize(Decimal("0.0001"))),
+                "unit_cost": str(uc.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
             }
         )
     out.sort(key=lambda r: (r["warehouse_group_name"].lower(), r["item_name"].lower(), r["item_id"]))

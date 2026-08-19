@@ -18,6 +18,8 @@ from api.models import (
 )
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 
+from tests.test_aquaculture_fish_bioasset_gl import _enable_aquaculture_with_coa
+
 
 def _pond_stock_heads(company_id: int, pond_id: int) -> int:
     rows = compute_fish_stock_position_rows(company_id, pond_id=pond_id)
@@ -26,6 +28,7 @@ def _pond_stock_heads(company_id: int, pond_id: int) -> int:
 
 @pytest.mark.django_db
 def test_edit_fish_transfer_changes_destination_stock(api_client, company_tenant, auth_admin_headers):
+    _enable_aquaculture_with_coa(company_tenant)
     cid = company_tenant.id
     nursing = AquaculturePond.objects.create(
         company_id=cid, name="Digonta Nursing", pond_role="nursing", is_active=True

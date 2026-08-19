@@ -66,7 +66,7 @@ def test_bill_persists_fish_weight_and_count_for_fish_pos_item(api_client, compa
     assert bill_r.status_code == 201, bill_r.content.decode()
     payload = json.loads(bill_r.content)
     line = payload["lines"][0]
-    assert line["aquaculture_fish_weight_kg"] == "12.5000"
+    assert line["aquaculture_fish_weight_kg"] == "12.50"
     assert line["aquaculture_fish_count"] == 5000
     assert line["aquaculture_fish_species"] == "tilapia"
     assert line["aquaculture_fish_species_label"] == "Tilapia"

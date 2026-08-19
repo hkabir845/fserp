@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q, Sum
 
@@ -633,11 +633,11 @@ COST_BUCKET_LABELS: dict[str, str] = {
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _kg_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.0001"))
+    return d.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def harvest_weight_denominator_kg(

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.db import models
@@ -80,11 +80,11 @@ BDT = "BDT"
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _qty_q(d: Decimal, places: str = "0.01") -> Decimal:
-    return d.quantize(Decimal(places))
+    return d.quantize(Decimal(places), rounding=ROUND_HALF_UP)
 
 
 def _tons_from_kg(kg: Decimal) -> Decimal:
@@ -105,7 +105,7 @@ def _fish_per_kg_from_count_weight(count: int | None, weight_kg) -> str:
     w = _decimal(str(weight_kg))
     if w <= 0:
         return ""
-    return str((Decimal(count) / w).quantize(Decimal("0.01")))
+    return str((Decimal(count) / w).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _pond_filter(company_id: int, raw: str | None) -> tuple[int | None, JsonResponse | None]:
@@ -527,7 +527,7 @@ def _report_shop_station_stock(
                 "item_number": (it.item_number or "").strip(),
                 "unit": (it.unit or "").strip() or "unit",
                 "quantity": str(q),
-                "unit_cost": str(uc.quantize(Decimal("0.0001"))),
+                "unit_cost": str(uc.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
                 "extended_value": str(ext),
                 "stock_kind": kind,
                 "stock_kind_label": {
@@ -1649,7 +1649,7 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
                 "fish_per_kg": _fish_per_kg_from_count_weight(b.estimated_fish_count, b.estimated_total_weight_kg),
                 "avg_weight_kg": str(b.avg_weight_kg) if b.avg_weight_kg is not None else "",
                 "avg_weight_g": (
-                    str((_decimal(str(b.avg_weight_kg)) * Decimal("1000")).quantize(Decimal("0.1")))
+                    str((_decimal(str(b.avg_weight_kg)) * Decimal("1000")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
                     if b.avg_weight_kg is not None
                     else ""
                 ),

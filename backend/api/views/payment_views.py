@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, Prefetch, Q
 from django.http import JsonResponse
@@ -306,7 +306,7 @@ def payments_received_outstanding(request):
         if bal <= Decimal("0.005"):
             continue
         total = inv.total or Decimal("0")
-        paid = (total - bal).quantize(Decimal("0.01"))
+        paid = (total - bal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if paid < 0:
             paid = Decimal("0")
         cust = inv.customer
@@ -1212,7 +1212,7 @@ def payments_deposits_list_or_create(request):
                         status=400,
                     )
                 total = sum((p.amount or Decimal("0")) for p in payments)
-                total = total.quantize(Decimal("0.01"))
+                total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 if total <= 0:
                     return JsonResponse(
                         {"detail": "Total deposit amount must be positive"}, status=400

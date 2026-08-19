@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import TypeVar
 
 from django.db import transaction
@@ -74,10 +74,10 @@ def pond_biological_settlement(company_id: int, pond_id: int, as_of: date) -> di
             tc=Coalesce(Sum("credit"), Decimal("0")),
         )
     )
-    bioasset = (agg["td"] - agg["tc"]).quantize(Decimal("0.01"))
+    bioasset = (agg["td"] - agg["tc"]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return {
         "settlement_fish_count": count,
-        "settlement_weight_kg": weight.quantize(Decimal("0.0001")),
+        "settlement_weight_kg": weight.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
         "settlement_bioasset_value": bioasset,
     }
 

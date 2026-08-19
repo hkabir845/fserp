@@ -79,7 +79,11 @@ from api.services.station_bill_share import (
     parse_optional_line_receipt_station_id,
     station_bill_line_cost_mode,
 )
-from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
+from api.services.coa_gl_defaults import (
+    ALLOWED_BILL_EXPENSE_DEBIT,
+    NON_PURCHASABLE_ASSET_SUB_TYPES,
+    parse_optional_chart_account_id,
+)
 from api.services.tenant_reporting_categories import (
     FUEL_STATION_EXPENSE_MAP_TARGETS,
     tenant_expense_row,
@@ -166,6 +170,7 @@ def _drop_invalid_bill_line_expense_account_id(company_id: int, row: dict) -> No
         raw,
         allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
         field_label="expense_account_id",
+        denied_sub_types=NON_PURCHASABLE_ASSET_SUB_TYPES,
     )
     if err:
         row["expense_account_id"] = None
@@ -216,6 +221,7 @@ def _parse_bill_lines_from_body(
             row.get("expense_account_id"),
             allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
             field_label="expense_account_id",
+            denied_sub_types=NON_PURCHASABLE_ASSET_SUB_TYPES,
         )
         if eerr:
             return [], JsonResponse({"detail": eerr}, status=400)
@@ -518,7 +524,7 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         "tenant_reporting_category_id": getattr(l, "tenant_reporting_category_id", None),
         "tenant_reporting_category_label": _bill_line_tenant_reporting_label(l),
         "aquaculture_fish_weight_kg": (
-            str(l.aquaculture_fish_weight_kg)
+            _serialize_quantity(l.aquaculture_fish_weight_kg)
             if getattr(l, "aquaculture_fish_weight_kg", None) is not None
             else None
         ),

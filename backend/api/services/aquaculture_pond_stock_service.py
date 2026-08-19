@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import F
@@ -82,7 +82,7 @@ def feed_inventory_qty_from_kg(
     """Convert applied feed kg to inventory units (sacks or kg)."""
     unit_l = (item.unit or "").strip().lower()
     if unit_l in ("kg", "kilogram", "kilograms"):
-        return applied_kg.quantize(Decimal("0.0001"))
+        return applied_kg.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     kg_per = item.content_weight_kg
     if kg_per is None or kg_per <= 0:
         if sack_size_kg is not None and sack_size_kg > 0:
@@ -93,7 +93,7 @@ def feed_inventory_qty_from_kg(
         kg_per = Decimal(kg_per)
     if kg_per <= 0:
         raise StockBusinessError("Set content_weight_kg on the feed item (or sack size on the advice).")
-    return (applied_kg / kg_per).quantize(Decimal("0.0001"))
+    return (applied_kg / kg_per).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def _fmt_qty(d: Decimal) -> str:

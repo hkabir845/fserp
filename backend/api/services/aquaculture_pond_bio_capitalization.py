@@ -179,10 +179,12 @@ def post_pond_expense_reclass_to_1581(
     positive = [(acc, amt, bucket) for acc, amt, bucket in balances if amt > 0]
     for i, (acc, bal, bucket) in enumerate(positive):
         if i == len(positive) - 1:
-            slice_amt = _money_q(target - running)
+            # Residual so the slices sum to target exactly, but never credit an expense
+            # account past its own debit balance - that would flip it credit-negative.
+            slice_amt = min(_money_q(target - running), _money_q(bal))
         else:
-            slice_amt = _money_q(bal * target / available)
-            running += slice_amt
+            slice_amt = min(_money_q(bal * target / available), _money_q(bal))
+        running += slice_amt
         if slice_amt <= 0:
             continue
         cr_meta = {

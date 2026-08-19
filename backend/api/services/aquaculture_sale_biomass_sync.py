@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.models import AquacultureBiomassSample, AquacultureFishSale
 from api.utils.decimal_fields import fit_decimal
@@ -39,13 +39,13 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
             return
 
         avg_kg = fit_decimal(
-            (sale.weight_kg / Decimal(sale.fish_count)).quantize(Decimal("0.000001")),
+            (sale.weight_kg / Decimal(sale.fish_count)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP),
             max_digits=14,
             decimal_places=6,
         )
-        fish_per_kg = (Decimal(sale.fish_count) / sale.weight_kg).quantize(Decimal("0.0001"))
+        fish_per_kg = (Decimal(sale.fish_count) / sale.weight_kg).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         market_price = fit_decimal(
-            (sale.total_amount / sale.weight_kg).quantize(Decimal("0.01")),
+            (sale.total_amount / sale.weight_kg).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             max_digits=14,
             decimal_places=2,
         )

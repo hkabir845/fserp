@@ -2,7 +2,7 @@
 
 import { CompanyDateInput } from '@/components/CompanyDateInput'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PageLayout from '@/components/PageLayout'
@@ -66,6 +66,7 @@ interface Account {
   account_type: string
   account_sub_type: string  // Fixed: backend uses account_sub_type (with underscore)
   description: string
+  note?: string
   current_balance: number | string
   opening_balance?: number | string
   opening_balance_date?: string
@@ -77,6 +78,16 @@ interface Account {
   /** Legacy: multiple links; prefer bank_register. */
   linked_banks?: LinkedBankRegister[]
   bank_register?: BankRegisterSummary | null
+}
+
+/** One row of the "Select from Examples" picker (GET /chart-of-accounts/examples/). */
+interface AccountExample {
+  account_code: string
+  account_name: string
+  account_sub_type: string
+  description: string
+  source: string
+  already_in_chart: boolean
 }
 
 interface StatementAllocation {
@@ -498,6 +509,7 @@ export default function ChartOfAccountsPage() {
     account_type: 'asset' as string,
     account_sub_type: '',
     description: '',
+    note: '',
     opening_balance: 0,
     opening_balance_date: new Date().toISOString().split('T')[0],
     is_active: true,
@@ -506,6 +518,15 @@ export default function ChartOfAccountsPage() {
     bank_account_number: '',
     register_type: 'CHECKING',
   })
+
+  // "Select from Examples" picker + "Subaccount of" toggle, mirroring the QuickBooks dialog.
+  const [showExamples, setShowExamples] = useState(false)
+  const [examples, setExamples] = useState<AccountExample[]>([])
+  const [examplesLoading, setExamplesLoading] = useState(false)
+  const [exampleSearch, setExampleSearch] = useState('')
+  const [nextAutoCode, setNextAutoCode] = useState<string>('')
+  const [isSubaccount, setIsSubaccount] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -1052,11 +1073,16 @@ export default function ChartOfAccountsPage() {
     )
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent, opts?: { keepOpen?: boolean }) => {
     e.preventDefault()
-    
-    if (!formData.account_code || !formData.account_name || !formData.account_sub_type) {
-      toast.error('Please fill in all required fields')
+
+    // Account code is optional: the server assigns the next free code in this type's band.
+    if (!formData.account_name || !formData.account_sub_type) {
+      toast.error('Account name and sub-type are required')
+      return
+    }
+    if (isSubaccount && !formData.parent_account_id) {
+      toast.error('Pick the parent account, or clear the "Subaccount of" tick.')
       return
     }
 
@@ -1071,15 +1097,18 @@ export default function ChartOfAccountsPage() {
 
     try {
       const payload: Record<string, unknown> = {
-        account_code: formData.account_code,
         account_name: formData.account_name,
         account_type: formData.account_type,
         account_sub_type: formData.account_sub_type,
         description: formData.description || null,
+        note: formData.note || '',
         opening_balance: formData.opening_balance,
         opening_balance_date: formData.opening_balance_date || null,
-        parent_account_id: formData.parent_account_id || null,
+        parent_account_id: isSubaccount ? formData.parent_account_id || null : null,
         is_active: formData.is_active,
+      }
+      if (formData.account_code.trim()) {
+        payload.account_code = formData.account_code.trim()
       }
       if (isBankStyleCoa(formData.account_type, formData.account_sub_type)) {
         const bn = formData.bank_name.trim()
@@ -1093,11 +1122,18 @@ export default function ChartOfAccountsPage() {
         }
       }
 
-      await api.post('/chart-of-accounts/', payload)
-      
-      toast.success('Account created successfully!')
-      setShowModal(false)
-      resetForm()
+      const { data: created } = await api.post('/chart-of-accounts/', payload)
+
+      toast.success(`Account ${created?.account_code || ''} created`.trim())
+      if (opts?.keepOpen) {
+        // Save & New: keep the type so the user can add siblings back to back.
+        const keepType = formData.account_type
+        resetForm()
+        setFormData((prev) => ({ ...prev, account_type: keepType }))
+      } else {
+        setShowModal(false)
+        resetForm()
+      }
       fetchAccounts()
     } catch (error: any) {
       console.error('Error creating account:', error)
@@ -1120,6 +1156,7 @@ export default function ChartOfAccountsPage() {
       account_type: account.account_type,
       account_sub_type: account.account_sub_type,
       description: account.description || '',
+      note: account.note || '',
       opening_balance: Number((account as any).opening_balance || account.current_balance || 0),
       opening_balance_date: (account as any).opening_balance_date
         ? new Date((account as any).opening_balance_date).toISOString().split('T')[0]
@@ -1130,6 +1167,7 @@ export default function ChartOfAccountsPage() {
       bank_account_number: br?.account_number ?? '',
       register_type: br?.register_type ?? 'CHECKING',
     })
+    setIsSubaccount(account.parent_account_id != null)
     setShowModal(true)
   }
 
@@ -1153,9 +1191,10 @@ export default function ChartOfAccountsPage() {
         account_type: formData.account_type,
         account_sub_type: formData.account_sub_type,
         description: formData.description || null,
+        note: formData.note || '',
         opening_balance: formData.opening_balance,
         opening_balance_date: formData.opening_balance_date || null,
-        parent_account_id: formData.parent_account_id || null,
+        parent_account_id: isSubaccount ? formData.parent_account_id || null : null,
         is_active: formData.is_active,
       }
       if (isBankStyleCoa(formData.account_type, formData.account_sub_type)) {
@@ -1224,6 +1263,7 @@ export default function ChartOfAccountsPage() {
       account_type: 'asset',
       account_sub_type: '',
       description: '',
+      note: '',
       opening_balance: 0,
       opening_balance_date: new Date().toISOString().split('T')[0],
       is_active: true,
@@ -1233,6 +1273,10 @@ export default function ChartOfAccountsPage() {
       register_type: 'CHECKING',
     })
     setEditingAccount(null)
+    setIsSubaccount(false)
+    setShowExamples(false)
+    setExampleSearch('')
+    setShowAdvanced(false)
   }
 
   const handleCloseModal = () => {
@@ -1242,6 +1286,54 @@ export default function ChartOfAccountsPage() {
 
   const getAvailableSubTypes = () => {
     return ACCOUNT_SUBTYPES[formData.account_type] || []
+  }
+
+  /** Accounts eligible as a parent: same type, same company, never the row being edited. */
+  const parentCandidates = useMemo(
+    () =>
+      accounts
+        .filter(
+          (a) =>
+            a.account_type === formData.account_type &&
+            (!editingAccount || a.id !== editingAccount.id)
+        )
+        .sort((a, b) => a.account_code.localeCompare(b.account_code)),
+    [accounts, formData.account_type, editingAccount]
+  )
+
+  const loadExamples = useCallback(async (accountType: string) => {
+    setExamplesLoading(true)
+    try {
+      const { data } = await api.get('/chart-of-accounts/examples/', {
+        params: { account_type: accountType },
+      })
+      setExamples(Array.isArray(data?.examples) ? data.examples : [])
+      setNextAutoCode(String(data?.next_available_code || ''))
+    } catch {
+      setExamples([])
+      setNextAutoCode('')
+    } finally {
+      setExamplesLoading(false)
+    }
+  }, [])
+
+  // Keep the examples list and the auto-assigned code in step with the chosen account type.
+  useEffect(() => {
+    if (!showModal) return
+    void loadExamples(formData.account_type)
+  }, [showModal, formData.account_type, loadExamples])
+
+  const applyExample = (ex: AccountExample) => {
+    setFormData((prev) => ({
+      ...prev,
+      account_name: ex.account_name,
+      // Only adopt the template code when the user has not typed one and it is still free.
+      account_code: prev.account_code || (ex.already_in_chart ? '' : ex.account_code),
+      account_sub_type: ex.account_sub_type || prev.account_sub_type,
+      description: prev.description || ex.description || '',
+    }))
+    setShowExamples(false)
+    setExampleSearch('')
   }
 
   if (loading) {
@@ -2403,62 +2495,185 @@ export default function ChartOfAccountsPage() {
             </div>
 
             <form onSubmit={editingAccount ? handleUpdate : handleCreate}>
+              {/* Account Type drives the examples list, the sub-type list and the parent list. */}
+              <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-border pb-4">
+                <label htmlFor="coa-account-type" className="text-sm font-medium text-foreground">
+                  Account Type
+                </label>
+                <select
+                  id="coa-account-type"
+                  required
+                  value={formData.account_type}
+                  onChange={(e) => {
+                    const nextType = e.target.value
+                    const subTypes = ACCOUNT_SUBTYPES[nextType] || []
+                    const defaultSub =
+                      nextType === 'cost_of_goods_sold' && subTypes.length > 0
+                        ? subTypes[0].value
+                        : ''
+                    // Parent must match the new type, so drop a parent that no longer qualifies.
+                    setFormData({
+                      ...formData,
+                      account_type: nextType,
+                      account_sub_type: defaultSub,
+                      parent_account_id: null,
+                    })
+                    setIsSubaccount(false)
+                  }}
+                  className="erp-field max-w-xs"
+                >
+                  {ACCOUNT_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-foreground">
-                    Account Code *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.account_code}
-                    onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
-                    className="erp-field"
-                    placeholder="e.g., 1000, 2000"
-                  />
-                </div>
-                <div>
+                <div className="col-span-2">
                   <label className="mb-2 block text-sm font-medium text-foreground">
                     Account Name *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.account_name}
-                    onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
-                    className="erp-field"
-                    placeholder="e.g., Cash, Accounts Payable"
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={formData.account_name}
+                      onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
+                      className="erp-field flex-1 min-w-[16rem]"
+                      placeholder="e.g., Vehicle Depreciation"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowExamples((v) => !v)}
+                      className="erp-btn-secondary whitespace-nowrap"
+                      aria-expanded={showExamples}
+                    >
+                      Select from Examples
+                    </button>
+                  </div>
+                  {showExamples && (
+                    <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Standard accounts for this type. Picking one fills the name, code,
+                          sub-type and description.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowExamples(false)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={exampleSearch}
+                        onChange={(e) => setExampleSearch(e.target.value)}
+                        placeholder="Search examples..."
+                        className="erp-field mb-2"
+                      />
+                      <div className="max-h-56 overflow-y-auto rounded border border-border bg-white">
+                        {examplesLoading && (
+                          <p className="p-3 text-sm text-muted-foreground">Loading examples...</p>
+                        )}
+                        {!examplesLoading && examples.length === 0 && (
+                          <p className="p-3 text-sm text-muted-foreground">
+                            No built-in examples for this account type.
+                          </p>
+                        )}
+                        {!examplesLoading &&
+                          examples
+                            .filter((ex) => {
+                              const q = exampleSearch.trim().toLowerCase()
+                              if (!q) return true
+                              return (
+                                ex.account_name.toLowerCase().includes(q) ||
+                                ex.account_code.toLowerCase().includes(q) ||
+                                ex.description.toLowerCase().includes(q)
+                              )
+                            })
+                            .map((ex) => (
+                              <button
+                                type="button"
+                                key={ex.account_code + '-' + ex.account_name}
+                                onClick={() => applyExample(ex)}
+                                className="flex w-full items-start gap-3 border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-muted/60"
+                              >
+                                <span className="mt-0.5 font-mono text-xs text-muted-foreground">
+                                  {ex.account_code}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-medium text-foreground">
+                                    {ex.account_name}
+                                    {ex.already_in_chart && (
+                                      <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                                        already added
+                                      </span>
+                                    )}
+                                  </span>
+                                  {ex.description && (
+                                    <span className="block text-xs text-muted-foreground">
+                                      {ex.description}
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                            ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-foreground">
-                    Account Type *
-                  </label>
-                  <select
-                    required
-                    value={formData.account_type}
-                    onChange={(e) => {
-                      const nextType = e.target.value
-                      const subTypes = ACCOUNT_SUBTYPES[nextType] || []
-                      const defaultSub =
-                        nextType === 'cost_of_goods_sold' && subTypes.length > 0
-                          ? subTypes[0].value
-                          : ''
-                      setFormData({
-                        ...formData,
-                        account_type: nextType,
-                        account_sub_type: defaultSub,
-                      })
-                    }}
-                    className="erp-field"
-                  >
-                    {ACCOUNT_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
+
+                {/* Subaccount of: parents are restricted to the same account type. */}
+                <div className="col-span-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      id="coa-is-subaccount"
+                      type="checkbox"
+                      checked={isSubaccount}
+                      onChange={(e) => {
+                        const on = e.target.checked
+                        setIsSubaccount(on)
+                        if (!on) setFormData((prev) => ({ ...prev, parent_account_id: null }))
+                      }}
+                      disabled={parentCandidates.length === 0}
+                      className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                    />
+                    <label
+                      htmlFor="coa-is-subaccount"
+                      className="text-sm font-medium text-foreground/85"
+                    >
+                      Subaccount of
+                    </label>
+                    <select
+                      value={formData.parent_account_id ?? ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          parent_account_id: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      disabled={!isSubaccount || parentCandidates.length === 0}
+                      className="erp-field max-w-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <option value="">Select parent account</option>
+                      {parentCandidates.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.account_code} - {p.account_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {parentCandidates.length === 0
+                      ? 'No other accounts of this type yet, so there is nothing to nest under.'
+                      : 'A subaccount rolls up into its parent on reports, and must be the same account type.'}
+                  </p>
                 </div>
+
                 <div>
                   <label className="mb-2 block text-sm font-medium text-foreground">
                     Account Sub-Type *
@@ -2476,6 +2691,23 @@ export default function ChartOfAccountsPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-foreground">
+                    Account Code
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.account_code}
+                    onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
+                    className="erp-field"
+                    placeholder={nextAutoCode ? 'Auto: ' + nextAutoCode : 'Assigned automatically'}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {editingAccount
+                      ? 'Posting rules resolve accounts by code - change with care.'
+                      : 'Leave blank and ' + (nextAutoCode || 'the next free code') + ' is assigned.'}
+                  </p>
                 </div>
                 {isBankStyleCoa(formData.account_type, formData.account_sub_type) && (
                   <div className="col-span-2 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
@@ -2523,17 +2755,35 @@ export default function ChartOfAccountsPage() {
                     </div>
                   </div>
                 )}
-                <div className="col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-foreground">
-                    Description
-                  </label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    rows={2}
-                    className="erp-field"
-                    placeholder="What this account is for (shown in the chart list; use for staff guidance)"
-                  />
+                <div className="col-span-2 rounded-lg border border-border p-4">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Optional
+                  </p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-foreground">
+                        Description
+                      </label>
+                      <textarea
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        rows={3}
+                        className="erp-field"
+                        placeholder="What this account is for (shown in the chart list; use for staff guidance)"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-foreground">Note</label>
+                      <input
+                        type="text"
+                        value={formData.note}
+                        onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                        maxLength={500}
+                        className="erp-field"
+                        placeholder="Short internal note (not shown on statements)"
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-foreground">
@@ -2572,19 +2822,22 @@ export default function ChartOfAccountsPage() {
                   </label>
                 </div>
               </div>
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="erp-btn-secondary"
-                >
-                  Cancel
+              <div className="mt-6 flex flex-wrap justify-end gap-3">
+                <button type="submit" className="erp-btn-primary">
+                  Save & Close
                 </button>
-                <button
-                  type="submit"
-                  className="erp-btn-primary"
-                >
-                  {editingAccount ? 'Update Account' : 'Create Account'}
+                {!editingAccount && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleCreate(e, { keepOpen: true })}
+                    className="erp-btn-secondary"
+                    title="Save this account and start another of the same type"
+                  >
+                    Save & New
+                  </button>
+                )}
+                <button type="button" onClick={handleCloseModal} className="erp-btn-secondary">
+                  Cancel
                 </button>
               </div>
             </form>

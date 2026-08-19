@@ -156,6 +156,31 @@ def test_fallback_to_5120_when_no_5210(
     assert by_code["1220"].credit == Decimal("10.00")
 
 
+def test_shrinkage_account_is_provisioned_when_the_chart_has_neither_5210_nor_5120(
+    api_client, company_tenant, auth_admin_headers
+):
+    """A write-off must always reach the books; it used to change stock and skip GL silently."""
+    from tests.conftest import seed_min_gl_accounts
+
+    cid = company_tenant.id
+    seed_min_gl_accounts(company_tenant)
+    ChartOfAccount.objects.filter(company_id=cid, account_code__in=("5210", "5120")).delete()
+
+    st = _station(cid)
+    item = _shop_item(cid)
+    set_station_stock(cid, st.id, item.id, Decimal("10"))
+
+    adj_id = _create_and_post(api_client, auth_admin_headers, cid, st, item, "8")
+
+    lines = _lines(cid, adj_id)
+    assert lines, "stock was written off with no journal"
+    by_code = {ln.account.account_code: ln for ln in lines}
+    assert by_code["5210"].debit == Decimal("10.00")  # loss of 2 units at cost 5
+    assert by_code["1220"].credit == Decimal("10.00")
+    shrink = ChartOfAccount.objects.get(company_id=cid, account_code="5210")
+    assert shrink.account_type == "cost_of_goods_sold"
+
+
 def test_rejects_non_shop_item(
     api_client, company_tenant_with_gl, auth_admin_headers
 ):

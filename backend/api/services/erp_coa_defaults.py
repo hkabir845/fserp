@@ -130,6 +130,7 @@ class ErpCoaCode:
     AQ_ELECTRICITY = "6717"
     AQ_MISC = "6725"
     AQ_MORTALITY = "6726"
+    AQ_COGS_HARVEST = "5240"
     AQ_REV_HARVEST = "4240"
     AQ_REV_FINGERLING = "4241"
     AQ_REV_PROCESSING = "4242"
@@ -870,7 +871,15 @@ ERP_COA_PURPOSES: tuple[ErpCoaPurpose, ...] = (
         "aquaculture",
         "Mortality & biological shrinkage",
         ErpCoaCode.AQ_MORTALITY,
-        "Fish stock ledger losses (6726 / Cr 1581).",
+        "Fish stock ledger losses (6726 / Cr 1581). Sales relief goes to 5240, not here.",
+    ),
+    ErpCoaPurpose(
+        "aquaculture.cogs_harvest",
+        "aquaculture",
+        "Cost of fish sold (harvest)",
+        ErpCoaCode.AQ_COGS_HARVEST,
+        "Accumulated pond cost of fish sold outside, relieved from 1581 on a finalized sale "
+        "(5240 / Cr 1581). Pairs with 4240-4243 so aquaculture gross profit is meaningful.",
     ),
     ErpCoaPurpose(
         "aquaculture.feed",

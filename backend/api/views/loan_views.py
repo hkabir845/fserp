@@ -91,7 +91,7 @@ def _parse_required_annual_interest_rate(ar_raw):
         raise ValueError("annual_interest_rate cannot be negative")
     if v > _MAX_APR:
         raise ValueError("annual_interest_rate exceeds maximum")
-    return v.quantize(Decimal("0.0001"))
+    return v.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def _parse_date(val):

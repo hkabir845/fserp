@@ -4,7 +4,7 @@ Fish growth report: sample-to-sample intervals with ADG, period FCR, and pond lo
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from api.models import AquacultureBiomassSample, AquaculturePond
@@ -24,7 +24,7 @@ def _d(v) -> Decimal:
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
@@ -68,7 +68,7 @@ def _interval_rows_for_samples(samples: list[AquacultureBiomassSample], company_
         adg_g: str | None = None
         if prev_mean is not None and cur_mean is not None and prev_mean > 0:
             adg = ((cur_mean - prev_mean) * Decimal("1000")) / Decimal(days)
-            adg_g = str(adg.quantize(Decimal("0.01")))
+            adg_g = str(adg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
         biomass_gain: str | None = None
         if prev_bio is not None and cur_bio is not None:
@@ -100,8 +100,8 @@ def _interval_rows_for_samples(samples: list[AquacultureBiomassSample], company_
                 "days": days,
                 "fish_species": sp,
                 "fish_species_label": fish_species_display_label(sp, spo),
-                "from_mean_weight_g": str((prev_mean * 1000).quantize(Decimal("0.01"))) if prev_mean else None,
-                "to_mean_weight_g": str((cur_mean * 1000).quantize(Decimal("0.01"))) if cur_mean else None,
+                "from_mean_weight_g": str((prev_mean * 1000).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if prev_mean else None,
+                "to_mean_weight_g": str((cur_mean * 1000).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if cur_mean else None,
                 "adg_g_per_fish_per_day": adg_g,
                 "from_biomass_kg": str(prev_bio) if prev_bio is not None else None,
                 "to_biomass_kg": str(cur_bio) if cur_bio is not None else None,

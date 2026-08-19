@@ -18,7 +18,7 @@ Examples:
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -366,7 +366,7 @@ class Command(BaseCommand):
             if sc["status"] == AquacultureFeedingAdvice.STATUS_APPLIED:
                 fac = sc.get("applied_kg_factor") or Decimal("1")
                 base = sug if sug and sug > 0 else Decimal("50")
-                a.applied_feed_kg = (base * fac).quantize(Decimal("0.01"))
+                a.applied_feed_kg = (base * fac).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 a.applied_at = django_timezone.now() - timedelta(hours=2)
 
             a.save()

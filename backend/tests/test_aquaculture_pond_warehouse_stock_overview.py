@@ -35,8 +35,8 @@ def test_pond_warehouse_stock_overview_lists_rows(api_client, company_tenant, au
     rows = body["rows"]
     assert len(rows) == 2
     names = {(x["pond_name"], x["item_name"], x["quantity"]) for x in rows}
-    assert ("North", "Grower 32%", "12.0000") in names
-    assert ("South", "Grower 32%", "3.0000") in names
+    assert ("North", "Grower 32%", "12.00") in names
+    assert ("South", "Grower 32%", "3.00") in names
 
 
 @pytest.mark.django_db
@@ -62,4 +62,4 @@ def test_pond_warehouse_stock_overview_pond_filter(api_client, company_tenant, a
     body = json.loads(r.content.decode())
     assert len(body["rows"]) == 1
     assert body["rows"][0]["pond_id"] == pond_a.id
-    assert body["rows"][0]["quantity"] == "5.0000"
+    assert body["rows"][0]["quantity"] == "5.00"

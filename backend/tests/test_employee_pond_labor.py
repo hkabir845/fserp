@@ -476,8 +476,9 @@ def test_manual_partial_pond_worker_payroll_auto_allocates_and_posts_6712(
     assert r.status_code == 200, r.content.decode()
     rows = json.loads(r.content)
     je_row = next(x for x in rows if x.get("entry_number") == f"AUTO-PAYROLL-{pid}")
-    assert je_row["station_name"] == "Digonta Pond"
-    assert je_row["lines"][0]["station_name"] == "Digonta Pond"
+    # Site columns show the pond's operational name verbatim; see test_journal_entity_site_label.
+    assert je_row["station_name"] == "Digonta"
+    assert je_row["lines"][0]["station_name"] == "Digonta"
 
     alloc = PayrollRunPondAllocation.objects.get(payroll_run_id=pid)
     assert alloc.pond_id == pond.id

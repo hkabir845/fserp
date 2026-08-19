@@ -28,12 +28,12 @@ def test_item_create_and_update_pieces_per_kg(api_client, company_tenant, auth_a
     )
     assert create_r.status_code == 201, create_r.content.decode()
     payload = json.loads(create_r.content)
-    assert payload["pieces_per_kg"] == "400.0000"
+    assert payload["pieces_per_kg"] == "400.00"
     item_id = payload["id"]
 
     get_r = api_client.get(f"/api/items/{item_id}/", **h)
     assert get_r.status_code == 200
-    assert json.loads(get_r.content)["pieces_per_kg"] == "400.0000"
+    assert json.loads(get_r.content)["pieces_per_kg"] == "400.00"
 
     upd_r = api_client.put(
         f"/api/items/{item_id}/",
@@ -42,7 +42,7 @@ def test_item_create_and_update_pieces_per_kg(api_client, company_tenant, auth_a
         **h,
     )
     assert upd_r.status_code == 200
-    assert json.loads(upd_r.content)["pieces_per_kg"] == "380.0000"
+    assert json.loads(upd_r.content)["pieces_per_kg"] == "380.00"
 
     clear_r = api_client.put(
         f"/api/items/{item_id}/",
@@ -131,7 +131,7 @@ def test_bill_with_fry_item_pieces_per_kg_derives_dims_from_qty_kg(api_client, c
     )
     assert bill_r.status_code == 201, bill_r.content.decode()
     line = json.loads(bill_r.content)["lines"][0]
-    assert line["aquaculture_fish_weight_kg"] == "12.5000"
+    assert line["aquaculture_fish_weight_kg"] == "12.50"
     assert line["aquaculture_fish_count"] == 5000
 
 
@@ -192,7 +192,7 @@ def test_bill_fish_line_with_ppk_honours_typed_weight(api_client, company_tenant
     assert bill_r.status_code == 201, bill_r.content.decode()
     line = json.loads(bill_r.content)["lines"][0]
     # Typed weight is kept (heads / Line would have said 166.6667) and drives billing kg.
-    assert line["aquaculture_fish_weight_kg"] == "950.5000"
+    assert line["aquaculture_fish_weight_kg"] == "950.50"
     assert line["quantity"] == "950.50"
     assert line["aquaculture_fish_count"] == 500000
 
@@ -252,6 +252,6 @@ def test_bill_fish_line_heads_and_amount_derives_billing_kg(api_client, company_
     )
     assert bill_r.status_code == 201, bill_r.content.decode()
     line = json.loads(bill_r.content)["lines"][0]
-    assert line["quantity"] == "166.6667"
-    assert line["aquaculture_fish_weight_kg"] == "166.6667"
+    assert line["quantity"] == "166.67"
+    assert line["aquaculture_fish_weight_kg"] == "166.67"
     assert line["aquaculture_fish_count"] == 500000

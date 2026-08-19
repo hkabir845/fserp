@@ -28,7 +28,7 @@ _M_PER_FT = Decimal("0.3048")
 
 def metres_to_feet(m: Decimal) -> Decimal:
     """Convert metres to feet (for legacy API keys)."""
-    return (m / _M_PER_FT).quantize(Decimal("0.001"))
+    return (m / _M_PER_FT).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
 
 from api.utils.measured_quantity import (
@@ -50,7 +50,7 @@ def format_pond_area_decimal_for_api(d: Decimal | None) -> str | None:
 def compute_water_surface_sq_ft(water_area_decimal: Decimal | None) -> Decimal | None:
     if water_area_decimal is None or water_area_decimal <= 0:
         return None
-    return (water_area_decimal * SQ_FT_PER_BANGLADESH_DECIMAL).quantize(Decimal("0.01"))
+    return (water_area_decimal * SQ_FT_PER_BANGLADESH_DECIMAL).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def compute_water_volume_cu_ft(

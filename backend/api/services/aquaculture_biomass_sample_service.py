@@ -1,7 +1,7 @@
 """Derive pond-level biomass estimates from a net-caught sample and transactional fish stock."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.utils.decimal_fields import fit_decimal
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
@@ -12,11 +12,11 @@ def _reference_avg_weight_kg(row: dict, tc: int, tw: Decimal) -> Decimal | None:
     if tc <= 0:
         return None
     if tw > 0:
-        return (tw / Decimal(tc)).quantize(Decimal("0.000001"))
+        return (tw / Decimal(tc)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     stocked_c = int(row.get("stocked_fish_count") or 0)
     stocked_w = Decimal(str(row.get("stocked_weight_kg") or "0"))
     if stocked_c > 0 and stocked_w > 0:
-        return (stocked_w / Decimal(stocked_c)).quantize(Decimal("0.000001"))
+        return (stocked_w / Decimal(stocked_c)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     return None
 
 
@@ -63,18 +63,18 @@ def apply_aquaculture_biomass_sample_extrapolation(sample) -> None:
     if fc is None or fc <= 0 or etw is None or etw <= 0:
         return
 
-    sample_avg = (etw / Decimal(fc)).quantize(Decimal("0.000001"))
+    sample_avg = (etw / Decimal(fc)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     if tc <= 0:
         return
 
     sample.extrapolated_biomass_kg = fit_decimal(
-        (sample_avg * Decimal(tc)).quantize(Decimal("0.0001")),
+        (sample_avg * Decimal(tc)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
         max_digits=14,
         decimal_places=4,
     )
     if ref_avg is not None:
         sample.biomass_gain_kg = fit_decimal(
-            ((sample_avg - ref_avg) * Decimal(tc)).quantize(Decimal("0.0001")),
+            ((sample_avg - ref_avg) * Decimal(tc)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
             max_digits=14,
             decimal_places=4,
         )

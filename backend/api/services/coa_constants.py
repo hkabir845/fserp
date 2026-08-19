@@ -91,3 +91,40 @@ def pl_bucket_for_coa(
             return "cost_of_goods_sold"
         return "expense"
     return None
+
+
+# Sub-types that make an `asset` row a cash or bank register. The fuel-station chart types every
+# one of these as plain "asset" (1010 cash_on_hand, 1030/1040/1050 checking, 1020 other_current_
+# asset), so anything that keyed off account_type == "bank_account" alone matched nothing at all.
+CASH_AND_BANK_SUB_TYPES: frozenset[str] = frozenset(
+    {
+        "bank_account",
+        "cash_on_hand",
+        "cash_and_cash_equivalents",
+        "checking",
+        "savings",
+        "money_market",
+        "undeposited_funds",
+    }
+)
+
+# 1020 "Cash Clearing - Undeposited" is a real cash position but is templated as a generic
+# other_current_asset, so it is recognised by code as well as by sub-type.
+CASH_AND_BANK_ACCOUNT_CODES: frozenset[str] = frozenset({"1010", "1020", "1030", "1040", "1050"})
+
+
+def is_cash_or_bank_account(
+    account_type: str | None,
+    account_sub_type: str | None = None,
+    account_code: str | None = None,
+) -> bool:
+    """True for the cash and bank registers that make up 'cash' on a cash-flow statement."""
+    t = normalize_chart_account_type(account_type)
+    if t == "bank_account":
+        return True
+    if t != "asset":
+        return False
+    st = (account_sub_type or "").strip().lower()
+    if st in CASH_AND_BANK_SUB_TYPES:
+        return True
+    return (account_code or "").strip() in CASH_AND_BANK_ACCOUNT_CODES

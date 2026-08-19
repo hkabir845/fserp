@@ -669,7 +669,7 @@ def workforce_retention_analysis(company_id: int, *, lang: str = "bn") -> dict[s
     )
     total_payroll_month = sum(_d(e.salary) for e in emps)
     payroll_pct = (
-        str((total_payroll_month / company_net * 100).quantize(Decimal("0.1")))
+        str((total_payroll_month / company_net * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
         if company_net > 0
         else None
     )

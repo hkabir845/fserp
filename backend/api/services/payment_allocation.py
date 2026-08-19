@@ -1,11 +1,13 @@
 """Invoice/bill payment application (subledger + status sync)."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from django.db import transaction
 from django.db.models import Sum
+
+from api.utils.rounding import money
 
 from api.models import (
     Bill,
@@ -133,7 +135,7 @@ def customer_uninvoiced_receivable(
         u = max(u, ob)
     if u < 0:
         u = Decimal("0")
-    return u.quantize(Decimal("0.01"))
+    return u.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def vendor_unbilled_payable(
@@ -168,7 +170,7 @@ def vendor_unbilled_payable(
         u = max(u, ob)
     if u < 0:
         u = Decimal("0")
-    return u.quantize(Decimal("0.01"))
+    return u.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def refresh_invoice_from_allocations(inv: Invoice, company_id: int) -> None:
@@ -335,7 +337,10 @@ def apply_invoice_allocations_for_payment(
             return False, f"invoice {iid} not found for this customer"
         if inv.status == "draft":
             return False, f"invoice {iid} is draft"
-        open_amt = invoice_open_amount(inv, company_id)
+        # Exclude THIS payment's existing rows: they are about to be replaced, and counting
+        # them makes re-saving an unchanged allocation look like an over-allocation.
+        open_amt = invoice_balance_due_excluding_payment(inv, company_id, p.id)
+        d_amt = money(d_amt)
         if d_amt > open_amt + Decimal("0.01"):
             return False, f"allocation exceeds open balance for invoice {iid}"
         cleaned.append((inv.id, d_amt))
@@ -383,8 +388,11 @@ def apply_bill_allocations_for_payment(
             return False, f"bill {bid} not found for this vendor"
         if bill.status == "draft":
             return False, f"bill {bid} is draft"
-        paid = total_allocated_to_bill(company_id, bill.id)
-        open_amt = max(Decimal("0"), (bill.total or Decimal("0")) - paid)
+        # Same as the invoice side: this payment's own rows are replaced below, so they must
+        # not count against the bill's open balance while re-validating.
+        paid = total_allocated_to_bill_excluding_payment(company_id, bill.id, p.id)
+        open_amt = max(Decimal("0"), money(bill.total or Decimal("0")) - paid)
+        d_amt = money(d_amt)
         if d_amt > open_amt + Decimal("0.01"):
             return False, f"allocation exceeds open balance for bill {bid}"
         cleaned.append((bill.id, d_amt))

@@ -11,7 +11,7 @@ Usage:
   python manage.py recompute_item_average_cost --company-id 1 --dry-run
   python manage.py recompute_item_average_cost --company-id 1
 """
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Sum
@@ -58,7 +58,7 @@ class Command(BaseCommand):
                 skipped += 1
                 continue
 
-            new_cost = (total_value / denom).quantize(Decimal("0.0001"))
+            new_cost = (total_value / denom).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
             old_cost = item.cost or Decimal("0")
             if new_cost == old_cost:
                 skipped += 1

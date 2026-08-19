@@ -20,10 +20,10 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='tenantreportingcategory',
-            constraint=models.CheckConstraint(condition=models.Q(('aquaculture_pond__isnull', False), ('station__isnull', False), _negated=True), name='tenant_reporting_cat_station_pond_mutually_exclusive'),
+            constraint=models.CheckConstraint(condition=~models.Q(aquaculture_pond__isnull=False, station__isnull=False), name='tenant_reporting_cat_station_pond_mutually_exclusive'),
         ),
         migrations.AddConstraint(
             model_name='tenantreportingcategory',
-            constraint=models.CheckConstraint(condition=models.Q(('aquaculture_pond__isnull', False), ('head_office_only', True), _negated=True), name='tenant_reporting_cat_ho_not_with_pond'),
+            constraint=models.CheckConstraint(condition=~models.Q(aquaculture_pond__isnull=False, head_office_only=True), name='tenant_reporting_cat_ho_not_with_pond'),
         ),
     ]

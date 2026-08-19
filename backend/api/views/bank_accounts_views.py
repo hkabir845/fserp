@@ -1,6 +1,6 @@
 """Bank accounts API: list, create, get, update, delete, statement (company-scoped)."""
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Optional
 
 from django.db import transaction
@@ -36,7 +36,7 @@ def _display_balance_for_bank(
     """
     if not b.chart_account_id:
         ob = b.current_balance if b.current_balance is not None else Decimal("0")
-        return ob.quantize(Decimal("0.01"))
+        return ob.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     ca = getattr(b, "chart_account", None)
     if ca is None:
         ca = (
@@ -46,13 +46,13 @@ def _display_balance_for_bank(
         )
     if ca is None:
         ob = b.current_balance if b.current_balance is not None else Decimal("0")
-        return ob.quantize(Decimal("0.01"))
+        return ob.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     ob = ca.opening_balance if ca.opening_balance is not None else Decimal("0")
     if journal_net_by_chart is not None:
         jn = journal_net_by_chart.get(b.chart_account_id, Decimal("0"))
     else:
         jn = journal_net_movement(b.chart_account_id)
-    return (ob + jn).quantize(Decimal("0.01"))
+    return (ob + jn).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _bank_to_json(b, journal_net_by_chart: Optional[Dict[int, Decimal]] = None):

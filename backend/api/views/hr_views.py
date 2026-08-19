@@ -1,7 +1,7 @@
 """HR: employees, employee subledger, payroll run (totals + optional salary GL post)."""
 import logging
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import Sum
@@ -90,7 +90,7 @@ EARNING_KEYS = (
 
 
 def _q_money(v: Decimal) -> Decimal:
-    return (v or Decimal("0")).quantize(Decimal("0.01"))
+    return (v or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _gross_from_earning_parts(
@@ -514,7 +514,7 @@ def _pond_allocations_for_payroll(payroll_id: int) -> list[dict]:
         {
             "pond_id": r.pond_id,
             "pond_name": (r.pond.name or "").strip() if r.pond_id else "",
-            "amount": str((r.amount or Decimal("0")).quantize(Decimal("0.01"))),
+            "amount": str((r.amount or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         }
         for r in rows
     ]
@@ -749,9 +749,9 @@ def _sync_payroll_employee_allocations(company_id: int, p: PayrollRun, body: dic
 
 
 def _validate_payroll_amounts(gross: Decimal, ded: Decimal, net: Decimal) -> str | None:
-    g = (gross or Decimal("0")).quantize(Decimal("0.01"))
-    d = (ded or Decimal("0")).quantize(Decimal("0.01"))
-    n = (net or Decimal("0")).quantize(Decimal("0.01"))
+    g = (gross or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    d = (ded or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    n = (net or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if d < 0 or n < 0 or g < 0:
         return "Gross, deductions, and net must be non-negative"
     if abs(g - d - n) > Decimal("0.02"):
@@ -1056,7 +1056,7 @@ def payroll_from_employees(request, payroll_id: int):
             company_id=cid, is_active=True, salary__isnull=False, salary__gt=0
         ).aggregate(t=Sum("salary"))["t"]
     ) or Decimal("0")
-    s = s.quantize(Decimal("0.01"))
+    s = s.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     p.base_salary_total = s
     p.overtime_amount = Decimal("0")
     p.bonus_amount = Decimal("0")
@@ -1132,7 +1132,7 @@ def payroll_from_one_employee(request, payroll_id: int):
         return JsonResponse({"detail": "Employee not found."}, status=404)
     if not emp.is_active:
         return JsonResponse({"detail": "Employee is not active."}, status=400)
-    s = (emp.salary or Decimal("0")).quantize(Decimal("0.01"))
+    s = (emp.salary or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if s <= 0:
         return JsonResponse(
             {

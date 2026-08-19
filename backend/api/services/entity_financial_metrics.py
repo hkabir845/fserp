@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q
 
@@ -25,7 +25,7 @@ from api.services.station_business_kind import KIND_SHOP_HUB, station_business_k
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _decimal(raw) -> Decimal:

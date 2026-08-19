@@ -190,6 +190,15 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
         "Internal trade: eliminated against 5245 in the company income statement.",
     ),
     (
+        "5240",
+        "Aquaculture — Cost of Fish Sold (Harvest)",
+        "cost_of_goods_sold",
+        "supplies_materials_cogs",
+        "Accumulated production cost of fish sold to outside buyers, relieved from 1581 at cost "
+        "per kg when a harvest sale is finalized. Pairs with 4240–4243 revenue so aquaculture "
+        "gross profit is meaningful; distinct from 6726, which is mortality and shrinkage.",
+    ),
+    (
         "5245",
         "Aquaculture — Inter-Pond Fish Cost of Sales (internal)",
         "cost_of_goods_sold",

@@ -793,8 +793,8 @@ export default function InvoicesPage() {
     }
 
     try {
-      const response = await api.put(`/invoices/${invoiceId}/status`, {
-        new_status: 'sent'
+      const response = await api.put(`/invoices/${invoiceId}/status/`, {
+        status: 'sent'
       })
 
       if (response.status === 200) {
@@ -813,7 +813,7 @@ export default function InvoicesPage() {
 
   const handleViewInvoice = async (invoiceId: number) => {
     try {
-      const response = await api.get(`/invoices/${invoiceId}`)
+      const response = await api.get(`/invoices/${invoiceId}/`)
       if (response.status === 200) {
         setViewingInvoice(normalizeInvoiceFromApi(response.data as Record<string, unknown>))
         setShowViewModal(true)
@@ -844,7 +844,7 @@ export default function InvoicesPage() {
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
       // Fetch full invoice details with line items
-      const response = await api.get(`/invoices/${invoice.id}`)
+      const response = await api.get(`/invoices/${invoice.id}/`)
       if (response.status === 200) {
         const fullInvoice = normalizeInvoiceFromApi(response.data as Record<string, unknown>)
         setEditingInvoice(fullInvoice)
@@ -915,7 +915,7 @@ export default function InvoicesPage() {
 
     try {
       const { subtotal, taxAmount, total } = calculateTotals()
-      const response = await api.put(`/invoices/${editingInvoice.id}`, {
+      const response = await api.put(`/invoices/${editingInvoice.id}/`, {
         customer_id: formData.customer_id,
         invoice_date: formData.invoice_date,
         due_date: formData.due_date || null,
@@ -948,7 +948,7 @@ export default function InvoicesPage() {
     }
 
     try {
-      const response = await api.delete(`/invoices/${invoiceId}`)
+      const response = await api.delete(`/invoices/${invoiceId}/`)
 
       if (response.status === 204 || response.status === 200) {
         toast.success(`Invoice ${invoiceNumber} deleted successfully!`)

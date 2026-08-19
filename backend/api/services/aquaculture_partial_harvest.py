@@ -194,6 +194,86 @@ def effective_biomass_kg_from_position_row(row: dict) -> Decimal:
     return implied_w
 
 
+def pond_biomass_alert_summary(row: dict | None) -> dict:
+    """
+    Farm-floor alert for pond load, derived from the biomass advice row.
+
+    Deliberately driven by biomass per decimal rather than head count: a pond is stressed by the
+    weight it carries, not by how many fish that weight is spread across.
+
+    ``severity`` is always one of green / yellow / red so a caller can switch on it exhaustively.
+    Expects a row from :func:`compute_biomass_load_advice_dict` (load_level vocabulary:
+    understocked | moderate | full | high_risk | unknown).
+    """
+    if not row:
+        return {
+            "severity": "green",
+            "action": "monitor",
+            "reason": "No pond data available.",
+            "suggested_reduction_kg": None,
+        }
+
+    load_level = str(row.get("load_level") or "").strip().lower()
+    density = row.get("stock_density_kg_per_decimal")
+    water_area_decimal = row.get("water_area_decimal")
+    suggested_kg = row.get("partial_harvest_suggested_kg")
+    reduction = str(suggested_kg) if suggested_kg not in (None, "") else None
+    rationale = str(row.get("partial_harvest_rationale") or row.get("owner_decision_summary") or "").strip()
+
+    # Pond area drives every band, so without it no load statement is trustworthy.
+    if water_area_decimal in (None, "") or str(water_area_decimal).strip() in ("0", "0.0"):
+        return {
+            "severity": "yellow",
+            "action": "Set the pond water area so biomass load can be checked against capacity.",
+            "reason": "Pond area is missing, so kg per decimal cannot be calculated.",
+            "suggested_reduction_kg": None,
+        }
+
+    if load_level == "high_risk":
+        return {
+            "severity": "red",
+            "action": "Reduce fish biomass with transfer or partial harvest before the pond exceeds safe capacity.",
+            "reason": (
+                f"Biomass load is {density} kg/decimal, above the pond's safe comfort band. "
+                f"{rationale or 'Pond is above the recommended load range.'}"
+            ).strip(),
+            "suggested_reduction_kg": reduction,
+        }
+
+    if load_level == "full" or (not load_level and row.get("partial_harvest_applicable") is True):
+        return {
+            "severity": "yellow",
+            "action": "Increase aeration and prepare a partial harvest or transfer to lower biomass.",
+            "reason": (
+                f"Pond is at full biomass capacity ({density} kg/decimal) and should not receive more fish."
+            ),
+            "suggested_reduction_kg": reduction,
+        }
+
+    if load_level == "moderate":
+        return {
+            "severity": "yellow",
+            "action": "Monitor closely and hold feeding to the current biomass level.",
+            "reason": f"Pond load ({density} kg/decimal) is within the moderate range but needs active monitoring.",
+            "suggested_reduction_kg": reduction,
+        }
+
+    if load_level == "understocked":
+        return {
+            "severity": "green",
+            "action": "Continue growing; the pond has headroom for more biomass.",
+            "reason": f"Pond load ({density} kg/decimal) is below the comfort band.",
+            "suggested_reduction_kg": None,
+        }
+
+    return {
+        "severity": "green",
+        "action": "Continue normal feeding and monitoring; keep biomass within pond-specific capacity.",
+        "reason": "Pond load is acceptable for routine management.",
+        "suggested_reduction_kg": None,
+    }
+
+
 def compute_biomass_load_advice_dict(
     *,
     biomass_kg: Decimal,
@@ -258,7 +338,7 @@ def compute_biomass_load_advice_dict(
         summary = advice.get("advice_summary") or ""
         action = "monitor"
 
-    return {
+    out = {
         **advice,
         **harvest,
         "water_area_decimal": str(water_area_decimal) if water_area_decimal and water_area_decimal > 0 else None,
@@ -269,6 +349,8 @@ def compute_biomass_load_advice_dict(
         "biomass_kg_for_load": str(bio),
         "fish_count_for_load": fish_count,
     }
+    out["biomass_alert"] = pond_biomass_alert_summary(out)
+    return out
 
 
 def sample_load_advice_from_sample(sample, *, pond=None) -> dict:

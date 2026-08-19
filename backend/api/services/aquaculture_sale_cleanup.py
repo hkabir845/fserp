@@ -1,7 +1,7 @@
 """Rollback aquaculture fish sale side-effects (biomass sample + linked invoice GL)."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
@@ -80,7 +80,7 @@ def reconcile_aquaculture_fish_sale_with_invoice(
         if not inv:
             return True, ""
 
-        amt = (sale.total_amount or Decimal("0")).quantize(Decimal("0.01"))
+        amt = (sale.total_amount or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         inv.invoice_date = sale.sale_date
         inv.subtotal = amt
         inv.total = amt

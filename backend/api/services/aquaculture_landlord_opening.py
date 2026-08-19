@@ -154,7 +154,7 @@ def post_landlord_opening_gl(company_id: int, ll: AquacultureLandlord, *, post_t
         )
         return False
 
-    mag = abs(amt).quantize(Decimal("0.01"))
+    mag = abs(amt).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     ll_name = (ll.name or f"Landlord #{ll.id}").strip()[:120]
     memo = f"Landlord opening balance — {ll_name}"[:280]
     if amt > 0:

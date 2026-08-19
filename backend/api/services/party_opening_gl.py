@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
@@ -75,7 +75,7 @@ def post_customer_opening_gl(company_id: int, cust: Customer, *, post_to_gl: boo
         )
         return False
 
-    mag = abs(amt).quantize(Decimal("0.01"))
+    mag = abs(amt).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     name = (cust.company_name or cust.display_name or f"Customer #{cust.id}").strip()[:120]
     memo = f"Customer A/R opening — {name}"[:280]
     if amt > 0:
@@ -121,7 +121,7 @@ def post_vendor_opening_gl(company_id: int, vend: Vendor, *, post_to_gl: bool = 
         )
         return False
 
-    mag = abs(amt).quantize(Decimal("0.01"))
+    mag = abs(amt).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     name = (vend.company_name or vend.display_name or f"Vendor #{vend.id}").strip()[:120]
     memo = f"Vendor A/P opening — {name}"[:280]
     if amt > 0:
@@ -198,7 +198,7 @@ def post_employee_opening_gl(company_id: int, emp: Employee, *, post_to_gl: bool
         )
         return False
 
-    mag = abs(amt).quantize(Decimal("0.01"))
+    mag = abs(amt).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     name = f"{emp.first_name} {emp.last_name}".strip() or f"Employee #{emp.id}"
     name = name[:120]
     memo = f"Employee opening — {name}"[:280]

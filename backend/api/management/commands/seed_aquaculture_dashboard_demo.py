@@ -18,7 +18,7 @@ Example:
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -191,10 +191,10 @@ class Command(BaseCommand):
                     production_cycle=cy,
                     expense_category="feed_purchase",
                     expense_date=d,
-                    amount=amt.quantize(Decimal("0.01")),
+                    amount=amt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     memo=f"{DEMO_TAG} Floating feed — batch {i + 1}",
                     vendor_name="Premium Feed Mills",
-                    feed_sack_count=(kg / Decimal("50")).quantize(Decimal("0.01")),
+                    feed_sack_count=(kg / Decimal("50")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     feed_weight_kg=kg,
                 )
                 total_feed_kg += kg
@@ -212,10 +212,10 @@ class Command(BaseCommand):
                     production_cycle=cy,
                     expense_category="feed_purchase",
                     expense_date=d,
-                    amount=amt.quantize(Decimal("0.01")),
+                    amount=amt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     memo=f"{DEMO_TAG} Daily ration (dashboard window)",
                     vendor_name="Premium Feed Mills",
-                    feed_sack_count=(kg / Decimal("50")).quantize(Decimal("0.01")),
+                    feed_sack_count=(kg / Decimal("50")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     feed_weight_kg=kg,
                 )
                 total_feed_kg += kg
@@ -267,10 +267,10 @@ class Command(BaseCommand):
                 vendor_name="Rural Power Co-op",
             )
             n_share = min(len(ponds), 6)
-            base = (share_total / Decimal(n_share)).quantize(Decimal("0.01"))
+            base = (share_total / Decimal(n_share)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             running = Decimal("0")
             for i, p in enumerate(ponds[:n_share]):
-                slice_amt = base if i < n_share - 1 else (share_total - running).quantize(Decimal("0.01"))
+                slice_amt = base if i < n_share - 1 else (share_total - running).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 running += slice_amt
                 AquacultureExpensePondShare.objects.create(expense=shared, pond=p, amount=slice_amt)
 
@@ -294,7 +294,7 @@ class Command(BaseCommand):
                     sale_date=d,
                     weight_kg=w_kg,
                     fish_count=6000 + hi * 800,
-                    total_amount=(w_kg * price_per_kg).quantize(Decimal("0.01")),
+                    total_amount=(w_kg * price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     buyer_name="Dhaka Wholesale Fish Market",
                     memo=f"{DEMO_TAG} Partial harvest — live haul",
                 )
@@ -329,7 +329,7 @@ class Command(BaseCommand):
                         early_d,
                         8000 + (p.id % 5) * 400,
                         base_kg,
-                        (base_kg / Decimal("8000")).quantize(Decimal("0.000001")),
+                        (base_kg / Decimal("8000")).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP),
                         "early",
                     ),
                     (
@@ -380,9 +380,9 @@ class Command(BaseCommand):
                 allocated = Decimal("0")
                 for i, ap in enumerate(alloc_ponds):
                     if i == len(alloc_ponds) - 1:
-                        amt = (net - allocated).quantize(Decimal("0.01"))
+                        amt = (net - allocated).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     else:
-                        amt = (net * weights[i]).quantize(Decimal("0.01"))
+                        amt = (net * weights[i]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                         allocated += amt
                     PayrollRunPondAllocation.objects.create(payroll_run=pr, pond=ap, amount=amt)
 

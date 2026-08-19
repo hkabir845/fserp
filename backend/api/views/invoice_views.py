@@ -22,6 +22,11 @@ from api.views.common import (
     _serialize_quantity,
 )
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
+from api.services.document_status import (
+    INVOICE_STATUSES,
+    normalize_document_status,
+    walkin_ar_invoice_error,
+)
 from api.models import Invoice, InvoiceLine, Customer, ShiftSession
 from api.services.document_posting_lifecycle import (
     assert_invoice_edit_allowed,
@@ -253,6 +258,17 @@ def invoices_list_or_create(request):
                 return JsonResponse({"detail": rerr}, status=400)
             parsed_lines.append((pl, rid))
 
+        inv_status, st_status_err = normalize_document_status(
+            body.get("status"), INVOICE_STATUSES
+        )
+        if st_status_err:
+            return JsonResponse({"detail": st_status_err}, status=400)
+        walk_err = walkin_ar_invoice_error(
+            inv_status or "draft",
+            Customer.objects.filter(id=customer_id, company_id=cid).first(),
+        )
+        if walk_err:
+            return JsonResponse({"detail": walk_err}, status=400)
         inv = Invoice(
             company_id=cid,
             customer_id=customer_id,
@@ -261,7 +277,7 @@ def invoices_list_or_create(request):
             invoice_number=next_available_code(cid, Invoice, "invoice_number", "INV"),
             invoice_date=_parse_date(body.get("invoice_date")) or timezone.localdate(),
             due_date=_parse_date(body.get("due_date")),
-            status=body.get("status") or "draft",
+            status=inv_status or "draft",
             subtotal=_decimal(body.get("subtotal")),
             tax_total=_decimal(body.get("tax_total")),
             total=_decimal(body.get("total")),
@@ -336,7 +352,13 @@ def invoice_detail(request, invoice_id: int):
         inv.tax_total = _decimal(body.get("tax_total"), inv.tax_total)
         inv.total = _decimal(body.get("total"), inv.total)
         if "status" in body:
-            inv.status = (body.get("status") or inv.status)[:32]
+            new_status, st_err = normalize_document_status(body.get("status"), INVOICE_STATUSES)
+            if st_err:
+                return JsonResponse({"detail": st_err}, status=400)
+            walk_err = walkin_ar_invoice_error(new_status or inv.status, inv.customer)
+            if walk_err:
+                return JsonResponse({"detail": walk_err}, status=400)
+            inv.status = new_status or inv.status
         if "payment_method" in body:
             inv.payment_method = (body.get("payment_method") or "").strip()[:32]
         if "shift_session_id" in body:
@@ -439,9 +461,19 @@ def invoice_status(request, invoice_id: int):
     body, err = parse_json_body(request)
     if err:
         return err
-    if "status" in body:
+    # The invoices UI posts {"new_status": ...}; accept both spellings. Reading only "status"
+    # made the "Post invoice" button return 200 while leaving the invoice in draft, so revenue
+    # was never recognised and nothing ever reached A/R.
+    raw_status = body.get("status", body.get("new_status"))
+    if "status" in body or "new_status" in body:
+        new_status, st_err = normalize_document_status(raw_status, INVOICE_STATUSES)
+        if st_err:
+            return JsonResponse({"detail": st_err}, status=400)
+        walk_err = walkin_ar_invoice_error(new_status or inv.status, inv.customer)
+        if walk_err:
+            return JsonResponse({"detail": walk_err}, status=400)
         old_status = inv.status
-        inv.status = (body.get("status") or inv.status)[:32]
+        inv.status = new_status or inv.status
         inv.save()
         inv.refresh_from_db()
         try:

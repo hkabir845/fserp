@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.models import Employee, EmployeeLedgerEntry, PayrollRun, PayrollRunEmployeeAllocation
 
@@ -13,7 +13,7 @@ _LEGACY_BACKFILL_SCAN_LIMIT = 40
 
 
 def _q(v: Decimal) -> Decimal:
-    return (v or Decimal("0")).quantize(Decimal("0.01"))
+    return (v or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _payroll_run_touches_employee(company_id: int, pr: PayrollRun, employee_id: int) -> bool:

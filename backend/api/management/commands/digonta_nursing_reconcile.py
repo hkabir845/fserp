@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -23,7 +23,7 @@ from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_
 FRY_COUNT = 500_000
 FRY_UNIT_BDT = Decimal("2.20")
 FRY_TOTAL_BDT = Decimal("1100000.00")
-FRY_IN_WEIGHT_KG = (Decimal(FRY_COUNT) / Decimal("3000")).quantize(Decimal("0.0001"))
+FRY_IN_WEIGHT_KG = (Decimal(FRY_COUNT) / Decimal("3000")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 MEMO_TAG = "[DIGONTA-NURSING-RECONCILE]"
 
 
@@ -150,8 +150,8 @@ class Command(BaseCommand):
         # 3) Biomass sample on Demo crop @ ~14 pcs/kg with pond-wide reference.
         sample_date = date(2026, 5, 25)
         survivor_est = 470_000  # ~6% nursing mortality from 500k
-        weight_kg = (Decimal(survivor_est) / Decimal("14")).quantize(Decimal("0.0001"))
-        avg_kg = (weight_kg / Decimal(survivor_est)).quantize(Decimal("0.000001"))
+        weight_kg = (Decimal(survivor_est) / Decimal("14")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        avg_kg = (weight_kg / Decimal(survivor_est)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
         sample, created = AquacultureBiomassSample.objects.update_or_create(
             company_id=cid,
             pond=pond,
@@ -159,14 +159,14 @@ class Command(BaseCommand):
             sample_date=sample_date,
             defaults={
                 "estimated_fish_count": 500,
-                "estimated_total_weight_kg": (Decimal("500") / Decimal("14")).quantize(Decimal("0.0001")),
+                "estimated_total_weight_kg": (Decimal("500") / Decimal("14")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
                 "avg_weight_kg": avg_kg,
                 "fish_species": "tilapia",
                 "notes": f"{MEMO_TAG} Seine sample ~14 pcs/kg; extrapolated to batch survivors.",
                 "stock_reference_fish_count": FRY_COUNT,
                 "stock_reference_net_weight_kg": FRY_IN_WEIGHT_KG,
                 "stock_reference_avg_weight_kg": (FRY_IN_WEIGHT_KG / Decimal(FRY_COUNT)).quantize(
-                    Decimal("0.0000001")
+                    Decimal("0.0000001"), rounding=ROUND_HALF_UP
                 ),
             },
         )

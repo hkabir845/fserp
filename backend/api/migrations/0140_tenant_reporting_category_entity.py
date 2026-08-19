@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="tenantreportingcategory",
             constraint=models.CheckConstraint(
-                check=~models.Q(("station__isnull", False), ("aquaculture_pond__isnull", False)),
+                condition=~models.Q(("station__isnull", False), ("aquaculture_pond__isnull", False)),
                 name="tenant_reporting_cat_station_pond_mutually_exclusive",
             ),
         ),

@@ -11,7 +11,7 @@ Usage:
   python manage.py backfill_tank_product_costs --ratio 0.92
 """
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -84,7 +84,7 @@ class Command(BaseCommand):
                     )
                 )
                 continue
-            new_cost = (price * ratio).quantize(Decimal("0.01"))
+            new_cost = (price * ratio).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             self.stdout.write(
                 f"  company={cid} item={item.id} {item.name!r}: cost {cost} → {new_cost} (from unit_price {price} × {ratio})"
             )

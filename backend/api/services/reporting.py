@@ -6,7 +6,7 @@ from __future__ import annotations
 from calendar import monthrange
 from collections import defaultdict
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from django.db.models import Count, Q, Sum, Value
@@ -80,7 +80,13 @@ def _filter_bill_lines_for_station(qs, station_id: int):
     )
 from api.services.item_catalog import item_tracks_physical_stock
 from api.services.station_stock import get_station_stock, item_uses_station_bins, tanks_exist_for_item
+from api.services.internal_trade_elimination import (
+    CODE_UNREALIZED_MARGIN,
+    INTERNAL_TRADE_PL_CODES,
+    internal_trade_elimination,
+)
 from api.services.coa_constants import (
+    is_cash_or_bank_account,
     is_debit_normal_chart_type,
     normalize_chart_account_type,
     pl_bucket_for_coa,
@@ -160,7 +166,7 @@ def _estimated_cogs_from_invoice_lines(
         qty = line.quantity or Decimal("0")
         if cost <= 0 or qty <= 0:
             continue
-        total += (qty * cost).quantize(Decimal("0.01"))
+        total += (qty * cost).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return total
 
 
@@ -171,7 +177,7 @@ def _d(v: Any) -> Decimal:
 
 
 def _f(d: Decimal | int | float | str | None) -> float:
-    return float(_d(d).quantize(Decimal("0.01")))
+    return float(_d(d).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _item_qoh_at_station(company_id: int, item: Item, station_id: int) -> Decimal:
@@ -252,12 +258,20 @@ def _je_lines_pond(company_id: int, pond_id: int):
 
 
 def _je_lines_unscoped_dims(company_id: int):
-    """Posted lines with no station and no pond tag (company-wide / head office slice)."""
+    """
+    Posted lines with no station and no pond tag (company-wide / head office slice).
+
+    Also excludes legacy lines that carry no station of their own but sit under a journal header
+    that does: ``_je_lines_base`` assigns those to the header's site, so counting them here as
+    well put the same line in two segments and made station + pond + head office overshoot the
+    company total.
+    """
     return JournalEntryLine.objects.filter(
         journal_entry__company_id=company_id,
         journal_entry__is_posted=True,
         station_id__isnull=True,
         aquaculture_pond_id__isnull=True,
+        journal_entry__station_id__isnull=True,
     )
 
 
@@ -455,6 +469,10 @@ def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
     ):
         bucket = _pl_bucket(coa)
         if bucket is None:
+            continue
+        # Inter-pond trade is eliminated on consolidation: the company sold nothing to anyone.
+        # The balance sheet carries the removed margin as the 1585 contra so it still balances.
+        if (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
             continue
         bal = _ending_balance(coa, company_id, as_of)
         if bucket == "income":
@@ -674,6 +692,28 @@ def report_balance_sheet(
                 "is_rollup": True,
             }
         )
+
+    # Consolidation removes inter-pond profit from equity above, so the fish the buying pond still
+    # holds must be written down by the same margin: Cr 1585. Without this the sheet would not
+    # balance and the tie-out plug would silently absorb the difference.
+    internal_margin = Decimal("0")
+    if pond_id is None and station_id is None and not unscoped_dims:
+        internal_margin = internal_trade_elimination(
+            company_id, start=None, end=end
+        )["unrealized_margin"]
+        if internal_margin != 0:
+            assets.append(
+                {
+                    "account_code": CODE_UNREALIZED_MARGIN,
+                    "account_name": (
+                        "Aquaculture — Unrealized Margin in Biological Inventory "
+                        "(consolidation elimination)"
+                    ),
+                    "balance": _f(-internal_margin),
+                    "is_rollup": True,
+                }
+            )
+            ta -= internal_margin
 
     te_total = te_plain + ni_cum
     diff = ta - tl - te_total
@@ -1224,6 +1264,43 @@ def _pl_scope_accounting_note(
     return ""
 
 
+def _internal_elimination_block(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    active: bool,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Disclosure for inter-pond trade removed from the consolidated figures."""
+    if not active or not rows:
+        return {
+            "applied": False,
+            "accounts": [],
+            "internal_revenue": 0.0,
+            "internal_cost_of_sales": 0.0,
+            "unrealized_margin": 0.0,
+            "note": (
+                "No inter-pond trade in this period. When ponds sell to each other, 4245 revenue "
+                "and 5245 cost are removed here so consolidated revenue shows outside sales only."
+            ),
+        }
+    totals = internal_trade_elimination(company_id, start=start, end=end)
+    return {
+        "applied": True,
+        "accounts": rows,
+        "internal_revenue": _f(totals["internal_revenue"]),
+        "internal_cost_of_sales": _f(totals["internal_cogs"]),
+        "unrealized_margin": _f(totals["unrealized_margin"]),
+        "note": (
+            "Inter-pond fish trade removed from consolidated income and cost: one pond selling to "
+            "another is not a sale by the company. The margin on fish still held by the buying "
+            "pond is unrealized and is deducted from biological inventory on the balance sheet "
+            "(1585). Open Profit & Loss scoped to a pond to see that pond's own trade."
+        ),
+    }
+
+
 def report_income_statement(
     company_id: int,
     start: date,
@@ -1266,6 +1343,10 @@ def report_income_statement(
         if est_cogs > posted_cogs_pre + Decimal("0.02"):
             backfill_invoice_cogs_journals(company_id, start, end)
     # Include inactive accounts: journals may still post to them; omitting them understates P&L.
+    # Company scope consolidates the ponds, so inter-pond trade is eliminated; a pond- or
+    # site-scoped statement keeps it, because from that pond's side the sale really happened.
+    eliminate_internal = pond_id is None and station_id is None and not unscoped_dims
+    elimination_rows: list[dict[str, Any]] = []
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
     ):
@@ -1284,6 +1365,9 @@ def report_income_statement(
             "account_name": display_name,
             "balance": _f(amt),
         }
+        if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
+            elimination_rows.append({**row, "bucket": bucket})
+            continue
         if bucket == "income":
             income_rows.append(row)
             ti += amt
@@ -1329,6 +1413,9 @@ def report_income_statement(
         "expenses": {"accounts": exp_rows, "total": _f(te)},
         "gross_profit": _f(gross),
         "net_income": _f(net),
+        "internal_eliminations": _internal_elimination_block(
+            company_id, start, end, active=eliminate_internal, rows=elimination_rows
+        ),
         "cumulative_net_income_change": _f(cumulative_change),
         "period_matches_cumulative_change": period_matches_cumulative,
         "cumulative_vs_period_difference": _f(cumulative_change - net),
@@ -1664,7 +1751,9 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
 
     bank_rows: list[dict[str, Any]] = []
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        if normalize_chart_account_type(coa.account_type) != "bank_account":
+        if not is_cash_or_bank_account(
+            coa.account_type, coa.account_sub_type, coa.account_code
+        ):
             continue
         bal = _ending_balance(coa, company_id, end)
         if bal == 0:
@@ -2229,7 +2318,9 @@ def _summarize_bank_accounts_for_scope(
 ) -> dict[str, Decimal]:
     begin_total = end_total = period_in = period_out = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        if normalize_chart_account_type(coa.account_type) != "bank_account":
+        if not is_cash_or_bank_account(
+            coa.account_type, coa.account_sub_type, coa.account_code
+        ):
             continue
         if pond_id is not None:
             b0, dep, wit, bend = _bank_period_flow_lines(
@@ -2421,7 +2512,9 @@ def report_cash_flow(
     bank_rows: list[dict[str, Any]] = []
     begin_total = end_total = period_in = period_out = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        if normalize_chart_account_type(coa.account_type) != "bank_account":
+        if not is_cash_or_bank_account(
+            coa.account_type, coa.account_sub_type, coa.account_code
+        ):
             continue
         if pond_id is not None:
             b0, dep, wit, bend = _bank_period_flow_lines(coa, company_id, start, end, pond_lines)
@@ -4123,7 +4216,7 @@ def report_tank_dip_register(company_id: int, start: date, end: date, station_id
         cap = _d(tank.capacity)
         pct_cap: Optional[float] = None
         if var is not None and cap > 0:
-            pct_cap = float((var / cap * Decimal("100")).quantize(Decimal("0.01")))
+            pct_cap = float((var / cap * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         prod = tank.product if tank.product_id else None
         rate = item_inventory_unit_cost(prod)
         var_val: Optional[float] = None

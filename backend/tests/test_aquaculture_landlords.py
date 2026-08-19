@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -143,8 +144,9 @@ def test_landlord_code_auto_generated_when_omitted(api_client, company_tenant, a
     )
     assert r0.status_code == 201, r0.content.decode()
     body = json.loads(r0.content.decode())
-    lid = body["id"]
-    assert body["code"] == f"LL-{lid:04d}"
+    # Reference codes take the lowest free LL-nnnn suffix; they are not the row's primary key,
+    # so tying the assertion to body["id"] fails as soon as another test creates a landlord.
+    assert re.fullmatch(r"LL-\d{4}", body["code"]), body["code"]
 
 
 @pytest.mark.django_db

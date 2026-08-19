@@ -6,7 +6,6 @@ import {
   groupErpModulesByCategory,
   moduleProfessionalProfiles,
   moduleCategoryLabels,
-  platformApps,
   type ErpModuleApp,
   type ModuleCategoryId,
   type ModuleReadiness,
@@ -40,6 +39,7 @@ function ModuleCard({
   const hubPath = `/modules/${app.hubSlug}`
   const profile = moduleProfessionalProfiles[app.id]
   const readiness = readinessMeta(profile?.readiness ?? 'planned')
+  const isPlanned = (profile?.readiness ?? 'planned') === 'planned' 
   return (
     <article
       className={`group flex flex-col rounded-2xl border p-5 shadow-sm transition ${
@@ -66,12 +66,23 @@ function ModuleCard({
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2 border-t border-border/70 pt-4">
-        <Link
-          href={app.entryHref}
-          className="inline-flex items-center justify-center rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90"
-        >
-          Open app
-        </Link>
+        {isPlanned ? (
+          // No "Open app" for a module with no backend: the screen loads and every request 404s.
+          <span
+            className="inline-flex cursor-not-allowed items-center justify-center rounded-lg border border-dashed border-border bg-muted/40 px-3.5 py-2 text-sm font-medium text-muted-foreground"
+            aria-disabled="true"
+            title="This module is on the roadmap and is not connected to the server yet."
+          >
+            Not yet available
+          </span>
+        ) : (
+          <Link
+            href={app.entryHref}
+            className="inline-flex items-center justify-center rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90"
+          >
+            Open app
+          </Link>
+        )}
         <Link
           href={hubPath}
           className="inline-flex items-center justify-center rounded-lg border border-border bg-white px-3.5 py-2 text-sm font-medium text-foreground transition hover:border-primary/25 hover:bg-accent/80"
@@ -166,46 +177,6 @@ export function ModulesLauncher({ erpModuleCount }: Props) {
         )
       })}
 
-      <section className="space-y-4 border-t border-border pt-12">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">Platform (operator console)</h2>
-            <p className="text-sm text-muted-foreground">
-              Multi-tenant administration — separate from your company ERP and only for platform roles.
-            </p>
-          </div>
-          <Link
-            href="/platform/dashboard"
-            className="text-sm font-medium text-purple-700 hover:text-purple-900 hover:underline"
-          >
-            Open platform hub →
-          </Link>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {platformApps.map((p) => (
-            <article
-              key={p.id}
-              className="flex flex-col rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-card p-5 shadow-sm transition hover:border-purple-200 hover:shadow-md"
-            >
-              <div className="flex items-start gap-3">
-                <span className="text-2xl" aria-hidden>
-                  {p.icon}
-                </span>
-                <div>
-                  <h3 className="font-semibold text-purple-950">{p.title}</h3>
-                  <p className="mt-1 text-sm text-purple-900/70">{p.tagline}</p>
-                </div>
-              </div>
-              <Link
-                href={p.entryHref}
-                className="mt-4 inline-flex w-fit items-center rounded-lg bg-purple-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-purple-800"
-              >
-                Open
-              </Link>
-            </article>
-          ))}
-        </div>
-      </section>
     </div>
   )
 }

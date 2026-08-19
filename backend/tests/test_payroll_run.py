@@ -7,6 +7,39 @@ import pytest
 from django.test import Client
 
 
+@pytest.fixture
+def bank(db, user_admin):
+    """Payroll bank register plus the salary/bank chart lines posting needs."""
+    from api.models import BankAccount, ChartOfAccount
+
+    cid = user_admin.company_id
+    ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="6400",
+        defaults={
+            "account_name": "Salaries & Wages",
+            "account_type": "expense",
+            "account_sub_type": "payroll_expenses",
+        },
+    )
+    bcoa, _ = ChartOfAccount.objects.get_or_create(
+        company_id=cid,
+        account_code="1030",
+        defaults={
+            "account_name": "Bank Operating",
+            "account_type": "asset",
+            "account_sub_type": "bank",
+        },
+    )
+    return BankAccount.objects.create(
+        company_id=cid,
+        chart_account=bcoa,
+        account_name="Payroll Bank",
+        account_number="0001",
+        bank_name="Test Bank",
+    )
+
+
 @pytest.mark.django_db
 def test_payroll_list_create_get_delete(api_client: Client, auth_admin_headers):
     r = api_client.get("/api/payroll/", **auth_admin_headers)

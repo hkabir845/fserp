@@ -6,11 +6,13 @@ export interface AppMenuItem {
   href: string
   icon: string
   children?: AppMenuItem[]
+  /** 'planned' = designed but the backend does not serve it yet; shown as unavailable. */
+  status?: 'live' | 'planned'
 }
 
 export const erpMenuItems: AppMenuItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: '📊' },
-  { title: 'Announcements', href: '/announcements', icon: '📣' },
+  { title: 'Announcements', href: '/announcements', icon: '📣', status: 'planned' },
   { title: 'Modules', href: '/modules', icon: '🗂️' },
   {
     title: 'Master Data',
@@ -18,8 +20,8 @@ export const erpMenuItems: AppMenuItem[] = [
     href: '/master-data',
     children: [
       { title: 'Items', href: '/items', icon: '📦' },
-      { title: 'Warehouses', href: '/warehouses', icon: '🏭' },
-      { title: 'Suppliers', href: '/suppliers', icon: '🏢' },
+      { title: 'Warehouses', href: '/warehouses', icon: '🏭', status: 'planned' },
+      { title: 'Suppliers', href: '/suppliers', icon: '🏢', status: 'planned' },
       { title: 'Customers', href: '/customers', icon: '👥' },
     ],
   },
@@ -28,11 +30,11 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '🛒',
     href: '/procurement',
     children: [
-      { title: 'Purchase requisitions', href: '/purchase/requisitions', icon: '📋' },
-      { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅' },
-      { title: 'Purchase Orders', href: '/purchase/orders', icon: '📝' },
-      { title: 'Goods Receipt', href: '/purchase/grn', icon: '📥' },
-      { title: 'Vendor Bills', href: '/purchase/bills', icon: '💰' },
+      { title: 'Purchase requisitions', href: '/purchase/requisitions', icon: '📋', status: 'planned' },
+      { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', status: 'planned' },
+      { title: 'Purchase Orders', href: '/purchase/orders', icon: '📝', status: 'planned' },
+      { title: 'Goods Receipt', href: '/purchase/grn', icon: '📥', status: 'planned' },
+      { title: 'Vendor Bills', href: '/purchase/bills', icon: '💰', status: 'planned' },
     ],
   },
   {
@@ -40,8 +42,8 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '🌐',
     href: '/trade-finance',
     children: [
-      { title: 'Letters of credit (LC)', href: '/trade-finance/lc', icon: '📜' },
-      { title: 'New LC', href: '/trade-finance/lc/new', icon: '➕' },
+      { title: 'Letters of credit (LC)', href: '/trade-finance/lc', icon: '📜', status: 'planned' },
+      { title: 'New LC', href: '/trade-finance/lc/new', icon: '➕', status: 'planned' },
     ],
   },
   {
@@ -49,10 +51,10 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '💼',
     href: '/sales',
     children: [
-      { title: 'Sales requisitions', href: '/sales/requisitions', icon: '📋' },
-      { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅' },
-      { title: 'Sales Invoices', href: '/sales/invoices', icon: '🧾' },
-      { title: 'Receipts', href: '/sales/receipts', icon: '💵' },
+      { title: 'Sales requisitions', href: '/sales/requisitions', icon: '📋', status: 'planned' },
+      { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', status: 'planned' },
+      { title: 'Sales Invoices', href: '/sales/invoices', icon: '🧾', status: 'planned' },
+      { title: 'Receipts', href: '/sales/receipts', icon: '💵', status: 'planned' },
     ],
   },
   {
@@ -60,13 +62,13 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '🏭',
     href: '/manufacturing',
     children: [
-      { title: 'Feed BOMs (Formulations)', href: '/manufacturing/feed-boms', icon: '📐' },
-      { title: 'Classic BOMs', href: '/manufacturing/boms', icon: '📎' },
-      { title: 'Pre-formulations', href: '/preformulations', icon: '🧪' },
-      { title: 'Silos', href: '/manufacturing/silos', icon: '🛖' },
-      { title: 'Production Batches', href: '/manufacturing/batches', icon: '⚙️' },
-      { title: 'Production Orders', href: '/manufacturing/production-orders', icon: '📋' },
-      { title: 'Quality lab', href: '/lab', icon: '🧪' },
+      { title: 'Feed BOMs (Formulations)', href: '/manufacturing/feed-boms', icon: '📐', status: 'planned' },
+      { title: 'Classic BOMs', href: '/manufacturing/boms', icon: '📎', status: 'planned' },
+      { title: 'Pre-formulations', href: '/preformulations', icon: '🧪', status: 'planned' },
+      { title: 'Silos', href: '/manufacturing/silos', icon: '🛖', status: 'planned' },
+      { title: 'Production Batches', href: '/manufacturing/batches', icon: '⚙️', status: 'planned' },
+      { title: 'Production Orders', href: '/manufacturing/production-orders', icon: '📋', status: 'planned' },
+      { title: 'Quality lab', href: '/lab', icon: '🧪', status: 'planned' },
     ],
   },
   { title: 'Inventory', href: '/inventory', icon: '📊' },
@@ -76,23 +78,23 @@ export const erpMenuItems: AppMenuItem[] = [
     href: '/reports',
     children: [
       { title: 'Reports hub', href: '/reports', icon: '📑' },
-      { title: 'Trial balance', href: '/accounting/trial-balance', icon: '⚖️' },
-      { title: 'Balance sheet', href: '/accounting/balance-sheet', icon: '📊' },
-      { title: 'Journal entries', href: '/accounting/journal', icon: '📔' },
+      { title: 'Trial balance', href: '/accounting/trial-balance', icon: '⚖️', status: 'planned' },
+      { title: 'Balance sheet', href: '/accounting/balance-sheet', icon: '📊', status: 'planned' },
+      { title: 'Journal entries', href: '/accounting/journal', icon: '📔', status: 'planned' },
     ],
   },
-  { title: 'Livestock', href: '/livestock', icon: '🐄' },
-  { title: 'Transport', href: '/transport', icon: '🚚' },
-  { title: 'Workshop', href: '/workshop', icon: '🔧' },
-  { title: 'Fuel Station', href: '/fuel', icon: '⛽' },
+  { title: 'Livestock', href: '/livestock', icon: '🐄', status: 'planned' },
+  { title: 'Transport', href: '/transport', icon: '🚚', status: 'planned' },
+  { title: 'Workshop', href: '/workshop', icon: '🔧', status: 'planned' },
+  { title: 'Fuel Station', href: '/fuel', icon: '⛽', status: 'planned' },
   { title: 'Loans', href: '/loans', icon: '🏦' },
   {
     title: 'CRM',
     icon: '🤝',
     href: '/crm',
     children: [
-      { title: 'Leads & pipeline', href: '/crm/leads', icon: '🎯' },
-      { title: 'Activities', href: '/crm/activities', icon: '📌' },
+      { title: 'Leads & pipeline', href: '/crm/leads', icon: '🎯', status: 'planned' },
+      { title: 'Activities', href: '/crm/activities', icon: '📌', status: 'planned' },
     ],
   },
   {
@@ -100,9 +102,9 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '👥',
     href: '/hr',
     children: [
-      { title: 'Time & attendance', href: '/hr/time', icon: '🗓️' },
-      { title: 'Expense claims', href: '/hr/expenses', icon: '🧾' },
-      { title: 'Business cards', href: '/cards', icon: '💳' },
+      { title: 'Time & attendance', href: '/hr/time', icon: '🗓️', status: 'planned' },
+      { title: 'Expense claims', href: '/hr/expenses', icon: '🧾', status: 'planned' },
+      { title: 'Business cards', href: '/cards', icon: '💳', status: 'planned' },
     ],
   },
   {
@@ -110,10 +112,10 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '💳',
     href: '/accounting',
     children: [
-      { title: 'Chart of Accounts', href: '/accounting/accounts', icon: '📑' },
-      { title: 'Journal Entries', href: '/accounting/journal', icon: '📔' },
-      { title: 'Trial Balance', href: '/accounting/trial-balance', icon: '⚖️' },
-      { title: 'Balance Sheet', href: '/accounting/balance-sheet', icon: '📊' },
+      { title: 'Chart of Accounts', href: '/accounting/accounts', icon: '📑', status: 'planned' },
+      { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', status: 'planned' },
+      { title: 'Trial Balance', href: '/accounting/trial-balance', icon: '⚖️', status: 'planned' },
+      { title: 'Balance Sheet', href: '/accounting/balance-sheet', icon: '📊', status: 'planned' },
       { title: 'Loans (facilities)', href: '/loans', icon: '🏦' },
     ],
   },
@@ -123,8 +125,8 @@ export const erpMenuItems: AppMenuItem[] = [
     href: '/payroll',
     children: [
       { title: 'Overview', href: '/payroll', icon: '📋' },
-      { title: 'Employees', href: '/payroll/employees', icon: '👤' },
-      { title: 'Payroll runs', href: '/payroll/runs', icon: '📅' },
+      { title: 'Employees', href: '/payroll/employees', icon: '👤', status: 'planned' },
+      { title: 'Payroll runs', href: '/payroll/runs', icon: '📅', status: 'planned' },
     ],
   },
   {
@@ -139,45 +141,14 @@ export const erpMenuItems: AppMenuItem[] = [
   },
 ]
 
-/** Platform (SaaS operator) area — shown on /modules and optional hub. */
-export const platformMenuItems: AppMenuItem[] = [
-  { title: 'Platform dashboard', href: '/platform/dashboard', icon: '📊' },
-  {
-    title: 'Tenants',
-    href: '/platform/tenants',
-    icon: '🏢',
-    children: [
-      { title: 'All tenants', href: '/platform/tenants', icon: '📋' },
-      { title: 'Browse', href: '/platform/tenants/browse', icon: '🔎' },
-      { title: 'New tenant', href: '/platform/tenants/new', icon: '➕' },
-    ],
-  },
-  { title: 'Subscription plans', href: '/platform/plans', icon: '📜' },
-  { title: 'Billing', href: '/platform/billing', icon: '💳' },
-  { title: 'Payments', href: '/platform/payments', icon: '💵' },
-  { title: 'Invoices', href: '/platform/invoices', icon: '🧾' },
-  { title: 'Subscriptions', href: '/platform/subscriptions', icon: '🔄' },
-  { title: 'Broadcast', href: '/platform/broadcast', icon: '📢' },
-  {
-    title: 'Platform settings',
-    href: '/platform/settings',
-    icon: '⚙️',
-    children: [
-      { title: 'Overview', href: '/platform/settings', icon: '⚙️' },
-      { title: 'General', href: '/platform/settings/general', icon: '📋' },
-      { title: 'Currencies', href: '/platform/settings/currencies', icon: '💱' },
-      { title: 'Units', href: '/platform/settings/units', icon: '📏' },
-    ],
-  },
-]
 
 export const masterDataHub = {
   title: 'Master Data',
   subtitle: 'Core reference data shared across procurement, sales, and inventory.',
   links: [
     { title: 'Items', href: '/items', icon: '📦', description: 'Products, SKUs, stock flags' },
-    { title: 'Warehouses', href: '/warehouses', icon: '🏭', description: 'Storage locations' },
-    { title: 'Suppliers', href: '/suppliers', icon: '🏢', description: 'Vendor master' },
+    { title: 'Warehouses', href: '/warehouses', icon: '🏭', description: 'Storage locations', status: 'planned' },
+    { title: 'Suppliers', href: '/suppliers', icon: '🏢', description: 'Vendor master', status: 'planned' },
     { title: 'Customers', href: '/customers', icon: '👥', description: 'Customer master' },
   ] satisfies HubLink[],
 }
@@ -190,18 +161,16 @@ export const procurementHub = {
       title: 'Purchase requisitions',
       href: '/purchase/requisitions',
       icon: '📋',
-      description: 'Multi-level approval before raising a PO',
-    },
-    { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', description: 'Department and executive queues' },
-    { title: 'Purchase Orders', href: '/purchase/orders', icon: '📝', description: 'Create and track POs' },
-    { title: 'Goods Receipt (GRN)', href: '/purchase/grn', icon: '📥', description: 'Receive against POs' },
-    { title: 'Vendor Bills', href: '/purchase/bills', icon: '💰', description: 'Accounts payable bills' },
+      description: 'Multi-level approval before raising a PO', status: 'planned' },
+    { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', description: 'Department and executive queues', status: 'planned' },
+    { title: 'Purchase Orders', href: '/purchase/orders', icon: '📝', description: 'Create and track POs', status: 'planned' },
+    { title: 'Goods Receipt (GRN)', href: '/purchase/grn', icon: '📥', description: 'Receive against POs', status: 'planned' },
+    { title: 'Vendor Bills', href: '/purchase/bills', icon: '💰', description: 'Accounts payable bills', status: 'planned' },
     {
       title: 'Letters of credit',
       href: '/trade-finance/lc',
       icon: '📜',
-      description: 'Import/export LCs — Bangladesh AD bank workflow',
-    },
+      description: 'Import/export LCs — Bangladesh AD bank workflow', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -214,14 +183,12 @@ export const tradeFinanceHub = {
       title: 'LC register',
       href: '/trade-finance/lc',
       icon: '📋',
-      description: 'All letters of credit, import and export',
-    },
+      description: 'All letters of credit, import and export', status: 'planned' },
     {
       title: 'New LC',
       href: '/trade-finance/lc/new',
       icon: '➕',
-      description: 'Register application or opened LC from bank SWIFT',
-    },
+      description: 'Register application or opened LC from bank SWIFT', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -233,11 +200,10 @@ export const salesHub = {
       title: 'Sales requisitions',
       href: '/sales/requisitions',
       icon: '📋',
-      description: 'Commercial approval chain before invoicing',
-    },
-    { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', description: 'Sales head and executive queues' },
-    { title: 'Sales Invoices', href: '/sales/invoices', icon: '🧾', description: 'Customer billing' },
-    { title: 'Receipts', href: '/sales/receipts', icon: '💵', description: 'Payment receipts' },
+      description: 'Commercial approval chain before invoicing', status: 'planned' },
+    { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', description: 'Sales head and executive queues', status: 'planned' },
+    { title: 'Sales Invoices', href: '/sales/invoices', icon: '🧾', description: 'Customer billing', status: 'planned' },
+    { title: 'Receipts', href: '/sales/receipts', icon: '💵', description: 'Payment receipts', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -250,8 +216,7 @@ export const labHub = {
       title: 'Lab workspace',
       href: '/lab',
       icon: '🧪',
-      description: 'Parameters, specs, samples, and OOS evaluation',
-    },
+      description: 'Parameters, specs, samples, and OOS evaluation', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -259,13 +224,13 @@ export const manufacturingHub = {
   title: 'Manufacturing',
   subtitle: 'Formulations, batch runs, and production orders.',
   links: [
-    { title: 'Quality lab', href: '/lab', icon: '🧪', description: 'Feed-grade and ingredient testing vs specs' },
-    { title: 'Feed BOMs (Formulations)', href: '/manufacturing/feed-boms', icon: '📐', description: 'Formulations and recipes' },
-    { title: 'Classic BOMs', href: '/manufacturing/boms', icon: '📎', description: 'Bill of materials (generic)' },
-    { title: 'Pre-formulations', href: '/preformulations', icon: '🧪', description: 'R&D formulations before BOM' },
-    { title: 'Production Batches', href: '/manufacturing/batches', icon: '⚙️', description: 'Batch-oriented production view' },
-    { title: 'Production Orders', href: '/manufacturing/production-orders', icon: '📋', description: 'Manufacturing orders' },
-    { title: 'Silos', href: '/manufacturing/silos', icon: '🛖', description: 'Bulk ingredient bins, levels, PLC / sensor hooks' },
+    { title: 'Quality lab', href: '/lab', icon: '🧪', description: 'Feed-grade and ingredient testing vs specs', status: 'planned' },
+    { title: 'Feed BOMs (Formulations)', href: '/manufacturing/feed-boms', icon: '📐', description: 'Formulations and recipes', status: 'planned' },
+    { title: 'Classic BOMs', href: '/manufacturing/boms', icon: '📎', description: 'Bill of materials (generic)', status: 'planned' },
+    { title: 'Pre-formulations', href: '/preformulations', icon: '🧪', description: 'R&D formulations before BOM', status: 'planned' },
+    { title: 'Production Batches', href: '/manufacturing/batches', icon: '⚙️', description: 'Batch-oriented production view', status: 'planned' },
+    { title: 'Production Orders', href: '/manufacturing/production-orders', icon: '📋', description: 'Manufacturing orders', status: 'planned' },
+    { title: 'Silos', href: '/manufacturing/silos', icon: '🛖', description: 'Bulk ingredient bins, levels, PLC / sensor hooks', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -278,8 +243,7 @@ export const workshopHub = {
       title: 'Workshop jobs',
       href: '/workshop',
       icon: '🛠️',
-      description: 'Create jobs, assign staff, track status from draft to complete',
-    },
+      description: 'Create jobs, assign staff, track status from draft to complete', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -287,13 +251,12 @@ export const crmHub = {
   title: 'CRM',
   subtitle: 'Customer relationships for feed distribution: farms, dealers, integrators, and key accounts.',
   links: [
-    { title: 'Leads & pipeline', href: '/crm/leads', icon: '🎯', description: 'Dealers, farms, distributors' },
+    { title: 'Leads & pipeline', href: '/crm/leads', icon: '🎯', description: 'Dealers, farms, distributors', status: 'planned' },
     {
       title: 'Activities',
       href: '/crm/activities',
       icon: '📌',
-      description: 'Calls, visits, tasks, and follow-ups on leads',
-    },
+      description: 'Calls, visits, tasks, and follow-ups on leads', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -305,10 +268,9 @@ export const hrHub = {
       title: 'Time & attendance',
       href: '/hr/time',
       icon: '🗓️',
-      description: 'Leave requests and daily attendance',
-    },
-    { title: 'Expense claims', href: '/hr/expenses', icon: '🧾', description: 'Client visits, meals, transport, fuel' },
-    { title: 'Digital business cards', href: '/cards', icon: '💳', description: 'NFC & digital cards for your team' },
+      description: 'Leave requests and daily attendance', status: 'planned' },
+    { title: 'Expense claims', href: '/hr/expenses', icon: '🧾', description: 'Client visits, meals, transport, fuel', status: 'planned' },
+    { title: 'Digital business cards', href: '/cards', icon: '💳', description: 'NFC & digital cards for your team', status: 'planned' },
   ] satisfies HubLink[],
 }
 
@@ -316,10 +278,10 @@ export const accountingHub = {
   title: 'Accounting',
   subtitle: 'Financial records and statements (sections under active development).',
   links: [
-    { title: 'Chart of Accounts', href: '/accounting/accounts', icon: '📑', description: 'GL account tree' },
-    { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', description: 'Manual journals' },
-    { title: 'Trial Balance', href: '/accounting/trial-balance', icon: '⚖️', description: 'Period TB' },
-    { title: 'Balance Sheet', href: '/accounting/balance-sheet', icon: '📊', description: 'Statement of position' },
+    { title: 'Chart of Accounts', href: '/accounting/accounts', icon: '📑', description: 'GL account tree', status: 'planned' },
+    { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', description: 'Manual journals', status: 'planned' },
+    { title: 'Trial Balance', href: '/accounting/trial-balance', icon: '⚖️', description: 'Period TB', status: 'planned' },
+    { title: 'Balance Sheet', href: '/accounting/balance-sheet', icon: '📊', description: 'Statement of position', status: 'planned' },
     {
       title: 'Operational reports hub',
       href: '/reports',
@@ -339,9 +301,9 @@ export const reportsHub = {
       icon: '📊',
       description: 'Warehouse + silo + commitments, production schedule, sales velocity, naive demand vs stock',
     },
-    { title: 'Trial balance', href: '/accounting/trial-balance', icon: '⚖️', description: 'GL trial balance' },
-    { title: 'Balance sheet', href: '/accounting/balance-sheet', icon: '📊', description: 'Statement of position' },
-    { title: 'Journal entries', href: '/accounting/journal', icon: '📔', description: 'Posted and draft journals' },
+    { title: 'Trial balance', href: '/accounting/trial-balance', icon: '⚖️', description: 'GL trial balance', status: 'planned' },
+    { title: 'Balance sheet', href: '/accounting/balance-sheet', icon: '📊', description: 'Statement of position', status: 'planned' },
+    { title: 'Journal entries', href: '/accounting/journal', icon: '📔', description: 'Posted and draft journals', status: 'planned' },
     { title: 'Stock positions', href: '/inventory', icon: '📦', description: 'Ledger-based warehouse stock' },
   ] satisfies HubLink[],
 }
@@ -350,52 +312,25 @@ export const settingsHub = {
   title: 'Settings',
   subtitle: 'Tenant defaults, currencies, and units of measure.',
   links: [
-    { title: 'General', href: '/settings/general', icon: '⚙️', description: 'Company and defaults' },
-    { title: 'Currencies', href: '/settings/currencies', icon: '💱', description: 'Tenant currency setup' },
-    { title: 'Units of measure', href: '/settings/units', icon: '📏', description: 'UOM catalog for this tenant' },
+    { title: 'General', href: '/settings/general', icon: '⚙️', description: 'Company and defaults', status: 'planned' },
+    { title: 'Currencies', href: '/settings/currencies', icon: '💱', description: 'Tenant currency setup', status: 'planned' },
+    { title: 'Units of measure', href: '/settings/units', icon: '📏', description: 'UOM catalog for this tenant', status: 'planned' },
   ] satisfies HubLink[],
 }
 
-export const platformHub = {
-  title: 'Platform',
-  subtitle: 'Multi-tenant SaaS administration (superadmin).',
-  links: [
-    { title: 'Platform dashboard', href: '/platform/dashboard', icon: '📊', description: 'Tenants and revenue overview' },
-    { title: 'All tenants', href: '/platform/tenants', icon: '📋', description: 'Tenant directory' },
-    { title: 'Browse tenants', href: '/platform/tenants/browse', icon: '🔎', description: 'Search and filter' },
-    {
-      title: 'Tenant backup & restore',
-      href: '/platform/tenants/browse',
-      icon: '💾',
-      description: 'Per-tenant JSON export/restore — open a tenant from Browse',
-    },
-    { title: 'New tenant', href: '/platform/tenants/new', icon: '➕', description: 'Onboard a tenant' },
-    { title: 'Subscription plans', href: '/platform/plans', icon: '📜', description: 'Plans and pricing' },
-    { title: 'Billing', href: '/platform/billing', icon: '💳', description: 'Platform billing' },
-    { title: 'Payments', href: '/platform/payments', icon: '💵', description: 'Payment records' },
-    { title: 'Invoices', href: '/platform/invoices', icon: '🧾', description: 'Subscription invoices' },
-    { title: 'Subscriptions', href: '/platform/subscriptions', icon: '🔄', description: 'Tenant subscriptions' },
-    { title: 'Broadcast', href: '/platform/broadcast', icon: '📢', description: 'Announcements to tenants' },
-    { title: 'Platform settings', href: '/platform/settings', icon: '⚙️', description: 'Global currencies and units' },
-    { title: 'General (platform)', href: '/platform/settings/general', icon: '📋', description: 'Company-wide defaults' },
-    { title: 'Currencies (platform)', href: '/platform/settings/currencies', icon: '💱', description: 'Master currency list' },
-    { title: 'Units (platform)', href: '/platform/settings/units', icon: '📏', description: 'Master UOM list' },
-  ] satisfies HubLink[],
-}
 
-/** Slug → canonical app path for modules that use a full screen instead of a link grid. */
+/**
+ * Slug → canonical app path for modules that use a full screen instead of a link grid.
+ *
+ * Only modules that actually have a screen belong here. Lab, livestock, transport, workshop,
+ * fuel, trade-finance and platform were removed with the FastAPI backend they talked to, so
+ * /modules/<slug> now falls through to "module not found" rather than redirecting to a 404.
+ */
 export const moduleSlugRedirects: Record<string, string> = {
   dashboard: '/dashboard',
-  lab: '/lab',
   inventory: '/inventory',
-  livestock: '/livestock',
-  transport: '/transport',
-  workshop: '/workshop',
-  fuel: '/fuel',
   loans: '/loans',
   payroll: '/payroll',
-  platform: '/platform',
-  'trade-finance': '/trade-finance/lc',
 }
 
 export type ModuleSlug =

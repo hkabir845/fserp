@@ -1,6 +1,6 @@
 """Chart of accounts API: list, create, get, update, delete, statement (company-scoped)."""
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import Q, Count
@@ -8,6 +8,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.services.coa_constants import CHART_ACCOUNT_TYPES, normalize_chart_account_type
+from api.services.coa_examples import (
+    coa_examples_for_type,
+    next_available_account_code,
+)
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
 from api.models import BankAccount, ChartOfAccount, FundTransfer, JournalEntryLine, Payment
@@ -213,7 +217,7 @@ def _account_to_json(a, *, journal_net=None, linked_banks=None):
         can_delete = jl == 0 and ch == 0 and bk == 0
     ob = a.opening_balance if a.opening_balance is not None else Decimal("0")
     jn = journal_net_movement(a.id) if journal_net is None else journal_net
-    current = (ob + jn).quantize(Decimal("0.01"))
+    current = (ob + jn).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     out = {
         "id": a.id,
         "account_code": a.account_code,
@@ -221,6 +225,7 @@ def _account_to_json(a, *, journal_net=None, linked_banks=None):
         "account_type": a.account_type,
         "account_sub_type": a.account_sub_type or "",
         "description": a.description or "",
+        "note": getattr(a, "note", "") or "",
         "parent_account_id": a.parent_id,
         "opening_balance": str(ob),
         "opening_balance_date": _serialize_date(a.opening_balance_date),
@@ -275,6 +280,66 @@ def _validated_account_type(body: dict, *, fallback: str) -> tuple[str | None, J
     return at, None
 
 
+def _validated_parent_account_id(
+    company_id: int,
+    raw,
+    *,
+    account_type: str,
+    self_id: int | None = None,
+) -> tuple[int | None, JsonResponse | None]:
+    """
+    Resolve the "Subaccount of" parent, or (None, 400).
+
+    A subaccount rolls up into its parent on every statement, so the two must be the same account
+    type - a parent of a different type would put the child's balance in the wrong section of the
+    balance sheet or P&L. Self-parenting and cycles are rejected for the same reason.
+    """
+    if raw in (None, "", 0, "0"):
+        return None, None
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None, JsonResponse({"detail": "parent_account_id must be an integer"}, status=400)
+
+    parent = ChartOfAccount.objects.filter(id=pid, company_id=company_id).first()
+    if not parent:
+        return None, JsonResponse(
+            {"detail": "parent_account_id does not match an account in this company"}, status=400
+        )
+    if self_id is not None and pid == self_id:
+        return None, JsonResponse({"detail": "An account cannot be a subaccount of itself"}, status=400)
+
+    want = normalize_chart_account_type(account_type)
+    got = normalize_chart_account_type(parent.account_type)
+    if want != got:
+        return None, JsonResponse(
+            {
+                "detail": (
+                    f"A subaccount must be the same account type as its parent. "
+                    f"{parent.account_code} {parent.account_name} is {got}, not {want}."
+                )
+            },
+            status=400,
+        )
+
+    if self_id is not None:
+        # Walk up from the chosen parent: meeting ourselves would make the tree a loop.
+        seen: set[int] = set()
+        cursor = parent
+        while cursor is not None and cursor.id not in seen:
+            if cursor.id == self_id:
+                return None, JsonResponse(
+                    {"detail": "That parent is already a subaccount of this account"}, status=400
+                )
+            seen.add(cursor.id)
+            cursor = (
+                ChartOfAccount.objects.filter(id=cursor.parent_id, company_id=company_id).first()
+                if cursor.parent_id
+                else None
+            )
+    return pid, None
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
@@ -301,18 +366,25 @@ def chart_of_accounts_list_or_create(request):
         body, err = parse_json_body(request)
         if err:
             return err
-        code = (body.get("account_code") or "").strip()
         name = (body.get("account_name") or "").strip()
-        if not code or not name:
-            return JsonResponse({"detail": "account_code and account_name are required"}, status=400)
-        if ChartOfAccount.objects.filter(company_id=request.company_id, account_code=code).exists():
-            return JsonResponse({"detail": "Account code already exists"}, status=400)
-        parent_id = body.get("parent_account_id")
-        if parent_id and not ChartOfAccount.objects.filter(id=parent_id, company_id=request.company_id).exists():
-            parent_id = None
+        if not name:
+            return JsonResponse({"detail": "account_name is required"}, status=400)
         at, verr = _validated_account_type(body, fallback="asset")
         if verr:
             return verr
+        sub_type = body.get("account_sub_type") or ""
+        # Account code is optional on the form (QuickBooks does not ask for one): allocate the
+        # next free code in this type's band so GL automation still has a code to resolve.
+        code = (body.get("account_code") or "").strip()
+        if not code:
+            code = next_available_account_code(request.company_id, at, sub_type)
+        if ChartOfAccount.objects.filter(company_id=request.company_id, account_code=code).exists():
+            return JsonResponse({"detail": "Account code already exists"}, status=400)
+        parent_id, perr = _validated_parent_account_id(
+            request.company_id, body.get("parent_account_id"), account_type=at
+        )
+        if perr:
+            return perr
         try:
             with transaction.atomic():
                 a = ChartOfAccount(
@@ -320,8 +392,9 @@ def chart_of_accounts_list_or_create(request):
                     account_code=code,
                     account_name=name,
                     account_type=at,
-                    account_sub_type=body.get("account_sub_type") or "",
+                    account_sub_type=sub_type,
                     description=body.get("description") or "",
+                    note=(body.get("note") or "")[:500],
                     parent_id=parent_id,
                     opening_balance=_decimal(body.get("opening_balance")),
                     opening_balance_date=_parse_date(body.get("opening_balance_date")),
@@ -405,16 +478,18 @@ def chart_of_account_detail(request, account_id: int):
                     a.account_sub_type = body.get("account_sub_type") or ""
                 if "description" in body:
                     a.description = body.get("description") or ""
+                if "note" in body:
+                    a.note = (body.get("note") or "")[:500]
                 if "parent_account_id" in body:
-                    pid = body.get("parent_account_id")
-                    a.parent_id = (
-                        pid
-                        if pid
-                        and ChartOfAccount.objects.filter(
-                            id=pid, company_id=request.company_id
-                        ).exists()
-                        else None
+                    pid, perr = _validated_parent_account_id(
+                        request.company_id,
+                        body.get("parent_account_id"),
+                        account_type=nt,
+                        self_id=a.id,
                     )
+                    if perr:
+                        raise _CoaBankRegisterRejected(perr)
+                    a.parent_id = pid
                 if "opening_balance" in body:
                     a.opening_balance = _decimal(body.get("opening_balance"), a.opening_balance)
                 if "opening_balance_date" in body:
@@ -501,6 +576,29 @@ def chart_of_account_statement(request, account_id: int):
         payload["date_range_ignored"] = True
     if st_sid is not None:
         payload["filter_station_id"] = st_sid
+    return JsonResponse(payload)
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+def chart_of_accounts_examples(request):
+    """
+    GET ?account_type=expense - example account names for the New Account form.
+
+    Backs the "Select from Examples" picker: the accounts a business of this kind normally keeps,
+    each with the template's code, sub-type and description, and a flag for the ones this company
+    already has. Also returns the next free code so the form can show what will be assigned.
+    """
+    if request.method != "GET":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    account_type = (request.GET.get("account_type") or "").strip()
+    if not account_type:
+        return JsonResponse({"detail": "account_type is required"}, status=400)
+    try:
+        payload = coa_examples_for_type(request.company_id, account_type)
+    except ValueError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
     return JsonResponse(payload)
 
 

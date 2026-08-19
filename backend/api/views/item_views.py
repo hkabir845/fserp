@@ -2,7 +2,7 @@
 import os
 import uuid
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -37,6 +37,7 @@ from api.services.coa_gl_defaults import (
     ALLOWED_COGS,
     ALLOWED_INCOME,
     ALLOWED_INVENTORY_ASSET,
+    NON_PURCHASABLE_ASSET_SUB_TYPES,
     parse_optional_chart_account_id,
 )
 from api.services.item_name_uniqueness import (
@@ -140,12 +141,12 @@ def _apply_item_gl_accounts_from_body(company_id: int, body: dict, target: Item)
     Returns JsonResponse on validation error, else None.
     """
     pairs = (
-        ("revenue_account_id", ALLOWED_INCOME),
-        ("cogs_account_id", ALLOWED_COGS),
-        ("inventory_account_id", ALLOWED_INVENTORY_ASSET),
-        ("expense_account_id", ALLOWED_BILL_EXPENSE_DEBIT),
+        ("revenue_account_id", ALLOWED_INCOME, frozenset()),
+        ("cogs_account_id", ALLOWED_COGS, frozenset()),
+        ("inventory_account_id", ALLOWED_INVENTORY_ASSET, NON_PURCHASABLE_ASSET_SUB_TYPES),
+        ("expense_account_id", ALLOWED_BILL_EXPENSE_DEBIT, NON_PURCHASABLE_ASSET_SUB_TYPES),
     )
-    for key, allowed in pairs:
+    for key, allowed, denied in pairs:
         if key not in body:
             continue
         rid, err = parse_optional_chart_account_id(
@@ -153,6 +154,7 @@ def _apply_item_gl_accounts_from_body(company_id: int, body: dict, target: Item)
             body.get(key),
             allowed_normalized_types=allowed,
             field_label=key,
+            denied_sub_types=denied,
         )
         if err:
             return JsonResponse({"detail": err}, status=400)
@@ -498,7 +500,7 @@ def _items_on_hand_value_totals(qs):
             output_field=DecimalField(max_digits=24, decimal_places=4),
         ),
     )["total_cost_value"] or Decimal("0")
-    q = total.quantize(Decimal("0.01"))
+    q = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return {"total_cost_value": _serialize_decimal(q)}
 
 

@@ -79,7 +79,7 @@ Then log in on the frontend with that username and password.
 **Windows (PowerShell)** — from repo root:
 
 ```powershell
-pwsh -File backend/scripts/local-setup.ps1
+pwsh -File scripts/dev-setup.ps1
 ```
 
 **Manual:**

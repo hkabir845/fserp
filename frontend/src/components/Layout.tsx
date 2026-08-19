@@ -5,7 +5,6 @@ import Sidebar from './Sidebar'
 import { useQuery } from '@tanstack/react-query'
 import { getCurrentUser, logout } from '@/lib/auth'
 import { BackendStatus } from './BackendStatus'
-import { ERPSaaSSwitcher } from './ERPSaaSSwitcher'
 import CompanySwitcher from './CompanySwitcher'
 
 interface LayoutProps {
@@ -82,11 +81,6 @@ export function Layout({ children }: LayoutProps) {
           transition: 'margin-left 0.2s ease-in-out'
         }}
       >
-        {/* ERP/SaaS Tab Switcher - Top Left Corner */}
-        <div className="sticky top-0 z-40 print:hidden">
-          <ERPSaaSSwitcher />
-        </div>
-        
         {/* Top Navigation Bar */}
         <header className="bg-white shadow-sm border-b border-border sticky top-0 z-30 print:hidden">
           <div className="px-4 sm:px-6 lg:px-8">

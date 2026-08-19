@@ -110,7 +110,11 @@ def test_fish_transfer_posts_1581_between_ponds(company_tenant):
 def test_fish_transfer_api_posts_gl(api_client, company_tenant, auth_admin_headers):
     _enable(company_tenant)
     cid = company_tenant.id
-    src = AquaculturePond.objects.create(company_id=cid, name="Nursing API", pond_role="nursing", is_active=True)
+    # Grow-out source below the 10,000-head fingerling threshold, so the transfer costs on a kg
+    # basis and honours the submitted cost_amount. A nursing pond (or any pond holding a
+    # fingerling-scale batch) re-derives cost per head from its own batch expense instead, which
+    # is nil here and would post no journal - that path is covered by the ORM-level test above.
+    src = AquaculturePond.objects.create(company_id=cid, name="Grow Src API", pond_role="grow_out", is_active=True)
     dst = AquaculturePond.objects.create(company_id=cid, name="Grow API", pond_role="grow_out", is_active=True)
     _seed_source_1581(cid, src.id, "400000.00")
     AquacultureFishStockLedger.objects.create(
@@ -119,7 +123,7 @@ def test_fish_transfer_api_posts_gl(api_client, company_tenant, auth_admin_heade
         entry_date=date(2026, 4, 1),
         entry_kind="adjustment",
         fish_species="tilapia",
-        fish_count_delta=50000,
+        fish_count_delta=5000,
         weight_kg_delta=Decimal("50"),
         memo="Opening for GL transfer test",
     )
@@ -136,7 +140,7 @@ def test_fish_transfer_api_posts_gl(api_client, company_tenant, auth_admin_heade
                     {
                         "to_pond_id": dst.id,
                         "weight_kg": "50",
-                        "fish_count": 50000,
+                        "fish_count": 5000,
                         "cost_amount": "150000.00",
                     }
                 ],

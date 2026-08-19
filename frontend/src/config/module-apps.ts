@@ -232,22 +232,22 @@ export const moduleProfessionalProfiles: Record<string, ModuleProfessionalProfil
     capabilities: ['operational reporting', 'financial statements'],
   },
   'master-data': {
-    readiness: 'production',
+    readiness: 'beta',
     domains: ['foundation controls', 'data governance'],
     capabilities: ['items and sku master', 'supplier and customer master'],
   },
   settings: {
-    readiness: 'production',
+    readiness: 'planned',
     domains: ['tenant governance', 'configuration management'],
     capabilities: ['currency setup', 'units and defaults'],
   },
   procurement: {
-    readiness: 'production',
+    readiness: 'planned',
     domains: ['feed mill sourcing', 'flour mill sourcing', 'raw material procurement'],
     capabilities: ['requisitions and approvals', 'po to grn to bill flow'],
   },
   'trade-finance': {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['import/export operations', 'banking compliance'],
     capabilities: ['lc register', 'bank document tracking'],
   },
@@ -257,22 +257,22 @@ export const moduleProfessionalProfiles: Record<string, ModuleProfessionalProfil
     capabilities: ['stock movement ledger', 'warehouse-level visibility'],
   },
   sales: {
-    readiness: 'production',
+    readiness: 'planned',
     domains: ['distribution sales', 'dealer channel sales'],
     capabilities: ['invoicing and receipts', 'sales requisition workflow'],
   },
   crm: {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['dealer management', 'farm relationship management'],
     capabilities: ['lead pipeline', 'activity tracking'],
   },
   manufacturing: {
-    readiness: 'production',
+    readiness: 'planned',
     domains: ['feed mill production', 'flour mill production', 'formula-driven manufacturing'],
     capabilities: ['formulations and boms', 'batches, silos, and production orders'],
   },
   lab: {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['quality assurance', 'feed safety'],
     capabilities: ['spec verification', 'sample and result workflows'],
   },
@@ -282,116 +282,43 @@ export const moduleProfessionalProfiles: Record<string, ModuleProfessionalProfil
     capabilities: ['herd record workflows'],
   },
   transport: {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['fleet logistics', 'distribution operations'],
     capabilities: ['vehicle and trip management'],
   },
   workshop: {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['maintenance operations', 'asset reliability'],
     capabilities: ['job cards', 'technician assignment'],
   },
   fuel: {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['fuel operations', 'fleet cost control'],
     capabilities: ['tank and issue tracking'],
   },
   accounting: {
-    readiness: 'production',
+    readiness: 'beta',
     domains: ['general accounting', 'financial control'],
     capabilities: ['coa and journals', 'trial balance and balance sheet'],
   },
   loans: {
-    readiness: 'beta',
+    readiness: 'production',
     domains: ['corporate finance', 'facility management'],
     capabilities: ['loan register', 'amortization tracking'],
   },
   payroll: {
-    readiness: 'beta',
+    readiness: 'production',
     domains: ['payroll management', 'people finance'],
     capabilities: ['employee payroll runs'],
   },
   hr: {
-    readiness: 'beta',
+    readiness: 'planned',
     domains: ['human resources', 'workforce operations'],
     capabilities: ['attendance and time', 'expense claim processing'],
   },
 }
 
-export type PlatformApp = {
-  id: string
-  title: string
-  tagline: string
-  icon: string
-  entryHref: string
-}
 
-/** SaaS operator console — separate from tenant ERP. */
-export const platformApps: PlatformApp[] = [
-  {
-    id: 'platform-dash',
-    title: 'Platform dashboard',
-    tagline: 'Cross-tenant overview and health.',
-    icon: '📊',
-    entryHref: '/platform/dashboard',
-  },
-  {
-    id: 'tenants',
-    title: 'Tenants',
-    tagline: 'Directory, browse, and onboard companies.',
-    icon: '🏢',
-    entryHref: '/platform/tenants',
-  },
-  {
-    id: 'plans',
-    title: 'Plans',
-    tagline: 'Subscription plans and packaging.',
-    icon: '📜',
-    entryHref: '/platform/plans',
-  },
-  {
-    id: 'billing',
-    title: 'Billing',
-    tagline: 'Platform billing configuration.',
-    icon: '💳',
-    entryHref: '/platform/billing',
-  },
-  {
-    id: 'payments',
-    title: 'Payments',
-    tagline: 'Payment records from customers.',
-    icon: '💵',
-    entryHref: '/platform/payments',
-  },
-  {
-    id: 'invoices',
-    title: 'Invoices',
-    tagline: 'Subscription invoices.',
-    icon: '🧾',
-    entryHref: '/platform/invoices',
-  },
-  {
-    id: 'subscriptions',
-    title: 'Subscriptions',
-    tagline: 'Active tenant subscriptions.',
-    icon: '🔄',
-    entryHref: '/platform/subscriptions',
-  },
-  {
-    id: 'broadcast',
-    title: 'Broadcast',
-    tagline: 'Announcements to tenants.',
-    icon: '📢',
-    entryHref: '/platform/broadcast',
-  },
-  {
-    id: 'platform-settings',
-    title: 'Platform settings',
-    tagline: 'Global currencies, units, and defaults.',
-    icon: '⚙️',
-    entryHref: '/platform/settings',
-  },
-]
 
 const categoryOrder: ModuleCategoryId[] = [
   'overview',

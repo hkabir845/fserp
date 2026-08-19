@@ -15,7 +15,7 @@ Usage:
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -283,7 +283,7 @@ class Command(BaseCommand):
                     continue
                 v = vendors_qs[(i - 1) % vendors_qs.count()]
                 line_amt = Decimal("5000.00") + Decimal(i * 1000)
-                tax = (line_amt * Decimal("0.15")).quantize(Decimal("0.01"))
+                tax = (line_amt * Decimal("0.15")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 total = line_amt + tax
                 bd = today - timedelta(days=3 + i)
                 with transaction.atomic():

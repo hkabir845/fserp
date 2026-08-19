@@ -7,7 +7,7 @@ AUTO-AQ-SHOP-* journals. Summing raw expense.amount for those rows double-counts
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Exists, OuterRef, Q, QuerySet, Sum
 
@@ -22,7 +22,7 @@ PL_CONSUMPTION_ROLLUP: tuple[tuple[str, str], ...] = (
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def pond_category_expense_sum(
@@ -125,5 +125,5 @@ def pond_shop_stock_issue_amounts_by_category(
         code = str(row["expense_category"] or "")
         if not code:
             continue
-        out[code] = Decimal(str(row["t"] or 0)).quantize(Decimal("0.01"))
+        out[code] = Decimal(str(row["t"] or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return out

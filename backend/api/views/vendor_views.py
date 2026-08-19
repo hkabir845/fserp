@@ -8,9 +8,18 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
-from api.views.common import parse_json_body, query_include_inactive, require_company_id
+from api.views.common import (
+    parse_json_body,
+    query_include_inactive,
+    query_include_internal,
+    require_company_id,
+)
 from api.models import Vendor
-from api.services.coa_gl_defaults import ALLOWED_BILL_EXPENSE_DEBIT, parse_optional_chart_account_id
+from api.services.coa_gl_defaults import (
+    ALLOWED_BILL_EXPENSE_DEBIT,
+    NON_PURCHASABLE_ASSET_SUB_TYPES,
+    parse_optional_chart_account_id,
+)
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_pond_fk, parse_optional_station_fk
 from api.services.contact_ledgers import build_vendor_ledger, ledger_dates_and_search
@@ -44,6 +53,8 @@ def _vendor_to_json(v, *, company_id: int | None = None):
         "opening_balance_date": _serialize_date(v.opening_balance_date),
         "current_balance": str(balance),
         "is_active": v.is_active,
+        "is_internal": bool(getattr(v, "is_internal", False)),
+        "internal_pond_id": getattr(v, "internal_pond_id", None),
         "default_station_id": v.default_station_id,
         "default_station_name": (
             (v.default_station.station_name or "").strip()
@@ -136,6 +147,9 @@ def vendors_list_or_create(request):
         )
         if not query_include_inactive(request):
             qs = qs.filter(is_active=True)
+        if not query_include_internal(request):
+            # Pond selling identities are for inter-pond documents, not manual vendor entry.
+            qs = qs.exclude(is_internal=True)
         qs = _vendor_apply_q(qs, request.GET.get("q", ""))
         qs = _vendor_apply_sort(qs, request)
         if wants_paged_response(request):
@@ -179,6 +193,7 @@ def vendors_list_or_create(request):
                 body.get("default_expense_account_id"),
                 allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
                 field_label="default_expense_account_id",
+                denied_sub_types=NON_PURCHASABLE_ASSET_SUB_TYPES,
             )
             if ea_err:
                 return JsonResponse({"detail": ea_err}, status=400)
@@ -286,6 +301,7 @@ def vendor_detail(request, vendor_id: int):
                 body.get("default_expense_account_id"),
                 allowed_normalized_types=ALLOWED_BILL_EXPENSE_DEBIT,
                 field_label="default_expense_account_id",
+                denied_sub_types=NON_PURCHASABLE_ASSET_SUB_TYPES,
             )
             if de_err:
                 return JsonResponse({"detail": de_err}, status=400)

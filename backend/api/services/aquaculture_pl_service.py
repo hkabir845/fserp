@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Sum
 
@@ -42,7 +42,7 @@ from api.services.aquaculture_pond_pl_opening import pl_opening_totals_for_pond
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 PL_FISH_INCOME_TYPES: frozenset[str] = frozenset({"fish_harvest_sale", "fingerling_sale"})

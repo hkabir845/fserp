@@ -84,7 +84,7 @@ def _mean_fish_weight_g_from_stock_row(stock_row: dict) -> tuple[Decimal | None,
         try:
             kg = _d(samp)
             if kg > 0:
-                return (kg * Decimal("1000")).quantize(Decimal("0.01")), "latest biomass sample (avg weight)"
+                return (kg * Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "latest biomass sample (avg weight)"
         except Exception:
             pass
     bio = _d(stock_row.get("implied_net_weight_kg"))
@@ -95,7 +95,7 @@ def _mean_fish_weight_g_from_stock_row(stock_row: dict) -> tuple[Decimal | None,
         n = 0
     if bio > 0 and n > 0:
         kg_each = bio / Decimal(n)
-        return (kg_each * Decimal("1000")).quantize(Decimal("0.01")), "implied net biomass ÷ fish count"
+        return (kg_each * Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "implied net biomass ÷ fish count"
     return None, ""
 
 

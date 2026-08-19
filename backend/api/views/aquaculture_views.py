@@ -132,7 +132,7 @@ from api.services.aquaculture_production_cycle_service import (
     next_automatic_cycle_code,
     refresh_pond_batch_integrity,
 )
-from api.services.reference_code import assign_string_code_if_empty
+from api.services.reference_code import assign_string_code_if_empty, next_available_code
 from api.services.aquaculture_cutover import (
     get_stored_cutover_date,
     is_go_live_fish_opening,
@@ -243,7 +243,7 @@ from api.services.aquaculture_constants import (
 )
 from api.services.permission_service import user_may_access_aquaculture_api
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, _serialize_quantity
 
 
 def _decimal(val, default="0") -> Decimal:
@@ -265,7 +265,7 @@ def _parse_date(val) -> date | None:
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _json_bool(value) -> bool:
@@ -299,7 +299,7 @@ def _contract_fractional_years(start: date, end: date) -> Decimal:
     days = (end - start).days
     if days <= 0:
         return Decimal(0)
-    return (Decimal(days) / Decimal("365.25")).quantize(Decimal("0.0001"))
+    return (Decimal(days) / Decimal("365.25")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def _contract_years_rounded_int(start: date, end: date) -> int | None:
@@ -556,7 +556,7 @@ def _inter_pond_transfer_to_json(t: PondWarehouseInterPondTransfer) -> dict:
         uc = item_inventory_unit_cost(ln.item)
         line_value = Decimal("0")
         if qty > 0 and uc > 0:
-            line_value = (qty * uc).quantize(Decimal("0.01"))
+            line_value = (qty * uc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         total_value += line_value
         line_rows.append(
             {
@@ -577,7 +577,7 @@ def _inter_pond_transfer_to_json(t: PondWarehouseInterPondTransfer) -> dict:
         "to_pond_name": (t.to_pond.name or "").strip() if t.to_pond_id else "",
         "memo": t.memo or "",
         "created_at": t.created_at.isoformat() if t.created_at else "",
-        "total_value": str(total_value.quantize(Decimal("0.01"))),
+        "total_value": str(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "lines": line_rows,
     }
 
@@ -2061,7 +2061,7 @@ def _expense_to_json(x: AquacultureExpense) -> dict:
         "empty_sack_count": (
             str(x.empty_sack_count) if getattr(x, "empty_sack_count", None) is not None else None
         ),
-        "feed_weight_kg": str(x.feed_weight_kg) if getattr(x, "feed_weight_kg", None) is not None else None,
+        "feed_weight_kg": _serialize_quantity(x.feed_weight_kg) if getattr(x, "feed_weight_kg", None) is not None else None,
         "funding_account_code": getattr(x, "funding_account_code", "") or "",
         "created_at": x.created_at.isoformat() if x.created_at else "",
     }
@@ -2121,7 +2121,7 @@ def aquaculture_expenses_list_or_create(request):
                 total = sum(
                     (Decimal(str(r.get("amount") or "0")) for r in payload["rows"]),
                     Decimal("0"),
-                ).quantize(Decimal("0.01"))
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 payload["total_amount"] = str(total)
                 payload["count"] = len(payload["rows"])
         legacy_array = request.GET.get("legacy_array") == "1"
@@ -2488,9 +2488,9 @@ def aquaculture_pond_warehouse_consume(request):
             if quantity is None:
                 quantity = q_kg
             if item.content_weight_kg and item.content_weight_kg > 0:
-                feed_sacks = (feed_w_kg / Decimal(item.content_weight_kg)).quantize(Decimal("0.0001"))
+                feed_sacks = (feed_w_kg / Decimal(item.content_weight_kg)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
             elif sack_sz is not None and sack_sz > 0:
-                feed_sacks = (feed_w_kg / Decimal(sack_sz)).quantize(Decimal("0.0001"))
+                feed_sacks = (feed_w_kg / Decimal(sack_sz)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
     if quantity is None or quantity <= 0:
         return JsonResponse(
@@ -2970,7 +2970,7 @@ def _sale_to_json(s: AquacultureFishSale) -> dict:
         "fish_species_other": spo,
         "fish_species_label": fish_species_display_label(sp, spo),
         "sale_date": s.sale_date.isoformat(),
-        "weight_kg": str(s.weight_kg),
+        "weight_kg": _serialize_quantity(s.weight_kg),
         "fish_count": s.fish_count,
         "total_amount": str(s.total_amount),
         "buyer_name": s.buyer_name or "",
@@ -3226,7 +3226,7 @@ def aquaculture_sales_list_or_create(request):
         sale_date=sd,
         weight_kg=wk,
         fish_count=fc_int,
-        total_amount=ta.quantize(Decimal("0.01")),
+        total_amount=ta.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         buyer_name=(body.get("buyer_name") or "")[:200],
         memo=(body.get("memo") or "")[:5000],
     )
@@ -3318,7 +3318,7 @@ def aquaculture_sale_detail(request, sale_id: int):
             ta = _decimal(body.get("total_amount"))
             if ta < 0:
                 return JsonResponse({"detail": "total_amount cannot be negative"}, status=400)
-            s.total_amount = ta.quantize(Decimal("0.01"))
+            s.total_amount = ta.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if "fish_count" in body:
             fc = body.get("fish_count")
             if fc is None or str(fc).strip() == "":
@@ -3467,11 +3467,11 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
         "production_cycle_name": cname,
         "sample_date": b.sample_date.isoformat(),
         "estimated_fish_count": b.estimated_fish_count,
-        "estimated_total_weight_kg": str(b.estimated_total_weight_kg) if b.estimated_total_weight_kg is not None else None,
+        "estimated_total_weight_kg": _serialize_quantity(b.estimated_total_weight_kg) if b.estimated_total_weight_kg is not None else None,
         "avg_weight_kg": str(b.avg_weight_kg) if b.avg_weight_kg is not None else None,
         "stock_reference_fish_count": b.stock_reference_fish_count,
         "stock_reference_net_weight_kg": (
-            str(b.stock_reference_net_weight_kg) if b.stock_reference_net_weight_kg is not None else None
+            _serialize_quantity(b.stock_reference_net_weight_kg) if b.stock_reference_net_weight_kg is not None else None
         ),
         "stock_reference_avg_weight_kg": (
             str(b.stock_reference_avg_weight_kg) if b.stock_reference_avg_weight_kg is not None else None
@@ -3919,7 +3919,7 @@ def _stock_ledger_to_json(x: AquacultureFishStockLedger) -> dict:
         "fish_species_other": x.fish_species_other or "",
         "fish_species_label": fish_species_display_label(x.fish_species, x.fish_species_other),
         "fish_count_delta": x.fish_count_delta,
-        "weight_kg_delta": str(x.weight_kg_delta),
+        "weight_kg_delta": _serialize_quantity(x.weight_kg_delta),
         "book_value": str(x.book_value),
         "post_to_books": bool(x.post_to_books),
         "memo": x.memo or "",
@@ -4848,7 +4848,7 @@ def aquaculture_pond_profit_transfers(request):
     amt = _decimal(body.get("amount"))
     if amt <= 0:
         return JsonResponse({"detail": "amount must be greater than zero"}, status=400)
-    amt = amt.quantize(Decimal("0.01"))
+    amt = amt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     try:
         debit_id = int(body.get("debit_account_id"))
         credit_id = int(body.get("credit_account_id"))
@@ -4878,10 +4878,12 @@ def aquaculture_pond_profit_transfers(request):
     desc = desc[:500]
 
     with transaction.atomic():
-        count = JournalEntry.objects.filter(company_id=cid).count()
         je = JournalEntry(
             company_id=cid,
-            entry_number=f"JE-{count + 1}",
+            # Numbering off a row count reuses a number as soon as any journal is deleted, which
+            # collides with an existing entry and breaks the entry_number-keyed idempotency
+            # checks in gl_posting. Use the same free-suffix allocator the journals API uses.
+            entry_number=next_available_code(cid, JournalEntry, "entry_number", "JE"),
             entry_date=td,
             description=desc,
             station_id=None,
@@ -4957,7 +4959,7 @@ def _fish_transfer_line_to_json(
         "to_pond_name": tpname,
         "to_production_cycle_id": line.to_production_cycle_id,
         "to_production_cycle_name": cname,
-        "weight_kg": str(line.weight_kg),
+        "weight_kg": _serialize_quantity(line.weight_kg),
         "fish_count": line.fish_count,
         "pcs_per_kg": str(line.pcs_per_kg) if line.pcs_per_kg is not None else None,
         "cost_amount": str(cost),
@@ -5956,17 +5958,17 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                 sack_sz = int(a.sack_size_kg) if a.sack_size_kg is not None else None
                 if it.content_weight_kg and it.content_weight_kg > 0:
                     metrics_payload["feed_sack_count"] = str(
-                        (applied_kg / Decimal(it.content_weight_kg)).quantize(Decimal("0.0001"))
+                        (applied_kg / Decimal(it.content_weight_kg)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
                     )
                 elif sack_sz is not None and sack_sz > 0:
                     metrics_payload["feed_sack_count"] = str(
-                        (applied_kg / Decimal(sack_sz)).quantize(Decimal("0.0001"))
+                        (applied_kg / Decimal(sack_sz)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
                     )
             elif resolved_cat == "feed_purchase" and applied_kg > 0:
                 advice_sack = int(a.sack_size_kg) if a.sack_size_kg is not None else None
                 if advice_sack is not None and advice_sack > 0:
                     metrics_payload["feed_sack_count"] = str(
-                        (applied_kg / Decimal(advice_sack)).quantize(Decimal("0.0001"))
+                        (applied_kg / Decimal(advice_sack)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
                     )
             fer = _apply_expense_feed_metrics_from_body(
                 x,
@@ -6517,7 +6519,7 @@ def aquaculture_landlords_list_or_create(request):
             setattr(ll, "pond_share_count", count_map.get(ll.id, 0))
             rec, paid, _n = ledger_map.get((ll.id, sh.pond_id), (Decimal(0), Decimal(0), Decimal(0)))
             ytd_balance = _money_q(rec - paid)
-            land_share = sh.land_area_decimal.quantize(Decimal("0.0001"))
+            land_share = sh.land_area_decimal.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
             pond = sh.pond
             implied_ann = Decimal(0)
             if pond and pond.lease_price_per_decimal_per_year is not None:

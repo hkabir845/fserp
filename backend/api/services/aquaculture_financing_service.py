@@ -22,6 +22,7 @@ from api.models import (
     LoanDisbursement,
     LoanRepayment,
 )
+from api.services.reference_code import next_available_code
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.loan_posting import post_loan_repayment
 
@@ -292,10 +293,10 @@ def _create_profit_transfer(
     desc = f"Aquaculture loan repayment contribution — {pond_label}"[:500]
     line_desc = (memo or desc)[:300]
 
-    count = JournalEntry.objects.filter(company_id=company_id).count()
     je = JournalEntry(
         company_id=company_id,
-        entry_number=f"JE-{count + 1}",
+        # Not a row count: that reuses a number after any delete and collides with a live entry.
+        entry_number=next_available_code(company_id, JournalEntry, "entry_number", "JE"),
         entry_date=transfer_date,
         description=desc[:500],
         station_id=None,

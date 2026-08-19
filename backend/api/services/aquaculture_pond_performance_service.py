@@ -4,7 +4,7 @@ Pond performance dashboard: FCR, load, ADG, biomass, and bioasset (GL 1581) per 
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from api.models import AquacultureBiomassSample, AquaculturePond
@@ -22,7 +22,7 @@ def _d(v) -> Decimal:
 
 
 def _money_q(d: Decimal) -> Decimal:
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _avg_adg_from_intervals(intervals: list[dict[str, Any]]) -> str | None:

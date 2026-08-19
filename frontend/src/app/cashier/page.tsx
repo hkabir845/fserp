@@ -712,7 +712,9 @@ export default function CashierPOSPage() {
       const [nozzleRes, customerRes, vendorRes, companyRes, itemRes, tanksRes, banksRes, stationsRes, pondsRes] =
         await Promise.all([
           scope !== "general" ? api.get("/nozzles/details/") : Promise.resolve({ data: [] }),
-          api.get("/customers/"),
+          // Ponds buy feed/medicine here on account, so their internal buying identities
+          // must stay in this picker even though the customer master hides them.
+          api.get("/customers/", { params: { include_internal: 1 } }),
           api.get('/vendors/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
           api.get("/companies/current/"),
           scope !== "fuel"

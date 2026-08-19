@@ -1078,6 +1078,12 @@ class ChartOfAccount(models.Model):
     account_type = models.CharField(max_length=32)  # see api.services.coa_constants.CHART_ACCOUNT_TYPES
     account_sub_type = models.CharField(max_length=64, blank=True)
     description = models.TextField(blank=True)
+    note = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Short internal note about this account (not shown on statements).",
+    )
     parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children")
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     opening_balance_date = models.DateField(null=True, blank=True)
@@ -1206,15 +1212,15 @@ class TenantReportingCategory(models.Model):
                 name="tenant_reporting_cat_company_app_kind_code_uniq",
             ),
             models.CheckConstraint(
-                check=~models.Q(station__isnull=False, aquaculture_pond__isnull=False),
+                condition=~models.Q(station__isnull=False, aquaculture_pond__isnull=False),
                 name="tenant_reporting_cat_station_pond_mutually_exclusive",
             ),
             models.CheckConstraint(
-                check=~models.Q(head_office_only=True, station__isnull=False),
+                condition=~models.Q(head_office_only=True, station__isnull=False),
                 name="tenant_reporting_cat_ho_not_with_station",
             ),
             models.CheckConstraint(
-                check=~models.Q(head_office_only=True, aquaculture_pond__isnull=False),
+                condition=~models.Q(head_office_only=True, aquaculture_pond__isnull=False),
                 name="tenant_reporting_cat_ho_not_with_pond",
             ),
         ]

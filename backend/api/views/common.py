@@ -13,6 +13,11 @@ def query_include_inactive(request) -> bool:
     return (request.GET.get("include_inactive") or "").strip().lower() in ("true", "1", "yes")
 
 
+def query_include_internal(request) -> bool:
+    """True when list endpoints should also return internal trading parties (pond identities)."""
+    return (request.GET.get("include_internal") or "").strip().lower() in ("true", "1", "yes")
+
+
 def parse_json_body(request):
     """Parse request body as JSON; return (data, None) or (None, error_response)."""
     try:

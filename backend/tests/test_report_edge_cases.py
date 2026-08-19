@@ -238,7 +238,7 @@ def test_sales_by_station_ok_with_invoices(
             "customer_id": cust["id"],
             "station_id": station.id,
             "invoice_date": "2026-01-15",
-            "status": "posted",
+            "status": "sent",
             "lines": [
                 {
                     "item_id": nozzle.product_id,

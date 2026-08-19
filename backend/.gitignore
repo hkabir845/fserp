@@ -25,6 +25,8 @@ wheels/
 # Environment
 .env
 .env.local
+# Written by scripts/deploy-vps.sh each deploy (release version + commit).
+.env.release
 env/.env
 
 # IDE

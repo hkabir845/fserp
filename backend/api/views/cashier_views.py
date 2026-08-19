@@ -1,7 +1,7 @@
 """Cashier POS API: fuel sale (POST /cashier/sale), unified POS (POST /cashier/pos). Uses Django only."""
 import logging
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -197,7 +197,7 @@ def _parse_general_lines(company_id: int, items: list) -> list:
             d = max(Decimal("0"), min(Decimal("100"), d))
         except Exception:
             d = Decimal("0")
-        line_amount = (q * up * (1 - d / 100)).quantize(Decimal("0.01"))
+        line_amount = (q * up * (1 - d / 100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         lines_data.append(
             {
                 "item": item,
@@ -237,7 +237,7 @@ def _parse_fuel_lines(
         if not product:
             return None, _cashier_pos_error("Nozzle has no product")
         unit_price = product.unit_price or Decimal("0")
-        line_amount = (qty * unit_price).quantize(Decimal("0.01"))
+        line_amount = (qty * unit_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         result.append(
             {
                 "nozzle": nozzle,
@@ -379,7 +379,7 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
     subtotal = sum(d["amount"] for d in lines_data) + sum(
         fe["amount"] for fe in fuel_entries
     )
-    total = subtotal.quantize(Decimal("0.01"))
+    total = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     split_tender = False
     if not on_account and amount_paid_now is not None and amount_paid_now > 0:

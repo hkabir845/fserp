@@ -204,3 +204,63 @@ def test_internal_parties_are_split_out_of_headline_balances(company_tenant):
     assert summary["internal_receivable"] == 50000.0
     assert summary["internal_payable"] == 50000.0
     assert summary["internal_net_position"] == 0.0
+
+
+@pytest.mark.django_db
+def test_internal_vendors_are_hidden_from_the_vendor_list(
+    api_client, auth_super_headers, company_master
+):
+    """A pond's selling identity must not appear in the picker used to raise real bills."""
+    from tests.test_api_production_audit import _audit_master_headers
+
+    cid = company_master.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Pond L-01", is_active=True)
+    provision_pond_internal_parties(company_id=cid, pond=pond)
+    Vendor.objects.create(
+        company_id=cid, company_name="Delta Feeds Ltd", vendor_number="V-REAL-1"
+    )
+    h = _audit_master_headers(auth_super_headers, company_master)
+
+    r = api_client.get("/api/vendors/", **h)
+    assert r.status_code == 200
+    names = [v["company_name"] for v in r.json()]
+    assert "Delta Feeds Ltd" in names
+    assert "Aquaculture — Pond L-01" not in names
+
+    r2 = api_client.get("/api/vendors/", {"include_internal": "1"}, **h)
+    assert r2.status_code == 200
+    names2 = [v["company_name"] for v in r2.json()]
+    assert "Aquaculture — Pond L-01" in names2
+
+
+@pytest.mark.django_db
+def test_internal_customers_are_hidden_from_the_customer_list(
+    api_client, auth_super_headers, company_master
+):
+    """A pond's buying identity must not appear in the picker used to raise real invoices."""
+    from tests.test_api_production_audit import _audit_master_headers
+
+    cid = company_master.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Pond L-02", is_active=True)
+    maybe_provision_auto_pos_customer(company_id=cid, pond=pond, skip_auto=False)
+    provision_pond_internal_parties(company_id=cid, pond=pond)
+    Customer.objects.create(
+        company_id=cid, company_name="Meghna Traders", customer_number="C-REAL-1"
+    )
+    h = _audit_master_headers(auth_super_headers, company_master)
+
+    r = api_client.get("/api/customers/", **h)
+    assert r.status_code == 200
+    rows = r.json()
+    names = [c["display_name"] for c in rows]
+    assert "Meghna Traders" in names
+    assert "Aquaculture — Pond L-02" not in names
+    assert all(c["is_internal"] is False for c in rows)
+
+    r2 = api_client.get("/api/customers/", {"include_internal": "1"}, **h)
+    assert r2.status_code == 200
+    rows2 = r2.json()
+    internal = [c for c in rows2 if c["display_name"] == "Aquaculture — Pond L-02"]
+    assert len(internal) == 1
+    assert internal[0]["is_internal"] is True
+    assert internal[0]["internal_pond_id"] == pond.id

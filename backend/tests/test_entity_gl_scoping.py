@@ -306,10 +306,12 @@ def test_payroll_post_blocks_without_station_or_pond_split(company_tenant_with_g
         validate_payroll_entity_tags_for_gl(
             cid, pr, split_by_pond=False, split_mixed_entities=False
         )
+    # Posting is blocked before the entity-tag check: a run with no employee wage rows cannot be
+    # allocated at all, so that guard reports first. Either way nothing reaches the ledger.
     _je, err = post_payroll_salary(cid, pr)
     assert _je is None
     assert err
     assert any(
         phrase in err.lower()
-        for phrase in ("payroll site", "pond", "6400", "salaries")
+        for phrase in ("payroll site", "pond", "6400", "salaries", "employees are paid")
     )

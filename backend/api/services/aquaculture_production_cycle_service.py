@@ -8,7 +8,7 @@ import re
 from datetime import date
 from typing import TYPE_CHECKING
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q
 
@@ -803,8 +803,8 @@ def fry_stocking_summaries_for_cycles(
         out[cy_id] = {
             "fry_stocking_date": row["fry_stocking_date"],
             "fry_stocking_fish_count": row["fry_stocking_fish_count"] or None,
-            "fry_stocking_weight_kg": str(w.quantize(Decimal("0.01"))) if w else None,
-            "fry_stocking_cost_amount": str(cost.quantize(Decimal("0.01"))) if cost else None,
+            "fry_stocking_weight_kg": str(w.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if w else None,
+            "fry_stocking_cost_amount": str(cost.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if cost else None,
             "fry_vendor_bill_numbers": ", ".join(nums) if nums else "",
         }
     return out

@@ -11,7 +11,7 @@ When both station and pond are set, pond wins for P&L attribution (station rows 
 """
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from django.db.models import Q
@@ -282,7 +282,7 @@ def audit_entity_gl_scoping(company_id: int, *, sample_limit: int = 5) -> dict[s
                     if line.journal_entry.entry_date
                     else None,
                     "account_code": line.account.account_code if line.account else "",
-                    "amount": str(amt.quantize(Decimal("0.01"))),
+                    "amount": str(amt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
                 }
             )
 

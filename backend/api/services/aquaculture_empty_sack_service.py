@@ -7,7 +7,7 @@ Empty sacks are sold via income_type empty_feed_sack_sale (weight_kg = sack coun
 from __future__ import annotations
 
 import math
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.exceptions import StockBusinessError
 from api.models import Item
@@ -33,7 +33,7 @@ def feed_sacks_opened_from_kg(applied_kg: Decimal, kg_per_sack: Decimal) -> Deci
     if applied_kg <= 0 or kg_per_sack <= 0:
         return Decimal("0")
     opened = math.ceil(float(applied_kg / kg_per_sack))
-    return Decimal(max(opened, 0)).quantize(Decimal("1"))
+    return Decimal(max(opened, 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
 def empty_sacks_opened_for_feed_consumption(
@@ -56,7 +56,7 @@ def empty_sacks_opened_for_feed_consumption(
     if unit_l in ("kg", "kilogram", "kilograms"):
         return Decimal("0")
     if quantity > 0:
-        return Decimal(math.ceil(float(quantity))).quantize(Decimal("1"))
+        return Decimal(math.ceil(float(quantity))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return Decimal("0")
 
 
@@ -174,8 +174,8 @@ def assert_empty_sacks_available(company_id: int, pond_id: int, sack_count: Deci
         )
     qoh = get_pond_item_stock(company_id, pond_id, empty_item.id)
     if sack_count > qoh:
-        need = sack_count.quantize(Decimal("0.0001"))
-        have = qoh.quantize(Decimal("0.0001"))
+        need = sack_count.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        have = qoh.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         raise StockBusinessError(
             f"Not enough empty feed sacks at this pond: need {need}, have {have}. "
             "Empty sacks are created when feed is consumed from sacks."

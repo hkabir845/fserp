@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
@@ -193,8 +193,8 @@ def _manual_journal_eligible_for_post(entry: JournalEntry) -> tuple[bool, str]:
         total_debit += d
         total_credit += c
 
-    total_debit = total_debit.quantize(Decimal("0.01"))
-    total_credit = total_credit.quantize(Decimal("0.01"))
+    total_debit = total_debit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total_credit = total_credit.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     if total_debit <= 0:
         return False, "Total debits must be greater than zero."

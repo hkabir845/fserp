@@ -1,7 +1,7 @@
 """Aquaculture → Financing API (working-capital loans, allocations, repayment worksheet)."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -28,7 +28,7 @@ def _parse_positive_decimal(val, field: str = "amount") -> Decimal | None:
         return None
     if d <= 0:
         return None
-    return d.quantize(Decimal("0.01"))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 @csrf_exempt

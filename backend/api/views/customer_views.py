@@ -1,7 +1,7 @@
 """Customers API: list, create, get, update, delete, add-dummy (company-scoped)."""
 import sys
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.db.models import Q
@@ -11,7 +11,12 @@ from django.views.decorators.csrf import csrf_exempt
 from api.services.permission_service import normalize_role_key
 from api.utils.auth import auth_required, user_is_super_admin
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
-from api.views.common import parse_json_body, query_include_inactive, require_company_id
+from api.views.common import (
+    parse_json_body,
+    query_include_inactive,
+    query_include_internal,
+    require_company_id,
+)
 from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.station_defaults import parse_optional_station_fk
@@ -49,6 +54,8 @@ def _customer_to_json(c, *, company_id: int | None = None):
         "opening_balance_date": _serialize_date(c.opening_balance_date),
         "current_balance": str(balance),
         "is_active": c.is_active,
+        "is_internal": bool(getattr(c, "is_internal", False)),
+        "internal_pond_id": getattr(c, "internal_pond_id", None),
         "default_station_id": c.default_station_id,
         "default_station_name": (
             (c.default_station.station_name or "").strip()
@@ -125,8 +132,8 @@ def _customer_list_stats(qs, company_id: int):
             recv += b
     return {
         "active_count": active,
-        "total_balance": str(bal.quantize(Decimal("0.01"))),
-        "total_receivable": str(recv.quantize(Decimal("0.01"))),
+        "total_balance": str(bal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
+        "total_receivable": str(recv.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
     }
 
 
@@ -138,6 +145,9 @@ def customers_list(request):
         qs = Customer.objects.filter(company_id=request.company_id).select_related("default_station")
         if not query_include_inactive(request):
             qs = qs.filter(is_active=True)
+        if not query_include_internal(request):
+            # Pond buying identities are for inter-pond documents, not manual customer entry.
+            qs = qs.exclude(is_internal=True)
         qs = _customer_apply_q(qs, request.GET.get("q", ""))
         qs = _customer_apply_sort(qs, request)
         if wants_paged_response(request):

@@ -21,14 +21,14 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="tenantreportingcategory",
             constraint=models.CheckConstraint(
-                check=~models.Q(("head_office_only", True), ("station__isnull", False)),
+                condition=~models.Q(("head_office_only", True), ("station__isnull", False)),
                 name="tenant_reporting_cat_ho_not_with_station",
             ),
         ),
         migrations.AddConstraint(
             model_name="tenantreportingcategory",
             constraint=models.CheckConstraint(
-                check=~models.Q(("head_office_only", True), ("aquaculture_pond__isnull", False)),
+                condition=~models.Q(("head_office_only", True), ("aquaculture_pond__isnull", False)),
                 name="tenant_reporting_cat_ho_not_with_pond",
             ),
         ),

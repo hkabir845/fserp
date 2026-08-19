@@ -4,7 +4,7 @@ Pond-based labor: resolve which pond an employee's wages belong to and build pay
 from __future__ import annotations
 
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.models import AquaculturePond, Company, Employee, PayrollRun, PayrollRunPondAllocation
 
@@ -20,7 +20,7 @@ VALID_LABOR_SCOPES = frozenset(
 
 
 def _q_money(v: Decimal) -> Decimal:
-    return (v or Decimal("0")).quantize(Decimal("0.01"))
+    return (v or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def employee_labor_scope(employee: Employee) -> str:

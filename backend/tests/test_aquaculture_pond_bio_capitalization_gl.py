@@ -213,7 +213,9 @@ def test_transfer_reclass_posts_full_gl_when_1581_short(api_client, company_tena
     tr = AquacultureFishPondTransfer.objects.create(
         company_id=cid,
         from_pond=src,
-        transfer_date=date(2026, 4, 1),
+        # After the 2026-05-09 fry bill: a transfer cannot draw on biological cost that has
+        # not been incurred yet, so 1581 as-of the transfer date must include the purchase.
+        transfer_date=date(2026, 6, 1),
         fish_species="tilapia",
     )
     AquacultureFishPondTransferLine.objects.create(

@@ -12,6 +12,15 @@ if [[ -f .env ]]; then
   set +a
 fi
 
+# Written by scripts/deploy-vps.sh: FSERP_APP_VERSION / GIT_COMMIT_SHA for /health/ and
+# /api/version/. Sourced after .env so a value set there still wins if you pin one by hand.
+if [[ -f .env.release ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env.release
+  set +a
+fi
+
 # Threaded (gthread) workers so a few processes serve many concurrent requests.
 # Plain sync workers handle ONE request each and block on DB I/O, so a handful of
 # slow/queued calls (dashboards, lists, side-total refreshes) starve everything —

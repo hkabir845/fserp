@@ -128,6 +128,21 @@ git pull
 bash scripts/deploy-vps.sh
 ```
 
+`deploy-vps.sh` takes a gzipped `pg_dump` into `~/fserp-backups/` before it migrates, and aborts
+if that fails — so a deploy cannot go out unbacked. Override the location with `FSERP_BACKUP_DIR`,
+or skip it with `FSERP_SKIP_BACKUP=1` when you have just taken one by hand. The last 10 are kept.
+
+To back up manually, read the credentials from `backend/.env` first — `DATABASE_URL` is not in your
+shell, and without it `pg_dump` fails with `role "<your login>" does not exist`:
+
+```bash
+cd /path/to/FSERP/backend && set -a && source .env && set +a
+pg_dump "$DATABASE_URL" | gzip > ~/fserp-$(date +%F).sql.gz
+```
+
+The script also writes `backend/.env.release` with the version and commit it deployed, so
+`GET /health/` and `GET /api/version/` report the running build instead of `0.0.0-dev`.
+
 After deploy, confirm **Backup & Restore** if you rely on it: download a test backup from `/backup` (or `/admin/backup`). If restore uploads fail with 413, raise nginx `client_max_body_size` and Django upload caps together.
 
 Manual steps (if not using the script):

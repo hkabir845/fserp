@@ -26,6 +26,7 @@ def _sale(
     kg: str,
     amount: str,
     species: str = "tilapia",
+    count: int | None = None,
     invoice: Invoice | None = None,
 ) -> AquacultureFishSale:
     return AquacultureFishSale.objects.create(
@@ -35,6 +36,7 @@ def _sale(
         fish_species=species,
         sale_date=when,
         weight_kg=Decimal(kg),
+        fish_count=count,
         total_amount=Decimal(amount),
         invoice=invoice,
     )
@@ -52,7 +54,7 @@ def test_rate_is_weighted_by_kilo_not_a_plain_average(company_tenant):
         cid, species="tilapia", as_of=date(2026, 2, 1)
     )
     assert rate == Decimal("110.0000")
-    assert "2 external tilapia sale" in basis
+    assert "2 sale(s)" in basis and "tilapia" in basis
 
 
 @pytest.mark.django_db
@@ -84,7 +86,7 @@ def test_internal_sales_never_set_the_market_rate(company_tenant):
         cid, species="tilapia", as_of=date(2026, 2, 1)
     )
     assert rate == Decimal("150.0000")
-    assert "1 external tilapia sale" in basis
+    assert "1 sale(s)" in basis and "tilapia" in basis
 
 
 @pytest.mark.django_db
@@ -97,7 +99,7 @@ def test_falls_back_to_older_history_then_to_other_species(company_tenant):
         cid, species="tilapia", as_of=date(2026, 6, 1)
     )
     assert rate == Decimal("120.0000")
-    assert "all 1 external tilapia sale" in basis
+    assert "all tilapia sales on or before" in basis
 
     # A species with no history of its own borrows the recent all-species rate.
     _sale(cid, pond, when=date(2026, 5, 20), kg="100", amount="18000", species="tilapia")
@@ -105,7 +107,7 @@ def test_falls_back_to_older_history_then_to_other_species(company_tenant):
         cid, species="pangas", as_of=date(2026, 6, 1)
     )
     assert rate2 == Decimal("180.0000")
-    assert "all species" in basis2
+    assert "No pangas history" in basis2 or "No species or size match" in basis2
 
 
 @pytest.mark.django_db
@@ -164,3 +166,68 @@ def test_unpriceable_movement_reports_zero_rather_than_guessing(company_tenant):
     assert q["priceable"] is False
     assert q["rate_per_kg"] is None
     assert q["amount"] == "0.00"
+
+
+@pytest.mark.django_db
+def test_size_beats_species_fingerlings_are_not_priced_as_table_fish(company_tenant):
+    """Same species, wildly different stage — the rate must follow the size, not the label."""
+    cid = company_tenant.id
+    pond = _pond(cid)
+    # Table fish: 500 kg, 1000 heads → 0.5 kg/fish @ 200/kg
+    _sale(cid, pond, when=date(2026, 1, 10), kg="500", amount="100000", count=1000)
+    # Fingerlings: 100 kg, 20000 heads → 0.005 kg/fish @ 600/kg
+    _sale(cid, pond, when=date(2026, 1, 12), kg="100", amount="60000", count=20000)
+
+    table_rate, table_basis = resolve_market_rate_per_kg(
+        cid, species="tilapia", as_of=date(2026, 2, 1), size_kg_per_fish=Decimal("0.5")
+    )
+    assert table_rate == Decimal("200.0000")
+    assert "g/fish" in table_basis or "kg/fish" in table_basis
+
+    fry_rate, _ = resolve_market_rate_per_kg(
+        cid, species="tilapia", as_of=date(2026, 2, 1), size_kg_per_fish=Decimal("0.005")
+    )
+    assert fry_rate == Decimal("600.0000")
+
+    # Without a size, the two blend into one weighted figure — the reason size matters.
+    blended, _ = resolve_market_rate_per_kg(
+        cid, species="tilapia", as_of=date(2026, 2, 1)
+    )
+    assert blended != table_rate and blended != fry_rate
+
+
+@pytest.mark.django_db
+def test_retail_sized_lots_do_not_set_the_wholesale_rate(company_tenant):
+    cid = company_tenant.id
+    pond = _pond(cid)
+    # Retail: 5 kg lots at a high price per kg.
+    _sale(cid, pond, when=date(2026, 1, 10), kg="5", amount="2000", count=10)
+    _sale(cid, pond, when=date(2026, 1, 11), kg="4", amount="1600", count=8)
+    # Wholesale: a 400 kg lot of the same size fish at the bulk price.
+    _sale(cid, pond, when=date(2026, 1, 12), kg="400", amount="80000", count=800)
+
+    rate, basis = resolve_market_rate_per_kg(
+        cid, species="tilapia", as_of=date(2026, 2, 1), size_kg_per_fish=Decimal("0.5")
+    )
+    assert rate == Decimal("200.0000")   # bulk price, not the 400/kg retail price
+    assert "Wholesale" in basis
+
+
+@pytest.mark.django_db
+def test_quote_derives_size_from_head_count(company_tenant):
+    cid = company_tenant.id
+    pond = _pond(cid, "Nursing P-01")
+    _sale(cid, pond, when=date(2026, 1, 10), kg="100", amount="60000", count=20000)  # fry @ 600
+
+    q = quote_inter_pond_transfer(
+        cid,
+        from_pond_id=pond.id,
+        species="tilapia",
+        as_of=date(2026, 2, 1),
+        weight_kg=Decimal("50"),
+        fish_count=10000,
+    )
+    assert q["size_kg_per_fish"] == "0.0050"
+    assert q["size_label"] == "~5 g/fish"
+    assert q["rate_per_kg"] == "600.0000"
+    assert q["amount"] == "30000.00"

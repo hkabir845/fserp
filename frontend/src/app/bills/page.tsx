@@ -130,7 +130,10 @@ interface BillLineItem {
   /** Fish-type items: required species (fry/fingerling) stocked on this line. */
   aquaculture_fish_species?: string
   aquaculture_fish_species_other?: string
-  /** UI only: per-line Line (pcs/kg) override used for derivations; blank falls back to the item catalog. */
+  /**
+   * Per-line Line (pcs/kg). Prefills from the item catalog; when the owner edits it and saves the bill,
+   * the catalog Item.pieces_per_kg is updated to match (see syncFishPcsPerKgOverridesToItems).
+   */
   fish_pcs_per_kg_override?: number | string
   /** UI only: raw Cost / head entry — line Amount derives from it × heads. */
   fish_cost_per_head_input?: number | string
@@ -452,6 +455,49 @@ function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): n
   return itemPiecesPerKg(item)
 }
 
+/**
+ * When the owner edits Line (pcs/kg) on a fish bill line, persist that value onto the catalog Item
+ * so the next open does not snap back to the old Item.pieces_per_kg.
+ * Returns a map of item id → new pieces_per_kg for local state merge.
+ */
+async function syncFishPcsPerKgOverridesToItems(
+  lines: BillLineItem[],
+  itemList: Item[]
+): Promise<Map<number, number>> {
+  const updates = new Map<number, number>()
+  for (const line of lines) {
+    if (!line.item_id) continue
+    const raw = line.fish_pcs_per_kg_override
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue
+    const nextPcs = Number(raw)
+    if (!Number.isFinite(nextPcs) || nextPcs <= 0) continue
+    const item = itemList.find((i) => i.id === line.item_id)
+    if (!item || !isFishTypeItem(item)) continue
+    const current = itemPiecesPerKg(item)
+    if (current != null && Math.abs(current - nextPcs) < 1e-9) continue
+    // Last edited line wins if the same item appears twice.
+    updates.set(line.item_id, nextPcs)
+  }
+  await Promise.all(
+    [...updates.entries()].map(([itemId, pieces_per_kg]) =>
+      api.put(`/items/${itemId}/`, { pieces_per_kg })
+    )
+  )
+  return updates
+}
+
+/** Merge catalog pcs/kg updates into the in-memory item list used by the bill form. */
+function applyPiecesPerKgUpdatesToItems(
+  itemList: Item[],
+  updates: Map<number, number>
+): Item[] {
+  if (updates.size === 0) return itemList
+  return itemList.map((it) => {
+    const next = updates.get(it.id)
+    return next == null ? it : { ...it, pieces_per_kg: next }
+  })
+}
+
 function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): number | null {
   const fromItem = itemPiecesPerKg(rowItem)
   if (fromItem != null) return fromItem
@@ -646,7 +692,7 @@ function FishBillLineDimensionRow({
           onChange={(e) =>
             onFieldChange(index, 'fish_pcs_per_kg_override', e.target.value === '' ? '' : e.target.value)
           }
-          title="Pieces per 1 kg used on this line. Prefilled from the item catalog — edit to override it here."
+          title="Pieces per 1 kg. Prefills from the item catalog — edit and save the bill to update the Item Line (pcs/kg)."
           className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
         />
       </div>
@@ -2198,6 +2244,21 @@ export default function BillsPage() {
       })),
     })
 
+    try {
+      const pcsUpdates = await syncFishPcsPerKgOverridesToItems(linesToSave, items)
+      if (pcsUpdates.size > 0) {
+        setItems((prev) => applyPiecesPerKgUpdatesToItems(prev, pcsUpdates))
+      }
+    } catch (pcsErr: unknown) {
+      console.error('Bill saved but Item Line (pcs/kg) could not be updated:', pcsErr)
+      toast.error(
+        extractErrorMessage(
+          pcsErr,
+          'Bill saved, but the Item Line (pcs/kg) was not updated. Edit the item catalog or try again.'
+        )
+      )
+    }
+
     toast.success(approveBill ? 'Bill approved and posted (Open).' : 'Bill saved as draft.')
     setShowModal(false)
     setStockReviewOpen(false)
@@ -2386,6 +2447,21 @@ export default function BillsPage() {
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
       })),
     })
+
+    try {
+      const pcsUpdates = await syncFishPcsPerKgOverridesToItems(linesToSave, items)
+      if (pcsUpdates.size > 0) {
+        setItems((prev) => applyPiecesPerKgUpdatesToItems(prev, pcsUpdates))
+      }
+    } catch (pcsErr: unknown) {
+      console.error('Bill updated but Item Line (pcs/kg) could not be updated:', pcsErr)
+      toast.error(
+        extractErrorMessage(
+          pcsErr,
+          'Bill updated, but the Item Line (pcs/kg) was not updated. Edit the item catalog or try again.'
+        )
+      )
+    }
 
     toast.success(
       postDraftBillOnUpdate && editingBill.status === 'draft'

@@ -117,6 +117,53 @@ export function buildExtraFinancialReportCsv(
   reportId: string,
   data: Record<string, unknown>,
 ): string | null {
+  if (reportId === 'entities-financial-statement') {
+    const groups = (data.groups as Record<string, unknown>[]) ?? []
+    const companyTotal = (data.company_total as Record<string, unknown>) ?? {}
+    const line = (label: string, r: Record<string, unknown>) =>
+      `${escapeCsvValue(label)},${escapeCsvValue(r.entity_name)},${r.income ?? 0},${r.cost_of_goods_sold ?? 0},${r.expenses ?? 0},${r.gross_profit ?? 0},${r.net_income ?? 0},${r.total_assets ?? 0},${r.total_liabilities ?? 0},${r.total_equity ?? 0},${r.trial_balance_debit ?? 0},${r.trial_balance_credit ?? 0},${r.trial_balance_balanced === false ? 'Off' : 'OK'}\n`
+    let out =
+      'Group,Entity,Income,COGS,Expenses,Gross profit,Net income,Assets,Liabilities,Equity,TB debit,TB credit,TB status\n'
+    groups.forEach((g) => {
+      const title = String(g.title ?? '')
+      const rows = (g.rows as Record<string, unknown>[]) ?? []
+      rows.forEach((r) => {
+        out += line(title, r)
+      })
+      const total = g.total as Record<string, unknown> | null
+      if (total) out += line(title, total)
+    })
+    out += line('Company', companyTotal)
+    return out
+  }
+
+  if (reportId === 'party-balances') {
+    const sections = (data.sections as Record<string, unknown>[]) ?? []
+    const summary = (data.summary as Record<string, number>) ?? {}
+    let out = 'Group,Code,Party,Detail,Balance,Net position\n'
+    sections.forEach((section) => {
+      const rows = (section.rows as Record<string, unknown>[]) ?? []
+      const title = String(section.title ?? '')
+      const key = String(section.key ?? '')
+      rows.forEach((r) => {
+        const detail =
+          key === 'loans'
+            ? [String(r.loan_status ?? ''), r.maturity_date ? `matures ${String(r.maturity_date)}` : '']
+                .filter(Boolean)
+                .join(' ')
+            : key === 'bank_accounts'
+              ? String(r.account_sub_type ?? '')
+              : String(r.phone || r.email || '')
+        out += `${escapeCsvValue(title)},${escapeCsvValue(r.code)},${escapeCsvValue(r.name)},${escapeCsvValue(detail)},${r.balance ?? 0},${r.net_position ?? 0}\n`
+      })
+      out += `${escapeCsvValue(`Sub-total — ${title}`)},,,,${Number(section.total_receivable ?? 0) + Number(section.total_payable ?? 0)},${section.net_position ?? 0}\n`
+    })
+    out += `Total receivable / cash held,,,,,${summary.total_receivable ?? 0}\n`
+    out += `Total payable,,,,,${summary.total_payable ?? 0}\n`
+    out += `Net position,,,,,${summary.net_position ?? 0}\n`
+    return out
+  }
+
   if (reportId === 'expense-detail') {
     const pondId =
       typeof data.filter_pond_id === 'number'
@@ -1072,6 +1119,97 @@ export function buildExtraFinancialPrintHtml(
   reportId: string,
   data: Record<string, unknown>,
 ): string | null {
+  if (reportId === 'entities-financial-statement') {
+    const groups = (data.groups as Record<string, unknown>[]) ?? []
+    const companyTotal = (data.company_total as Record<string, unknown>) ?? {}
+    const headers = [
+      'Entity',
+      'Income (right)',
+      'COGS (right)',
+      'Expenses (right)',
+      'Gross profit (right)',
+      'Net income (right)',
+      'Assets (right)',
+      'Liabilities (right)',
+      'Equity (right)',
+      'TB debit (right)',
+      'TB credit (right)',
+    ]
+    const line = (r: Record<string, unknown>) => [
+      String(r.entity_name ?? ''),
+      fmtMoney(r.income),
+      fmtMoney(r.cost_of_goods_sold),
+      fmtMoney(r.expenses),
+      fmtMoney(r.gross_profit),
+      fmtMoney(r.net_income),
+      fmtMoney(r.total_assets),
+      fmtMoney(r.total_liabilities),
+      fmtMoney(r.total_equity),
+      fmtMoney(r.trial_balance_debit),
+      fmtMoney(r.trial_balance_credit),
+    ]
+    let html = ''
+    groups.forEach((g) => {
+      const rows = (g.rows as Record<string, unknown>[]) ?? []
+      if (!rows.length) return
+      const body = rows.map(line)
+      const total = g.total as Record<string, unknown> | null
+      if (total) body.push(line(total))
+      html += htmlTable(String(g.title ?? ''), headers, body)
+    })
+    html += htmlTable('Company total', headers, [line(companyTotal)])
+    return html
+  }
+
+  if (reportId === 'party-balances') {
+    const sections = (data.sections as Record<string, unknown>[]) ?? []
+    const summary = (data.summary as Record<string, number>) ?? {}
+    let html = ''
+    sections.forEach((section) => {
+      const rows = (section.rows as Record<string, unknown>[]) ?? []
+      if (!rows.length) return
+      const key = String(section.key ?? '')
+      const body = rows.map((r) => {
+        const detail =
+          key === 'loans'
+            ? [String(r.loan_status ?? ''), r.maturity_date ? `matures ${String(r.maturity_date)}` : '']
+                .filter(Boolean)
+                .join(' · ')
+            : key === 'bank_accounts'
+              ? String(r.account_sub_type ?? '')
+              : String(r.phone || r.email || '')
+        return [String(r.code ?? ''), String(r.name ?? ''), detail, fmtMoney(r.balance), fmtMoney(r.net_position)]
+      })
+      body.push([
+        'Sub-total',
+        '',
+        '',
+        fmtMoney(Number(section.total_receivable ?? 0) + Number(section.total_payable ?? 0)),
+        fmtMoney(section.net_position),
+      ])
+      html += htmlTable(
+        String(section.title ?? ''),
+        ['Code', 'Party', 'Detail', 'Balance (right)', 'Net position (right)'],
+        body,
+      )
+    })
+    html += htmlTable(
+      'Summary',
+      ['Metric', 'Amount (right)'],
+      [
+        ['Customers owe us (A/R)', fmtMoney(summary.customer_receivable)],
+        ['We owe suppliers (A/P)', fmtMoney(summary.vendor_payable)],
+        ['Bank & cash on hand', fmtMoney(summary.bank_cash_on_hand)],
+        ['Loans lent (receivable)', fmtMoney(summary.loans_lent_outstanding)],
+        ['Loans borrowed (payable)', fmtMoney(summary.loans_borrowed_outstanding)],
+        ['Total receivable / cash held', fmtMoney(summary.total_receivable)],
+        ['Total payable', fmtMoney(summary.total_payable)],
+        ['Net position', fmtMoney(summary.net_position)],
+      ],
+    )
+    return html
+  }
+
   if (reportId === 'ar-aging' || reportId === 'ap-aging') {
     const isAr = reportId === 'ar-aging'
     const list = ((isAr ? data.customers : data.vendors) as Record<string, unknown>[]) ?? []

@@ -1543,6 +1543,195 @@ def report_vendor_balances(
     return out
 
 
+def _party_row(
+    *,
+    party_type: str,
+    party_label: str,
+    party_id: int | None,
+    code: str,
+    name: str,
+    balance: Decimal,
+    sign: int,
+    **extra: Any,
+) -> dict[str, Any]:
+    """One consolidated balance row. ``sign`` is +1 when a positive balance is a company asset."""
+    row: dict[str, Any] = {
+        "party_type": party_type,
+        "party_label": party_label,
+        "party_id": party_id,
+        "code": code,
+        "name": name,
+        "balance": _f(balance),
+        "net_position": _f(balance * sign),
+    }
+    row.update(extra)
+    return row
+
+
+def _party_section(title: str, key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    receivable = sum(
+        (_d(r["net_position"]) for r in rows if _d(r["net_position"]) > 0), start=Decimal("0")
+    )
+    payable = sum(
+        (-_d(r["net_position"]) for r in rows if _d(r["net_position"]) < 0), start=Decimal("0")
+    )
+    net = sum((_d(r["net_position"]) for r in rows), start=Decimal("0"))
+    return {
+        "key": key,
+        "title": title,
+        "rows": rows,
+        "count": len(rows),
+        "total_receivable": _f(receivable),
+        "total_payable": _f(payable),
+        "net_position": _f(net),
+    }
+
+
+def report_party_balances(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """
+    Consolidated balance for every party the company holds money with: customers (A/R),
+    suppliers (A/P), bank and cash registers, and loan counterparties (lent and borrowed).
+
+    ``net_position`` is signed from the company's point of view: positive is an asset
+    (owed to us, or cash we hold), negative is a liability (we owe).
+    """
+    customer_rows: list[dict[str, Any]] = []
+    for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
+        "display_name"
+    ):
+        bal = compute_customer_balance_due(company_id, c.id)
+        if bal == 0:
+            continue
+        customer_rows.append(
+            _party_row(
+                party_type="customer",
+                party_label="Customer (A/R)",
+                party_id=c.id,
+                code=c.customer_number or "",
+                name=(c.display_name or c.company_name or "").strip() or f"Customer #{c.id}",
+                balance=bal,
+                sign=1,
+                phone=c.phone or "",
+                email=c.email or "",
+            )
+        )
+
+    vendor_rows: list[dict[str, Any]] = []
+    for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
+        "company_name"
+    ):
+        bal = compute_vendor_balance_due(company_id, v.id)
+        if bal == 0:
+            continue
+        vendor_rows.append(
+            _party_row(
+                party_type="vendor",
+                party_label="Supplier (A/P)",
+                party_id=v.id,
+                code=v.vendor_number or "",
+                name=(v.display_name or v.company_name or "").strip() or f"Supplier #{v.id}",
+                balance=bal,
+                sign=-1,
+                phone=v.phone or "",
+                email=v.email or "",
+            )
+        )
+
+    bank_rows: list[dict[str, Any]] = []
+    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+        if normalize_chart_account_type(coa.account_type) != "bank_account":
+            continue
+        bal = _ending_balance(coa, company_id, end)
+        if bal == 0:
+            continue
+        bank_rows.append(
+            _party_row(
+                party_type="bank",
+                party_label="Bank / cash register",
+                party_id=coa.id,
+                code=coa.account_code or "",
+                name=(coa.account_name or "").strip() or f"Account #{coa.id}",
+                balance=bal,
+                sign=1,
+                account_id=coa.id,
+                account_sub_type=coa.account_sub_type or "",
+            )
+        )
+
+    loan_rows: list[dict[str, Any]] = []
+    for ln in (
+        Loan.objects.filter(company_id=company_id)
+        .exclude(status="draft")
+        .select_related("counterparty", "station")
+        .order_by("direction", "loan_no")
+    ):
+        op = _d(ln.outstanding_principal)
+        if op == 0:
+            continue
+        lent = ln.direction == Loan.DIRECTION_LENT
+        cp = ln.counterparty
+        loan_rows.append(
+            _party_row(
+                party_type="loan_lent" if lent else "loan_borrowed",
+                party_label="Loan lent (receivable)" if lent else "Loan borrowed (payable)",
+                party_id=ln.id,
+                code=ln.loan_no or "",
+                name=(cp.name if cp else "").strip() or f"Loan #{ln.id}",
+                balance=op,
+                sign=1 if lent else -1,
+                loan_id=ln.id,
+                loan_no=ln.loan_no or "",
+                direction=ln.direction,
+                loan_status=ln.status,
+                counterparty_code=cp.code if cp else "",
+                station_id=ln.station_id,
+                station_name=(ln.station.station_name if ln.station_id else None),
+                maturity_date=ln.maturity_date.isoformat() if ln.maturity_date else None,
+            )
+        )
+
+    sections = [
+        _party_section("Customers — receivable (A/R)", "customers", customer_rows),
+        _party_section("Suppliers — payable (A/P)", "vendors", vendor_rows),
+        _party_section("Bank & cash registers", "bank_accounts", bank_rows),
+        _party_section("Loans — lent & borrowed", "loans", loan_rows),
+    ]
+    all_rows = [r for s in sections for r in s["rows"]]
+    total_receivable = sum((_d(s["total_receivable"]) for s in sections), start=Decimal("0"))
+    total_payable = sum((_d(s["total_payable"]) for s in sections), start=Decimal("0"))
+
+    return {
+        "report_id": "party-balances",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "balances_as_of": end.isoformat(),
+        "sections": sections,
+        "parties": all_rows,
+        "summary": {
+            "party_count": len(all_rows),
+            "customer_receivable": sections[0]["total_receivable"],
+            "customer_prepayments": sections[0]["total_payable"],
+            "vendor_payable": sections[1]["total_payable"],
+            "vendor_advances": sections[1]["total_receivable"],
+            "bank_cash_on_hand": sections[2]["net_position"],
+            "loans_lent_outstanding": sections[3]["total_receivable"],
+            "loans_borrowed_outstanding": sections[3]["total_payable"],
+            "total_receivable": _f(total_receivable),
+            "total_payable": _f(total_payable),
+            "net_position": _f(total_receivable - total_payable),
+        },
+        "accounting_note": (
+            "One row per party the company holds a balance with. net_position is signed from the "
+            "company side: positive is an asset (owed to us, or cash we hold), negative is a "
+            "liability (we owe). Customer and supplier balances are the all-time subledger closing "
+            "figures — the same numbers as the Customer Balances and Vendor Balances reports and the "
+            "customer/vendor ledgers — so they ignore the selected period. Bank and cash registers are "
+            "GL balances as of the period end date. Loan rows are the stored outstanding principal from "
+            "the loan register (current value, not restated to the end date) and exclude draft "
+            "facilities. Parties with a zero balance are omitted."
+        ),
+    }
+
+
 _AGING_BUCKET_KEYS = ("current", "days_1_30", "days_31_60", "days_61_90", "days_over_90")
 
 
@@ -2960,6 +3149,122 @@ def report_entities_financial_summary(
             "Combined view. Fuel stations, shop hubs (no fuel), and ponds are separate entity groups "
             "with category subtotals. For separate reports use: All Entities — P&L, "
             "All Entities — Balance Sheet, and All Entities — Trial Balance."
+        ),
+    }
+
+
+_STATEMENT_ROW_KEYS: tuple[str, ...] = (
+    "income",
+    "cost_of_goods_sold",
+    "expenses",
+    "gross_profit",
+    "net_income",
+    "total_assets",
+    "total_liabilities",
+    "total_equity",
+    "trial_balance_debit",
+    "trial_balance_credit",
+)
+
+
+def _statement_row(row: dict[str, Any]) -> dict[str, Any]:
+    """One line of the consolidated statement: P&L, balance sheet, and trial balance side by side."""
+    out: dict[str, Any] = {
+        "entity_type": row.get("entity_type"),
+        "entity_id": row.get("entity_id"),
+        "entity_name": row.get("entity_name"),
+    }
+    for key in _STATEMENT_ROW_KEYS:
+        out[key] = _f(_d(row.get(key)))
+    out["trial_balance_balanced"] = bool(row.get("trial_balance_balanced", True))
+    if row.get("station_id") is not None:
+        out["station_id"] = row["station_id"]
+        out["station_name"] = row.get("station_name")
+        if "business_kind_label" in row:
+            out["business_kind_label"] = row["business_kind_label"]
+    if row.get("pond_id") is not None:
+        out["pond_id"] = row["pond_id"]
+        out["pond_name"] = row.get("pond_name")
+    return out
+
+
+def _statement_group(
+    key: str, title: str, rows: list[dict[str, Any]], total_row: dict[str, Any] | None
+) -> dict[str, Any]:
+    mapped = [_statement_row(r) for r in rows]
+    return {
+        "key": key,
+        "title": title,
+        "rows": mapped,
+        "count": len(mapped),
+        "total": _statement_row(total_row) if total_row else None,
+    }
+
+
+def report_entities_financial_statement(
+    company_id: int, start: date, end: date
+) -> dict[str, Any]:
+    """
+    Board-pack consolidated financial statement: every entity on one line with its P&L,
+    balance sheet, and trial balance columns side by side, grouped by entity class.
+    """
+    bundle = _collect_all_entity_financial_rows(company_id, start, end)
+    groups = [
+        _statement_group(
+            "fuel_stations",
+            "Fuel filling stations",
+            bundle.get("by_fuel_station") or [],
+            bundle.get("fuel_stations_total"),
+        ),
+        _statement_group(
+            "shop_hubs",
+            "Shop / agro hubs (no fuel)",
+            bundle.get("by_shop_hub") or [],
+            bundle.get("shop_hubs_total"),
+        ),
+        _statement_group(
+            "ponds",
+            "Aquaculture ponds",
+            bundle.get("by_pond") or [],
+            bundle.get("ponds_total"),
+        ),
+        _statement_group(
+            "head_office",
+            "Head office / unassigned",
+            [bundle["unscoped"]] if bundle.get("unscoped") else [],
+            None,
+        ),
+    ]
+    company_total = _statement_row(bundle["company_total"])
+    unbalanced = [
+        r["entity_name"]
+        for g in groups
+        for r in g["rows"]
+        if not r["trial_balance_balanced"]
+    ]
+    return {
+        "report_id": "entities-financial-statement",
+        "period": bundle["period"],
+        "balance_sheet_as_of": bundle["balance_sheet_as_of"],
+        "groups": groups,
+        "rows": [r for g in groups for r in g["rows"]],
+        "company_total": company_total,
+        "summary": {
+            "entity_count": sum(g["count"] for g in groups),
+            "income": company_total["income"],
+            "net_income": company_total["net_income"],
+            "total_assets": company_total["total_assets"],
+            "total_liabilities": company_total["total_liabilities"],
+            "total_equity": company_total["total_equity"],
+            "unbalanced_entities": unbalanced,
+        },
+        "accounting_note": (
+            "One statement line per entity: P&L for the selected date range, balance sheet as of the "
+            "period end date, and trial balance debits and credits posted in the range. "
+            + _ENTITY_SCOPE_NOTE
+            + " Group totals sum the individual rows above them; the company total is all GL and "
+            "includes chart opening balances, so it will not equal the sum of the site and pond rows "
+            "(those cover posted tagged lines only)."
         ),
     }
 

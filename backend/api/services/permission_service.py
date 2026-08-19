@@ -72,6 +72,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {"report_id": "ar-aging", "label": "Accounts Receivable Aging", "group": "Reports — Financial"},
     {"report_id": "vendor-balances", "label": "Vendor Balances", "group": "Reports — Financial"},
     {"report_id": "ap-aging", "label": "Accounts Payable Aging", "group": "Reports — Financial"},
+    {
+        "report_id": "party-balances",
+        "label": "All Party Balances (A/R, A/P, banks, loans)",
+        "group": "Reports — Financial",
+    },
     {"report_id": "cash-flow", "label": "Cash Flow Summary", "group": "Reports — Financial"},
     {"report_id": "expense-detail", "label": "Expense Detail (GL)", "group": "Reports — Financial"},
     {"report_id": "income-detail", "label": "Income Detail (GL)", "group": "Reports — Financial"},
@@ -89,6 +94,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {
         "report_id": "entities-financial-summary",
         "label": "All Entities — Financial summary",
+        "group": "Reports — Financial",
+    },
+    {
+        "report_id": "entities-financial-statement",
+        "label": "Consolidated Financial Statement (all entities)",
         "group": "Reports — Financial",
     },
     {

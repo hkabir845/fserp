@@ -29,6 +29,8 @@ type ReportType =
   | 'entities-balance-sheet-summary'
   | 'entities-trial-balance-summary'
   | 'entities-financial-summary'
+  | 'party-balances'
+  | 'entities-financial-statement'
 
 function filterPondEntityRows(
   rows: Record<string, unknown>[],
@@ -724,6 +726,294 @@ export function renderExtraFinancialReport(
     )
   }
 
+  if (reportType === 'entities-financial-statement') {
+    const groups = (data.groups as Record<string, unknown>[]) ?? []
+    const companyTotal = (data.company_total as Record<string, unknown>) ?? {}
+    const summary = (data.summary as Record<string, unknown>) ?? {}
+    const scope = ctx.drillScope ?? {}
+    const unbalanced = (summary.unbalanced_entities as string[]) ?? []
+
+    const amountCell = (row: Record<string, unknown>, field: string, className = '') => (
+      <td className={`px-3 py-2.5 text-right whitespace-nowrap ${className}`}>
+        <ReportAmountCell amount={Number(row[field] ?? 0)} row={row} field={field} scope={scope} />
+      </td>
+    )
+
+    const statementRow = (row: Record<string, unknown>, isTotal: boolean) => (
+      <tr
+        key={`${String(row.entity_type)}-${String(row.entity_id ?? 'x')}`}
+        className={isTotal ? 'bg-muted/40 font-semibold' : 'hover:bg-muted/40'}
+      >
+        <td className="sticky left-0 z-10 bg-inherit px-4 py-2.5 font-medium text-foreground whitespace-nowrap">
+          {String(row.entity_name ?? '')}
+        </td>
+        {amountCell(row, 'income')}
+        {amountCell(row, 'cost_of_goods_sold')}
+        {amountCell(row, 'expenses')}
+        {amountCell(row, 'gross_profit')}
+        {amountCell(
+          row,
+          'net_income',
+          Number(row.net_income ?? 0) < 0 ? 'text-destructive font-medium' : 'font-medium',
+        )}
+        {amountCell(row, 'total_assets')}
+        {amountCell(row, 'total_liabilities')}
+        {amountCell(row, 'total_equity')}
+        {amountCell(row, 'trial_balance_debit')}
+        {amountCell(row, 'trial_balance_credit')}
+        <td className="px-3 py-2.5 text-center">
+          {row.trial_balance_balanced === false ? (
+            <span className="rounded bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">Off</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">OK</span>
+          )}
+        </td>
+      </tr>
+    )
+
+    const headerCell = (label: string) => (
+      <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground whitespace-nowrap">
+        {label}
+      </th>
+    )
+
+    return (
+      <div className="space-y-6">
+        {periodFilter(
+          'One line per entity: P&L for the range, balance sheet as of period end, trial balance for the range. Clear the site filter to see every entity.',
+        )}
+        {typeof data.accounting_note === 'string' && (
+          <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">
+            {data.accounting_note}
+          </p>
+        )}
+        {unbalanced.length > 0 && (
+          <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            Trial balance does not tie for: {unbalanced.join(', ')}. Review the journal entries tagged to
+            {unbalanced.length === 1 ? ' that entity' : ' those entities'} before circulating this statement.
+          </p>
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <div className="rounded-lg border bg-white p-4 shadow-sm">
+            <p className="text-xs uppercase text-muted-foreground">Entities</p>
+            <p className="mt-1 text-xl font-bold text-foreground">{Number(summary.entity_count ?? 0)}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-4 shadow-sm">
+            <p className="text-xs uppercase text-muted-foreground">Income (company)</p>
+            <p className="mt-1 text-xl font-bold text-foreground">{formatCurrency(Number(summary.income ?? 0))}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-4 shadow-sm">
+            <p className="text-xs uppercase text-muted-foreground">Net income (company)</p>
+            <p
+              className={`mt-1 text-xl font-bold ${
+                Number(summary.net_income ?? 0) < 0 ? 'text-destructive' : 'text-success'
+              }`}
+            >
+              {formatCurrency(Number(summary.net_income ?? 0))}
+            </p>
+          </div>
+          <div className="rounded-lg border bg-white p-4 shadow-sm">
+            <p className="text-xs uppercase text-muted-foreground">Total assets (company)</p>
+            <p className="mt-1 text-xl font-bold text-foreground">
+              {formatCurrency(Number(summary.total_assets ?? 0))}
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="sticky left-0 z-10 bg-muted/40 px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">
+                  Entity
+                </th>
+                {headerCell('Income')}
+                {headerCell('COGS')}
+                {headerCell('Expenses')}
+                {headerCell('Gross profit')}
+                {headerCell('Net income')}
+                {headerCell('Assets')}
+                {headerCell('Liabilities')}
+                {headerCell('Equity')}
+                {headerCell('TB debit')}
+                {headerCell('TB credit')}
+                <th className="px-3 py-3 text-center text-xs font-medium uppercase text-muted-foreground">TB</th>
+              </tr>
+            </thead>
+            {groups.map((g) => {
+              const rows = (g.rows as Record<string, unknown>[]) ?? []
+              if (!rows.length) return null
+              const total = g.total as Record<string, unknown> | null
+              return (
+                <tbody key={String(g.key)} className="divide-y divide-border bg-white">
+                  <tr>
+                    <td
+                      colSpan={12}
+                      className="bg-muted/25 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-foreground"
+                    >
+                      {String(g.title ?? '')}
+                    </td>
+                  </tr>
+                  {rows.map((r) => statementRow(r, false))}
+                  {total ? statementRow(total, true) : null}
+                </tbody>
+              )
+            })}
+            <tfoot className="bg-muted/40">{statementRow(companyTotal, true)}</tfoot>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'party-balances') {
+    const sections = (data.sections as Record<string, unknown>[]) ?? []
+    const summary = (data.summary as Record<string, number>) ?? {}
+    const scope = ctx.drillScope ?? {}
+    const netPosition = Number(summary.net_position ?? 0)
+
+    const partyTable = (section: Record<string, unknown>) => {
+      const rows = (section.rows as Record<string, unknown>[]) ?? []
+      const key = String(section.key ?? '')
+      const isLoans = key === 'loans'
+      const isBank = key === 'bank_accounts'
+      return (
+        <div key={key} className="overflow-x-auto rounded-lg border border-border">
+          <h3 className="flex flex-wrap items-baseline justify-between gap-2 border-b bg-muted/40 px-4 py-3 text-sm font-semibold text-foreground">
+            <span>{String(section.title ?? '')}</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {Number(section.count ?? 0)} {Number(section.count ?? 0) === 1 ? 'party' : 'parties'}
+            </span>
+          </h3>
+          {rows.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted-foreground">No open balances in this group.</p>
+          ) : (
+            <table className="min-w-full divide-y divide-border text-sm">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">
+                    {isBank ? 'Account code' : isLoans ? 'Loan no.' : 'Code'}
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground">
+                    {isBank ? 'Account' : isLoans ? 'Counterparty' : 'Party'}
+                  </th>
+                  <th className="px-3 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Detail</th>
+                  <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Balance</th>
+                  <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground whitespace-nowrap">
+                    Net position
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border bg-white">
+                {rows.map((r) => {
+                  const net = Number(r.net_position ?? 0)
+                  return (
+                    <tr key={`${String(r.party_type)}-${String(r.party_id ?? '')}`} className="hover:bg-muted/40">
+                      <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{String(r.code || '—')}</td>
+                      <td className="px-4 py-3 font-medium text-foreground">{String(r.name ?? '')}</td>
+                      <td className="px-3 py-3 text-xs text-muted-foreground">
+                        {isLoans
+                          ? [String(r.loan_status || ''), r.maturity_date ? `matures ${String(r.maturity_date)}` : '']
+                              .filter(Boolean)
+                              .join(' · ') || '—'
+                          : isBank
+                            ? String(r.account_sub_type || '—')
+                            : String(r.phone || r.email || '—')}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <ReportAmountCell amount={Number(r.balance ?? 0)} row={r} field="balance" scope={scope} />
+                      </td>
+                      <td
+                        className={`px-3 py-3 text-right font-medium ${net < 0 ? 'text-destructive' : 'text-success'}`}
+                      >
+                        {formatCurrency(net)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot className="bg-muted/40">
+                <tr>
+                  <td colSpan={3} className="px-4 py-3 text-right text-xs font-semibold uppercase text-foreground">
+                    Sub-total — {String(section.title ?? '')}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm font-bold text-foreground">
+                    {formatCurrency(
+                      Number(section.total_receivable ?? 0) + Number(section.total_payable ?? 0),
+                    )}
+                  </td>
+                  <td
+                    className={`px-3 py-3 text-right text-sm font-bold ${
+                      Number(section.net_position ?? 0) < 0 ? 'text-destructive' : 'text-success'
+                    }`}
+                  >
+                    {formatCurrency(Number(section.net_position ?? 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-6">
+        {periodFilter(
+          'Every party the company holds a balance with. A/R and A/P are all-time subledger closing balances; bank and cash registers are as of the period end date.',
+        )}
+        {typeof data.accounting_note === 'string' && (
+          <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">
+            {data.accounting_note}
+          </p>
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-lg border border-success/25 bg-gradient-to-br from-green-50 to-card p-4">
+            <p className="text-xs uppercase text-success">Total receivable / cash held</p>
+            <p className="mt-1 text-2xl font-bold text-green-900">
+              {formatCurrency(Number(summary.total_receivable ?? 0))}
+            </p>
+          </div>
+          <div className="rounded-lg border border-destructive/25 bg-gradient-to-br from-red-50 to-card p-4">
+            <p className="text-xs uppercase text-destructive">Total payable</p>
+            <p className="mt-1 text-2xl font-bold text-red-900">
+              {formatCurrency(Number(summary.total_payable ?? 0))}
+            </p>
+          </div>
+          <div className="rounded-lg border border-primary/25 bg-gradient-to-br from-accent to-card p-4">
+            <p className="text-xs uppercase text-primary">Net position</p>
+            <p className={`mt-1 text-2xl font-bold ${netPosition < 0 ? 'text-red-900' : 'text-blue-900'}`}>
+              {formatCurrency(netPosition)}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: 'Customers owe us', value: summary.customer_receivable },
+            { label: 'We owe suppliers', value: summary.vendor_payable },
+            { label: 'Bank & cash on hand', value: summary.bank_cash_on_hand },
+            { label: 'Loans borrowed', value: summary.loans_borrowed_outstanding },
+          ].map((tile) => (
+            <div key={tile.label} className="rounded-lg border bg-white p-4 shadow-sm">
+              <p className="text-xs uppercase text-muted-foreground">{tile.label}</p>
+              <p className="mt-1 text-lg font-bold text-foreground">{formatCurrency(Number(tile.value ?? 0))}</p>
+            </div>
+          ))}
+        </div>
+        {sections.map((s) => partyTable(s))}
+        <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm font-bold text-foreground">
+              Grand total — {Number(summary.party_count ?? 0)} parties
+            </span>
+            <span className={`text-lg font-bold ${netPosition < 0 ? 'text-destructive' : 'text-success'}`}>
+              Net position {formatCurrency(netPosition)}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (reportType === 'cash-flow') {
     const banks = (data.bank_accounts as Record<string, unknown>[]) ?? []
     const op = (data.operating as Record<string, number>) ?? {}
@@ -1372,4 +1662,6 @@ export const EXTRA_FINANCIAL_REPORT_IDS: readonly ReportType[] = [
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
   'entities-financial-summary',
+  'party-balances',
+  'entities-financial-statement',
 ]

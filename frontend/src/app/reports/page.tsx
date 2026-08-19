@@ -181,6 +181,8 @@ type ReportType =
   | 'income-statement'
   | 'customer-balances'
   | 'vendor-balances'
+  | 'party-balances'
+  | 'entities-financial-statement'
   | 'ar-aging'
   | 'ap-aging'
   | 'cash-flow'
@@ -320,6 +322,14 @@ const reports: ReportCard[] = [
     category: 'financial'
   },
   {
+    id: 'party-balances',
+    title: 'All Party Balances',
+    description:
+      'Every party the company holds a balance with — customers (A/R), suppliers (A/P), bank & cash registers, and loans lent or borrowed — with a signed net position',
+    icon: Users,
+    category: 'financial'
+  },
+  {
     id: 'cash-flow',
     title: 'Cash Flow Summary',
     description: 'Company bank accounts plus cash flow by every station, pond, and head office (clear site filter)',
@@ -369,6 +379,14 @@ const reports: ReportCard[] = [
     title: 'All Entities — Financial (combined)',
     description:
       'P&L and balance sheet together for every station, pond, and head office (use separate entity reports for detail)',
+    icon: FileText,
+    category: 'financial',
+  },
+  {
+    id: 'entities-financial-statement',
+    title: 'Consolidated Financial Statement',
+    description:
+      'Board-pack statement: every entity on one line with P&L, balance sheet, and trial balance columns side by side, grouped by fuel station, shop hub, pond, and head office',
     icon: FileText,
     category: 'financial',
   },
@@ -865,6 +883,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'income-statement',
   'customer-balances',
   'vendor-balances',
+  'party-balances',
   'ar-aging',
   'ap-aging',
   'cash-flow',
@@ -874,6 +893,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
   'entities-financial-summary',
+  'entities-financial-statement',
   'stations-financial-summary',
   'fuel-stations-pl-summary',
   'shop-hubs-pl-summary',
@@ -1003,6 +1023,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'loans-borrow-and-lent',
   'customer-balances',
   'vendor-balances',
+  'party-balances',
   'ar-aging',
   'ap-aging',
   'cash-flow',
@@ -1012,6 +1033,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'entities-balance-sheet-summary',
   'entities-trial-balance-summary',
   'entities-financial-summary',
+  'entities-financial-statement',
   'stations-financial-summary',
   'fuel-stations-pl-summary',
   'shop-hubs-pl-summary',

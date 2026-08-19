@@ -56,6 +56,20 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
       bn: 'ভেন্ডর অনুযায়ী খোলা বিল এজিং বাকেটে — স্টেশন বা পুকুর-ট্যাগ বিল লাইন ফিল্টার',
     },
   },
+  'entities-financial-statement': {
+    title: { en: 'Consolidated Financial Statement', bn: 'সমন্বিত আর্থিক বিবরণী' },
+    description: {
+      en: 'Board-pack statement: every entity on one line with P&L, balance sheet, and trial balance columns side by side, grouped by fuel station, shop hub, pond, and head office',
+      bn: 'বোর্ড-প্যাক বিবরণী: প্রতিটি এন্টিটি এক লাইনে — P&L, ব্যালেন্স শীট ও ট্রায়াল ব্যালেন্স পাশাপাশি, ফুয়েল স্টেশন, শপ হাব, পুকুর ও হেড অফিস অনুযায়ী গ্রুপ করা',
+    },
+  },
+  'party-balances': {
+    title: { en: 'All Party Balances', bn: 'সকল পক্ষের ব্যালেন্স' },
+    description: {
+      en: 'Every party the company holds a balance with — customers (A/R), suppliers (A/P), bank & cash registers, and loans lent or borrowed — with a signed net position',
+      bn: 'কোম্পানির সাথে ব্যালেন্স আছে এমন প্রতিটি পক্ষ — গ্রাহক (A/R), সরবরাহকারী (A/P), ব্যাংক ও নগদ রেজিস্টার, এবং দেওয়া বা নেওয়া ঋণ — নিট অবস্থানসহ',
+    },
+  },
   'cash-flow': {
     title: { en: 'Cash Flow Summary', bn: 'নগদ প্রবাহ সারাংশ' },
     description: {

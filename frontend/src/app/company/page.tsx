@@ -102,6 +102,7 @@ export default function CompanyPage() {
   const [aquacultureEnabled, setAquacultureEnabled] = useState(false)
   const [aquaculturePermanent, setAquaculturePermanent] = useState(false)
   const [capitalizeConsumptionToBioasset, setCapitalizeConsumptionToBioasset] = useState(false)
+  const [internalTransferMarginPerKg, setInternalTransferMarginPerKg] = useState('')
   const [canEditAquacultureToggle, setCanEditAquacultureToggle] = useState(false)
   const [canEditAquacultureSettings, setCanEditAquacultureSettings] = useState(false)
 
@@ -125,6 +126,7 @@ export default function CompanyPage() {
         aquaculture_enabled?: boolean
         aquaculture_permanent?: boolean
         aquaculture_capitalize_pond_consumption_to_bioasset?: boolean
+        aquaculture_internal_transfer_margin_per_kg?: string
         can_edit_aquaculture_toggle?: boolean
         can_edit_aquaculture_settings?: boolean
       }
@@ -136,6 +138,11 @@ export default function CompanyPage() {
       setAquacultureEnabled(Boolean(ext.aquaculture_enabled))
       setAquaculturePermanent(Boolean(ext.aquaculture_permanent))
       setCapitalizeConsumptionToBioasset(Boolean(ext.aquaculture_capitalize_pond_consumption_to_bioasset))
+      setInternalTransferMarginPerKg(
+        ext.aquaculture_internal_transfer_margin_per_kg != null
+          ? String(Number(ext.aquaculture_internal_transfer_margin_per_kg))
+          : ''
+      )
       setCanEditAquacultureToggle(Boolean(ext.can_edit_aquaculture_toggle))
       setCanEditAquacultureSettings(Boolean(ext.can_edit_aquaculture_settings))
       setFormData({
@@ -230,6 +237,10 @@ export default function CompanyPage() {
       }
       if (aquacultureLicensed && canEditAquacultureSettings) {
         payload.aquaculture_capitalize_pond_consumption_to_bioasset = capitalizeConsumptionToBioasset
+        const margin = internalTransferMarginPerKg.trim()
+        if (margin !== '') {
+          payload.aquaculture_internal_transfer_margin_per_kg = margin
+        }
       }
 
       const { data } = await api.put<Record<string, unknown>>(`/companies/${companyId}/`, payload)
@@ -644,6 +655,29 @@ export default function CompanyPage() {
                               </p>
                             </div>
                           </label>
+                        ) : null}
+                        {aquacultureEnabled && canEditAquacultureSettings ? (
+                          <div className="mt-4 rounded-xl border border-primary/25 bg-accent/40 p-4">
+                            <label className="block font-medium text-foreground" htmlFor="aq-internal-margin">
+                              Inter-pond transfer margin (per kg)
+                            </label>
+                            <input
+                              id="aq-internal-margin"
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              value={internalTransferMarginPerKg}
+                              onChange={(e) => setInternalTransferMarginPerKg(e.target.value)}
+                              className="mt-2 w-40 rounded-lg border border-border px-3 py-2 text-right tabular-nums text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                            />
+                            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                              When fish move from one pond to another, the selling pond charges its cost per kg plus
+                              this margin — cost {'৳'}100/kg at a margin of 20 sells at {'৳'}120/kg — so the
+                              nursing pond earns the value it created. Applies to inter-pond transfers only: a genuine
+                              sale to an outside customer keeps the price that customer paid. Company profit excludes
+                              this margin until the fish are actually sold outside. Set 0 to move fish at cost.
+                            </p>
+                          </div>
                         ) : null}
                       </div>
                     </div>

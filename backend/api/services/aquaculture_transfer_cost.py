@@ -1480,7 +1480,11 @@ def _sync_transfer_batch_gl(
         qs = qs.filter(from_production_cycle_id=from_production_cycle_id)
     else:
         qs = qs.filter(from_production_cycle__isnull=True)
+    from api.services.aquaculture_internal_transfer_price import apply_internal_prices_to_transfer
+
     for tr in qs.order_by("transfer_date", "id"):
+        # Cost just moved, so the internal price (cost/kg + margin) has to move with it.
+        apply_internal_prices_to_transfer(company_id, tr)
         sync_aquaculture_fish_pond_transfer_gl(company_id, tr)
 
 

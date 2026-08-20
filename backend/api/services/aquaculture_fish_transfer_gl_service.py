@@ -130,7 +130,14 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
         as_of=transfer.transfer_date,
         lines=lines,
     )
-    postable = [(ln, amt) for ln, amt in line_amounts if amt > 0]
+    # A line priced above its own cost still posts when there is nothing in 1581 to relieve:
+    # the selling pond expensed its costs, so its P&L already carries them.
+    def _has_margin(ln) -> bool:
+        sale = _money_q(Decimal(str(getattr(ln, "sale_amount", None) or 0)))
+        cost = _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0)))
+        return sale > 0 and sale > cost
+
+    postable = [(ln, amt) for ln, amt in line_amounts if amt > 0 or _has_margin(ln)]
     if not postable:
         reason = "no_cost_amount"
         if total_req > 0 and total_gl <= 0:

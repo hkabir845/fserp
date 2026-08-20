@@ -38,6 +38,8 @@ interface SampleRow {
   production_cycle_id?: number | null
   production_cycle_name?: string
   sample_date: string
+  /** Clock time "HH:MM"; auto rows carry the entry time of the bill / transfer / sale. */
+  sample_time?: string | null
   fish_species?: string
   fish_species_other?: string
   fish_species_label?: string
@@ -51,6 +53,11 @@ interface SampleRow {
   biomass_gain_kg?: string | null
   notes: string
   source_fish_sale_id?: number | null
+  source_bill_line_id?: number | null
+  source_fish_pond_transfer_id?: number | null
+  source_fish_pond_transfer_line_id?: number | null
+  /** manual | fish_sale | bill_purchase | transfer_in | transfer_out */
+  source_kind?: string
   market_price_per_kg?: string | null
   market_value?: string | null
   book_bioasset_value?: string | null
@@ -126,6 +133,23 @@ function referenceAvgKgFromStock(stock: PositionRow): number | null {
 }
 
 /** total_kg / fish_count when both are valid and count > 0 */
+/** Badge for a row a fish movement created (who bought / who sold); null for a manual sample. */
+function autoSourceLabel(r: SampleRow, lang: AdviceLanguage): string | null {
+  switch (r.source_kind) {
+    case 'fish_sale':
+      return aquacultureT('fromHarvestSale', lang)
+    case 'bill_purchase':
+      return aquacultureT('fromFishPurchase', lang)
+    case 'transfer_in':
+      return aquacultureT('fromTransferIn', lang)
+    case 'transfer_out':
+      return aquacultureT('fromTransferOut', lang)
+    default:
+      // Rows saved before source_kind existed still carry the harvest-sale link.
+      return r.source_fish_sale_id != null ? aquacultureT('fromHarvestSale', lang) : null
+  }
+}
+
 function computeAvgWeightKg(fishCountStr: string, totalKgStr: string): number | null {
   const countStr = fishCountStr.trim()
   const wStr = totalKgStr.trim()
@@ -356,6 +380,7 @@ export default function AquacultureSamplingPage() {
     pond_id: '',
     production_cycle_id: '',
     sample_date: '',
+    sample_time: '',
     fish_species: 'tilapia',
     fish_species_other: '',
     estimated_fish_count: '',
@@ -615,6 +640,7 @@ export default function AquacultureSamplingPage() {
       pond_id: ponds[0] ? String(ponds[0].id) : '',
       production_cycle_id: '',
       sample_date: today,
+      sample_time: '',
       fish_species: 'tilapia',
       fish_species_other: '',
       estimated_fish_count: '',
@@ -631,6 +657,7 @@ export default function AquacultureSamplingPage() {
       pond_id: String(r.pond_id),
       production_cycle_id: r.production_cycle_id != null ? String(r.production_cycle_id) : '',
       sample_date: r.sample_date.slice(0, 10),
+      sample_time: r.sample_time || '',
       fish_species: r.fish_species || 'tilapia',
       fish_species_other: r.fish_species_other || '',
       estimated_fish_count: r.estimated_fish_count != null ? String(r.estimated_fish_count) : '',
@@ -659,6 +686,7 @@ export default function AquacultureSamplingPage() {
     const payload: Record<string, unknown> = {
       pond_id: parseInt(form.pond_id, 10),
       sample_date: form.sample_date,
+      sample_time: form.sample_time.trim() || null,
       fish_species: form.fish_species,
       notes: form.notes.trim(),
       estimated_fish_count: n,
@@ -853,13 +881,17 @@ export default function AquacultureSamplingPage() {
                 const species = r.fish_species_label || r.fish_species || ''
                 const cycle = r.production_cycle_name?.trim()
                 const notes = (r.notes || '').trim()
+                const sourceLabel = autoSourceLabel(r, lang)
                 return (
                   <tr key={r.id} className="hover:bg-muted/40">
                     <td className={tdCell}>
                       <div className="text-xs font-medium text-foreground">{formatDateOnly(r.sample_date)}</div>
-                      {r.source_fish_sale_id != null ? (
+                      {r.sample_time ? (
+                        <div className="text-[11px] tabular-nums text-muted-foreground">{r.sample_time}</div>
+                      ) : null}
+                      {sourceLabel ? (
                         <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {aquacultureT('fromHarvestSale', lang)}
+                          {sourceLabel}
                         </span>
                       ) : null}
                     </td>
@@ -1054,6 +1086,10 @@ export default function AquacultureSamplingPage() {
               <p className="mt-2 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-xs leading-relaxed text-teal-950">
                 {aquacultureT('harvestSaleEditNote', lang)}
               </p>
+            ) : editing && autoSourceLabel(editing, lang) ? (
+              <p className="mt-2 rounded-lg border border-primary/25 bg-accent px-3 py-2 text-xs leading-relaxed text-teal-950">
+                {aquacultureT('autoSampleEditNote', lang)}
+              </p>
             ) : null}
 
             <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-xs text-muted-foreground">
@@ -1099,6 +1135,15 @@ export default function AquacultureSamplingPage() {
                   value={form.sample_date}
                   onChange={(isoYmd) => setForm((f) => ({ ...f, sample_date: isoYmd }))}
                   required
+                />
+              </label>
+              <label className="block text-sm font-medium text-foreground/85">
+                {aquacultureT('sampleTimeLabel', lang)}
+                <input
+                  type="time"
+                  className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                  value={form.sample_time}
+                  onChange={(e) => setForm((f) => ({ ...f, sample_time: e.target.value }))}
                 />
               </label>
               <label className="block text-sm font-medium text-foreground/85">

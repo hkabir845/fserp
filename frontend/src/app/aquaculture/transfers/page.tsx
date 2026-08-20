@@ -84,6 +84,11 @@ interface TransferLine {
   cost_amount: string
   fry_cost_amount?: string
   other_expense_amount?: string
+  /** Internal sale price charged to the buying pond: cost per kg + the company margin. */
+  sale_rate_per_kg?: string | null
+  sale_amount?: string
+  margin_amount?: string
+  price_basis?: string
 }
 
 interface TransferRow {
@@ -101,6 +106,19 @@ interface TransferRow {
   fry_cost_total?: string
   other_expense_total?: string
   cost_total?: string
+  sale_total?: string
+  margin_total?: string
+  internal_margin_per_kg?: string
+  /** Evidence of the internal sale: one invoice (seller) and one bill (buyer) per priced line. */
+  internal_documents?: {
+    line_id: number
+    to_pond_id: number
+    invoice_id: number | null
+    invoice_number: string | null
+    bill_id: number | null
+    bill_number: string | null
+    amount: string
+  }[]
   gl_posted?: boolean
   journal_entry_number?: string | null
   gl_total_amount?: string | null
@@ -1160,6 +1178,8 @@ export default function AquacultureFishTransfersPage() {
                   <th className="px-4 py-3 text-right">{aquacultureT('transferFryCost', lang)}</th>
                   <th className="px-4 py-3 text-right">{aquacultureT('transferOtherExpense', lang)}</th>
                   <th className="px-4 py-3 text-right">{aquacultureT('costMoved', lang)}</th>
+                  <th className="px-4 py-3 text-right">{aquacultureT('soldForCol', lang)}</th>
+                  <th className="px-4 py-3 text-right">{aquacultureT('marginEarnedCol', lang)}</th>
                   <th className="px-4 py-3">GL 1581</th>
                   <th className="px-4 py-3 text-right">{uiT("actions")}</th>
                 </tr>
@@ -1186,6 +1206,12 @@ export default function AquacultureFishTransfersPage() {
                     const otherExpense =
                       Number.parseFloat(t.other_expense_total ?? '') ||
                       t.lines.reduce((a, l) => a + (Number.parseFloat(l.other_expense_amount ?? '') || 0), 0)
+                    const soldFor =
+                      Number.parseFloat(t.sale_total ?? '') ||
+                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.sale_amount ?? '') || 0), 0)
+                    const margin =
+                      Number.parseFloat(t.margin_total ?? '') || (soldFor > 0 ? soldFor - cost : 0)
+                    const priceBasis = t.lines.find((l) => (l.price_basis || '').trim())?.price_basis || ''
                     const dest = t.lines
                       .map((l) => {
                         const h = l.fish_count != null ? `, ${formatNumber(Number(l.fish_count), 0)} head` : ''
@@ -1228,7 +1254,45 @@ export default function AquacultureFishTransfersPage() {
                             '—'
                           )}
                         </td>
+                        <td className="px-4 py-3 text-right tabular-nums" title={priceBasis || undefined}>
+                          {soldFor > 0 ? `${sym}${formatNumber(soldFor, 2)}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium">
+                          {soldFor > 0 ? (
+                            <span className={margin > 0 ? 'text-primary' : undefined}>
+                              {`${sym}${formatNumber(margin, 2)}`}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {(t.internal_documents ?? []).length > 0 ? (
+                            <div className="mb-1 space-y-0.5">
+                              {(t.internal_documents ?? []).map((d) => (
+                                <div key={d.line_id} className="flex flex-wrap gap-x-1.5">
+                                  {d.invoice_number ? (
+                                    <Link
+                                      href={`/invoices?internal_trade=1&highlight=${d.invoice_id}`}
+                                      className="text-primary hover:underline"
+                                      title={aquacultureT('internalSaleDocsHint', lang)}
+                                    >
+                                      {d.invoice_number}
+                                    </Link>
+                                  ) : null}
+                                  {d.bill_number ? (
+                                    <Link
+                                      href={`/bills?internal_trade=1&highlight=${d.bill_id}`}
+                                      className="text-primary hover:underline"
+                                      title={aquacultureT('internalSaleDocsHint', lang)}
+                                    >
+                                      {d.bill_number}
+                                    </Link>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                           {t.gl_posted ? (
                             <span className="text-primary" title={t.journal_entry_number || undefined}>
                               Posted

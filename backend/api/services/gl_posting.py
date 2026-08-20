@@ -1770,8 +1770,22 @@ def post_aquaculture_fish_pond_transfer_journal(
     """
     Idempotent entry_number AUTO-AQ-FISH-XFER-{transfer_id}.
 
-    Re-tags biological inventory (1581) from source pond to each destination pond:
-      per line: Dr 1581 (to pond, fish_transfer_in) / Cr 1581 (from pond, fish_transfer_out).
+    Moves fish from the source pond to each destination pond. At zero inter-pond margin this is a
+    pure re-tag of biological inventory (1581):
+
+      Dr 1581 (to pond, fish_transfer_in) / Cr 1581 (from pond, fish_transfer_out) at cost.
+
+    When the line carries an internal sale price above its cost, the source pond sells rather than
+    hands over, and the same movement books that sale:
+
+      Dr 1581 (to pond)   sale price      the buying pond capitalizes what it paid
+      Cr 4245 (from pond) sale price      internal revenue
+      Dr 5245 (from pond) cost            internal cost of sales
+      Cr 1581 (from pond) cost            fish leave at book cost
+
+    so the selling pond keeps the margin and the buying pond's inventory carries it. Consolidation
+    removes both sides through api.services.internal_trade_elimination (4245/5245 -> 1585), which
+    is why nothing settles in cash here.
     """
     entry_number = f"AUTO-AQ-FISH-XFER-{transfer_id}"
     if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
@@ -1785,11 +1799,31 @@ def post_aquaculture_fish_pond_transfer_journal(
         )
         return None
 
+    internal_revenue = ChartOfAccount.objects.filter(
+        company_id=company_id, account_code="4245", is_active=True
+    ).first()
+    internal_cogs = ChartOfAccount.objects.filter(
+        company_id=company_id, account_code="5245", is_active=True
+    ).first()
+    can_sell = bool(internal_revenue and internal_cogs)
+
     lines: list[tuple] = []
     aq_costing: list[Optional[dict]] = []
+    sold_total = Decimal("0")
     for ln, amt in line_posts:
         amount = amt.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        if amount <= 0:
+        sale = Decimal(str(getattr(ln, "sale_amount", None) or 0)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        cost_of_line = Decimal(str(getattr(ln, "cost_amount", None) or 0)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        # A sale exists only when the price beats the line's own cost — priced at cost (zero
+        # margin) this stays the plain at-cost move it has always been. The comparison is against
+        # the line cost, not the GL amount: a pond whose costs were expensed has nothing in 1581
+        # to relieve but still sells at a margin.
+        is_internal_sale = can_sell and sale > 0 and sale > cost_of_line
+        if amount <= 0 and not is_internal_sale:
             continue
         to_pond_id = getattr(ln, "to_pond_id", None)
         if not to_pond_id:
@@ -1814,6 +1848,28 @@ def post_aquaculture_fish_pond_transfer_journal(
             "production_cycle_id": from_production_cycle_id,
             "cost_bucket": "fish_transfer_out",
         }
+        if is_internal_sale and amount <= 0:
+            # The selling pond expensed its costs rather than capitalizing them, so there is
+            # nothing in 1581 to relieve — its P&L already carries the cost.
+            lines.append((bio, sale, Decimal("0"), line_memo))
+            aq_costing.append(dr_meta)
+            lines.append((internal_revenue, Decimal("0"), sale, line_memo))
+            aq_costing.append(cr_meta)
+            sold_total += sale
+            continue
+
+        if is_internal_sale:
+            lines.append((bio, sale, Decimal("0"), line_memo))
+            aq_costing.append(dr_meta)
+            lines.append((internal_revenue, Decimal("0"), sale, line_memo))
+            aq_costing.append(cr_meta)
+            lines.append((internal_cogs, amount, Decimal("0"), line_memo))
+            aq_costing.append(cr_meta)
+            lines.append((bio, Decimal("0"), amount, line_memo))
+            aq_costing.append(cr_meta)
+            sold_total += sale
+            continue
+
         lines.append((bio, amount, Decimal("0"), line_memo))
         aq_costing.append(dr_meta)
         lines.append((bio, Decimal("0"), amount, line_memo))
@@ -1825,7 +1881,13 @@ def post_aquaculture_fish_pond_transfer_journal(
     cap_note = ""
     if gl_capped and total_requested is not None and total_requested > 0:
         cap_note = " (capped at source 1581 balance)"
-    desc = f"Aquaculture — inter-pond fish biological cost ({from_pond_label}){cap_note}"[:500]
+    if sold_total > 0:
+        desc = (
+            f"Aquaculture — inter-pond fish sale ({from_pond_label}), "
+            f"{sold_total} at internal price{cap_note}"
+        )[:500]
+    else:
+        desc = f"Aquaculture — inter-pond fish biological cost ({from_pond_label}){cap_note}"[:500]
     return _create_posted_entry(
         company_id,
         entry_date,
@@ -2859,6 +2921,11 @@ def bill_eligible_for_posting(bill: Optional[Bill]) -> bool:
     """
     if not bill:
         return False
+    if getattr(bill, "internal_fish_transfer_line_id", None):
+        # Paper for an inter-pond transfer. The transfer's own journal already carries the
+        # economics pond by pond, and the fish were moved by the transfer, not received here —
+        # posting this bill would double both. See aquaculture_internal_trade_documents.
+        return False
     total = bill.total if bill.total is not None else Decimal("0")
     if total <= 0:
         return False
@@ -3300,6 +3367,10 @@ def sync_invoice_gl(
 ) -> None:
     """Create posted journals for invoice lifecycle (sale + COGS + optional AR receipt)."""
     inv.refresh_from_db()
+    if getattr(inv, "internal_fish_transfer_line_id", None):
+        # Paper for an inter-pond transfer — the transfer journal already booked the sale
+        # (4245/5245/1581). See aquaculture_internal_trade_documents.
+        return
     if inv.status in ("draft", "void") or (inv.total or Decimal("0")) <= 0:
         return
     ok = post_invoice_sale_journal(

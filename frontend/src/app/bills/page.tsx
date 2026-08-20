@@ -95,6 +95,11 @@ import {
 import { BillLineEntityTagging } from '@/components/bills/BillLineEntityTagging'
 import { BillPondSupplementFields } from '@/components/bills/BillPondSupplementFields'
 import { BillLineTypePicker, type BillLineKind } from '@/components/bills/BillLineItemSelect'
+import {
+  BillLineItemCatalogPanel,
+  billLineItemCatalogPayload,
+  type BillLineItemCatalogEdits,
+} from '@/components/bills/BillLineItemCatalogPanel'
 import { COA_OFFICE_EXP, coaPickIdIfValid, suggestedBillLineExpenseAccountId, templateCoaOptionLabel } from '@/lib/coaDefaults'
 import { syncLineTouchedForAccount } from '@/lib/coaSuggestForm'
 import { ItemCogsOnSaleHint } from '@/components/items/ItemCogsOnSaleHint'
@@ -137,6 +142,11 @@ interface BillLineItem {
   fish_pcs_per_kg_override?: number | string
   /** UI only: raw Cost / head entry — line Amount derives from it × heads. */
   fish_cost_per_head_input?: number | string
+  /**
+   * Item-catalog edits made on this line ("Edit item" panel). Saving the bill writes the
+   * changed fields onto the Item; unchanged fields are never sent.
+   */
+  item_catalog?: BillLineItemCatalogEdits
   /** UI only: owner typed Amount by hand on a standard line — don't overwrite it with Qty × Rate. */
   amount_manual?: boolean
   /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
@@ -341,6 +351,8 @@ interface Item {
   name: string
   description?: string
   cost: number
+  /** Sale price (catalog). Editable from a bill line's "Edit item" panel. */
+  unit_price?: number | string
   unit: string
   item_type: string  // 'inventory', 'non_inventory', 'service'
   pos_category?: string  // 'fuel', 'general', 'fish' (Fish Type), etc.
@@ -932,9 +944,11 @@ function serializeBillLineForApi(
     const n = Number(r)
     return Number.isFinite(n) ? n : null
   })()
+  const itemCatalog = billLineItemCatalogPayload(item, normalized.item_catalog)
   return {
     description: normalized.description || null,
     item_id: normalized.item_id || null,
+    ...(itemCatalog ? { item_catalog: itemCatalog } : {}),
     expense_account_id: expenseAccountId ?? null,
     tank_id: normalized.tank_id || null,
     quantity: normalized.quantity,
@@ -2043,6 +2057,11 @@ export default function BillsPage() {
       }
 
       newLines[index] = { ...newLines[index], [field]: value }
+
+      if (field === 'item_id') {
+        // Catalog edits belong to the item that was selected — drop them when the item changes.
+        newLines[index].item_catalog = undefined
+      }
 
       if (field === 'item_id' && value) {
         newLines[index] = applyItemSelectionToBillLine(
@@ -3636,6 +3655,13 @@ export default function BillsPage() {
                               </button>
                             </div>
                           </div>
+                          <BillLineItemCatalogPanel
+                            index={index}
+                            itemId={line.item_id}
+                            item={lineItem}
+                            edits={line.item_catalog}
+                            onFieldChange={handleLineChange}
+                          />
                           {showFishDims ? (
                             <FishBillLineDimensionRow
                               line={line}
@@ -4147,6 +4173,13 @@ export default function BillsPage() {
                               </button>
                             </div>
                           </div>
+                          <BillLineItemCatalogPanel
+                            index={index}
+                            itemId={line.item_id}
+                            item={lineItem}
+                            edits={line.item_catalog}
+                            onFieldChange={handleLineChange}
+                          />
                           {showFishDims ? (
                             <FishBillLineDimensionRow
                               line={line}

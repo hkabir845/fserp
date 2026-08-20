@@ -117,6 +117,17 @@ class Company(models.Model):
             "accumulates on the bio-asset GL account and is relieved on harvest or inter-pond transfer."
         ),
     )
+    aquaculture_internal_transfer_margin_per_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        default=Decimal("20"),
+        help_text=(
+            "Margin per kg the selling pond earns when fish move to another pond: the internal sale "
+            "price is that line's cost per kg plus this (cost 100/kg with margin 20 sells at 120/kg). "
+            "Applies to inter-pond transfers only — a genuine sale to an outside customer keeps the "
+            "price that customer paid. Set to 0 to move fish at cost, as before."
+        ),
+    )
     organization = models.ForeignKey(
         Organization,
         on_delete=models.PROTECT,
@@ -1420,6 +1431,23 @@ class InventoryAdjustmentLine(models.Model):
 # ---------------------------------------------------------------------------
 # Sales: Invoices, Bills, Payments
 # ---------------------------------------------------------------------------
+class ExternalTradeDocumentManager(models.Manager):
+    """
+    Default manager for Invoice and Bill: hides inter-pond trade paperwork.
+
+    A pond selling fish to another pond raises an invoice and a bill as evidence, but the
+    movement is booked once by the transfer's own journal. If those documents were visible to
+    the ordinary managers, every report that sums invoices or bills — sales, purchases, cash
+    flow, party balances, station P&L — would count the internal trade as real business.
+    Excluding them here makes correctness the default for code that has not been written yet;
+    use ``all_objects`` in the few places that must see them (the document service, and the
+    list/detail endpoints that show the evidence).
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(internal_fish_transfer_line__isnull=True)
+
+
 class Invoice(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="invoices")
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="invoices")
@@ -1446,12 +1474,27 @@ class Invoice(models.Model):
     tax_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     payment_method = models.CharField(max_length=32, blank=True, default="")
+    internal_fish_transfer_line = models.OneToOneField(
+        "AquacultureFishPondTransferLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="internal_sale_invoice",
+        help_text=(
+            "When set, this document is the paper record of one inter-pond fish transfer line (pond selling to pond). Its economics are carried by the transfer's own journal (1581/4245/5245), so it never posts GL, never receives stock, and never ages in A/R or A/P — it is evidence of the internal sale, settled through the inter-pond current account rather than in cash."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ExternalTradeDocumentManager()
+    all_objects = models.Manager()
 
     class Meta:
         db_table = "invoice"
         unique_together = [["company", "invoice_number"]]
+        # Related-object lookups and cascade deletes must see every row, internal included.
+        base_manager_name = "all_objects"
 
 
 class InvoiceLine(models.Model):
@@ -1546,12 +1589,31 @@ class Bill(models.Model):
         default=False,
         help_text="True once this bill's total was added to vendor.current_balance (A/P subledger).",
     )
+    internal_fish_transfer_line = models.OneToOneField(
+        "AquacultureFishPondTransferLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="internal_purchase_bill",
+        help_text=(
+            "When set, this document is the paper record of one inter-pond fish transfer line "
+            "(pond buying from pond). Its economics are carried by the transfer's own journal "
+            "(1581/4245/5245), so it never posts GL, never receives stock, and never ages in "
+            "A/R or A/P — it is evidence of the internal purchase, settled through the inter-pond "
+            "current account rather than in cash."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ExternalTradeDocumentManager()
+    all_objects = models.Manager()
 
     class Meta:
         db_table = "bill"
         unique_together = [["company", "bill_number"]]
+        # Related-object lookups and cascade deletes must see every row, internal included.
+        base_manager_name = "all_objects"
 
 
 class BillLine(models.Model):
@@ -3065,6 +3127,29 @@ class AquacultureFishPondTransferLine(models.Model):
         default=0,
         help_text="BDT (or company currency) biological cost moved with this line; drives inter-pond P&L allocation.",
     )
+    sale_rate_per_kg = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text=(
+            "Internal sale price per kg charged to the buying pond (cost per kg + the company's "
+            "inter-pond margin, unless entered by hand)."
+        ),
+    )
+    sale_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text=(
+            "sale_rate_per_kg x weight_kg — what the buying pond capitalizes. The difference from "
+            "cost_amount is the selling pond's margin, eliminated from company profit on consolidation."
+        ),
+    )
+    price_basis = models.TextField(
+        blank=True,
+        help_text="How this line was priced (cost per kg, margin applied, or manual override).",
+    )
 
     class Meta:
         db_table = "aquaculture_fish_pond_transfer_line"
@@ -3212,6 +3297,38 @@ class AquacultureBiomassSample(models.Model):
         on_delete=models.CASCADE,
         related_name="biomass_sample_from_sale",
         help_text="When set, this row was auto-created from that harvest sale (head count + kg).",
+    )
+    source_bill_line = models.OneToOneField(
+        "BillLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="biomass_sample_from_bill_line",
+        help_text="When set, auto-created from that fish/fry purchase line on a posted vendor bill (buying pond).",
+    )
+    source_fish_pond_transfer = models.OneToOneField(
+        "AquacultureFishPondTransfer",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="biomass_sample_out",
+        help_text="When set, auto-created for the source pond of that pond-to-pond transfer (selling pond).",
+    )
+    source_fish_pond_transfer_line = models.OneToOneField(
+        "AquacultureFishPondTransferLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="biomass_sample_in",
+        help_text="When set, auto-created for the destination pond of that transfer line (buying pond).",
+    )
+    sample_time = models.TimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Clock time for this sampling. Auto rows carry the entry time of the bill / transfer / "
+            "sale they came from, so several trades on one date stay in order."
+        ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.utils import timezone
+
 from api.models import AquacultureBiomassSample, AquacultureFishSale
 from api.utils.decimal_fields import fit_decimal
 from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
@@ -11,6 +13,17 @@ from api.services.aquaculture_biomass_sample_valuation_service import apply_biom
 from api.services.tenant_reporting_categories import resolve_aquaculture_income_to_builtin
 
 logger = logging.getLogger(__name__)
+
+
+def _entry_time(sale: AquacultureFishSale):
+    """Wall-clock entry time of the sale, so same-day rows stay in order on the sampling page."""
+    created = getattr(sale, "created_at", None)
+    if not created:
+        return None
+    try:
+        return timezone.localtime(created).time()
+    except (ValueError, TypeError):
+        return created.time()
 
 
 def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
@@ -61,6 +74,7 @@ def sync_biomass_sample_from_fish_sale(sale: AquacultureFishSale) -> None:
                 "pond_id": sale.pond_id,
                 "production_cycle": sale.production_cycle,
                 "sample_date": sale.sale_date,
+                "sample_time": _entry_time(sale),
                 "estimated_fish_count": sale.fish_count,
                 "estimated_total_weight_kg": fit_decimal(sale.weight_kg, max_digits=14, decimal_places=4),
                 "avg_weight_kg": avg_kg,

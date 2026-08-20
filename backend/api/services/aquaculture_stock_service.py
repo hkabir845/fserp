@@ -247,7 +247,11 @@ def compute_fish_stock_position_rows(
 
     latest_sample: dict[int, AquacultureBiomassSample] = {}
     for p in ponds:
-        qs = AquacultureBiomassSample.objects.filter(company_id=cid, pond_id=p.id)
+        # Transfer-out rows measure fish that left the pond; they must not stand in for the
+        # stock still held there (see _live_fingerling_heads_basis).
+        qs = AquacultureBiomassSample.objects.filter(
+            company_id=cid, pond_id=p.id, source_fish_pond_transfer__isnull=True
+        )
         if cy_id is not None:
             qs = qs.filter(production_cycle_id=cy_id)
         if species_filter_code is not None:

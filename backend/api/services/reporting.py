@@ -108,13 +108,22 @@ def _pl_amount_from_movement(coa: ChartOfAccount, debit: Decimal, credit: Decima
 
 
 def _period_pl_totals_from_line_qs(
-    company_id: int, start: date, end: date, line_qs
+    company_id: int, start: date, end: date, line_qs, *, eliminate_internal: bool = False
 ) -> dict[str, Decimal]:
-    """Income, COGS, and expense totals for a journal-line slice (uses _pl_bucket for classification)."""
+    """
+    Income, COGS, and expense totals for a journal-line slice (uses _pl_bucket for classification).
+
+    ``eliminate_internal`` drops inter-pond trade (4245/5245) the way the income statement does:
+    one pond selling to another is not a sale by the company, so consolidated totals must exclude
+    it or company profit reads high by the unrealized margin. Pond- and site-scoped callers pass
+    False, because from that pond's own side the sale really happened.
+    """
     ti = tcogs = te = Decimal("0")
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _pl_bucket(coa)
         if bucket is None:
+            continue
+        if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
             continue
         amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
         if bucket == "income":
@@ -1120,7 +1129,14 @@ def _period_income_statement_totals(
             company_id, start, end, _je_lines_pond(company_id, pond_id)
         )
     return _period_pl_totals_from_line_qs(
-        company_id, start, end, _je_lines_pl_scope(company_id, station_id)
+        company_id,
+        start,
+        end,
+        _je_lines_pl_scope(company_id, station_id),
+        # Pure company scope consolidates the ponds, so inter-pond trade is eliminated here for
+        # every report that funnels through this helper — cash flow, entity summaries, station
+        # roll-ups and analytics — not just the income statement.
+        eliminate_internal=station_id is None,
     )
 
 
@@ -2173,6 +2189,8 @@ def report_income_detail(
             pk=pond_id, company_id=company_id, is_active=True
         ).only("name").first()
         pond_name = (pond.name or "").strip() if pond else None
+    eliminate_internal = pond_id is None and station_id is None and not unscoped_dims
+    internal_income_rows: list[dict[str, Any]] = []
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if normalize_chart_account_type(coa.account_type) != "income":
             continue
@@ -2182,6 +2200,17 @@ def report_income_detail(
         display_name = coa.account_name
         if not coa.is_active:
             display_name = f"{display_name} (inactive)"
+        if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
+            # Inter-pond trade is not company income; shown separately, as on the income statement.
+            internal_income_rows.append(
+                {
+                    "account_id": coa.id,
+                    "account_code": coa.account_code,
+                    "account_name": display_name,
+                    "balance": _f(amt),
+                }
+            )
+            continue
         income_rows.append(
             {
                 "account_id": coa.id,
@@ -2203,6 +2232,14 @@ def report_income_detail(
         "report_id": "income-detail",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "income": {"accounts": income_rows, "total": _f(ti)},
+        "internal_trade_income": {
+            "accounts": internal_income_rows,
+            "total": _f(sum((_d(r["balance"]) for r in internal_income_rows), Decimal("0"))),
+            "note": (
+                "Inter-pond fish trade — one pond selling to another is not company income, so it "
+                "is excluded from the total above."
+            ),
+        },
         "accounting_note": note,
     }
     if pond_id is not None:
@@ -6770,7 +6807,12 @@ def report_financial_analytics(
             }
         )
 
-    active_customers = Customer.objects.filter(company_id=company_id, is_active=True).count()
+    # Internal parties stand for the company's own ponds, not customers it sells to.
+    active_customers = (
+        Customer.objects.filter(company_id=company_id, is_active=True)
+        .exclude(is_internal=True)
+        .count()
+    )
     active_vendors = Vendor.objects.filter(company_id=company_id, is_active=True).count()
 
     out_fa: dict[str, Any] = {

@@ -71,6 +71,10 @@ def _live_biomass_sample_queryset(
     pond_ids = _same_site_pond_ids(company_id, requested_pond_id) if same_site_scope else [requested_pond_id]
     qs = AquacultureBiomassSample.objects.filter(
         company_id=company_id, pond_id__in=pond_ids, fish_species=sp_code
+    ).filter(
+        # A transfer-out row measures fish that LEFT this pond, so it is not a reference for
+        # what is still in it. It stays visible on the sampling page.
+        source_fish_pond_transfer__isnull=True
     )
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)

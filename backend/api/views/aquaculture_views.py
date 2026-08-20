@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
@@ -168,6 +168,18 @@ from api.services.aquaculture_pond_internal_vendor import (
     provision_missing_pond_internal_vendors,
     provision_pond_internal_parties,
     sync_auto_internal_vendor_from_pond,
+)
+from api.services.aquaculture_auto_biomass_sample import (
+    sync_biomass_samples_from_fish_pond_transfer,
+)
+from api.services.aquaculture_internal_trade_documents import (
+    internal_trade_documents_for_transfer,
+    sync_internal_trade_documents,
+)
+from api.services.aquaculture_internal_transfer_price import (
+    apply_internal_prices_to_transfer,
+    internal_transfer_margin_per_kg,
+    transfer_margin_total,
 )
 from api.services.aquaculture_sale_biomass_sync import sync_biomass_sample_from_fish_sale
 from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
@@ -3450,6 +3462,32 @@ def aquaculture_sale_finalize(request, sale_id: int):
     return JsonResponse({"sale": _sale_to_json(sale), "invoice": inv_dict})
 
 
+def _parse_sample_time(raw):
+    """Optional clock time on a sampling row: "HH:MM" or "HH:MM:SS"; blank clears it."""
+    if raw is None or str(raw).strip() == "":
+        return None, None
+    text = str(raw).strip()
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).time(), None
+        except ValueError:
+            continue
+    return None, "sample_time must be HH:MM (24-hour)."
+
+
+def _biomass_sample_source_kind(b: AquacultureBiomassSample) -> str:
+    """Which document produced this row: manual entry, or one side of a fish movement."""
+    if getattr(b, "source_fish_sale_id", None):
+        return "fish_sale"
+    if getattr(b, "source_bill_line_id", None):
+        return "bill_purchase"
+    if getattr(b, "source_fish_pond_transfer_line_id", None):
+        return "transfer_in"
+    if getattr(b, "source_fish_pond_transfer_id", None):
+        return "transfer_out"
+    return "manual"
+
+
 def _sample_to_json(b: AquacultureBiomassSample) -> dict:
     cyc_id = getattr(b, "production_cycle_id", None)
     cname = ""
@@ -3466,6 +3504,7 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
         "production_cycle_id": cyc_id,
         "production_cycle_name": cname,
         "sample_date": b.sample_date.isoformat(),
+        "sample_time": b.sample_time.strftime("%H:%M") if b.sample_time else None,
         "estimated_fish_count": b.estimated_fish_count,
         "estimated_total_weight_kg": _serialize_quantity(b.estimated_total_weight_kg) if b.estimated_total_weight_kg is not None else None,
         "avg_weight_kg": str(b.avg_weight_kg) if b.avg_weight_kg is not None else None,
@@ -3483,6 +3522,10 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
         "fish_species_label": fish_species_display_label(sp, spo),
         "notes": b.notes or "",
         "source_fish_sale_id": getattr(b, "source_fish_sale_id", None),
+        "source_bill_line_id": getattr(b, "source_bill_line_id", None),
+        "source_fish_pond_transfer_id": getattr(b, "source_fish_pond_transfer_id", None),
+        "source_fish_pond_transfer_line_id": getattr(b, "source_fish_pond_transfer_line_id", None),
+        "source_kind": _biomass_sample_source_kind(b),
         "market_price_per_kg": str(b.market_price_per_kg) if b.market_price_per_kg is not None else None,
         "market_value": str(b.market_value) if b.market_value is not None else None,
         "book_bioasset_value": str(b.book_bioasset_value) if b.book_bioasset_value is not None else None,
@@ -3545,7 +3588,7 @@ def aquaculture_samples_list_or_create(request):
             qs = filter_live_pond_queryset(qs, cid, p_int, "sample_date")
         else:
             qs = filter_live_biomass_samples_queryset(qs, cid)
-        qs = qs.order_by("-sample_date", "-id")[:200]
+        qs = qs.order_by("-sample_date", F("sample_time").desc(nulls_last=True), "-id")[:200]
         return JsonResponse([_sample_to_json(b) for b in qs], safe=False)
 
     body, e = parse_json_body(request)
@@ -3564,6 +3607,9 @@ def aquaculture_samples_list_or_create(request):
         return lock_err
     if not sd:
         return JsonResponse({"detail": "sample_date is required (YYYY-MM-DD)"}, status=400)
+    st, st_err = _parse_sample_time(body.get("sample_time"))
+    if st_err:
+        return JsonResponse({"detail": st_err}, status=400)
     efc = body.get("estimated_fish_count")
     efc_i = None
     if efc is not None and str(efc).strip() != "":
@@ -3625,6 +3671,7 @@ def aquaculture_samples_list_or_create(request):
         pond=pond,
         production_cycle=cycle_obj,
         sample_date=sd,
+        sample_time=st,
         estimated_fish_count=efc_i,
         estimated_total_weight_kg=etw_d,
         avg_weight_kg=aw_d,
@@ -3682,6 +3729,11 @@ def aquaculture_sample_detail(request, sample_id: int):
             if not sd:
                 return JsonResponse({"detail": "Invalid sample_date"}, status=400)
             b.sample_date = sd
+        if "sample_time" in body:
+            st, st_err = _parse_sample_time(body.get("sample_time"))
+            if st_err:
+                return JsonResponse({"detail": st_err}, status=400)
+            b.sample_time = st
         if "estimated_fish_count" in body:
             fc = body.get("estimated_fish_count")
             if fc is None or str(fc).strip() == "":
@@ -4965,6 +5017,12 @@ def _fish_transfer_line_to_json(
         "cost_amount": str(cost),
         "fry_cost_amount": str(fry_cost),
         "other_expense_amount": str(other_expense),
+        "sale_rate_per_kg": (
+            str(line.sale_rate_per_kg) if line.sale_rate_per_kg is not None else None
+        ),
+        "sale_amount": str(_money_q(line.sale_amount or Decimal("0"))),
+        "margin_amount": str(_money_q((line.sale_amount or Decimal("0")) - cost)),
+        "price_basis": line.price_basis or "",
     }
 
 
@@ -4985,6 +5043,7 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
     fry_total = _money_q(sum(Decimal(ln["fry_cost_amount"]) for ln in lines))
     other_total = _money_q(sum(Decimal(ln["other_expense_amount"]) for ln in lines))
     cost_total = _money_q(sum(Decimal(ln["cost_amount"]) for ln in lines))
+    sale_total = _money_q(sum(Decimal(ln["sale_amount"]) for ln in lines))
     gl = transfer_gl_status(t.company_id, t.id)
     return {
         "id": t.id,
@@ -5002,6 +5061,10 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
         "fry_cost_total": str(fry_total),
         "other_expense_total": str(other_total),
         "cost_total": str(cost_total),
+        "sale_total": str(sale_total),
+        "margin_total": str(transfer_margin_total(t)),
+        "internal_documents": internal_trade_documents_for_transfer(t),
+        "internal_margin_per_kg": str(internal_transfer_margin_per_kg(t.company_id)),
         "created_at": t.created_at.isoformat() if t.created_at else "",
         **gl,
     }
@@ -5357,7 +5420,13 @@ def aquaculture_fish_pond_transfers(request):
             from_production_cycle_id=xfer.from_production_cycle_id,
             sync_gl=True,
         )
+        # Price the move before it posts: the source pond sells at cost/kg + the company margin.
+        apply_internal_prices_to_transfer(cid, xfer)
         gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, xfer)
+        # Evidence of the internal sale: an invoice for the seller, a bill for each buyer.
+        doc_result = sync_internal_trade_documents(cid, xfer)
+        # Selling pond and each buying pond get a dated, timed sampling row from this move.
+        sync_biomass_samples_from_fish_pond_transfer(cid, xfer)
         nursing_warehouse_transfers = maybe_transfer_nursing_warehouse_when_empty(
             company_id=cid,
             xfer=xfer,
@@ -5373,6 +5442,7 @@ def aquaculture_fish_pond_transfers(request):
         "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
         "transfer": _fish_transfer_to_json(xfer),
         "gl_sync": gl_result,
+        "internal_trade_documents": doc_result,
     }
     if nursing_warehouse_transfers:
         payload["nursing_warehouse_transfers"] = nursing_warehouse_transfers
@@ -5433,7 +5503,13 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
                 from_production_cycle_id=t.from_production_cycle_id,
                 sync_gl=True,
             )
+            # Price the move before it posts: the source pond sells at cost/kg + the company margin.
+            apply_internal_prices_to_transfer(cid, t)
             gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, t)
+            # Evidence of the internal sale: an invoice for the seller, a bill for each buyer.
+            doc_result = sync_internal_trade_documents(cid, t)
+            # Selling pond and each buying pond get a dated, timed sampling row from this move.
+            sync_biomass_samples_from_fish_pond_transfer(cid, t)
             nursing_warehouse_transfers = maybe_transfer_nursing_warehouse_when_empty(
                 company_id=cid,
                 xfer=t,
@@ -5448,6 +5524,7 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
             "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
             "transfer": _fish_transfer_to_json(t),
             "gl_sync": gl_result,
+            "internal_trade_documents": doc_result,
         }
         if nursing_warehouse_transfers:
             put_payload["nursing_warehouse_transfers"] = nursing_warehouse_transfers

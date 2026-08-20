@@ -27,7 +27,12 @@ from api.services.aquaculture_constants import (
     normalize_fish_species,
     normalize_fish_species_other,
 )
+from api.services.aquaculture_auto_biomass_sample import sync_biomass_samples_from_bill
 from api.services.aquaculture_pond_display import bill_line_pond_display_name
+from api.services.bill_item_catalog_sync import (
+    apply_bill_line_item_catalog_updates,
+    parse_bill_line_item_catalog_updates,
+)
 from api.services.aquaculture_production_cycle_service import (
     assign_auto_production_cycles_for_parsed_bill_lines,
     repair_stale_aquaculture_bill_line_cycles,
@@ -802,6 +807,18 @@ def bills_list_or_create(request):
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
 
+def _wants_internal_trade_documents(request) -> bool:
+    """
+    True when the caller explicitly asks for inter-pond trade paperwork.
+
+    These documents are hidden from the default managers so no total can accidentally count
+    them (see api.models.ExternalTradeDocumentManager). The evidence is still reachable: the
+    transfers screen links here with ?internal_trade=1.
+    """
+    raw = (request.GET.get("internal_trade") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def _bills_list(request):
     line_qs = BillLine.objects.select_related(
         "aquaculture_pond",
@@ -810,8 +827,9 @@ def _bills_list(request):
         "receipt_station",
         "item",
     )
+    manager = Bill.all_objects if _wants_internal_trade_documents(request) else Bill.objects
     qs = (
-        Bill.objects.filter(company_id=request.company_id)
+        manager.filter(company_id=request.company_id)
         .select_related("vendor", "receipt_station")
         .prefetch_related(
             Prefetch("lines", queryset=line_qs),
@@ -918,6 +936,11 @@ def bills_create(request):
     parsed_lines, parse_err = _parse_bill_lines_from_body(request.company_id, body.get("lines"))
     if parse_err:
         return parse_err
+    item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
+        request.company_id, body.get("lines")
+    )
+    if catalog_err:
+        return JsonResponse({"detail": catalog_err}, status=400)
     bill_purpose, purpose_err = parse_bill_purpose(body)
     if purpose_err:
         return JsonResponse({"detail": purpose_err}, status=400)
@@ -997,6 +1020,10 @@ def bills_create(request):
                 bill_ids=[b.id],
                 resync_gl=True,
             )
+            # After posting/AVCO, so the rate and catalog fields typed on the line are what stick.
+            apply_bill_line_item_catalog_updates(request.company_id, item_catalog_updates)
+            # Fish/fry lines become sampling rows for the receiving pond once stock is received.
+            sync_biomass_samples_from_bill(request.company_id, b)
             b = (
                 Bill.objects.filter(id=b.id)
                 .select_related("vendor", "receipt_station")
@@ -1032,8 +1059,10 @@ def bills_create(request):
 @auth_required
 @require_company_id
 def bill_detail(request, bill_id: int):
+    # all_objects: a link to inter-pond trade paperwork must open, even though those documents
+    # are hidden from every list and total by default.
     b = (
-        Bill.objects.filter(id=bill_id, company_id=request.company_id)
+        Bill.all_objects.filter(id=bill_id, company_id=request.company_id)
         .select_related("vendor", "receipt_station")
         .prefetch_related(
             "lines__item",
@@ -1091,6 +1120,7 @@ def bill_detail(request, bill_id: int):
                     )
                 b.receipt_station_id = rid
         parsed_lines = None
+        item_catalog_updates: dict[int, dict] = {}
         if body.get("vendor_id"):
             vid = body.get("vendor_id")
             try:
@@ -1117,6 +1147,11 @@ def bill_detail(request, bill_id: int):
             )
             if parse_err:
                 return parse_err
+            item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
+                request.company_id, body.get("lines")
+            )
+            if catalog_err:
+                return JsonResponse({"detail": catalog_err}, status=400)
             bill_purpose, purpose_err = parse_bill_purpose(body)
             if purpose_err:
                 return JsonResponse({"detail": purpose_err}, status=400)
@@ -1213,6 +1248,10 @@ def bill_detail(request, bill_id: int):
                     bill_ids=[b.id],
                     resync_gl=True,
                 )
+                # After posting/AVCO, so the rate and catalog fields typed on the line are what stick.
+                apply_bill_line_item_catalog_updates(request.company_id, item_catalog_updates)
+                # Fish/fry lines become sampling rows for the receiving pond once stock is received.
+                sync_biomass_samples_from_bill(request.company_id, b)
                 b = (
                     Bill.objects.filter(id=b.id)
                     .select_related("vendor", "receipt_station")

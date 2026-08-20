@@ -174,10 +174,23 @@ def _invoices_apply_source_filter(qs, source: str):
     return qs
 
 
+def _wants_internal_trade_documents(request) -> bool:
+    """
+    True when the caller explicitly asks for inter-pond trade paperwork.
+
+    These documents are hidden from the default managers so no total can accidentally count
+    them (see api.models.ExternalTradeDocumentManager). The evidence is still reachable: the
+    transfers screen links here with ?internal_trade=1.
+    """
+    raw = (request.GET.get("internal_trade") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def _invoices_list(request):
     cid = request.company_id
+    manager = Invoice.all_objects if _wants_internal_trade_documents(request) else Invoice.objects
     qs = (
-        Invoice.objects.filter(company_id=cid)
+        manager.filter(company_id=cid)
         .select_related("customer", "shift_session", "station")
         .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
         .order_by("-invoice_date", "-id")
@@ -327,8 +340,10 @@ def invoices_list_or_create(request):
 @require_company_id
 def invoice_detail(request, invoice_id: int):
     cid = request.company_id
+    # all_objects: a link to inter-pond trade paperwork must open, even though those documents
+    # are hidden from every list and total by default.
     inv = (
-        Invoice.objects.filter(id=invoice_id, company_id=cid)
+        Invoice.all_objects.filter(id=invoice_id, company_id=cid)
         .select_related("customer", "shift_session", "station")
         .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
         .first()

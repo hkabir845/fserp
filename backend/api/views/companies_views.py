@@ -2,7 +2,7 @@
 import json
 import logging
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
@@ -316,6 +316,9 @@ def _company_to_json(c: Company) -> dict:
         "aquaculture_permanent": is_permanent_aquaculture_company(c),
         "aquaculture_capitalize_pond_consumption_to_bioasset": bool(
             getattr(c, "aquaculture_capitalize_pond_consumption_to_bioasset", False)
+        ),
+        "aquaculture_internal_transfer_margin_per_kg": str(
+            getattr(c, "aquaculture_internal_transfer_margin_per_kg", None) or Decimal("0")
         ),
     }
 
@@ -837,6 +840,36 @@ def company_detail(request, company_id: int):
                     )
                 company.aquaculture_capitalize_pond_consumption_to_bioasset = bool(
                     body.get("aquaculture_capitalize_pond_consumption_to_bioasset")
+                )
+            if "aquaculture_internal_transfer_margin_per_kg" in body:
+                if not (is_super or tenant_admin):
+                    return JsonResponse(
+                        {"detail": "Only Admin may change the inter-pond transfer margin."},
+                        status=403,
+                    )
+                raw_margin = body.get("aquaculture_internal_transfer_margin_per_kg")
+                if raw_margin is None or str(raw_margin).strip() == "":
+                    margin = Decimal("0")
+                else:
+                    try:
+                        margin = Decimal(str(raw_margin))
+                    except (InvalidOperation, TypeError, ValueError):
+                        return JsonResponse(
+                            {"detail": "aquaculture_internal_transfer_margin_per_kg must be a number."},
+                            status=400,
+                        )
+                if margin < 0:
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "aquaculture_internal_transfer_margin_per_kg cannot be negative — "
+                                "use 0 to move fish between ponds at cost."
+                            )
+                        },
+                        status=400,
+                    )
+                company.aquaculture_internal_transfer_margin_per_kg = margin.quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
                 )
             company.save()
             payload = {**_company_to_json(company), **_company_station_api_context(request, company)}

@@ -488,10 +488,9 @@ function applyLinePcsOverridesToItemList(itemList: Item[], lines: BillLineItem[]
   const next = new Map<number, number>()
   for (const line of lines) {
     if (!line.item_id) continue
-    const raw = line.fish_pcs_per_kg_override ?? line.item_catalog?.pieces_per_kg
-    if (raw === undefined || raw === null || String(raw).trim() === '') continue
-    const n = Number(raw)
-    if (Number.isFinite(n) && n > 0) next.set(line.item_id, n)
+    const item = itemList.find((i) => i.id === line.item_id)
+    const pcs = effectiveLinePiecesPerKg(line, item)
+    if (pcs != null && pcs > 0) next.set(line.item_id, Number(pcs.toFixed(4)))
   }
   if (next.size === 0) return itemList
   return itemList.map((it) => {
@@ -622,12 +621,17 @@ function FishBillLineDimensionRow({
 }) {
   const speciesValue = (line.aquaculture_fish_species || '').trim()
   const costPerHead = fishCostPerHead(line)
+  // Prefer what the owner typed, else heads÷kg on this bill, else the Item catalog.
+  // Never hide a bill-specific Line behind a stale catalog 3000 when weight/heads imply 8.67.
+  const pcsEffective = effectiveLinePiecesPerKg(line, lineItem)
   const pcsPerKgValue =
     line.fish_pcs_per_kg_override !== undefined &&
     line.fish_pcs_per_kg_override !== null &&
     String(line.fish_pcs_per_kg_override) !== ''
       ? line.fish_pcs_per_kg_override
-      : itemPiecesPerKg(lineItem) ?? ''
+      : pcsEffective != null
+        ? Number(pcsEffective.toFixed(4))
+        : ''
   const costPerHeadTyped = line.fish_cost_per_head_input
   const costPerHeadValue =
     costPerHeadTyped !== undefined && costPerHeadTyped !== null && String(costPerHeadTyped) !== ''
@@ -678,8 +682,8 @@ function FishBillLineDimensionRow({
           onChange={(e) =>
             onFieldChange(index, 'fish_pcs_per_kg_override', e.target.value === '' ? '' : e.target.value)
           }
-          title="From the Item catalog. Type a new Line (e.g. 8.67) and Update Bill to save it on the item for every bill that uses this product."
-          className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
+          title="Last Line used on this bill (or typed here). Update Bill stores it on the Item so the next bill starts from this number."
+          className="w-full px-2 py-1 text-sm border border-sky-300 rounded focus:ring-1 focus:ring-sky-500 bg-white tabular-nums"
         />
       </div>
       <div className="w-[7.5rem] shrink-0">
@@ -990,10 +994,8 @@ function serializeBillLineForApi(
               ? (line.aquaculture_fish_species_other || '').trim() || null
               : null,
           pieces_per_kg: (() => {
-            const raw = normalized.fish_pcs_per_kg_override
-            if (raw === undefined || raw === null || String(raw).trim() === '') return undefined
-            const pcs = Number(raw)
-            return Number.isFinite(pcs) && pcs > 0 ? pcs : undefined
+            const pcs = effectiveLinePiecesPerKg(normalized, item)
+            return pcs != null ? Number(pcs.toFixed(4)) : undefined
           })(),
         }
       : {}),
@@ -2385,6 +2387,20 @@ export default function BillsPage() {
                 ? Number((line as BillLineItem & { line_receipt_station_id?: number }).line_receipt_station_id)
                 : '',
             station_cost_mode: 'direct',
+            // Seed Line from this bill (API heads÷kg or stored item_pieces_per_kg), not a stale catalog.
+            fish_pcs_per_kg_override: (() => {
+              const fromApi = line.item_pieces_per_kg
+              if (fromApi != null && String(fromApi) !== '') {
+                const n = Number(fromApi)
+                if (Number.isFinite(n) && n > 0) return Number(n.toFixed(4))
+              }
+              const implied = impliedLinePiecesPerKg({
+                ...line,
+                aquaculture_fish_weight_kg: line.aquaculture_fish_weight_kg,
+                aquaculture_fish_count: line.aquaculture_fish_count,
+              } as BillLineItem)
+              return implied != null ? Number(implied.toFixed(4)) : undefined
+            })(),
           })) || [],
         })
         setShowEditModal(true)

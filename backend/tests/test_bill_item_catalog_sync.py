@@ -389,3 +389,63 @@ def test_update_bill_line_pcs_per_kg_overwrites_item_each_time(
     fry.refresh_from_db()
     assert fry.pieces_per_kg == Decimal("10.0000")
 
+
+def test_effective_bill_line_pieces_per_kg_ignores_stale_catalog():
+    from api.services.bill_item_catalog_sync import effective_bill_line_pieces_per_kg
+
+    pcs, err = effective_bill_line_pieces_per_kg(
+        {
+            "pieces_per_kg": "3000",
+            "aquaculture_fish_count": 64878,
+            "aquaculture_fish_weight_kg": "7483.0450",
+        }
+    )
+    assert err is None
+    assert pcs == Decimal("8.6700")
+
+
+@pytest.mark.django_db
+def test_update_bill_stale_catalog_3000_does_not_overwrite_implied_line(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Weight/heads already imply 8.67; a leftover catalog 3000 in the payload must not win."""
+    h = auth_admin_headers
+    vendor_id = _vendor(api_client, h, "Stale Catalog Fry")
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing Stale", pond_role="nursing", is_active=True
+    )
+    fry = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry Stale",
+        item_type="inventory",
+        pos_category="fish",
+        unit="kg",
+        category="Aquaculture",
+        pieces_per_kg=Decimal("3000"),
+        cost=Decimal("150.00"),
+    )
+    created = _post_bill(
+        api_client,
+        h,
+        vendor_id,
+        {
+            "description": "Tilapia Fry Stale",
+            "item_id": fry.id,
+            "quantity": "7483.0450",
+            "unit_cost": "150.00",
+            "amount": "1122456.75",
+            "aquaculture_pond_id": pond.id,
+            "aquaculture_fish_species": "tilapia",
+            "aquaculture_fish_weight_kg": "7483.0450",
+            "aquaculture_fish_count": 64878,
+            "pieces_per_kg": "3000",
+        },
+        status="draft",
+    )
+    assert created.status_code == 201, created.content.decode()
+    body = json.loads(created.content)
+    line = body["lines"][0]
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("8.6700")
+    assert Decimal(line["item_pieces_per_kg"]) == Decimal("8.6700")
+

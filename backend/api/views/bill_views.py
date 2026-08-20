@@ -31,6 +31,7 @@ from api.services.aquaculture_auto_biomass_sample import sync_biomass_samples_fr
 from api.services.aquaculture_pond_display import bill_line_pond_display_name
 from api.services.bill_item_catalog_sync import (
     apply_bill_line_item_catalog_updates,
+    effective_bill_line_pieces_per_kg,
     parse_bill_line_item_catalog_updates,
 )
 from api.services.aquaculture_production_cycle_service import (
@@ -386,15 +387,11 @@ def _parse_bill_line_fish_dims(request_company_id: int, row: dict, item_id: Opti
     }
 
     ppk = getattr(item, "pieces_per_kg", None)
-    row_ppk = row.get("pieces_per_kg", row.get("fish_pcs_per_kg"))
-    if row_ppk not in (None, ""):
-        parsed_ppk = _decimal(row_ppk, None)
-        if parsed_ppk is None or parsed_ppk <= 0:
-            return None, JsonResponse(
-                {"detail": "pieces_per_kg must be a number greater than zero."},
-                status=400,
-            )
-        ppk = parsed_ppk
+    eff_ppk, ppk_err = effective_bill_line_pieces_per_kg(row)
+    if ppk_err:
+        return None, JsonResponse({"detail": ppk_err}, status=400)
+    if eff_ppk is not None:
+        ppk = eff_ppk
         catalog = getattr(item, "pieces_per_kg", None)
         if catalog is None or catalog != ppk:
             Item.objects.filter(pk=item.pk, company_id=request_company_id).update(

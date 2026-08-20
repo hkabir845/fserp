@@ -43,6 +43,56 @@ def _decimal_or_none(raw):
         return None
 
 
+def _implied_pieces_per_kg(row: dict) -> Decimal | None:
+    """heads ÷ weight on this bill row — the Line actually used, e.g. 64878 ÷ 7483.05 ≈ 8.67."""
+    c_raw = row.get("aquaculture_fish_count")
+    w_raw = row.get("aquaculture_fish_weight_kg")
+    if c_raw in (None, "") or w_raw in (None, ""):
+        return None
+    try:
+        heads = int(c_raw)
+    except (TypeError, ValueError):
+        return None
+    weight = _decimal_or_none(w_raw)
+    if heads <= 0 or weight is None or weight <= 0:
+        return None
+    return (Decimal(heads) / weight).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def _pcs_disagree(a: Decimal, b: Decimal) -> bool:
+    if a <= 0 or b <= 0:
+        return False
+    return abs(a - b) / max(a, b) > Decimal("0.005")
+
+
+def effective_bill_line_pieces_per_kg(row: dict) -> tuple[Decimal | None, str | None]:
+    """
+    Line (pcs/kg) to store on the Item from this bill row.
+
+    Typed ``pieces_per_kg`` is kept when it matches heads÷kg (or weight is still blank).
+    If the payload still says catalog 3000 while this bill's heads and kg imply 8.67,
+    8.67 wins so Update Bill cannot snap the Item back to the old catalog.
+    """
+    implied = _implied_pieces_per_kg(row)
+    raw = row.get("pieces_per_kg", row.get("fish_pcs_per_kg"))
+    panel = row.get("item_catalog") if isinstance(row.get("item_catalog"), dict) else None
+    if raw in (None, "") and panel is not None and "pieces_per_kg" in panel:
+        raw = panel.get("pieces_per_kg")
+
+    typed = None
+    if raw not in (None, ""):
+        typed = _decimal_or_none(raw)
+        if typed is None or typed <= 0:
+            return None, "pieces_per_kg must be a number greater than zero."
+        typed = typed.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+    if implied is not None:
+        if typed is not None and not _pcs_disagree(typed, implied):
+            return typed, None
+        return implied, None
+    return typed, None
+
+
 def _money(value: Decimal) -> Decimal:
     """Item.cost / Item.unit_price are 2dp — quantize here so re-saving a bill is a no-op."""
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -98,14 +148,13 @@ def parse_bill_line_item_catalog_updates(
         if rate is not None and rate > 0:
             fields["cost"] = _money(rate)
 
-        # Line (pcs/kg) on a fish bill: accept it on the row even when the Edit item panel
-        # was not opened, so Update Bill still writes the catalog.
-        row_ppk = row.get("pieces_per_kg", row.get("fish_pcs_per_kg"))
-        if row_ppk not in (None, ""):
-            ppk = _decimal_or_none(row_ppk)
-            if ppk is None or ppk <= 0:
-                return {}, f"Line {idx}: pieces_per_kg must be a number greater than zero."
-            fields["pieces_per_kg"] = ppk.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        # Line (pcs/kg): typed value, else heads÷kg on this bill. Stale catalog 3000
+        # is ignored when this row's heads and kg already imply 8.67.
+        ppk, ppk_err = effective_bill_line_pieces_per_kg(row)
+        if ppk_err:
+            return {}, f"Line {idx}: {ppk_err}"
+        if ppk is not None:
+            fields["pieces_per_kg"] = ppk
 
         panel = row.get("item_catalog")
         if not isinstance(panel, dict):
@@ -146,12 +195,6 @@ def parse_bill_line_item_catalog_updates(
             if up < 0:
                 return {}, f"Line {idx}: item unit_price cannot be negative."
             fields["unit_price"] = _money(up)
-
-        if "pieces_per_kg" in panel:
-            ppk = _decimal_or_none(panel.get("pieces_per_kg"))
-            if ppk is None or ppk <= 0:
-                return {}, f"Line {idx}: pieces_per_kg must be a number greater than zero."
-            fields["pieces_per_kg"] = ppk.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
     return {item_id: f for item_id, f in updates.items() if f}, None
 

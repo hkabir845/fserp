@@ -467,16 +467,37 @@ function impliedLinePiecesPerKg(line: BillLineItem): number | null {
   return heads / wn
 }
 
-/** pcs/kg driving this line: typed override, else heads÷kg on this bill, else the item catalog. */
+function pcsNearlyEqual(a: number, b: number): boolean {
+  if (!(a > 0) || !(b > 0)) return false
+  return Math.abs(a - b) / Math.max(a, b) <= 0.005
+}
+
+/**
+ * Line (pcs/kg) for this bill: what was typed, else heads÷kg already on the row, else the catalog.
+ * A seeded catalog 3000 is ignored when this bill's heads and weight already imply 8.67.
+ */
 function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): number | null {
+  const implied = impliedLinePiecesPerKg(line)
+  const catalog = itemPiecesPerKg(item)
   const raw = line.fish_pcs_per_kg_override
+  let typed: number | null = null
   if (raw !== undefined && raw !== null && String(raw) !== '') {
     const n = Number(raw)
-    if (Number.isFinite(n) && n > 0) return n
+    if (Number.isFinite(n) && n > 0) typed = n
   }
-  const implied = impliedLinePiecesPerKg(line)
+  if (typed != null) {
+    if (
+      implied != null &&
+      catalog != null &&
+      pcsNearlyEqual(typed, catalog) &&
+      !pcsNearlyEqual(typed, implied)
+    ) {
+      return implied
+    }
+    return typed
+  }
   if (implied != null) return implied
-  return itemPiecesPerKg(item)
+  return catalog
 }
 
 function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): number | null {
@@ -621,14 +642,12 @@ function FishBillLineDimensionRow({
 }) {
   const speciesValue = (line.aquaculture_fish_species || '').trim()
   const costPerHead = fishCostPerHead(line)
-  // Prefer what the owner typed, else heads÷kg on this bill, else the Item catalog.
-  // Never hide a bill-specific Line behind a stale catalog 3000 when weight/heads imply 8.67.
   const pcsEffective = effectiveLinePiecesPerKg(line, lineItem)
+  const typedRaw = line.fish_pcs_per_kg_override
+  // Keep the exact keystrokes while typing ("8."); after that show this bill's Line, not catalog 3000.
   const pcsPerKgValue =
-    line.fish_pcs_per_kg_override !== undefined &&
-    line.fish_pcs_per_kg_override !== null &&
-    String(line.fish_pcs_per_kg_override) !== ''
-      ? line.fish_pcs_per_kg_override
+    typeof typedRaw === 'string' && typedRaw !== ''
+      ? typedRaw
       : pcsEffective != null
         ? Number(pcsEffective.toFixed(4))
         : ''
@@ -2387,19 +2406,20 @@ export default function BillsPage() {
                 ? Number((line as BillLineItem & { line_receipt_station_id?: number }).line_receipt_station_id)
                 : '',
             station_cost_mode: 'direct',
-            // Seed Line from this bill (API heads÷kg or stored item_pieces_per_kg), not a stale catalog.
+            // Seed from this bill's heads÷kg (e.g. 8.67), never a stale Item catalog 3000.
             fish_pcs_per_kg_override: (() => {
-              const fromApi = line.item_pieces_per_kg
-              if (fromApi != null && String(fromApi) !== '') {
-                const n = Number(fromApi)
-                if (Number.isFinite(n) && n > 0) return Number(n.toFixed(4))
-              }
               const implied = impliedLinePiecesPerKg({
                 ...line,
                 aquaculture_fish_weight_kg: line.aquaculture_fish_weight_kg,
                 aquaculture_fish_count: line.aquaculture_fish_count,
               } as BillLineItem)
-              return implied != null ? Number(implied.toFixed(4)) : undefined
+              if (implied != null) return Number(implied.toFixed(4))
+              const fromApi = line.item_pieces_per_kg
+              if (fromApi != null && String(fromApi) !== '') {
+                const n = Number(fromApi)
+                if (Number.isFinite(n) && n > 0) return Number(n.toFixed(4))
+              }
+              return undefined
             })(),
           })) || [],
         })

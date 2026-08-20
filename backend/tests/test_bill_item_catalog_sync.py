@@ -449,3 +449,57 @@ def test_update_bill_stale_catalog_3000_does_not_overwrite_implied_line(
     assert fry.pieces_per_kg == Decimal("8.6700")
     assert Decimal(line["item_pieces_per_kg"]) == Decimal("8.6700")
 
+
+@pytest.mark.django_db
+def test_get_bill_repairs_stale_item_pieces_per_kg(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Opening Bill Details repairs Item catalog 3000 when this bill's heads÷kg is 8.67."""
+    h = auth_admin_headers
+    vendor_id = _vendor(api_client, h, "Repair On Get Fry")
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing Repair", pond_role="nursing", is_active=True
+    )
+    fry = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry Repair",
+        item_type="inventory",
+        pos_category="fish",
+        unit="kg",
+        category="Aquaculture",
+        pieces_per_kg=Decimal("8.6700"),
+        cost=Decimal("150.00"),
+    )
+    created = _post_bill(
+        api_client,
+        h,
+        vendor_id,
+        {
+            "description": "Tilapia Fry Repair",
+            "item_id": fry.id,
+            "quantity": "7483.0450",
+            "unit_cost": "150.00",
+            "amount": "1122456.75",
+            "aquaculture_pond_id": pond.id,
+            "aquaculture_fish_species": "tilapia",
+            "aquaculture_fish_weight_kg": "7483.0450",
+            "aquaculture_fish_count": 64878,
+            "pieces_per_kg": "8.67",
+        },
+        status="draft",
+    )
+    assert created.status_code == 201, created.content.decode()
+    bill_id = json.loads(created.content)["id"]
+
+    # Simulate pre-fix production data: Item still stuck on catalog 3000.
+    Item.objects.filter(pk=fry.id).update(pieces_per_kg=Decimal("3000"))
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("3000")
+
+    got = api_client.get(f"/api/bills/{bill_id}/", **h)
+    assert got.status_code == 200, got.content.decode()
+    line = json.loads(got.content)["lines"][0]
+    assert Decimal(line["item_pieces_per_kg"]) == Decimal("8.6700")
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("8.6700")
+

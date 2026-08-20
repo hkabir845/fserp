@@ -93,6 +93,31 @@ def effective_bill_line_pieces_per_kg(row: dict) -> tuple[Decimal | None, str | 
     return typed, None
 
 
+def repair_item_pieces_per_kg_from_bill_line(
+    company_id: int, item, weight, count
+) -> Decimal | None:
+    """
+    If this bill line has heads and kg that imply a Line (e.g. 8.67) different from the
+    Item catalog (e.g. 3000), write the implied Line onto the Item and return it.
+    """
+    if item is None or count is None or weight is None:
+        return None
+    try:
+        heads = int(count)
+        wd = Decimal(str(weight))
+    except (TypeError, ValueError, InvalidOperation, ArithmeticError):
+        return None
+    if heads <= 0 or wd <= 0:
+        return None
+    implied = (Decimal(heads) / wd).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    catalog = getattr(item, "pieces_per_kg", None)
+    if catalog is not None and not _pcs_disagree(Decimal(str(catalog)), implied):
+        return implied
+    Item.objects.filter(pk=item.pk, company_id=company_id).update(pieces_per_kg=implied)
+    item.pieces_per_kg = implied
+    return implied
+
+
 def _money(value: Decimal) -> Decimal:
     """Item.cost / Item.unit_price are 2dp — quantize here so re-saving a bill is a no-op."""
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

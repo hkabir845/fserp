@@ -460,7 +460,9 @@ function itemPiecesPerKg(item: Item | undefined): number | null {
 
 function impliedLinePiecesPerKg(line: BillLineItem): number | null {
   const heads = parseFishHeadCount(line)
-  const w = line.aquaculture_fish_weight_kg
+  // Prefer stored fish weight; fall back to billing Qty (kg) so Bill Details still shows 8.67.
+  let w: number | string | null | undefined = line.aquaculture_fish_weight_kg
+  if (w == null || String(w) === '') w = line.quantity
   if (heads <= 0 || w == null || String(w) === '') return null
   const wn = Number(w)
   if (!Number.isFinite(wn) || wn <= 0) return null
@@ -500,7 +502,18 @@ function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): n
   return catalog
 }
 
+/**
+ * Display Line for Bill Details / tables: this bill's Line first, never a stale Item catalog
+ * 3000 when heads and kg already imply 8.67.
+ */
 function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): number | null {
+  const implied = impliedLinePiecesPerKg(line)
+  if (implied != null) return implied
+  const fromApi = line.item_pieces_per_kg
+  if (fromApi != null && String(fromApi) !== '') {
+    const n = Number(fromApi)
+    if (Number.isFinite(n) && n > 0) return n
+  }
   return effectiveLinePiecesPerKg(line, rowItem)
 }
 

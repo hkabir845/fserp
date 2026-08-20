@@ -500,8 +500,15 @@ def _bill_line_quantity_from_row(
 
 
 def _bill_line_pieces_per_kg_display(l: BillLine, item, company_id: int | None = None) -> str | None:
-    """pcs/kg for this bill line: heads ÷ kg when both exist, else the catalog Item value."""
+    """pcs/kg for this bill line: heads ÷ kg when both exist, else the catalog Item value.
+
+    If ``aquaculture_fish_weight_kg`` is missing on older rows, billing ``quantity`` (kg)
+    is the same figure — use it so View Bill does not fall back to a stale catalog 3000
+    while Wt (kg) still shows the quantity.
+    """
     w = getattr(l, "aquaculture_fish_weight_kg", None)
+    if w is None:
+        w = getattr(l, "quantity", None)
     c = getattr(l, "aquaculture_fish_count", None)
     if (w is None or w == "") and getattr(l, "quantity", None) is not None:
         # Billing qty is kg on fish lines — same as Bill Details Wt column fallback.

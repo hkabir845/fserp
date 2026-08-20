@@ -478,8 +478,16 @@ function pcsNearlyEqual(a: number, b: number): boolean {
  * Line (pcs/kg) for this bill: what was typed, else heads÷kg already on the row, else the catalog.
  * A seeded catalog 3000 is ignored when this bill's heads and weight already imply 8.67.
  */
+function lineApiPiecesPerKg(line: BillLineItem): number | null {
+  const raw = line.item_pieces_per_kg
+  if (raw === undefined || raw === null || raw === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): number | null {
   const implied = impliedLinePiecesPerKg(line)
+  const fromApi = lineApiPiecesPerKg(line)
   const catalog = itemPiecesPerKg(item)
   const raw = line.fish_pcs_per_kg_override
   let typed: number | null = null
@@ -488,6 +496,8 @@ function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): n
     if (Number.isFinite(n) && n > 0) typed = n
   }
   if (typed != null) {
+    // Typed value that only matches a stale catalog (e.g. 3000) while this bill
+    // already implies ~8.67 must not win — use heads÷kg instead.
     if (
       implied != null &&
       catalog != null &&
@@ -496,9 +506,26 @@ function effectiveLinePiecesPerKg(line: BillLineItem, item: Item | undefined): n
     ) {
       return implied
     }
+    if (
+      implied != null &&
+      fromApi != null &&
+      pcsNearlyEqual(typed, fromApi) &&
+      !pcsNearlyEqual(typed, implied) &&
+      catalog != null &&
+      pcsNearlyEqual(fromApi, catalog)
+    ) {
+      return implied
+    }
     return typed
   }
+  // This bill's heads÷kg always beats a stale Item catalog 3000.
   if (implied != null) return implied
+  if (fromApi != null) {
+    if (catalog != null && pcsNearlyEqual(fromApi, catalog) && implied == null) {
+      return fromApi
+    }
+    return fromApi
+  }
   return catalog
 }
 

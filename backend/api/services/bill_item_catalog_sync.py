@@ -15,9 +15,9 @@ The Rate mirror is applied AFTER posting and the AVCO reconciliation
 (``recompute_item_average_cost``), so the rate the owner typed is what survives the save
 instead of being replaced by the weighted average of the receipt history.
 
-Line pieces_per_kg has its own, older write-back path in
-``api.views.bill_views._parse_bill_line_fish_dims`` (it must run before parsing, because
-weight/heads derive from it) and is deliberately not repeated here.
+Line pieces_per_kg is also written here (from the Line field / item_catalog) AFTER posting,
+so Update Bill keeps the number the owner typed instead of the old catalog value.
+Weight/heads still derive from it during parse in ``api.views.bill_views._parse_bill_line_fish_dims``.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from api.services.item_name_uniqueness import (
 from api.services.item_reporting_categories import normalize_item_reporting_category
 
 # Catalog fields the bill line's "Edit item" panel may write.
-CATALOG_PANEL_FIELDS = ("name", "description", "unit", "category", "unit_price")
+CATALOG_PANEL_FIELDS = ("name", "description", "unit", "category", "unit_price", "pieces_per_kg")
 
 
 def _decimal_or_none(raw):
@@ -77,7 +77,16 @@ def parse_bill_line_item_catalog_updates(
             continue
         item = (
             Item.objects.filter(pk=item_id, company_id=company_id)
-            .only("id", "name", "description", "unit", "category", "unit_price", "cost")
+            .only(
+                "id",
+                "name",
+                "description",
+                "unit",
+                "category",
+                "unit_price",
+                "cost",
+                "pieces_per_kg",
+            )
             .first()
         )
         if not item:
@@ -88,6 +97,15 @@ def parse_bill_line_item_catalog_updates(
         rate = _decimal_or_none(row.get("unit_cost", row.get("unit_price")))
         if rate is not None and rate > 0:
             fields["cost"] = _money(rate)
+
+        # Line (pcs/kg) on a fish bill: accept it on the row even when the Edit item panel
+        # was not opened, so Update Bill still writes the catalog.
+        row_ppk = row.get("pieces_per_kg", row.get("fish_pcs_per_kg"))
+        if row_ppk not in (None, ""):
+            ppk = _decimal_or_none(row_ppk)
+            if ppk is None or ppk <= 0:
+                return {}, f"Line {idx}: pieces_per_kg must be a number greater than zero."
+            fields["pieces_per_kg"] = ppk.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
         panel = row.get("item_catalog")
         if not isinstance(panel, dict):
@@ -129,6 +147,12 @@ def parse_bill_line_item_catalog_updates(
                 return {}, f"Line {idx}: item unit_price cannot be negative."
             fields["unit_price"] = _money(up)
 
+        if "pieces_per_kg" in panel:
+            ppk = _decimal_or_none(panel.get("pieces_per_kg"))
+            if ppk is None or ppk <= 0:
+                return {}, f"Line {idx}: pieces_per_kg must be a number greater than zero."
+            fields["pieces_per_kg"] = ppk.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
     return {item_id: f for item_id, f in updates.items() if f}, None
 
 
@@ -138,7 +162,16 @@ def apply_bill_line_item_catalog_updates(company_id: int, updates: dict[int, dic
     for item_id, fields in (updates or {}).items():
         item = (
             Item.objects.filter(pk=item_id, company_id=company_id)
-            .only("id", "name", "description", "unit", "category", "unit_price", "cost")
+            .only(
+                "id",
+                "name",
+                "description",
+                "unit",
+                "category",
+                "unit_price",
+                "cost",
+                "pieces_per_kg",
+            )
             .first()
         )
         if not item:

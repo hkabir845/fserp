@@ -10,6 +10,7 @@ export type BillLineItemCatalogEdits = {
   unit?: string
   category?: string
   unit_price?: number | string
+  pieces_per_kg?: number | string
 }
 
 export type BillLineCatalogItem = {
@@ -19,6 +20,8 @@ export type BillLineCatalogItem = {
   unit?: string
   category?: string
   unit_price?: number | string
+  pieces_per_kg?: number | string | null
+  pos_category?: string
 }
 
 type FieldKey = keyof BillLineItemCatalogEdits
@@ -50,10 +53,11 @@ function isChanged(item: BillLineCatalogItem, edits: BillLineItemCatalogEdits, k
   const next = edits[key]
   if (next === undefined) return false
   const current = catalogValue(item, key)
-  if (key === 'unit_price') {
+  if (key === 'unit_price' || key === 'pieces_per_kg') {
     const a = Number(next)
     const b = Number(current)
     if (Number.isFinite(a) && Number.isFinite(b)) return a !== b
+    if (String(next) === '' && (current === '' || current == null)) return false
   }
   return String(next) !== current
 }
@@ -164,6 +168,10 @@ export function billLineItemCatalogPayload(
   if (isChanged(item, edits, 'unit_price')) {
     const n = Number(edits.unit_price)
     if (Number.isFinite(n)) out.unit_price = n
+  }
+  if (isChanged(item, edits, 'pieces_per_kg')) {
+    const n = Number(edits.pieces_per_kg)
+    if (Number.isFinite(n) && n > 0) out.pieces_per_kg = n
   }
   return Object.keys(out).length ? out : null
 }

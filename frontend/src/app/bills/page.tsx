@@ -483,6 +483,23 @@ function billLinePiecesPerKg(line: BillLineItem, rowItem: Item | undefined): num
   return effectiveLinePiecesPerKg(line, rowItem)
 }
 
+/** After a bill save, keep the in-memory item list on the Line (pcs/kg) just written to the catalog. */
+function applyLinePcsOverridesToItemList(itemList: Item[], lines: BillLineItem[]): Item[] {
+  const next = new Map<number, number>()
+  for (const line of lines) {
+    if (!line.item_id) continue
+    const raw = line.fish_pcs_per_kg_override ?? line.item_catalog?.pieces_per_kg
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) next.set(line.item_id, n)
+  }
+  if (next.size === 0) return itemList
+  return itemList.map((it) => {
+    const pcs = next.get(it.id)
+    return pcs == null ? it : { ...it, pieces_per_kg: pcs }
+  })
+}
+
 function formatBillLinePcsPerKg(line: BillLineItem, rowItem: Item | undefined): string {
   const pcs = billLinePiecesPerKg(line, rowItem)
   return pcs != null ? formatNumber(pcs) : '—'
@@ -605,7 +622,12 @@ function FishBillLineDimensionRow({
 }) {
   const speciesValue = (line.aquaculture_fish_species || '').trim()
   const costPerHead = fishCostPerHead(line)
-  const pcsPerKgValue = effectiveLinePiecesPerKg(line, lineItem) ?? ''
+  const pcsPerKgValue =
+    line.fish_pcs_per_kg_override !== undefined &&
+    line.fish_pcs_per_kg_override !== null &&
+    String(line.fish_pcs_per_kg_override) !== ''
+      ? line.fish_pcs_per_kg_override
+      : itemPiecesPerKg(lineItem) ?? ''
   const costPerHeadTyped = line.fish_cost_per_head_input
   const costPerHeadValue =
     costPerHeadTyped !== undefined && costPerHeadTyped !== null && String(costPerHeadTyped) !== ''
@@ -656,7 +678,7 @@ function FishBillLineDimensionRow({
           onChange={(e) =>
             onFieldChange(index, 'fish_pcs_per_kg_override', e.target.value === '' ? '' : e.target.value)
           }
-          title="Pieces per 1 kg on this bill line. Edit here — save writes it onto the Item catalog too."
+          title="From the Item catalog. Type a new Line (e.g. 8.67) and Update Bill to save it on the item for every bill that uses this product."
           className="w-full px-2 py-1 text-sm border border-border rounded focus:ring-1 focus:ring-ring bg-white tabular-nums"
         />
       </div>
@@ -739,7 +761,8 @@ function FishBillLineDimensionRow({
             Enter <strong>total fish (heads)</strong> and line <strong>Amount</strong> (vendor total) —
             everything else fills in. <strong>Heads</strong> and <strong>Weight/Qty (kg)</strong> convert
             into each other through <strong>Line (pcs/kg)</strong>, so typing either one refills the other.
-            Every field here is editable: the one you type last is kept.
+            Change <strong>Line (pcs/kg)</strong> and Update Bill: the Item catalog stores that new Line
+            and the next bill that picks this item starts from it.
           </>
         ) : (
           <>
@@ -967,8 +990,10 @@ function serializeBillLineForApi(
               ? (line.aquaculture_fish_species_other || '').trim() || null
               : null,
           pieces_per_kg: (() => {
-            const pcs = effectiveLinePiecesPerKg(normalized, item)
-            return pcs != null ? pcs : null
+            const raw = normalized.fish_pcs_per_kg_override
+            if (raw === undefined || raw === null || String(raw).trim() === '') return undefined
+            const pcs = Number(raw)
+            return Number.isFinite(pcs) && pcs > 0 ? pcs : undefined
           })(),
         }
       : {}),
@@ -2101,6 +2126,15 @@ export default function BillsPage() {
       const fishLineAuto = fishLine && effectiveLinePiecesPerKg(newLines[index], lineItem) != null
 
       if (field === 'fish_pcs_per_kg_override' && fishLine) {
+        const pcsRaw = newLines[index].fish_pcs_per_kg_override
+        const catalog = { ...(newLines[index].item_catalog || {}) }
+        if (pcsRaw === undefined || pcsRaw === null || String(pcsRaw).trim() === '') {
+          delete catalog.pieces_per_kg
+          newLines[index].item_catalog = Object.keys(catalog).length ? catalog : undefined
+        } else {
+          catalog.pieces_per_kg = pcsRaw
+          newLines[index].item_catalog = catalog
+        }
         newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'pcs')
       } else if (field === 'fish_cost_per_head_input' && fishLine) {
         newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'cost_per_head')
@@ -2219,6 +2253,7 @@ export default function BillsPage() {
       })),
     })
 
+    setItems((prev) => applyLinePcsOverridesToItemList(prev, linesToSave))
     toast.success(approveBill ? 'Bill approved and posted (Open).' : 'Bill saved as draft.')
     setShowModal(false)
     setStockReviewOpen(false)
@@ -2350,14 +2385,6 @@ export default function BillsPage() {
                 ? Number((line as BillLineItem & { line_receipt_station_id?: number }).line_receipt_station_id)
                 : '',
             station_cost_mode: 'direct',
-            fish_pcs_per_kg_override: (() => {
-              const fromApi = line.item_pieces_per_kg
-              if (fromApi != null && String(fromApi) !== '') {
-                const n = Number(fromApi)
-                if (Number.isFinite(n) && n > 0) return n
-              }
-              return impliedLinePiecesPerKg(line) ?? undefined
-            })(),
           })) || [],
         })
         setShowEditModal(true)
@@ -2416,6 +2443,7 @@ export default function BillsPage() {
       })),
     })
 
+    setItems((prev) => applyLinePcsOverridesToItemList(prev, linesToSave))
     toast.success(
       postDraftBillOnUpdate && editingBill.status === 'draft'
         ? 'Bill approved and posted (Open).'

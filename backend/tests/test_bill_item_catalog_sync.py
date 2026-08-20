@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from api.models import Item
+from api.models import AquaculturePond, Item
 
 
 def _vendor(api_client, headers, name: str) -> int:
@@ -303,3 +303,89 @@ def test_bill_line_item_catalog_ignores_another_companys_item(
     foreign.refresh_from_db()
     assert foreign.name == "Foreign Item"
     assert foreign.cost == Decimal("10.00")
+
+
+@pytest.mark.django_db
+def test_update_bill_line_pcs_per_kg_overwrites_item_each_time(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Line (pcs/kg) on Update Bill is stored on the Item; a later edit replaces it again."""
+    h = auth_admin_headers
+    vendor_id = _vendor(api_client, h, "Fry Line Catalog")
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Nursing Line", pond_role="nursing", is_active=True
+    )
+    fry = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Tilapia Fry",
+        item_type="inventory",
+        pos_category="fish",
+        unit="kg",
+        category="Aquaculture",
+        pieces_per_kg=Decimal("3000"),
+        cost=Decimal("150.00"),
+    )
+
+    created = _post_bill(
+        api_client,
+        h,
+        vendor_id,
+        {
+            "description": "Tilapia Fry",
+            "item_id": fry.id,
+            "quantity": "10",
+            "unit_cost": "150.00",
+            "amount": "1500.00",
+            "aquaculture_pond_id": pond.id,
+            "aquaculture_fish_species": "tilapia",
+            "aquaculture_fish_weight_kg": "10",
+            "aquaculture_fish_count": 30000,
+        },
+        status="draft",
+    )
+    assert created.status_code == 201, created.content.decode()
+    bill_id = json.loads(created.content)["id"]
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("3000")
+
+    def _put(pcs: str, kg: str, heads: int, amount: str):
+        return api_client.put(
+            f"/api/bills/{bill_id}/",
+            data=json.dumps(
+                {
+                    "vendor_id": vendor_id,
+                    "bill_date": "2026-08-20",
+                    "subtotal": amount,
+                    "tax_total": "0",
+                    "total": amount,
+                    "status": "draft",
+                    "lines": [
+                        {
+                            "description": "Tilapia Fry",
+                            "item_id": fry.id,
+                            "quantity": kg,
+                            "unit_cost": "150.00",
+                            "amount": amount,
+                            "aquaculture_pond_id": pond.id,
+                            "aquaculture_fish_species": "tilapia",
+                            "aquaculture_fish_weight_kg": kg,
+                            "aquaculture_fish_count": heads,
+                            "pieces_per_kg": pcs,
+                        }
+                    ],
+                }
+            ),
+            content_type="application/json",
+            **h,
+        )
+
+    first = _put("8.67", "7483.0450", 64878, "1122456.75")
+    assert first.status_code == 200, first.content.decode()
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("8.6700")
+
+    second = _put("10", "6487.8000", 64878, "973170.00")
+    assert second.status_code == 200, second.content.decode()
+    fry.refresh_from_db()
+    assert fry.pieces_per_kg == Decimal("10.0000")
+

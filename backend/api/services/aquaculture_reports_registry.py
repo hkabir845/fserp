@@ -1581,6 +1581,25 @@ def _report_feed_medicine_consumption(
         limit=10000,
     )
 
+    soft_note: str | None = None
+    if cycle_filter_id is not None:
+        from api.services.aquaculture_consumption_batch_allocation_service import (
+            SOFT_ALLOC_NOTE,
+            soft_allocate_untagged_consumption_for_cycle,
+        )
+
+        soft_rows = soft_allocate_untagged_consumption_for_cycle(
+            company_id,
+            production_cycle_id=cycle_filter_id,
+            pond_id=pond_filter_id,
+            date_from=start,
+            date_to=end,
+            kind=kind_norm,
+        )
+        if soft_rows:
+            rows = list(rows) + soft_rows
+            soft_note = SOFT_ALLOC_NOTE
+
     feed_item_options: dict[int, str] = {}
     medicine_item_options: dict[int, str] = {}
     for r in rows:
@@ -1806,6 +1825,10 @@ def _report_feed_medicine_consumption(
         out["filter_cycle_id"] = cycle_filter_id
         if scoped_cycle is not None:
             out["filter_cycle_name"] = (scoped_cycle.name or "").strip() or f"Cycle #{scoped_cycle.id}"
+    if soft_note:
+        out["batch_soft_allocation_note"] = soft_note
+        prev = (out.get("accounting_note") or "").strip()
+        out["accounting_note"] = f"{prev} {soft_note}".strip() if prev else soft_note
     if feed_item_id is not None:
         out["filter_feed_item_id"] = feed_item_id
     if medicine_item_id is not None:

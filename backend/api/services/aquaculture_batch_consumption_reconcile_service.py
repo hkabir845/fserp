@@ -307,20 +307,35 @@ def reconcile_batch_consumption_for_company(
     *,
     pond_id: int | None = None,
     dry_run: bool = False,
+    split_multi: bool = False,
 ) -> dict[str, Any]:
     """
-    Tag or split historical untagged feed/medicine expenses for ``company_id``.
+    Tag historical untagged feed/medicine expenses for ``company_id``.
+
+    Default (safe): only retag when the pond has **one** batch with demand.
+    Multi-batch hard rewrite requires ``split_multi=True`` (rewrites GL expense rows).
+    Prefer report soft-allocation for multi-batch history.
 
     Run on the VPS after deploy::
 
+        python manage.py reconcile_aquaculture_batch_consumption --company-id 1 --dry-run
         python manage.py reconcile_aquaculture_batch_consumption --company-id 1
     """
     preview = preview_batch_consumption_reconcile(company_id, pond_id=pond_id)
     if dry_run:
-        return {**preview, "dry_run": True, "tagged": 0, "split": 0, "created_expense_ids": []}
+        return {
+            **preview,
+            "dry_run": True,
+            "split_multi": split_multi,
+            "tagged": 0,
+            "split": 0,
+            "skipped_multi_batch": preview.get("would_split_multi_batch", 0) if not split_multi else 0,
+            "created_expense_ids": [],
+        }
 
     tagged = 0
     split = 0
+    skipped_multi = 0
     created: list[int] = []
     errors: list[dict] = []
 
@@ -332,18 +347,22 @@ def reconcile_batch_consumption_for_company(
             if len(shares) == 1:
                 _tag_single_batch(company_id, exp, int(shares[0]["production_cycle_id"]))
                 tagged += 1
-            else:
+            elif split_multi:
                 new_ids = _split_multi_batch(company_id, exp, shares)
                 split += 1
                 created.extend(new_ids)
+            else:
+                skipped_multi += 1
         except Exception as ex:  # noqa: BLE001 — continue other ponds on VPS
             errors.append({"expense_id": exp.id, "detail": str(ex)})
 
     return {
         **preview,
         "dry_run": False,
+        "split_multi": split_multi,
         "tagged": tagged,
         "split": split,
+        "skipped_multi_batch": skipped_multi,
         "created_expense_ids": created,
         "errors": errors,
     }

@@ -54,7 +54,21 @@ def sum_feed_kg_for_period(
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)
     agg = qs.aggregate(total=Sum("feed_weight_kg"))
-    return _q4(_d(agg.get("total")))
+    tagged = _q4(_d(agg.get("total")))
+    if production_cycle_id is None:
+        return tagged
+    from api.services.aquaculture_consumption_batch_allocation_service import (
+        sum_soft_allocated_feed_kg_for_cycle,
+    )
+
+    soft = sum_soft_allocated_feed_kg_for_cycle(
+        company_id,
+        start,
+        end,
+        production_cycle_id=production_cycle_id,
+        pond_id=pond_id,
+    )
+    return _q4(tagged + soft)
 
 
 def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:

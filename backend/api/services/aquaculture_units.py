@@ -151,63 +151,31 @@ def _worse_level(a: str, b: str) -> str:
     return a if _LEVEL_RANK.get(a, -1) >= _LEVEL_RANK.get(b, -1) else b
 
 
-def _fmt_band_num(d: Decimal) -> str:
-    # Drop trailing .00 for clean range labels (15 not 15.00; keep 0.5 if needed).
+def _fmt_density_num(d: Decimal) -> str:
+    """Format calculated density for display (keep 2 dp; drop trailing zeros)."""
     s = format(d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
     if "." in s:
         s = s.rstrip("0").rstrip(".")
     return s or "0"
 
 
-def _range_label_for_level(
-    level: str,
+def load_level_density_label(
     *,
-    light: Decimal,
-    comfort: Decimal,
-    stress: Decimal,
-    unit: str,
-    lang: str,
-) -> str:
-    """Human range for the active band, e.g. '15–40 kg/dec' or '< 15 kg/dec'."""
-    lv = (level or "").strip()
-    lo = _fmt_band_num(light)
-    mid = _fmt_band_num(comfort)
-    hi = _fmt_band_num(stress)
-    if lv == "understocked":
-        return _pick(lang, f"< {lo} {unit}", f"< {lo} {unit}")
-    if lv == "moderate":
-        return _pick(lang, f"{lo}–{mid} {unit}", f"{lo}–{mid} {unit}")
-    if lv == "full":
-        return _pick(lang, f"{mid}–{hi} {unit}", f"{mid}–{hi} {unit}")
-    if lv == "high_risk":
-        return _pick(lang, f"≥ {hi} {unit}", f"≥ {hi} {unit}")
-    return _pick(lang, f"— {unit}", f"— {unit}")
-
-
-def load_level_range_label(
-    level: str,
-    *,
-    pond_role: str | None,
+    kg_per_dec: Decimal | None,
+    pcs_per_dec: Decimal | None = None,
     lang: str | None = "en",
-    include_pcs: bool = True,
 ) -> str:
     """
-    Display label for load badges: the active band ranges (not 'Moderate' / 'Full').
-    Example: '15–40 kg/dec · 150–230 pcs/dec'
+    Display label for load badges: the calculated densities (not band ranges / word names).
+    Example: '30 kg/dec · 200 pcs/dec'
     """
     lang_n = normalize_lang(lang)
-    if (level or "").strip() == "unknown":
+    if kg_per_dec is None:
         return _pick(lang_n, "Set water area", "জলের আয়তন দিন")
-    kg_l, kg_c, kg_s, pcs_l, pcs_c, pcs_s = _full_bands_for_role(pond_role)
-    kg_part = _range_label_for_level(
-        level, light=kg_l, comfort=kg_c, stress=kg_s, unit="kg/dec", lang=lang_n
-    )
-    if not include_pcs:
-        return kg_part
-    pcs_part = _range_label_for_level(
-        level, light=pcs_l, comfort=pcs_c, stress=pcs_s, unit="pcs/dec", lang=lang_n
-    )
-    return f"{kg_part} · {pcs_part}"
+    parts = [f"{_fmt_density_num(kg_per_dec)} kg/dec"]
+    if pcs_per_dec is not None:
+        parts.append(f"{_fmt_density_num(pcs_per_dec)} pcs/dec")
+    return " · ".join(parts)
 
 
 def compute_stocking_load_advice(
@@ -224,7 +192,7 @@ def compute_stocking_load_advice(
 
     kg/dec = biomass ÷ water decimals; pcs/dec = heads ÷ water decimals.
     ``load_level`` stays understocked|moderate|full|high_risk|unknown for badge colour /
-    feeding bias. ``load_level_label`` shows the **numeric range** for that band.
+    feeding bias. ``load_level_label`` shows the **exact calculated** kg/dec (and pcs/dec).
     Overall level is the worse of kg and pcs bands when both are known.
     """
     kg_l, kg_c, kg_s, pcs_l, pcs_c, pcs_s = _full_bands_for_role(pond_role)
@@ -267,7 +235,7 @@ def compute_stocking_load_advice(
             "stock_density_pcs_per_decimal": None,
             "stock_density_kg_per_1000_cu_ft": str(kg_per_kcuft) if kg_per_kcuft is not None else None,
             "load_level": "unknown",
-            "load_level_label": load_level_range_label("unknown", pond_role=pond_role, lang=lang_n),
+            "load_level_label": load_level_density_label(kg_per_dec=None, lang=lang_n),
             "load_level_kg": "unknown",
             "load_level_pcs": "unknown",
             "advice_summary": load_set_water_area_summary(lang_n),
@@ -281,18 +249,17 @@ def compute_stocking_load_advice(
     )
     level = level_kg if level_pcs == "unknown" else _worse_level(level_kg, level_pcs)
 
-    label = load_level_range_label(
-        level,
-        pond_role=pond_role,
+    label = load_level_density_label(
+        kg_per_dec=kg_per_dec,
+        pcs_per_dec=pcs_per_dec,
         lang=lang_n,
-        include_pcs=pcs_per_dec is not None,
     )
     summary = load_advice_summary(level, kg_per_dec, lang_n)
     if pcs_per_dec is not None:
         summary = _pick(
             lang_n,
-            f"{summary} Standing ~{pcs_per_dec} pcs/dec (band {label}).",
-            f"{summary} বর্তমান ~{pcs_per_dec} pcs/ডেসিমেল (ব্যান্ড {label})।",
+            f"{summary} Standing {_fmt_density_num(pcs_per_dec)} pcs/dec.",
+            f"{summary} বর্তমান {_fmt_density_num(pcs_per_dec)} pcs/ডেসিমেল।",
         )
 
     extra = ""

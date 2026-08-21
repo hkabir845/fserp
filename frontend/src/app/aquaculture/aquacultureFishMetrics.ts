@@ -18,7 +18,7 @@ export type StockMetricsRow = {
   stock_density_pcs_per_decimal?: string | null
   stock_density_kg_per_1000_cu_ft?: string | null
   load_level?: string
-  /** Active band ranges, e.g. "15–40 kg/dec · 150–230 pcs/dec". */
+  /** Exact calculated densities, e.g. "30 kg/dec · 200 pcs/dec". */
   load_level_label?: string
   advice_summary?: string
   partial_harvest_applicable?: boolean

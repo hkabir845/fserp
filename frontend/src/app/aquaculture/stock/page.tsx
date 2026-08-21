@@ -103,7 +103,7 @@ interface PositionRow {
   stock_density_pcs_per_decimal?: string | null
   stock_density_kg_per_1000_cu_ft?: string | null
   load_level?: string
-  /** Active band ranges from API, e.g. "15–40 kg/dec · 150–230 pcs/dec". */
+  /** Exact calculated densities, e.g. "30 kg/dec · 200 pcs/dec". */
   load_level_label?: string
   advice_summary?: string
   reference_note?: string
@@ -431,8 +431,7 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
               <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${badgeClass}`}>
                 {r.load_level_label}
               </span>
-            ) : null}
-            {densityLine ? (
+            ) : densityLine ? (
               <span className="tabular-nums text-sm">{densityLine}</span>
             ) : (
               <span className="text-xs text-muted-foreground">Set water area and depth on pond</span>
@@ -1489,8 +1488,7 @@ function AquacultureStockPageContent() {
                                 <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${badgeClass}`}>
                                   {r.load_level_label}
                                 </span>
-                              ) : null}
-                              {densityLine ? (
+                              ) : densityLine ? (
                                 <span className="tabular-nums text-sm">{densityLine}</span>
                               ) : (
                                 <span className="text-xs text-muted-foreground">Set water area and depth on pond</span>

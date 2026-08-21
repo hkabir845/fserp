@@ -89,7 +89,7 @@ interface Pond extends PondOpeningSource {
   tilapia_pcs_per_decimal?: string | null
   tilapia_kg_per_1000_cu_ft?: string | null
   tilapia_load_level?: string | null
-  /** Active band ranges, e.g. "15–40 kg/dec · 150–230 pcs/dec". */
+  /** Exact calculated densities, e.g. "30 kg/dec · 200 pcs/dec". */
   tilapia_load_level_label?: string | null
   lease_contract_start: string | null
   lease_contract_end: string | null
@@ -253,33 +253,32 @@ function PondTilapiaLoadCell({ p }: { p: Pond }) {
           <span className="text-muted-foreground/70">kg —</span>
         )}
       </p>
-      <p className="tabular-nums text-muted-foreground">
-        {kpd != null && !Number.isNaN(kpd) ? (
-          <span title="Kilograms of tilapia biomass per decimal of water surface">
-            {formatNumber(kpd, 3)} kg/dec
-          </span>
-        ) : (
-          <span className="text-muted-foreground/70" title="Set water area (decimal) on the pond to compute kg per decimal">
-            kg/dec —
-          </span>
-        )}
-        {ppd != null && !Number.isNaN(ppd) ? (
-          <>
-            <span className="text-muted-foreground/40"> · </span>
-            <span title="Standing fish count per decimal of water surface">
-              {formatNumber(ppd, 0)} pcs/dec
-            </span>
-          </>
-        ) : null}
-      </p>
       {label ? (
         <span
           className={`inline-flex max-w-[14rem] flex-wrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-snug ${tilapiaLoadBadgeClass(level)}`}
-          title="Indicative load band for this pond role (worse of kg/dec and pcs/dec)"
+          title="Calculated kg/dec and pcs/dec (badge colour from load band)"
         >
           {label}
         </span>
-      ) : null}
+      ) : kpd != null && !Number.isNaN(kpd) ? (
+        <p className="tabular-nums text-muted-foreground">
+          <span title="Kilograms of tilapia biomass per decimal of water surface">
+            {formatNumber(kpd, 3)} kg/dec
+          </span>
+          {ppd != null && !Number.isNaN(ppd) ? (
+            <>
+              <span className="text-muted-foreground/40"> · </span>
+              <span title="Standing fish count per decimal of water surface">
+                {formatNumber(ppd, 0)} pcs/dec
+              </span>
+            </>
+          ) : null}
+        </p>
+      ) : (
+        <p className="tabular-nums text-muted-foreground/70" title="Set water area (decimal) on the pond to compute density">
+          kg/dec —
+        </p>
+      )}
     </div>
   )
 }

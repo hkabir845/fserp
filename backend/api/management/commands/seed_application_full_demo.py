@@ -198,8 +198,8 @@ class Command(BaseCommand):
                 sort_order=10,
                 is_active=True,
                 notes="Application demo seed — grow-out.",
-                leasing_area_decimal=Decimal("12.5000"),
-                water_area_decimal=Decimal("11.8000"),
+                leasing_area_decimal=Decimal("1250.00"),
+                water_area_decimal=Decimal("1180.00"),
                 pond_depth_ft=Decimal("5.250"),
                 pond_role="grow_out",
             )
@@ -216,8 +216,8 @@ class Command(BaseCommand):
                 sort_order=20,
                 is_active=True,
                 notes="Application demo seed — nursing.",
-                leasing_area_decimal=Decimal("4.2500"),
-                water_area_decimal=Decimal("4.0000"),
+                leasing_area_decimal=Decimal("425.00"),
+                water_area_decimal=Decimal("400.00"),
                 pond_depth_ft=Decimal("3.937"),
                 pond_role="nursing",
             )

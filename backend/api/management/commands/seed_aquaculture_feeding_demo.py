@@ -106,11 +106,12 @@ def _cleanup_demo(company_id: int, stdout, style) -> None:
 
 
 # Pond code, display name, role, water dec, depth ft, fish count, total kg (tilapia), sample avg kg, sack kg for advice
+# Water area is Bangladesh decimals (1 acre = 100 dec) — not acre counts.
 POND_SPECS: tuple[tuple[str, str, str, Decimal, Decimal, int, Decimal, Decimal, int], ...] = (
-    ("FEED-UI-KHUL-A", "Khalishpur Grow-A", "grow_out", Decimal("2.1000"), Decimal("5.600"), 13500, Decimal("2430.0000"), Decimal("0.180000"), 25),
-    ("FEED-UI-CHAL-B", "Chalna Grow-B", "grow_out", Decimal("1.6000"), Decimal("5.100"), 9800, Decimal("931.0000"), Decimal("0.095000"), 20),
-    ("FEED-UI-RUP-C", "Rupsha Nursery-C", "nursing", Decimal("0.4800"), Decimal("4.000"), 48000, Decimal("576.0000"), Decimal("0.012000"), 25),
-    ("FEED-UI-BAT-D", "Batiaghata Finisher-D", "grow_out", Decimal("3.0500"), Decimal("6.100"), 8200, Decimal("2624.0000"), Decimal("0.320000"), 10),
+    ("FEED-UI-KHUL-A", "Khalishpur Grow-A", "grow_out", Decimal("210.00"), Decimal("5.600"), 13500, Decimal("2430.0000"), Decimal("0.180000"), 25),
+    ("FEED-UI-CHAL-B", "Chalna Grow-B", "grow_out", Decimal("160.00"), Decimal("5.100"), 9800, Decimal("931.0000"), Decimal("0.095000"), 20),
+    ("FEED-UI-RUP-C", "Rupsha Nursery-C", "nursing", Decimal("48.00"), Decimal("4.000"), 48000, Decimal("576.0000"), Decimal("0.012000"), 25),
+    ("FEED-UI-BAT-D", "Batiaghata Finisher-D", "grow_out", Decimal("305.00"), Decimal("6.100"), 8200, Decimal("2624.0000"), Decimal("0.320000"), 10),
 )
 
 

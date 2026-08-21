@@ -84,8 +84,8 @@ class Command(BaseCommand):
                         sort_order=int(sort_base) + idx * 10,
                         is_active=True,
                         notes=f"Bulk demo seed (≥5 examples) — {code}.",
-                        leasing_area_decimal=Decimal("10.0000") + Decimal(idx),
-                        water_area_decimal=Decimal("9.5000") + Decimal(idx) * Decimal("0.1"),
+                        leasing_area_decimal=Decimal("1000.00") + Decimal(idx) * Decimal("100"),
+                        water_area_decimal=Decimal("950.00") + Decimal(idx) * Decimal("10"),
                         pond_depth_ft=Decimal("4.500") + Decimal(idx) * Decimal("0.1"),
                         pond_role="grow_out" if idx % 2 == 1 else "nursing",
                     )

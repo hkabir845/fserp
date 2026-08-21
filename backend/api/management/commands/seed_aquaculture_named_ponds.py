@@ -71,15 +71,15 @@ POND_PROFILES: tuple[dict, ...] = (
         "name": "Ashari-1",
         "role": "grow_out",
         "code_stem": "ASHARI1",
-        "water_area_decimal": Decimal("800.00"),
-        "leasing_area_decimal": Decimal("835.00"),
+        "water_area_decimal": Decimal("310.00"),
+        "leasing_area_decimal": Decimal("335.00"),
         "pond_depth_ft": Decimal("6.20"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("400000.00"),
         "notes": (
-            "Largest production cell (~800 dec water / ~8 acres); deeper average depth for dry-season carry. "
+            "Largest production cell (~310 dec water / ~3.1 acres); deeper average depth for dry-season carry. "
             "Improved GIFT line; bamboo sluice maintenance budgeted each monsoon."
         ),
         "demo_fish_count": 14200,
@@ -89,15 +89,15 @@ POND_PROFILES: tuple[dict, ...] = (
         "name": "Ashari-2",
         "role": "grow_out",
         "code_stem": "ASHARI2",
-        "water_area_decimal": Decimal("480.00"),
-        "leasing_area_decimal": Decimal("520.00"),
+        "water_area_decimal": Decimal("185.00"),
+        "leasing_area_decimal": Decimal("205.00"),
         "pond_depth_ft": Decimal("5.00"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("379250.00"),
         "notes": (
-            "Earthen pond with inlet from shared canal (~480 dec water); slightly shallower — watch afternoon DO "
+            "Earthen pond with inlet from shared canal (~185 dec water); slightly shallower — watch afternoon DO "
             "in April–May. Lease prepaid through contract term (balance zero in demo)."
         ),
         "demo_fish_count": 9600,

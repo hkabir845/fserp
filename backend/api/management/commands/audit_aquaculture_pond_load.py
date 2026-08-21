@@ -6,8 +6,9 @@ was entered in acres (or acres×10) instead of Bangladesh decimals (1 acre = 100
 
 Examples:
   python manage.py audit_aquaculture_pond_load --company-id 2
-  python manage.py audit_aquaculture_pond_load --company-id 2 --scale-water-by 10 --apply
+  python manage.py audit_aquaculture_pond_load --company-id 2 --scale-water-by 10 --only-flagged --apply
   python manage.py audit_aquaculture_pond_load --company-id 2 --pond-id 17 --scale-water-by 10 --apply
+  python manage.py audit_aquaculture_pond_load --company-id 1 --scale-water-by 100 --only-flagged --also-scale-leasing --apply
 """
 from __future__ import annotations
 
@@ -56,6 +57,23 @@ class Command(BaseCommand):
             help="Persist --scale-water-by changes (otherwise dry-run).",
         )
         parser.add_argument(
+            "--only-flagged",
+            action="store_true",
+            help=(
+                "With --scale-water-by, only scale ponds that have at least one stock row "
+                "at/above --high-kg-dec (safer when some ponds already use correct decimals)."
+            ),
+        )
+        parser.add_argument(
+            "--max-water-to-scale",
+            type=str,
+            default="50",
+            help=(
+                "With --only-flagged, skip ponds whose water_area_decimal is already above this "
+                "(default 50). Avoids ×10/×100 on ponds that are high-load from biomass, not tiny area."
+            ),
+        )
+        parser.add_argument(
             "--high-kg-dec",
             type=str,
             default="80",
@@ -89,6 +107,7 @@ class Command(BaseCommand):
             f"(kg/dec = biomass ÷ water_area_decimal; 1 acre = 100 decimals)"
         )
         flagged = 0
+        flagged_pond_ids: set[int] = set()
         for p in pond_list:
             wa = p.water_area_decimal
             rows = compute_fish_stock_position_breakdown_rows(cid, pond_id=p.id)
@@ -107,6 +126,7 @@ class Command(BaseCommand):
                 suspect = dens >= high and (role in ("grow_out", "other", "") or dens >= high * 2)
                 if suspect:
                     flagged += 1
+                    flagged_pond_ids.add(p.id)
                 mark = " ** CHECK WATER AREA (often ×10 or ×100 short) **" if suspect else ""
                 self.stdout.write(
                     f"  pond id={p.id} {p.name!r} cycle={cy!r} species={r.get('fish_species')} "
@@ -121,7 +141,9 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.NOTICE(
                         "If kg/dec is ~10× too high vs farm spreadsheet, water area is usually 10× too small. "
-                        "Re-run with --scale-water-by 10 --apply (add --also-scale-leasing if lease land matches)."
+                        "Re-run with --scale-water-by 10 --only-flagged --apply "
+                        "(add --also-scale-leasing if lease land matches). "
+                        "Use --scale-water-by 100 when values look like acres (e.g. 3.10 instead of 310)."
                     )
                 )
             return
@@ -130,19 +152,37 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR("--scale-water-by must be > 0"))
             return
 
+        only_flagged = bool(options["only_flagged"])
+        max_water = _d(options["max_water_to_scale"])
+        target_ids = sorted(flagged_pond_ids) if only_flagged else [x.id for x in pond_list]
+        if only_flagged and not target_ids:
+            self.stdout.write(self.style.WARNING("No flagged ponds to scale."))
+            return
+
         self.stdout.write(
             self.style.WARNING(
                 f"{'APPLY' if apply else 'DRY-RUN'}: multiply water_area_decimal by {scale}"
                 + (" and leasing_area_decimal" if also_lease else "")
+                + (
+                    f" for flagged ponds with water_area <= {max_water}"
+                    if only_flagged
+                    else f" for {len(target_ids)} pond(s)"
+                )
             )
         )
         updated = 0
         with transaction.atomic():
             for p in AquaculturePond.objects.select_for_update().filter(
-                company_id=cid, pk__in=[x.id for x in pond_list]
+                company_id=cid, pk__in=target_ids
             ):
                 if p.water_area_decimal is None or p.water_area_decimal <= 0:
-                    self.stdout.write(f"  skip id={p.id} {p.name!r} — no water area")
+                    self.stdout.write(f"  skip id={p.id} {p.name!r} - no water area")
+                    continue
+                if only_flagged and p.water_area_decimal > max_water:
+                    self.stdout.write(
+                        f"  skip id={p.id} {p.name!r} - water {p.water_area_decimal} already > {max_water} "
+                        f"(high kg/dec is likely biomass, not area units)"
+                    )
                     continue
                 old_w = p.water_area_decimal
                 new_w = quantize_pond_area_decimal(old_w * scale)
@@ -155,8 +195,8 @@ class Command(BaseCommand):
                     p.leasing_area_decimal = new_l
                     fields.append("leasing_area_decimal")
                 self.stdout.write(
-                    f"  id={p.id} {p.name!r}: water {old_w} → {new_w}"
-                    + (f"; lease {old_l} → {new_l}" if also_lease else "")
+                    f"  id={p.id} {p.name!r}: water {old_w} -> {new_w}"
+                    + (f"; lease {old_l} -> {new_l}" if also_lease else "")
                 )
                 if apply:
                     p.save(update_fields=fields)

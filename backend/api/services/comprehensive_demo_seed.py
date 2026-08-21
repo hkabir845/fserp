@@ -401,9 +401,9 @@ def _ensure_landlords(company_id: int, stdout: TextIO, style: Any) -> None:
         return
     ponds = {p.name: p for p in AquaculturePond.objects.filter(company_id=company_id, is_active=True)}
     specs = [
-        ("COMP-LL-MYNUDDIN", "Mynuddin Family Estate", "Mynuddin", Decimal("2.6500")),
-        ("COMP-LL-ASHARI", "Ashari Pond Owners Assoc.", "Ashari-1", Decimal("3.3500")),
-        ("COMP-LL-DIGONTA", "Digonta Canal Lease", "Digonta", Decimal("0.8000")),
+        ("COMP-LL-MYNUDDIN", "Mynuddin Family Estate", "Mynuddin", Decimal("265.00")),
+        ("COMP-LL-ASHARI", "Ashari Pond Owners Assoc.", "Ashari-1", Decimal("335.00")),
+        ("COMP-LL-DIGONTA", "Digonta Canal Lease", "Digonta", Decimal("80.00")),
     ]
     n = 0
     for code, lname, pond_name, area in specs:

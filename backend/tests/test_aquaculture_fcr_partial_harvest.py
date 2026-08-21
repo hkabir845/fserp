@@ -141,7 +141,7 @@ def test_load_kg_per_dec_divides_biomass_by_water_area():
 
 
 def test_ashari1_c03_load_at_400_decimal_water():
-    """Batch C03: 64878 fish @ 8.76 pcs/kg on Ashari-1 (400 dec) → ~18.52 kg/dec."""
+    """Batch C03-style: 64878 fish @ 8.76 pcs/kg on 400 dec → ~18.52 kg/dec."""
     fish = 64878
     pcs = Decimal("8.76")
     bio = (Decimal(fish) / pcs).quantize(Decimal("0.0001"))
@@ -166,6 +166,30 @@ def test_ashari1_c03_load_at_400_decimal_water():
         lang="en",
     )
     assert bad["stock_density_kg_per_decimal"] == "110.54"
+
+
+def test_ashari1_tilapia_c03_live_prefers_sample_over_inflated_book():
+    """Live Ashari-1: water 750, book 82924, sample 8.76 pcs/kg → load 9.87 not 110.57."""
+    from api.services.aquaculture_partial_harvest import effective_biomass_kg_from_position_row
+
+    row = {
+        "implied_net_weight_kg": "82924.2454",
+        "implied_net_fish_count": 64878,
+        "latest_sample_avg_weight_kg": "0.114155",
+        "pond_role": "grow_out",
+    }
+    bio = effective_biomass_kg_from_position_row(row)
+    assert bio == Decimal("7406.1481") or abs(bio - Decimal("7406.1644")) < Decimal("0.02")
+    enriched = enrich_position_row_with_fish_metrics(
+        {
+            **row,
+            "water_volume_cu_ft": None,
+        },
+        water_area_decimal=Decimal("750"),
+        lang="en",
+    )
+    assert enriched["stock_density_kg_per_decimal"] == "9.87"
+    assert enriched["biomass_kg_for_load"] == str(bio)
 
 
 def test_load_level_worse_of_kg_and_pcs():

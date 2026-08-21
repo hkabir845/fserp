@@ -168,8 +168,12 @@ def compute_partial_harvest_suggestion(
 
 def effective_biomass_kg_from_position_row(row: dict) -> Decimal:
     """
-    Biomass kg for outbound checks and UI when transaction book weight still reflects fry
-    stocking but a biomass sample shows fingerlings have grown (pcs/kg from seine sampling).
+    Live biomass for load / outbound checks.
+
+    Prefer sample-derived weight (avg × heads) when a size sample exists. Book kg alone is often
+    wrong both ways: fry transfers understate growth, and bad transfer kg can overstate mass.
+    Ashari-1 Tilapia C03 live example: book 82924 kg vs sample 7406 kg @ 8.76 pcs/kg — load must
+    use the sample figure (÷ water 750 dec → 9.87 kg/dec), not max(book, sample).
     """
     implied_w = _d(row.get("implied_net_weight_kg"))
     try:
@@ -189,8 +193,7 @@ def effective_biomass_kg_from_position_row(row: dict) -> Decimal:
             avg_kg = (Decimal("1") / pcs).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
     if avg_kg > 0:
-        sample_based = (avg_kg * Decimal(fish_n)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-        return max(implied_w, sample_based)
+        return (avg_kg * Decimal(fish_n)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     return implied_w
 
 

@@ -592,6 +592,7 @@ def _inter_pond_transfer_to_json(t: PondWarehouseInterPondTransfer) -> dict:
         "to_pond_id": t.to_pond_id,
         "to_pond_name": (t.to_pond.name or "").strip() if t.to_pond_id else "",
         "memo": t.memo or "",
+        "transfer_date": t.transfer_date.isoformat() if t.transfer_date else None,
         "created_at": t.created_at.isoformat() if t.created_at else "",
         "total_value": str(total_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
         "lines": line_rows,
@@ -2318,8 +2319,9 @@ def aquaculture_pond_warehouse_transfer(request):
         pond_id = int(raw_pid)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    td = _parse_date(body.get("transfer_date")) or django_timezone.localdate()
     # Date-aware lock: year-close archives a period; new-season warehouse moves after period_end stay allowed.
-    lock_err = _pond_write_lock_response(cid, pond_id, django_timezone.localdate())
+    lock_err = _pond_write_lock_response(cid, pond_id, td)
     if lock_err:
         return lock_err
     items = body.get("items")
@@ -2331,6 +2333,7 @@ def aquaculture_pond_warehouse_transfer(request):
             station_id=station_id,
             pond_id=pond_id,
             items=items,
+            transfer_date=td,
         )
     except StockBusinessError as ex:
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
@@ -2364,7 +2367,8 @@ def aquaculture_pond_warehouse_return(request):
         pond_id = int(raw_pid)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
-    lock_err = _pond_write_lock_response(cid, pond_id, django_timezone.localdate())
+    td = _parse_date(body.get("transfer_date")) or django_timezone.localdate()
+    lock_err = _pond_write_lock_response(cid, pond_id, td)
     if lock_err:
         return lock_err
     items = body.get("items")
@@ -2378,6 +2382,7 @@ def aquaculture_pond_warehouse_return(request):
             station_id=station_id,
             items=items,
             memo=memo,
+            transfer_date=td,
         )
     except StockBusinessError as ex:
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
@@ -2676,7 +2681,7 @@ def aquaculture_pond_warehouse_inter_pond_transfers(request):
         qs = (
             PondWarehouseInterPondTransfer.objects.filter(company_id=cid)
             .select_related("from_pond", "to_pond")
-            .order_by("-created_at", "-id")[:200]
+            .order_by("-transfer_date", "-id")[:200]
         )
         return JsonResponse([_inter_pond_transfer_to_json(t) for t in qs], safe=False)
 
@@ -2692,12 +2697,11 @@ def aquaculture_pond_warehouse_inter_pond_transfers(request):
         to_pond_id = int(raw_tp)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "from_pond_id and to_pond_id must be integers"}, status=400)
-    # Date-aware: undated checks treat any Data Bank lock as a hard block for all warehouse moves.
-    today = django_timezone.localdate()
-    lock_err = _pond_write_lock_response(cid, from_pond_id, today)
+    td = _parse_date(body.get("transfer_date")) or django_timezone.localdate()
+    lock_err = _pond_write_lock_response(cid, from_pond_id, td)
     if lock_err:
         return lock_err
-    lock_err = _pond_write_lock_response(cid, to_pond_id, today)
+    lock_err = _pond_write_lock_response(cid, to_pond_id, td)
     if lock_err:
         return lock_err
     items = body.get("items")
@@ -2710,6 +2714,7 @@ def aquaculture_pond_warehouse_inter_pond_transfers(request):
             to_pond_id=to_pond_id,
             items=items,
             memo=str(body.get("memo") or ""),
+            transfer_date=td,
         )
     except StockBusinessError as ex:
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
@@ -2739,11 +2744,11 @@ def aquaculture_pond_warehouse_inter_pond_transfer_detail(request, transfer_id: 
         return JsonResponse(_inter_pond_transfer_to_json(xfer))
 
     if request.method == "DELETE":
-        today = django_timezone.localdate()
-        lock_err = _pond_write_lock_response(cid, xfer.from_pond_id, today)
+        td = xfer.transfer_date or django_timezone.localdate()
+        lock_err = _pond_write_lock_response(cid, xfer.from_pond_id, td)
         if lock_err:
             return lock_err
-        lock_err = _pond_write_lock_response(cid, xfer.to_pond_id, today)
+        lock_err = _pond_write_lock_response(cid, xfer.to_pond_id, td)
         if lock_err:
             return lock_err
         try:
@@ -2764,11 +2769,11 @@ def aquaculture_pond_warehouse_inter_pond_transfer_detail(request, transfer_id: 
         to_pond_id = int(raw_tp)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "from_pond_id and to_pond_id must be integers"}, status=400)
-    today = django_timezone.localdate()
-    lock_err = _pond_write_lock_response(cid, from_pond_id, today)
+    td = _parse_date(body.get("transfer_date")) or xfer.transfer_date or django_timezone.localdate()
+    lock_err = _pond_write_lock_response(cid, from_pond_id, td)
     if lock_err:
         return lock_err
-    lock_err = _pond_write_lock_response(cid, to_pond_id, today)
+    lock_err = _pond_write_lock_response(cid, to_pond_id, td)
     if lock_err:
         return lock_err
     items = body.get("items")
@@ -2782,6 +2787,7 @@ def aquaculture_pond_warehouse_inter_pond_transfer_detail(request, transfer_id: 
             to_pond_id=to_pond_id,
             items=items,
             memo=str(body.get("memo") or ""),
+            transfer_date=td,
         )
     except StockBusinessError as ex:
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)

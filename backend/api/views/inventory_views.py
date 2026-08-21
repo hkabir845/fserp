@@ -75,12 +75,22 @@ def _pond_receipt_visible_for_user(request, rec: PondWarehouseStockReceipt) -> b
     return int(rec.from_station_id) == h
 
 
-def _pond_warehouse_lock_response(company_id: int, pond_id: int):
-    """Date-aware Data Bank lock for undated warehouse receipt/return edits (uses today)."""
-    detail = pond_write_blocked_detail(company_id, pond_id, timezone.localdate())
+def _pond_warehouse_lock_response(company_id: int, pond_id: int, transaction_date: date | None = None):
+    """Date-aware Data Bank lock for warehouse receipt/return edits."""
+    td = transaction_date or timezone.localdate()
+    detail = pond_write_blocked_detail(company_id, pond_id, td)
     if detail:
         return JsonResponse({"detail": detail, "code": "pond_data_locked"}, status=409)
     return None
+
+
+def _parse_transfer_date(raw) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw).split("T")[0])
+    except (TypeError, ValueError):
+        return None
 
 
 def _pond_return_visible_for_user(request, ret: PondWarehouseStockReturn) -> bool:
@@ -123,6 +133,7 @@ def _pond_receipt_to_json(rec: PondWarehouseStockReceipt) -> dict:
         "movement_type": "shop_to_pond",
         "receipt_number": rec.receipt_number or "",
         "document_number": rec.receipt_number or "",
+        "transfer_date": rec.transfer_date.isoformat() if rec.transfer_date else None,
         "created_at": rec.created_at.isoformat() if rec.created_at else None,
         "from_station_id": rec.from_station_id,
         "from_station_name": (rec.from_station.station_name or "") if rec.from_station_id else "",
@@ -155,6 +166,7 @@ def _pond_return_to_json(ret: PondWarehouseStockReturn) -> dict:
         "movement_type": "pond_to_shop",
         "return_number": ret.return_number or "",
         "document_number": ret.return_number or "",
+        "transfer_date": ret.transfer_date.isoformat() if ret.transfer_date else None,
         "created_at": ret.created_at.isoformat() if ret.created_at else None,
         "from_station_id": None,
         "from_station_name": "",
@@ -496,7 +508,7 @@ def pond_warehouse_receipts_list(request):
     h = _user_home_station_id(request)
     if h is not None:
         qs = qs.filter(from_station_id=h)
-    qs = qs.order_by("-created_at", "-id")[:200]
+    qs = qs.order_by("-transfer_date", "-id")[:200]
     return JsonResponse([_pond_receipt_to_json(r) for r in qs], safe=False)
 
 
@@ -533,8 +545,9 @@ def pond_warehouse_receipt_detail_or_amend(request, receipt_id: int):
         pond_id = int(raw_pid)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "station_id and pond_id must be integers"}, status=400)
+    td = _parse_transfer_date(body.get("transfer_date")) or rec.transfer_date or timezone.localdate()
     for pid in {int(rec.pond_id), pond_id}:
-        lock_err = _pond_warehouse_lock_response(cid, pid)
+        lock_err = _pond_warehouse_lock_response(cid, pid, td)
         if lock_err:
             return lock_err
     items = body.get("items")
@@ -547,6 +560,7 @@ def pond_warehouse_receipt_detail_or_amend(request, receipt_id: int):
             station_id=station_id,
             pond_id=pond_id,
             items=items,
+            transfer_date=td,
         )
     except StockBusinessError as ex:
         return JsonResponse({"detail": ex.detail}, status=400)
@@ -1127,7 +1141,9 @@ def pond_warehouse_receipt_reverse_view(request, receipt_id: int):
         return JsonResponse({"detail": "Receipt not found"}, status=404)
     if not _pond_receipt_visible_for_user(request, rec):
         return JsonResponse({"detail": "Receipt not found"}, status=404)
-    lock_err = _pond_warehouse_lock_response(cid, int(rec.pond_id))
+    lock_err = _pond_warehouse_lock_response(
+        cid, int(rec.pond_id), rec.transfer_date or timezone.localdate()
+    )
     if lock_err:
         return lock_err
     try:
@@ -1155,7 +1171,7 @@ def pond_warehouse_returns_list(request):
     h = _user_home_station_id(request)
     if h is not None:
         qs = qs.filter(to_station_id=h)
-    qs = qs.order_by("-created_at", "-id")[:200]
+    qs = qs.order_by("-transfer_date", "-id")[:200]
     return JsonResponse([_pond_return_to_json(r) for r in qs], safe=False)
 
 
@@ -1171,7 +1187,9 @@ def pond_warehouse_return_reverse_view(request, return_id: int):
         return JsonResponse({"detail": "Return not found"}, status=404)
     if not _pond_return_visible_for_user(request, ret):
         return JsonResponse({"detail": "Return not found"}, status=404)
-    lock_err = _pond_warehouse_lock_response(cid, int(ret.pond_id))
+    lock_err = _pond_warehouse_lock_response(
+        cid, int(ret.pond_id), ret.transfer_date or timezone.localdate()
+    )
     if lock_err:
         return lock_err
     try:

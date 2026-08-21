@@ -173,6 +173,7 @@ type PondReceiptRecord = {
   receipt_number?: string
   return_number?: string
   document_number?: string
+  transfer_date?: string | null
   created_at: string | null
   from_station_id?: number | null
   from_station_name?: string
@@ -649,9 +650,12 @@ function InventoryContent() {
             }))
           : []
       const merged = [...receiptRows, ...returnRows].sort((a, b) => {
-        const ta = a.created_at ? Date.parse(a.created_at) : 0
-        const tb = b.created_at ? Date.parse(b.created_at) : 0
-        return tb - ta
+        const da = a.transfer_date || a.created_at || ''
+        const db = b.transfer_date || b.created_at || ''
+        const ta = da ? Date.parse(da) : 0
+        const tb = db ? Date.parse(db) : 0
+        if (tb !== ta) return tb - ta
+        return b.id - a.id
       })
       setPondReceipts(merged)
       if (coRes.status === 'fulfilled' && coRes.value && 'data' in coRes.value) {
@@ -1088,7 +1092,9 @@ function InventoryContent() {
     if (pondMovementIsReturn(r)) return
     setFromEndpoint({ kind: 'station', id: r.from_station_id! })
     setToEndpoint({ kind: 'pond', id: r.pond_id })
-    setTransferDate(new Date().toISOString().split('T')[0])
+    const raw = (r.transfer_date || r.created_at || '').trim()
+    const d = raw.includes('T') ? raw.split('T')[0] : raw.slice(0, 10)
+    setTransferDate(d || new Date().toISOString().split('T')[0])
     setTransferMemo('')
     setLineRows(
       r.lines?.length
@@ -1174,6 +1180,7 @@ function InventoryContent() {
         await api.put(`/inventory/pond-warehouse-receipts/${editingPondReceiptId}/`, {
           station_id: fromEndpoint.id,
           pond_id: toEndpoint.id,
+          transfer_date: transferDate,
           items: linePayload,
         })
         toast.success(inventoryT('toastPondReceiptUpdated', language))
@@ -1184,6 +1191,7 @@ function InventoryContent() {
         await api.post('/aquaculture/pond-warehouse-transfer/', {
           station_id: fromEndpoint.id,
           pond_id: toEndpoint.id,
+          transfer_date: transferDate,
           items: linePayload,
         })
         toast.success(inventoryT('toastStockMovedToPond', language, { name: pname }))
@@ -1191,6 +1199,7 @@ function InventoryContent() {
         await api.post('/aquaculture/pond-warehouse-inter-pond-transfers/', {
           from_pond_id: fromEndpoint.id,
           to_pond_id: toEndpoint.id,
+          transfer_date: transferDate,
           items: linePayload,
           memo: transferMemo || '',
         })
@@ -1203,6 +1212,7 @@ function InventoryContent() {
         await api.post('/aquaculture/pond-warehouse-return/', {
           station_id: toEndpoint.id,
           pond_id: fromEndpoint.id,
+          transfer_date: transferDate,
           items: linePayload,
           memo: transferMemo || '',
         })
@@ -1989,16 +1999,12 @@ function InventoryContent() {
                           {inventoryT('documentDetails', language)}
                         </h3>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          {transferRoute === 'station-station' ||
-                          editingInterStationTransferId != null ||
-                          amendingPostedTransferId != null ? (
-                            <div className="space-y-1">
-                              <label className="text-sm font-medium" htmlFor="inv-transfer-date">
-                                {inventoryT('date', language)}
-                              </label>
-                              <CompanyDateInput value={transferDate} onChange={iso => setTransferDate(iso)} className={inputClassName} id="inv-transfer-date" />
-                            </div>
-                          ) : null}
+                          <div className="space-y-1">
+                            <label className="text-sm font-medium" htmlFor="inv-transfer-date">
+                              {inventoryT('date', language)}
+                            </label>
+                            <CompanyDateInput value={transferDate} onChange={iso => setTransferDate(iso)} className={inputClassName} id="inv-transfer-date" />
+                          </div>
                           <div className="space-y-1 sm:col-span-2">
                             <label className="text-sm font-medium" htmlFor="inv-transfer-memo">
                               {inventoryT('memo', language)}{' '}
@@ -2643,7 +2649,9 @@ function InventoryContent() {
                                 {pondMovementDocNumber(r)}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                                {r.created_at ? formatDateOnly(r.created_at) : '—'}
+                                {r.transfer_date || r.created_at
+                                  ? formatDateOnly(r.transfer_date || r.created_at!)
+                                  : '—'}
                               </td>
                               <td className="px-4 py-3">
                                 {pondMovementIsReturn(r) ? (
@@ -2828,7 +2836,11 @@ function InventoryContent() {
           <div className="space-y-4 text-sm">
             <div>
               <p className="text-xs font-medium uppercase text-muted-foreground">{inventoryT('when', language)}</p>
-              <p>{viewPondReceipt.created_at ? formatDateOnly(viewPondReceipt.created_at) : '—'}</p>
+              <p>
+                {viewPondReceipt.transfer_date || viewPondReceipt.created_at
+                  ? formatDateOnly(viewPondReceipt.transfer_date || viewPondReceipt.created_at!)
+                  : '—'}
+              </p>
             </div>
             <div>
               <p className="text-xs font-medium uppercase text-muted-foreground">Route</p>

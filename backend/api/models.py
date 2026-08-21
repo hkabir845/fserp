@@ -616,11 +616,12 @@ class PondWarehouseStockReceipt(models.Model):
         related_name="warehouse_stock_receipts",
     )
     receipt_number = models.CharField(max_length=64, blank=True)
+    transfer_date = models.DateField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "pond_warehouse_stock_receipt"
-        ordering = ["-created_at", "-id"]
+        ordering = ["-transfer_date", "-id"]
 
 
 class PondWarehouseStockReceiptLine(models.Model):
@@ -654,11 +655,12 @@ class PondWarehouseStockReturn(models.Model):
     )
     return_number = models.CharField(max_length=64, blank=True)
     memo = models.CharField(max_length=500, blank=True)
+    transfer_date = models.DateField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "pond_warehouse_stock_return"
-        ordering = ["-created_at", "-id"]
+        ordering = ["-transfer_date", "-id"]
 
 
 class PondWarehouseStockReturnLine(models.Model):
@@ -693,11 +695,12 @@ class PondWarehouseInterPondTransfer(models.Model):
     )
     transfer_number = models.CharField(max_length=64, blank=True)
     memo = models.TextField(blank=True)
+    transfer_date = models.DateField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "pond_warehouse_inter_pond_transfer"
-        ordering = ["-created_at", "-id"]
+        ordering = ["-transfer_date", "-id"]
         indexes = [
             models.Index(fields=["company", "from_pond", "created_at"]),
             models.Index(fields=["company", "to_pond", "created_at"]),

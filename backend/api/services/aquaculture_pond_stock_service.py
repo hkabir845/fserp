@@ -205,6 +205,7 @@ def transfer_station_stock_to_pond_warehouse(
     station_id: int,
     pond_id: int,
     items: list,
+    transfer_date: date | None = None,
 ) -> None:
     """
     Move inventory from a station bin to the pond warehouse. No expense or COGS (still company inventory).
@@ -225,10 +226,12 @@ def transfer_station_stock_to_pond_warehouse(
     for d in lines_data:
         add_pond_stock(company_id, pond_id, d["item"].id, d["quantity"])
 
+    td = transfer_date or date.today()
     rec = PondWarehouseStockReceipt.objects.create(
         company_id=company_id,
         from_station_id=st.id,
         pond_id=pond.id,
+        transfer_date=td,
     )
     PondWarehouseStockReceipt.objects.filter(pk=rec.pk).update(
         receipt_number=f"PWR-{rec.pk}",
@@ -249,6 +252,7 @@ def transfer_pond_warehouse_to_station(
     station_id: int,
     items: list,
     memo: str = "",
+    transfer_date: date | None = None,
 ) -> PondWarehouseStockReturn:
     """
     Move inventory from a pond warehouse back to a shop station bin. No expense or COGS (still company inventory).
@@ -270,11 +274,13 @@ def transfer_pond_warehouse_to_station(
     for d in lines_data:
         add_station_stock(company_id, station_id, d["item"].id, d["quantity"])
 
+    td = transfer_date or date.today()
     ret = PondWarehouseStockReturn.objects.create(
         company_id=company_id,
         pond_id=pond.id,
         to_station_id=st.id,
         memo=(memo or "")[:500],
+        transfer_date=td,
     )
     PondWarehouseStockReturn.objects.filter(pk=ret.pk).update(
         return_number=f"PWRT-{ret.pk}",
@@ -402,6 +408,7 @@ def amend_pond_warehouse_stock_receipt(
     station_id: int,
     pond_id: int,
     items: list,
+    transfer_date: date | None = None,
 ) -> PondWarehouseStockReceipt:
     """
     Update a shop → pond warehouse receipt: reverse the prior move, apply new lines, keep the same receipt id.
@@ -439,7 +446,11 @@ def amend_pond_warehouse_stock_receipt(
 
     rec.from_station_id = st.id
     rec.pond_id = pond.id
-    rec.save(update_fields=["from_station_id", "pond_id"])
+    update_fields = ["from_station_id", "pond_id"]
+    if transfer_date is not None:
+        rec.transfer_date = transfer_date
+        update_fields.append("transfer_date")
+    rec.save(update_fields=update_fields)
     PondWarehouseStockReceiptLine.objects.filter(receipt_id=rec.pk).delete()
     for d in lines_data:
         PondWarehouseStockReceiptLine.objects.create(
@@ -458,6 +469,7 @@ def transfer_pond_warehouse_between_ponds(
     to_pond_id: int,
     items: list,
     memo: str = "",
+    transfer_date: date | None = None,
 ) -> PondWarehouseInterPondTransfer:
     """
     Move feed/medicine stock from one pond warehouse to another (no GL).
@@ -477,11 +489,13 @@ def transfer_pond_warehouse_between_ponds(
     for d in lines_data:
         add_pond_stock(company_id, to_pond_id, d["item"].id, d["quantity"])
 
+    td = transfer_date or date.today()
     xfer = PondWarehouseInterPondTransfer.objects.create(
         company_id=company_id,
         from_pond_id=from_pond.id,
         to_pond_id=to_pond.id,
         memo=(memo or "")[:5000],
+        transfer_date=td,
     )
     PondWarehouseInterPondTransfer.objects.filter(pk=xfer.pk).update(
         transfer_number=f"PWIP-{xfer.pk}",
@@ -562,6 +576,7 @@ def amend_pond_warehouse_inter_pond_transfer(
     to_pond_id: int,
     items: list,
     memo: str = "",
+    transfer_date: date | None = None,
 ) -> PondWarehouseInterPondTransfer:
     """Update a pond-to-pond warehouse transfer: reverse prior move, apply new lines, keep transfer id."""
     from_pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).first()
@@ -600,7 +615,11 @@ def amend_pond_warehouse_inter_pond_transfer(
     xfer.from_pond_id = from_pond.id
     xfer.to_pond_id = to_pond.id
     xfer.memo = (memo or "")[:5000]
-    xfer.save(update_fields=["from_pond_id", "to_pond_id", "memo"])
+    update_fields = ["from_pond_id", "to_pond_id", "memo"]
+    if transfer_date is not None:
+        xfer.transfer_date = transfer_date
+        update_fields.append("transfer_date")
+    xfer.save(update_fields=update_fields)
     PondWarehouseInterPondTransferLine.objects.filter(transfer_id=xfer.pk).delete()
     for d in lines_data:
         PondWarehouseInterPondTransferLine.objects.create(

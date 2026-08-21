@@ -236,8 +236,11 @@ def test_transfer_reclass_posts_full_gl_when_1581_short(api_client, company_tena
         company_id=cid, entry_number=f"AUTO-AQ-FISH-XFER-{tr.id}-RECLASS", is_posted=True
     ).exists()
 
+    # The sale's paperwork releases the seller's 1581 at book cost, across the invoice journals
+    # raised for each line of the transfer.
+    line_ids = list(tr.lines.values_list("id", flat=True))
     xfer_cr = JournalEntryLine.objects.filter(
-        journal_entry__entry_number=f"AUTO-AQ-FISH-XFER-{tr.id}",
+        journal_entry__entry_number__in=[f"AUTO-IPT-INV-{tr.id}-{lid}" for lid in line_ids],
         account__account_code="1581",
         aquaculture_pond_id=src.id,
         credit__gt=0,

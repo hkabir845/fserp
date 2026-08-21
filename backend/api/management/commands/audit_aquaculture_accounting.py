@@ -8,7 +8,7 @@ Checks accounting rules:
   - Lease payments vs implied annual (area × rate)
   - Duplicate landlord payments (same pond/date/amount)
   - Missing auto-posted GL journals (gl_posting_audit)
-  - Transfer line cost vs AUTO-AQ-FISH-XFER GL amount
+  - Transfer priced lines must have AUTO-IPT invoice/bill journals (legacy XFER fallback)
 
 Usage:
   python manage.py audit_aquaculture_accounting --company-id 2
@@ -23,7 +23,6 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.management.base import BaseCommand
-from django.db.models import Sum
 
 from api.models import (
     AquacultureFishPondTransfer,
@@ -31,7 +30,6 @@ from api.models import (
     AquacultureLandlordLedgerEntry,
     AquaculturePond,
     Company,
-    JournalEntry,
 )
 from api.services.aquaculture_data_bank_service import fiscal_period_for_end_date
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
@@ -50,16 +48,35 @@ def _pond_implied_annual_lease(pond: AquaculturePond) -> Decimal | None:
 
 
 def _transfer_gl_amount(company_id: int, transfer_id: int) -> Decimal:
-    je = JournalEntry.objects.filter(
-        company_id=company_id,
-        entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}",
-        is_posted=True,
-    ).first()
-    if not je:
-        return Decimal("0")
-    return MONEY(
-        je.lines.filter(debit__gt=0).aggregate(s=Sum("debit"))["s"] or Decimal("0")
+    """
+    Book cost relieved on the seller (Cr 1581) for this trade.
+
+    Prefer AUTO-IPT invoice/bill journals; fall back to legacy AUTO-AQ-FISH-XFER until converted.
+    """
+    from api.services.aquaculture_fish_transfer_gl_service import transfer_gl_status
+
+    status = transfer_gl_status(company_id, transfer_id)
+    if status.get("gl_posted") and status.get("gl_total_amount") is not None:
+        return MONEY(status["gl_total_amount"])
+    return Decimal("0")
+
+
+def _transfer_sale_posted(company_id: int, transfer_id: int) -> bool:
+    """True when every priced line has both AUTO-IPT journals (or legacy transfer JE exists)."""
+    from api.services.aquaculture_fish_transfer_gl_service import transfer_gl_status
+    from api.services.aquaculture_internal_trade_posting import internal_trade_documents_posted
+
+    lines = list(
+        AquacultureFishPondTransferLine.objects.filter(transfer_id=transfer_id).only(
+            "id", "sale_amount"
+        )
     )
+    priced = [ln for ln in lines if MONEY(ln.sale_amount or 0) > 0]
+    if not priced:
+        return False
+    if all(internal_trade_documents_posted(company_id, transfer_id, ln.id) for ln in priced):
+        return True
+    return bool(transfer_gl_status(company_id, transfer_id).get("gl_posted"))
 
 
 class Command(BaseCommand):
@@ -200,14 +217,37 @@ class Command(BaseCommand):
                     }
                 )
 
-        # 5) Transfer line cost vs GL
+        # 5) Transfer line cost vs GL + priced lines must have IPT journals
         fix_gl = options["fix_transfer_gl"]
         for tr in AquacultureFishPondTransfer.objects.filter(company_id=company_id).order_by("id"):
             line_total = MONEY(
                 sum(MONEY(ln.cost_amount or 0) for ln in tr.lines.all())
             )
+            sale_total = MONEY(
+                sum(MONEY(ln.sale_amount or 0) for ln in tr.lines.all())
+            )
             gl_amt = _transfer_gl_amount(company_id, tr.id)
-            if line_total > 0 and abs(line_total - gl_amt) > Decimal("0.05"):
+            if sale_total > 0 and not _transfer_sale_posted(company_id, tr.id):
+                entry = {
+                    "type": "transfer_gl_missing",
+                    "transfer_id": tr.id,
+                    "transfer_date": tr.transfer_date.isoformat(),
+                    "sale_total": str(sale_total),
+                    "line_cost_total": str(line_total),
+                    "note": "Priced inter-pond trade missing AUTO-IPT invoice/bill journals",
+                }
+                issues.append(entry)
+                if fix_gl:
+                    r = sync_aquaculture_fish_pond_transfer_gl(company_id, tr)
+                    if r.get("posted"):
+                        warnings.append(
+                            {
+                                "type": "transfer_gl_fixed",
+                                "transfer_id": tr.id,
+                                "amount": str(r.get("total_gl_amount")),
+                            }
+                        )
+            elif line_total > 0 and abs(line_total - gl_amt) > Decimal("0.05"):
                 entry = {
                     "type": "transfer_gl_mismatch",
                     "transfer_id": tr.id,

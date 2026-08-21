@@ -118,7 +118,8 @@ def test_manual_fry_1581_moves_on_fingerling_transfer_gl(company_tenant, monkeyp
     assert result["posted"] is True, result
     assert Decimal(result["total_gl_amount"]) == Decimal("175000.00")
 
-    je = JournalEntry.objects.get(company_id=cid, entry_number=f"AUTO-AQ-FISH-XFER-{tr.id}")
+    line_id = tr.lines.get().id
+    je = JournalEntry.objects.get(company_id=cid, entry_number=f"AUTO-IPT-INV-{tr.id}-{line_id}")
     cr_src = JournalEntryLine.objects.filter(
         journal_entry=je,
         account__account_code="1581",

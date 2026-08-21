@@ -12,6 +12,7 @@ from typing import Any
 from api.models import (
     AquacultureExpense,
     AquacultureExpenseInventoryLine,
+    AquacultureFishPondTransferLine,
     AquacultureFishStockLedger,
     AquacultureLandlordLedgerEntry,
     BankDeposit,
@@ -23,6 +24,10 @@ from api.models import (
     PayrollRun,
 )
 from api.services.gl_posting import bill_eligible_for_posting
+from api.services.aquaculture_internal_trade_posting import (
+    internal_trade_documents_posted,
+    internal_trade_entry_numbers,
+)
 
 
 def invoice_eligible_for_gl_sale(inv: Invoice | None) -> bool:
@@ -419,6 +424,51 @@ def find_payroll_gaps(company_id: int) -> list[dict]:
     return gaps
 
 
+def find_inter_pond_fish_trade_gaps(company_id: int) -> list[dict]:
+    """
+    Priced inter-pond fish lines must carry AUTO-IPT invoice + bill journals.
+
+    Sale value is cost/kg + company margin (default 20/kg). A line with sale_amount > 0 that is
+    missing either journal is a books gap; legacy AUTO-AQ-FISH-XFER alone no longer counts.
+    """
+    gaps: list[dict] = []
+    qs = (
+        AquacultureFishPondTransferLine.objects.filter(
+            transfer__company_id=company_id,
+            sale_amount__gt=0,
+        )
+        .select_related("transfer", "to_pond", "transfer__from_pond")
+        .order_by("transfer__transfer_date", "transfer_id", "id")
+    )
+    for line in qs:
+        tr = line.transfer
+        if internal_trade_documents_posted(company_id, tr.id, line.id):
+            continue
+        inv_en, bill_en = internal_trade_entry_numbers(tr.id, line.id)
+        from_name = (tr.from_pond.name if tr.from_pond_id and tr.from_pond else "") or ""
+        to_name = (line.to_pond.name if line.to_pond_id and line.to_pond else "") or ""
+        gaps.append(
+            _gap(
+                gap_type="inter_pond_fish_trade",
+                record_id=line.id,
+                entry_number=f"{inv_en} + {bill_en}",
+                label=(
+                    f"Inter-pond fish trade #{tr.id} line #{line.id} "
+                    f"({from_name or 'source'} → {to_name or 'dest'})"
+                ),
+                amount=str(line.sale_amount or Decimal("0")),
+                record_date=tr.transfer_date.isoformat() if tr.transfer_date else None,
+                extra={
+                    "transfer_id": tr.id,
+                    "cost_amount": str(line.cost_amount or Decimal("0")),
+                    "expected_invoice_entry": inv_en,
+                    "expected_bill_entry": bill_en,
+                },
+            )
+        )
+    return gaps
+
+
 GAP_FINDERS = {
     "vendor_payment_made": find_vendor_payment_made_gaps,
     "customer_payment_received": find_customer_payment_received_gaps,
@@ -429,6 +479,7 @@ GAP_FINDERS = {
     "aquaculture_pond_consumption": find_aquaculture_pond_consumption_gaps,
     "aquaculture_manual_expense": find_aquaculture_manual_expense_gaps,
     "aquaculture_fish_stock_ledger": find_aquaculture_fish_stock_ledger_gaps,
+    "inter_pond_fish_trade": find_inter_pond_fish_trade_gaps,
     "fund_transfer": find_fund_transfer_gaps,
     "bank_deposit": find_bank_deposit_gaps,
     "payroll_posted": find_payroll_gaps,

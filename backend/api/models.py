@@ -58,6 +58,15 @@ class Company(models.Model):
         help_text="UI and aquaculture advice language: en (English) or bn (Bangla).",
     )
     fiscal_year_start = models.CharField(max_length=5, default="01-01")
+    books_locked_through = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Accounting period close: general-ledger activity dated on or before this day is final. "
+            "Posting, editing, unposting, or deleting anything that hits the GL on or before it is "
+            "refused, so statements already issued for those periods cannot change. Blank = open books."
+        ),
+    )
     address_line1 = models.CharField(max_length=200, blank=True)
     address_line2 = models.CharField(max_length=200, blank=True)
     city = models.CharField(max_length=100, blank=True)

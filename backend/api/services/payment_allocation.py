@@ -78,6 +78,40 @@ def invoice_open_amount(inv: Invoice, company_id: int) -> Decimal:
     return max(Decimal("0"), total - paid)
 
 
+def total_allocated_to_invoice_as_of(company_id: int, invoice_id: int, as_of) -> Decimal:
+    """Allocations settled on or before as_of — payments made later are not yet money in."""
+    s = (
+        PaymentInvoiceAllocation.objects.filter(
+            invoice_id=invoice_id,
+            payment__company_id=company_id,
+            payment__payment_date__lte=as_of,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    return s or Decimal("0")
+
+
+def invoice_open_amount_as_of(inv: Invoice, company_id: int, as_of) -> Decimal:
+    """
+    A/R still open on this invoice at a past date.
+
+    Point-in-time, unlike invoice_open_amount(): an invoice issued after as_of was not
+    receivable yet, and a payment received after as_of had not reduced it yet. Cash sales
+    (status paid, never any payment application) never sat in A/R at all.
+    """
+    if (inv.status or "") in ("draft", "void"):
+        return Decimal("0")
+    if inv.invoice_date and inv.invoice_date > as_of:
+        return Decimal("0")
+    total = inv.total or Decimal("0")
+    if total <= 0:
+        return Decimal("0")
+    if (inv.status or "") == "paid" and total_allocated_for_invoice(inv, company_id) <= 0:
+        # Settled at the counter (cash/POS): the sale posted straight to cash, never to A/R.
+        return Decimal("0")
+    paid = total_allocated_to_invoice_as_of(company_id, inv.id, as_of)
+    return max(Decimal("0"), total - paid)
+
+
 def invoice_balance_due(inv: Invoice, company_id: int) -> Decimal:
     """Same as open amount for non-draft; draft shows full total as not yet invoiced for collection."""
     if inv.status == "draft":
@@ -255,6 +289,34 @@ def bill_open_amount(bill: Bill, company_id: int) -> Decimal:
         return Decimal("0")
     total = bill.total or Decimal("0")
     paid = total_allocated_to_bill(company_id, bill.id)
+    return max(Decimal("0"), total - paid)
+
+
+def total_allocated_to_bill_as_of(company_id: int, bill_id: int, as_of) -> Decimal:
+    """Vendor payments applied to this bill on or before as_of."""
+    s = (
+        PaymentBillAllocation.objects.filter(
+            bill_id=bill_id,
+            payment__company_id=company_id,
+            payment__payment_date__lte=as_of,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    return s or Decimal("0")
+
+
+def bill_open_amount_as_of(bill: Bill, company_id: int, as_of) -> Decimal:
+    """A/P still open on this bill at a past date (see invoice_open_amount_as_of)."""
+    if (bill.status or "") in ("draft", "void"):
+        return Decimal("0")
+    if bill.bill_date and bill.bill_date > as_of:
+        return Decimal("0")
+    total = bill.total or Decimal("0")
+    if total <= 0:
+        return Decimal("0")
+    if (bill.status or "") == "paid" and total_allocated_to_bill(company_id, bill.id) <= 0:
+        # Paid on the spot with no vendor payment record: never sat in A/P.
+        return Decimal("0")
+    paid = total_allocated_to_bill_as_of(company_id, bill.id, as_of)
     return max(Decimal("0"), total - paid)
 
 

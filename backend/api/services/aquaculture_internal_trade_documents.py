@@ -11,13 +11,13 @@ Both are marked ``paid`` on creation and settle through the inter-pond current a
 cash — no internal balance ages in A/R or A/P, which is what the two identities being flagged
 ``is_internal`` is for.
 
-**These documents never post GL and never move stock.** The economics of the move are already
-carried, pond by pond, by the transfer's own journal (Dr 1581 buyer / Cr 4245 / Dr 5245 / Cr 1581
-seller — see ``gl_posting.post_aquaculture_fish_pond_transfer_journal``). Letting the documents
-post as well would count the same sale twice, and a posted bill carrying a fish item would inflate
-the buying pond's fish stock on top of the transfer that already moved it. The guards live in
-``gl_posting.bill_eligible_for_posting``, ``gl_posting.sync_invoice_gl`` and
-``aquaculture_auto_biomass_sample.sync_biomass_samples_from_bill``, all keyed on
+**These documents do not post through the normal ``AUTO-INV-*-SALE`` / ``AUTO-BILL-*`` path**
+(that would double-count and pull fish into shop inventory). Money hits the GL via
+``aquaculture_internal_trade_posting`` as ``AUTO-IPT-INV-{transfer}-{line}`` and
+``AUTO-IPT-BILL-{transfer}-{line}`` (1595 / 4245 / 5245 / 1581). Biomass and head count still
+move only through the stock ledger. Guards that keep the documents out of ordinary invoice/bill
+posting live in ``gl_posting.bill_eligible_for_posting``, ``gl_posting.sync_invoice_gl`` and
+``aquaculture_auto_biomass_sample.sync_biomass_samples_from_bill``, keyed on
 ``internal_fish_transfer_line``.
 
 Document lines are deliberately item-less: the description carries the fish, so nothing touches

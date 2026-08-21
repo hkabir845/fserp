@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, TextIO
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 from django.utils import timezone as django_timezone
 
 from api.models import (
@@ -78,7 +78,7 @@ from api.services.gl_posting import (
 from api.services.loan_posting import post_loan_disbursement, post_loan_repayment
 from api.services.payment_allocation import refresh_bill_from_allocations, refresh_invoice_from_allocations
 from api.services.payment_station import apply_payment_register_station
-from api.services.station_stock import add_station_stock
+from api.services.station_stock import add_station_stock, refresh_item_quantity_on_hand
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +337,7 @@ def _ensure_station_stock(company_id: int, stdout: TextIO, style: Any) -> None:
         .order_by("id")[:12]
     )
     n = 0
+    touched: set[int] = set()
     for it in list(feed_items) + list(med_items) + list(shop_items):
         _, created = ItemStationStock.objects.get_or_create(
             company_id=company_id,
@@ -346,6 +347,7 @@ def _ensure_station_stock(company_id: int, stdout: TextIO, style: Any) -> None:
         )
         if created:
             n += 1
+            touched.add(it.id)
     if main:
         for it in Item.objects.filter(company_id=company_id, pos_category="general", is_active=True)[:6]:
             _, created = ItemStationStock.objects.get_or_create(
@@ -356,6 +358,11 @@ def _ensure_station_stock(company_id: int, stdout: TextIO, style: Any) -> None:
             )
             if created:
                 n += 1
+                touched.add(it.id)
+    # Bins are the source of truth for shop SKUs: writing them without this refresh left
+    # Item.quantity_on_hand stale, which is what inventory valuation and COGS read.
+    for item_id in sorted(touched):
+        refresh_item_quantity_on_hand(company_id, item_id)
     stdout.write(style.SUCCESS(f"  + Station bin stock rows created: {n}"))
 
 
@@ -580,6 +587,9 @@ def _ensure_aquaculture_expenses(company_id: int, stdout: TextIO, style: Any) ->
     stdout.write(style.SUCCESS(f"  + Aquaculture opex lines: {len(rows)} direct + 1 shared"))
 
 
+SHOP_VAT_RATE = Decimal("0.15")
+
+
 def _ensure_invoices(company_id: int, stdout: TextIO, style: Any) -> None:
     if Invoice.objects.filter(company_id=company_id, invoice_number="COMP-DEMO-INV-FUEL-001").exists():
         stdout.write("  . COMP-DEMO invoices already present.")
@@ -603,9 +613,7 @@ def _ensure_invoices(company_id: int, stdout: TextIO, style: Any) -> None:
             invoice_number="COMP-DEMO-INV-FUEL-001",
             invoice_date=today - timedelta(days=2),
             status="paid",
-            subtotal=Decimal("11400.00"),
             tax_total=Decimal("0"),
-            total=Decimal("11400.00"),
             payment_method="cash",
         )
         if diesel:
@@ -617,6 +625,10 @@ def _ensure_invoices(company_id: int, stdout: TextIO, style: Any) -> None:
                 unit_price=Decimal("114.00"),
                 amount=Decimal("11400.00"),
             )
+        fuel_subtotal = inv_fuel.lines.aggregate(s=Sum("amount"))["s"] or Decimal("0")
+        inv_fuel.subtotal = fuel_subtotal
+        inv_fuel.total = fuel_subtotal + (inv_fuel.tax_total or Decimal("0"))
+        inv_fuel.save(update_fields=["subtotal", "total", "updated_at"])
         sync_invoice_gl(company_id, inv_fuel, payment_method="cash")
 
         if premium and cust_shop and oil_4l:
@@ -627,9 +639,6 @@ def _ensure_invoices(company_id: int, stdout: TextIO, style: Any) -> None:
                 invoice_number="COMP-DEMO-INV-SHOP-001",
                 invoice_date=today - timedelta(days=1),
                 status="paid",
-                subtotal=Decimal("9600.00"),
-                tax_total=Decimal("1440.00"),
-                total=Decimal("11040.00"),
                 payment_method="cash",
             )
             InvoiceLine.objects.create(
@@ -647,6 +656,15 @@ def _ensure_invoices(company_id: int, stdout: TextIO, style: Any) -> None:
                     unit_price=Decimal("850.00"),
                     amount=Decimal("3400.00"),
                 )
+            # Header must follow the lines, never a hand-typed constant: a drifting
+            # subtotal posts the wrong revenue and breaks lines-vs-header reconciliation.
+            shop_subtotal = inv_shop.lines.aggregate(s=Sum("amount"))["s"] or Decimal("0")
+            inv_shop.subtotal = shop_subtotal
+            inv_shop.tax_total = (shop_subtotal * SHOP_VAT_RATE).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            inv_shop.total = inv_shop.subtotal + inv_shop.tax_total
+            inv_shop.save(update_fields=["subtotal", "tax_total", "total", "updated_at"])
             sync_invoice_gl(company_id, inv_shop, payment_method="cash")
     stdout.write(style.SUCCESS("  + Posted invoices: fuel (Main) + shop (Premium Agro)"))
 

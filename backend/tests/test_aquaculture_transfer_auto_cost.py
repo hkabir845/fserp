@@ -26,6 +26,14 @@ from api.services.aquaculture_transfer_cost import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_legacy_fish_transfers(legacy_fish_transfers_enabled):
+    """
+    These cover the transfer machinery that historical records and the conversion still run
+    through. The endpoint itself is retired for users — see test_fish_transfer_retired.
+    """
+
+
 def _enable(c: Company) -> None:
     Company.objects.filter(pk=c.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
 

@@ -15,6 +15,14 @@ from api.models import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_legacy_fish_transfers(legacy_fish_transfers_enabled):
+    """
+    These cover the transfer machinery that historical records and the conversion still run
+    through. The endpoint itself is retired for users — see test_fish_transfer_retired.
+    """
+
+
 def _seed_pond_fish(company_id: int, pond, *, heads: int, kg: str, entry_date: str) -> None:
     """Give the source pond stock so an outbound transfer passes the stock guard."""
     AquacultureFishStockLedger.objects.create(

@@ -21,6 +21,14 @@ from api.services.aquaculture_stock_service import compute_fish_stock_position_r
 from tests.test_aquaculture_fish_bioasset_gl import _enable_aquaculture_with_coa
 
 
+@pytest.fixture(autouse=True)
+def _allow_legacy_fish_transfers(legacy_fish_transfers_enabled):
+    """
+    These cover the transfer machinery that historical records and the conversion still run
+    through. The endpoint itself is retired for users — see test_fish_transfer_retired.
+    """
+
+
 def _pond_stock_heads(company_id: int, pond_id: int) -> int:
     rows = compute_fish_stock_position_rows(company_id, pond_id=pond_id)
     return int(rows[0]["implied_net_fish_count"]) if rows else 0

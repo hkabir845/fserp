@@ -31,6 +31,7 @@ from api.models import (
     Nozzle,
     Payment,
     PaymentBillAllocation,
+    PaymentInvoiceAllocation,
     ShiftSession,
     Station,
     Tank,
@@ -38,6 +39,11 @@ from api.models import (
     Vendor,
 )
 from api.services.gl_posting import (
+    CODE_AP,
+    CODE_AR,
+    CODE_INV_BIO,
+    CODE_INV_FUEL,
+    CODE_INV_SHOP,
     backfill_invoice_cogs_journals,
     item_cogs_unit_cost,
     item_inventory_unit_cost,
@@ -45,12 +51,19 @@ from api.services.gl_posting import (
 )
 from api.services.payment_allocation import (
     bill_open_amount,
+    bill_open_amount_as_of,
     compute_customer_balance_due,
     compute_vendor_balance_due,
     invoice_open_amount,
+    invoice_open_amount_as_of,
 )
 from api.utils.pos_payment import is_on_account_payment
 from api.services.aquaculture_pond_pos_customer import pond_pos_customer_ids
+
+# Above this, a balance-sheet residual is not rounding: it is unclassified activity that the
+# statement must report rather than quietly absorb into the tie-out line.
+BALANCE_SHEET_TIE_OUT_MATERIALITY = Decimal("1.00")
+
 
 # Vendor bills included in purchase / movement reports (exclude draft and void).
 _BILL_LINE_POSTED_STATUSES = ("open", "paid", "partial", "overdue")
@@ -107,6 +120,30 @@ def _pl_amount_from_movement(coa: ChartOfAccount, debit: Decimal, credit: Decima
     return Decimal("0")
 
 
+ZERO = Decimal("0")
+
+
+def _movements_by_account(
+    line_qs, *, start: date | None = None, end: date | None = None
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """
+    {account_id: (debit_total, credit_total)} for a journal-line slice, in ONE query.
+
+    The per-account alternative issued one aggregate per chart account per entity, which turned
+    the multi-entity statements into thousands of round trips for the same numbers.
+    """
+    qs = line_qs
+    if start is not None:
+        qs = qs.filter(journal_entry__entry_date__gte=start)
+    if end is not None:
+        qs = qs.filter(journal_entry__entry_date__lte=end)
+    rows = qs.values("account_id").annotate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    return {r["account_id"]: (r["td"], r["tc"]) for r in rows}
+
+
 def _period_pl_totals_from_line_qs(
     company_id: int, start: date, end: date, line_qs, *, eliminate_internal: bool = False
 ) -> dict[str, Decimal]:
@@ -119,13 +156,15 @@ def _period_pl_totals_from_line_qs(
     False, because from that pond's own side the sale really happened.
     """
     ti = tcogs = te = Decimal("0")
+    moves = _movements_by_account(line_qs, start=start, end=end)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _pl_bucket(coa)
         if bucket is None:
             continue
         if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
             continue
-        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        d, c = moves.get(coa.id, (ZERO, ZERO))
+        amt = _pl_amount_from_movement(coa, d, c)
         if bucket == "income":
             ti += amt
         elif bucket == "cost_of_goods_sold":
@@ -418,8 +457,15 @@ def _movement_through(
 
 
 def _ending_balance(coa: ChartOfAccount, company_id: int, as_of: date) -> Decimal:
+    return _ending_balance_from_movement(coa, _movement_through(company_id, coa.id, as_of))
+
+
+def _ending_balance_from_movement(
+    coa: ChartOfAccount, movement: tuple[Decimal, Decimal] | None
+) -> Decimal:
+    """Chart opening balance plus an already-fetched (debit, credit) pair for this account."""
     ob = coa.opening_balance or Decimal("0")
-    d, c = _movement_through(company_id, coa.id, as_of)
+    d, c = movement or (Decimal("0"), Decimal("0"))
     if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
         return ob + d - c
     return ob + c - d
@@ -473,6 +519,7 @@ def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
     (each balance as-of `as_of`, including opening_balance on COA rows).
     """
     ni = Decimal("0")
+    moves = _movements_by_account(_je_lines_base(company_id), end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
     ):
@@ -483,7 +530,7 @@ def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
         # The balance sheet carries the removed margin as the 1585 contra so it still balances.
         if (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
             continue
-        bal = _ending_balance(coa, company_id, as_of)
+        bal = _ending_balance_from_movement(coa, moves.get(coa.id))
         if bucket == "income":
             ni += bal
         else:
@@ -504,11 +551,13 @@ def _cumulative_net_income_site_through(
 ) -> Decimal:
     """Same sign convention as ``_cumulative_net_income_through`` but journal lines for one site only."""
     ni = Decimal("0")
+    moves = _movements_by_account(_je_lines_base(company_id, station_id), end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _pl_bucket(coa)
         if bucket is None:
             continue
-        bal = _site_pl_activity_balance(coa, company_id, as_of, station_id)
+        d, c = moves.get(coa.id, (Decimal("0"), Decimal("0")))
+        bal = _pl_amount_from_movement(coa, d, c)
         if bucket == "income":
             ni += bal
         else:
@@ -521,11 +570,12 @@ def _cumulative_net_income_pond_through(
 ) -> Decimal:
     """Same sign convention as ``_cumulative_net_income_site_through`` but for one pond's tagged lines."""
     ni = Decimal("0")
+    moves = _movements_by_account(_je_lines_pond(company_id, pond_id), end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _pl_bucket(coa)
         if bucket is None:
             continue
-        d, c = _movement_through_pond(company_id, coa.id, as_of, pond_id)
+        d, c = moves.get(coa.id, (Decimal("0"), Decimal("0")))
         bal = _pl_amount_from_movement(coa, d, c)
         if bucket == "income":
             ni += bal
@@ -727,17 +777,24 @@ def report_balance_sheet(
     te_total = te_plain + ni_cum
     diff = ta - tl - te_total
     auto_plug = Decimal("0")
+    # A tie-out line keeps the columns footing, but it must not be able to declare a broken
+    # balance sheet "balanced". Sub-paisa residue is rounding; anything larger is real
+    # unclassified activity and the statement has to say so instead of absorbing it.
+    material = abs(diff) > BALANCE_SHEET_TIE_OUT_MATERIALITY
     if abs(diff) > Decimal("0.02"):
         auto_plug = diff
         equity.append(
             {
                 "account_code": "Σ-ADJ",
                 "account_name": (
-                    "Statement tie-out (rounding, one-sided openings, or unclassified activity)"
+                    "Statement tie-out — UNEXPLAINED, investigate"
+                    if material
+                    else "Statement tie-out (rounding residual)"
                 ),
                 "balance": _f(auto_plug),
                 "is_rollup": True,
                 "is_auto_plug": True,
+                "is_material": material,
             }
         )
         te_total = te_plain + ni_cum + auto_plug
@@ -747,6 +804,14 @@ def report_balance_sheet(
     note = (
         "Point-in-time as of end date. Unclosed P&L is included in equity as Σ-P&L; Σ-ADJ is an automatic tie-out if a small residual remains."
     )
+    if material:
+        note += (
+            " This sheet does NOT balance on its own: %s of activity could not be classified into "
+            "assets, liabilities or equity, and Σ-ADJ is holding it. Usual causes are a one-sided "
+            "opening balance, a chart account with an unrecognised type, or a manual journal against "
+            "an account that is not on the balance sheet. Check the Trial Balance for the same date."
+            % _f(auto_plug)
+        )
     if pond_id is not None:
         note = (
             note
@@ -775,7 +840,8 @@ def report_balance_sheet(
         "total_liabilities_and_equity": _f(tle),
         "net_income_cumulative": _f(ni_cum),
         "auto_plug_amount": _f(auto_plug) if auto_plug != 0 else 0.0,
-        "is_balanced": abs(final_diff) <= Decimal("0.02"),
+        "auto_plug_is_material": bool(material),
+        "is_balanced": abs(final_diff) <= Decimal("0.02") and not material,
         "assets_minus_liabilities_equity": _f(final_diff),
         "accounting_note": note,
     }
@@ -1341,7 +1407,7 @@ def report_income_statement(
     pond_name: str | None = None
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
-            pk=pond_id, company_id=company_id, is_active=True
+            pk=pond_id, company_id=company_id
         ).only("name").first()
         pond_name = (pond.name or "").strip() if pond else None
     # Cost of the goods actually sold in this period (subledger: qty x best-available unit cost).
@@ -1363,13 +1429,15 @@ def report_income_statement(
     # site-scoped statement keeps it, because from that pond's side the sale really happened.
     eliminate_internal = pond_id is None and station_id is None and not unscoped_dims
     elimination_rows: list[dict[str, Any]] = []
+    pl_moves = _movements_by_account(line_qs, start=start, end=end)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
         "account_code"
     ):
         bucket = _pl_bucket(coa)
         if bucket is None:
             continue
-        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        d_mv, c_mv = pl_moves.get(coa.id, (Decimal("0"), Decimal("0")))
+        amt = _pl_amount_from_movement(coa, d_mv, c_mv)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -1928,6 +1996,113 @@ def _aging_row_from_buckets(buckets: dict[str, Decimal]) -> dict[str, Any]:
     return out
 
 
+def _control_account_balance(company_id: int, code: str, as_of: date) -> Decimal | None:
+    """Posted GL balance of a control account through as_of (None when the account is absent)."""
+    coa = ChartOfAccount.objects.filter(company_id=company_id, account_code=code).first()
+    if not coa:
+        return None
+    d, c = _movement_through(company_id, coa.id, as_of)
+    ob = coa.opening_balance or Decimal("0")
+    if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+        return ob + d - c
+    return ob + c - d
+
+
+def _unapplied_payment_total(company_id: int, payment_type: str, as_of: date) -> Decimal:
+    """
+    Cash received (or paid) on or before as_of that no document application consumed.
+
+    Unapplied money moves the control account but not the open-document list, so it is the
+    usual reason an aging total and its GL control account disagree.
+    """
+    total = Decimal("0")
+    payments = Payment.objects.filter(
+        company_id=company_id, payment_type=payment_type, payment_date__lte=as_of
+    ).only("id", "amount")
+    for p in payments:
+        amt = p.amount or Decimal("0")
+        if amt <= 0:
+            continue
+        if payment_type == "received":
+            applied = (
+                PaymentInvoiceAllocation.objects.filter(payment_id=p.id).aggregate(
+                    s=Coalesce(Sum("amount"), Decimal("0"))
+                )["s"]
+                or Decimal("0")
+            )
+        else:
+            applied = (
+                PaymentBillAllocation.objects.filter(payment_id=p.id).aggregate(
+                    s=Coalesce(Sum("amount"), Decimal("0"))
+                )["s"]
+                or Decimal("0")
+            )
+        if applied < amt:
+            total += amt - applied
+    return total
+
+
+def _reconciliation_note(recon: dict[str, Any], label: str) -> str:
+    """One sentence for accounting_note so the tie-out is visible in the UI, print and CSV."""
+    gl = recon.get("gl_control_balance")
+    if gl is None:
+        return ""
+    parts = [
+        "%s subledger %s vs GL account %s balance %s"
+        % (label, recon.get("subledger_total"), recon.get("control_account_code"), gl)
+    ]
+    unapplied = recon.get("unapplied_payments") or 0
+    if unapplied:
+        parts.append("less %s of unapplied payments on account" % unapplied)
+    diff = recon.get("difference")
+    if diff:
+        parts.append("leaving an unexplained difference of %s" % diff)
+    else:
+        parts.append("which ties")
+    return " — ".join(parts) + "."
+
+
+def _subledger_gl_reconciliation(
+    company_id: int,
+    as_of: date,
+    subledger_total: Decimal,
+    *,
+    control_code: str,
+    payment_type: str,
+    scoped: bool,
+) -> dict[str, Any]:
+    """Aging total vs its GL control account, with unapplied cash shown as the bridge."""
+    gl = _control_account_balance(company_id, control_code, as_of)
+    unapplied = _unapplied_payment_total(company_id, payment_type, as_of)
+    out: dict[str, Any] = {
+        "control_account_code": control_code,
+        "gl_control_balance": _f(gl) if gl is not None else None,
+        "subledger_total": _f(subledger_total),
+        "unapplied_payments": _f(unapplied),
+    }
+    if gl is None:
+        out["difference"] = None
+        out["note"] = "No control account %s in the chart of accounts." % control_code
+        return out
+    # Unapplied cash has already moved the control account; add it back to compare like with like.
+    diff = (subledger_total - unapplied) - gl
+    out["difference"] = _f(diff)
+    if scoped:
+        out["note"] = (
+            "Site/pond filter is on: the GL control account is company-wide, so a difference "
+            "here is expected."
+        )
+    elif diff == 0:
+        out["note"] = "Subledger ties to the GL control account."
+    else:
+        out["note"] = (
+            "Subledger and GL control account differ by %s. Usual causes: an unposted journal "
+            "entry for a document, an opening balance posted straight to the control account, "
+            "or a manual journal against it." % _f(diff)
+        )
+    return out
+
+
 def report_ar_aging(
     company_id: int,
     start: date,
@@ -1948,11 +2123,12 @@ def report_ar_aging(
         documents: list[dict[str, Any]] = []
         for inv in (
             _invoices_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
-            .filter(customer_id=c.id)
-            .exclude(status__in=("draft", "paid", "void"))
+            .filter(customer_id=c.id, invoice_date__lte=as_of)
+            .exclude(status__in=("draft", "void"))
             .order_by("due_date", "invoice_date", "id")
         ):
-            open_amt = invoice_open_amount(inv, company_id)
+            # As-of aging: an invoice paid after the end date was still receivable then.
+            open_amt = invoice_open_amount_as_of(inv, company_id, as_of)
             if open_amt <= 0:
                 continue
             due = inv.due_date or inv.invoice_date
@@ -1986,7 +2162,9 @@ def report_ar_aging(
         customers_out.append(row)
 
     note = (
-        "Aging uses open invoice balances (total minus payment allocations) as of the end date. "
+        "Aging is point-in-time: invoices issued on or before the end date, less payment "
+        "allocations received on or before the end date. Invoices settled later still age here; "
+        "cash/POS sales that never sat in A/R do not. "
         "Days past due = end date minus due date (or invoice date when due date is blank). "
         "Customer opening balances without invoices are not aged here — see Customer Balances."
     )
@@ -1994,13 +2172,22 @@ def report_ar_aging(
         note += " Pond filter: only invoices for this pond's POS customer are included."
     elif station_id is not None:
         note += " Site filter: only invoices with this station_id are included."
+    ar_recon = _subledger_gl_reconciliation(
+        company_id,
+        as_of,
+        sum(totals.values(), start=Decimal("0")),
+        control_code=CODE_AR,
+        payment_type="received",
+        scoped=(station_id is not None or pond_id is not None),
+    )
     out: dict[str, Any] = {
         "report_id": "ar-aging",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "as_of_date": as_of.isoformat(),
         "customers": customers_out,
         "totals": _aging_row_from_buckets(totals),
-        "accounting_note": note,
+        "gl_reconciliation": ar_recon,
+        "accounting_note": (note + " " + _reconciliation_note(ar_recon, "A/R")).strip(),
     }
     if pond_id is not None:
         out["filter_pond_id"] = pond_id
@@ -2029,11 +2216,12 @@ def report_ap_aging(
         documents: list[dict[str, Any]] = []
         for bill in (
             _bills_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
-            .filter(vendor_id=v.id)
-            .exclude(status__in=("draft", "paid", "void"))
+            .filter(vendor_id=v.id, bill_date__lte=as_of)
+            .exclude(status__in=("draft", "void"))
             .order_by("due_date", "bill_date", "id")
         ):
-            open_amt = bill_open_amount(bill, company_id)
+            # As-of aging: a bill paid after the end date was still payable then.
+            open_amt = bill_open_amount_as_of(bill, company_id, as_of)
             if open_amt <= 0:
                 continue
             due = bill.due_date or bill.bill_date
@@ -2068,20 +2256,30 @@ def report_ap_aging(
         )
 
     note = (
-        "Aging uses open bill balances (total minus vendor payment allocations) as of the end date. "
+        "Aging is point-in-time: bills dated on or before the end date, less vendor payments "
+        "applied on or before the end date. Bills settled later still age here. "
         "Days past due = end date minus due date (or bill date when due date is blank)."
     )
     if pond_id is not None:
         note += " Pond filter: only bills with at least one line tagged to this pond are included."
     elif station_id is not None:
         note += " Site filter: only bills received at this station (header or line receipt_station_id)."
+    ap_recon = _subledger_gl_reconciliation(
+        company_id,
+        as_of,
+        sum(totals.values(), start=Decimal("0")),
+        control_code=CODE_AP,
+        payment_type="made",
+        scoped=(station_id is not None or pond_id is not None),
+    )
     out: dict[str, Any] = {
         "report_id": "ap-aging",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "as_of_date": as_of.isoformat(),
         "vendors": vendors_out,
         "totals": _aging_row_from_buckets(totals),
-        "accounting_note": note,
+        "gl_reconciliation": ap_recon,
+        "accounting_note": (note + " " + _reconciliation_note(ap_recon, "A/P")).strip(),
     }
     if pond_id is not None:
         out["filter_pond_id"] = pond_id
@@ -2113,13 +2311,15 @@ def report_expense_detail(
     pond_name: str | None = None
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
-            pk=pond_id, company_id=company_id, is_active=True
+            pk=pond_id, company_id=company_id
         ).only("name").first()
         pond_name = (pond.name or "").strip() if pond else None
+    pl_moves = _movements_by_account(line_qs, start=start, end=end)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if _pl_bucket(coa) != "expense":
             continue
-        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        d_mv, c_mv = pl_moves.get(coa.id, (Decimal("0"), Decimal("0")))
+        amt = _pl_amount_from_movement(coa, d_mv, c_mv)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -2186,15 +2386,17 @@ def report_income_detail(
     pond_name: str | None = None
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
-            pk=pond_id, company_id=company_id, is_active=True
+            pk=pond_id, company_id=company_id
         ).only("name").first()
         pond_name = (pond.name or "").strip() if pond else None
     eliminate_internal = pond_id is None and station_id is None and not unscoped_dims
     internal_income_rows: list[dict[str, Any]] = []
+    pl_moves = _movements_by_account(line_qs, start=start, end=end)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if normalize_chart_account_type(coa.account_type) != "income":
             continue
-        amt = _period_pl_amount_lines(coa, company_id, start, end, line_qs)
+        d_mv, c_mv = pl_moves.get(coa.id, (Decimal("0"), Decimal("0")))
+        amt = _pl_amount_from_movement(coa, d_mv, c_mv)
         if amt == 0:
             continue
         display_name = coa.account_name
@@ -2354,21 +2556,46 @@ def _summarize_bank_accounts_for_scope(
     unscoped_dims: bool = False,
 ) -> dict[str, Decimal]:
     begin_total = end_total = period_in = period_out = Decimal("0")
+    if pond_id is not None:
+        line_qs = _je_lines_pond(company_id, pond_id)
+        basis = "slice"
+    elif unscoped_dims:
+        line_qs = _je_lines_unscoped_dims(company_id)
+        basis = "slice"
+    elif station_id is not None:
+        line_qs = _je_lines_base(company_id, station_id)
+        basis = "site"
+    else:
+        line_qs = _je_lines_base(company_id)
+        basis = "company"
+    day_before = start - timedelta(days=1)
+    # Three grouped reads replace two balance queries per bank account per entity.
+    before = _movements_by_account(line_qs, end=day_before)
+    through = _movements_by_account(line_qs, end=end)
+    period = _movements_by_account(line_qs, start=start, end=end)
+    zero = (Decimal("0"), Decimal("0"))
+
+    def _balance(coa: ChartOfAccount, movement) -> Decimal:
+        # Mirrors _bank_cash_balance_as_of / _bank_slice_balance_as_of exactly:
+        # company scope carries the chart opening balance, site scope is sign-aware
+        # posted activity, and pond / head-office slices are raw debit-minus-credit.
+        d, c = movement or zero
+        if basis == "company":
+            return _ending_balance_from_movement(coa, movement)
+        if basis == "site":
+            if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+                return d - c
+            return c - d
+        return d - c
+
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if not is_cash_or_bank_account(
             coa.account_type, coa.account_sub_type, coa.account_code
         ):
             continue
-        if pond_id is not None:
-            b0, dep, wit, bend = _bank_period_flow_lines(
-                coa, company_id, start, end, _je_lines_pond(company_id, pond_id)
-            )
-        elif unscoped_dims:
-            b0, dep, wit, bend = _bank_period_flow_lines(
-                coa, company_id, start, end, _je_lines_unscoped_dims(company_id)
-            )
-        else:
-            b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
+        b0 = _balance(coa, before.get(coa.id))
+        bend = _balance(coa, through.get(coa.id))
+        dep, wit = period.get(coa.id, zero)
         if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
             continue
         begin_total += b0
@@ -2630,32 +2857,30 @@ def report_cash_flow(
         )
     else:
         by_station: list[dict[str, Any]] = []
-        for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
-            "station_name", "id"
-        ):
+        for st in _reportable_stations(company_id, end):
             row = _cash_flow_entity_row(
                 company_id,
                 start,
                 end,
                 entity_type="station",
                 entity_id=st.id,
-                entity_name=(st.station_name or "").strip() or f"Station #{st.id}",
+                entity_name=_entity_display_name(st.station_name, f"Station #{st.id}", st.is_active),
                 station_id=st.id,
             )
+            row["is_active"] = bool(st.is_active)
             by_station.append(row)
         by_pond: list[dict[str, Any]] = []
-        for pond in AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
-            "sort_order", "name", "id"
-        ):
+        for pond in _reportable_ponds(company_id, end):
             row = _cash_flow_entity_row(
                 company_id,
                 start,
                 end,
                 entity_type="pond",
                 entity_id=pond.id,
-                entity_name=(pond.name or "").strip() or f"Pond #{pond.id}",
+                entity_name=_entity_display_name(pond.name, f"Pond #{pond.id}", pond.is_active),
                 pond_id=pond.id,
             )
+            row["is_active"] = bool(pond.is_active)
             by_pond.append(row)
         unscoped = _cash_flow_entity_row(
             company_id,
@@ -2677,18 +2902,13 @@ def report_cash_flow(
 def _cumulative_net_income_lines_through(company_id: int, as_of: date, line_qs) -> Decimal:
     """Cumulative P&L through ``as_of`` on a filtered journal-line queryset (pond or unscoped slice)."""
     ni = Decimal("0")
+    moves = _movements_by_account(line_qs, end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _pl_bucket(coa)
         if bucket is None:
             continue
-        agg = line_qs.filter(
-            account_id=coa.id,
-            journal_entry__entry_date__lte=as_of,
-        ).aggregate(
-            td=Coalesce(Sum("debit"), Decimal("0")),
-            tc=Coalesce(Sum("credit"), Decimal("0")),
-        )
-        bal = _pl_amount_from_movement(coa, agg["td"], agg["tc"])
+        d, c = moves.get(coa.id, (ZERO, ZERO))
+        bal = _pl_amount_from_movement(coa, d, c)
         if bucket == "income":
             ni += bal
         else:
@@ -2699,18 +2919,12 @@ def _cumulative_net_income_lines_through(company_id: int, as_of: date, line_qs) 
 def _bs_totals_from_line_qs(company_id: int, as_of: date, line_qs) -> dict[str, Decimal]:
     """Balance sheet side totals from posted lines only (no chart opening balances)."""
     ta = tl = te_plain = Decimal("0")
+    moves = _movements_by_account(line_qs, end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _balance_sheet_bucket_for_coa(coa)
         if not bucket:
             continue
-        agg = line_qs.filter(
-            account_id=coa.id,
-            journal_entry__entry_date__lte=as_of,
-        ).aggregate(
-            td=Coalesce(Sum("debit"), Decimal("0")),
-            tc=Coalesce(Sum("credit"), Decimal("0")),
-        )
-        d, c = agg["td"], agg["tc"]
+        d, c = moves.get(coa.id, (ZERO, ZERO))
         if bucket == "asset":
             bal = d - c
         else:
@@ -2736,11 +2950,16 @@ def _bs_totals_from_line_qs(company_id: int, as_of: date, line_qs) -> dict[str, 
 
 def _bs_totals_station(company_id: int, as_of: date, station_id: int) -> dict[str, Decimal]:
     ta = tl = te_plain = Decimal("0")
+    moves = _movements_by_account(_je_lines_base(company_id, station_id), end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _balance_sheet_bucket_for_coa(coa)
         if not bucket:
             continue
-        bal = _balance_sheet_balance_from_site_activity(coa, company_id, as_of, station_id)
+        d, c = moves.get(coa.id, (Decimal("0"), Decimal("0")))
+        if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+            bal = d - c
+        else:
+            bal = c - d
         if bal == 0:
             continue
         if bucket == "asset":
@@ -2762,11 +2981,12 @@ def _bs_totals_station(company_id: int, as_of: date, station_id: int) -> dict[st
 
 def _bs_totals_company(company_id: int, as_of: date) -> dict[str, Decimal]:
     ta = tl = te_plain = Decimal("0")
+    moves = _movements_by_account(_je_lines_base(company_id), end=as_of)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         bucket = _balance_sheet_bucket_for_coa(coa)
         if not bucket:
             continue
-        bal = _ending_balance(coa, company_id, as_of)
+        bal = _ending_balance_from_movement(coa, moves.get(coa.id))
         if bal == 0:
             continue
         if bucket == "asset":
@@ -3041,6 +3261,70 @@ def _pl_category_total(co: dict[str, Any]) -> dict[str, float]:
     return _pl_company_total(co)
 
 
+def _stations_with_gl_activity(company_id: int, as_of: date) -> set[int]:
+    """Station ids carrying posted GL through as_of, by line tag or journal header."""
+    base = JournalEntryLine.objects.filter(
+        journal_entry__company_id=company_id,
+        journal_entry__is_posted=True,
+        journal_entry__entry_date__lte=as_of,
+        aquaculture_pond_id__isnull=True,
+    )
+    tagged = set(
+        base.filter(station_id__isnull=False).values_list("station_id", flat=True).distinct()
+    )
+    header = set(
+        base.filter(station_id__isnull=True, journal_entry__station_id__isnull=False)
+        .values_list("journal_entry__station_id", flat=True)
+        .distinct()
+    )
+    return {sid for sid in (tagged | header) if sid is not None}
+
+
+def _ponds_with_gl_activity(company_id: int, as_of: date) -> set[int]:
+    """Pond ids carrying posted GL through as_of."""
+    return {
+        pid
+        for pid in JournalEntryLine.objects.filter(
+            journal_entry__company_id=company_id,
+            journal_entry__is_posted=True,
+            journal_entry__entry_date__lte=as_of,
+            aquaculture_pond_id__isnull=False,
+        )
+        .values_list("aquaculture_pond_id", flat=True)
+        .distinct()
+        if pid is not None
+    }
+
+
+def _reportable_stations(company_id: int, as_of: date):
+    """
+    Active stations, plus closed ones that still carry posted GL.
+
+    A site or pond can be deactivated while its history stays in the ledger. Listing only
+    active entities dropped that history from every per-entity row while the company total
+    still counted it, so the segment rows silently failed to add up to the company.
+    """
+    return (
+        Station.objects.filter(company_id=company_id)
+        .filter(Q(is_active=True) | Q(id__in=_stations_with_gl_activity(company_id, as_of)))
+        .order_by("station_name", "id")
+    )
+
+
+def _reportable_ponds(company_id: int, as_of: date):
+    """Active ponds, plus closed ones that still carry posted GL (see _reportable_stations)."""
+    return (
+        AquaculturePond.objects.filter(company_id=company_id)
+        .filter(Q(is_active=True) | Q(id__in=_ponds_with_gl_activity(company_id, as_of)))
+        .order_by("sort_order", "name", "id")
+    )
+
+
+def _entity_display_name(raw: str | None, fallback: str, is_active: bool) -> str:
+    name = (raw or "").strip() or fallback
+    return name if is_active else "%s (closed)" % name
+
+
 def _collect_all_entity_financial_rows(
     company_id: int, start: date, end: date
 ) -> dict[str, Any]:
@@ -3048,34 +3332,32 @@ def _collect_all_entity_financial_rows(
     from api.services.entity_financial_metrics import enrich_pond_entity_row, enrich_station_entity_row
 
     by_station: list[dict[str, Any]] = []
-    for st in Station.objects.filter(company_id=company_id, is_active=True).order_by(
-        "station_name", "id"
-    ):
+    for st in _reportable_stations(company_id, end):
         row = _entity_financial_summary_row(
             company_id,
             start,
             end,
             entity_type="station",
             entity_id=st.id,
-            entity_name=(st.station_name or "").strip() or f"Station #{st.id}",
+            entity_name=_entity_display_name(st.station_name, f"Station #{st.id}", st.is_active),
             station_id=st.id,
         )
+        row["is_active"] = bool(st.is_active)
         enrich_station_entity_row(company_id, st, row, start=start, end=end)
         by_station.append(row)
 
     by_pond: list[dict[str, Any]] = []
-    for pond in AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by(
-        "sort_order", "name", "id"
-    ):
+    for pond in _reportable_ponds(company_id, end):
         row = _entity_financial_summary_row(
             company_id,
             start,
             end,
             entity_type="pond",
             entity_id=pond.id,
-            entity_name=(pond.name or "").strip() or f"Pond #{pond.id}",
+            entity_name=_entity_display_name(pond.name, f"Pond #{pond.id}", pond.is_active),
             pond_id=pond.id,
         )
+        row["is_active"] = bool(pond.is_active)
         enrich_pond_entity_row(company_id, pond.id, row)
         by_pond.append(row)
 
@@ -3128,6 +3410,9 @@ def _entity_pl_row(row: dict[str, Any]) -> dict[str, Any]:
         "gross_profit": row["gross_profit"],
         "net_income": row["net_income"],
     }
+    if "is_active" in row:
+        # Closed sites/ponds still report their history; the caller needs to see they are closed.
+        out["is_active"] = row["is_active"]
     if row.get("station_id") is not None:
         out["station_id"] = row["station_id"]
         out["station_name"] = row.get("station_name")
@@ -3178,6 +3463,9 @@ def _entity_bs_row(row: dict[str, Any]) -> dict[str, Any]:
         "total_equity": row["total_equity"],
         "total_liabilities_and_equity": row["total_liabilities_and_equity"],
     }
+    if "is_active" in row:
+        # Closed sites/ponds still report their history; the caller needs to see they are closed.
+        out["is_active"] = row["is_active"]
     if row.get("station_id") is not None:
         out["station_id"] = row["station_id"]
         out["station_name"] = row.get("station_name")
@@ -3196,6 +3484,9 @@ def _entity_tb_row(row: dict[str, Any]) -> dict[str, Any]:
         "trial_balance_credit": row["trial_balance_credit"],
         "trial_balance_balanced": row["trial_balance_balanced"],
     }
+    if "is_active" in row:
+        # Closed sites/ponds still report their history; the caller needs to see they are closed.
+        out["is_active"] = row["is_active"]
     if row.get("station_id") is not None:
         out["station_id"] = row["station_id"]
         out["station_name"] = row.get("station_name")
@@ -3264,6 +3555,42 @@ def _entity_pl_segment_totals(bundle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _entity_consolidation_bridge(company_id: int, start: date, end: date, bundle: dict[str, Any]) -> dict[str, Any]:
+    """
+    How the segments add up to the company total.
+
+    A pond that sells fish to another pond books real revenue, and so does the buyer's cost —
+    from each pond's own side the trade happened. The company sold nothing to anyone, so
+    consolidation removes it. That is why the segment rows can legitimately total more than the
+    company, and this block is the arithmetic that closes the gap instead of leaving a reader to
+    wonder which figure is wrong.
+    """
+    seg = Decimal("0")
+    for key in ("stations_total", "ponds_total"):
+        row = bundle.get(key) or {}
+        seg += _d(row.get("net_income"))
+    unscoped = bundle.get("unscoped") or {}
+    seg += _d(unscoped.get("net_income"))
+    company = _d((bundle.get("company_total") or {}).get("net_income"))
+
+    elim = internal_trade_elimination(company_id, start=start, end=end)
+    margin = elim["unrealized_margin"]
+    residual = seg - margin - company
+    return {
+        "segment_net_income": _f(seg),
+        "internal_trade_removed_on_consolidation": _f(margin),
+        "company_net_income": _f(company),
+        "unexplained_residual": _f(residual),
+        "reconciles": abs(residual) <= Decimal("0.02"),
+        "note": (
+            "Segments %s less inter-pond profit removed on consolidation %s = company %s."
+            % (_f(seg), _f(margin), _f(company))
+            if margin
+            else "No inter-pond trade in this period, so the segments total to the company exactly."
+        ),
+    }
+
+
 def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[str, Any]:
     """P&L per station, pond, head office, and company total."""
     bundle = _collect_all_entity_financial_rows(company_id, start, end)
@@ -3275,10 +3602,13 @@ def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[
             "Posted journal P&L for the date range. Each row is one entity (fuel station, shop hub, or pond). "
             + _ENTITY_SCOPE_NOTE
             + " Category totals sum fuel stations, shop hubs (no fuel), and ponds separately. "
-            "Company total is all GL. Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT)."
+            "Company total is all GL, after removing profit ponds made selling to each other, so the "
+            "segment rows can total more than the company — see consolidation_bridge. "
+            "Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT)."
         ),
         segment_totals=_entity_pl_segment_totals(bundle),
     )
+    payload["consolidation_bridge"] = _entity_consolidation_bridge(company_id, start, end, bundle)
     payload["fuel_stations"] = payload["by_fuel_station"]
     payload["shop_hubs"] = payload["by_shop_hub"]
     payload["aquaculture_management"] = _aquaculture_management_snapshot(
@@ -5610,6 +5940,54 @@ def report_purchase_report(
     return payload
 
 
+def _inventory_gl_reconciliation(company_id: int, as_of: date, valuation_total: Decimal) -> dict[str, Any]:
+    """
+    Priced-stock total vs the inventory asset accounts in the GL.
+
+    The two are built differently on purpose: the GL carries what was actually paid and
+    relieved through COGS, while this report prices live on-hand at Item.cost (last cost,
+    with a list-price fallback for zero-cost SKUs). Showing the gap keeps a stock valuation
+    from quietly disagreeing with the balance sheet.
+    """
+    codes = [CODE_INV_FUEL, CODE_INV_SHOP, CODE_INV_BIO]
+    accounts: list[dict[str, Any]] = []
+    gl_total = Decimal("0")
+    for coa in ChartOfAccount.objects.filter(
+        company_id=company_id, account_code__in=codes
+    ).order_by("account_code"):
+        bal = _ending_balance(coa, company_id, as_of)
+        gl_total += bal
+        accounts.append(
+            {
+                "account_code": coa.account_code,
+                "account_name": coa.account_name,
+                "balance": _f(bal),
+            }
+        )
+    bio = next((a for a in accounts if a["account_code"] == CODE_INV_BIO), None)
+    bio_balance = Decimal(str(bio["balance"])) if bio else Decimal("0")
+    # Same consolidation view the balance sheet takes: fish a pond bought from another pond
+    # still carry the seller's margin, which the company has not earned, so 1581 is shown net
+    # of the 1585 elimination. Without this, an internal transfer would inflate the figure.
+    unrealized = internal_trade_elimination(company_id, start=None, end=as_of)["unrealized_margin"]
+    bio_net = bio_balance - unrealized
+    if bio is not None:
+        # Report the consolidated figure on the line itself: the gross 1581 balance rises by the
+        # seller's margin on every internal move, which is not company-level inventory value.
+        bio["balance"] = _f(bio_net)
+    # Live fish are not catalogue SKUs with an on-hand quantity, so they are held out of the
+    # comparison and reported on their own line.
+    comparable_gl = gl_total - bio_balance
+    return {
+        "accounts": accounts,
+        "gl_inventory_total": _f(gl_total - unrealized),
+        "gl_biological_inventory": _f(bio_net),
+        "gl_stock_inventory": _f(comparable_gl),
+        "valuation_total": _f(valuation_total),
+        "difference": _f(valuation_total - comparable_gl),
+    }
+
+
 def report_inventory_sku_valuation(
     company_id: int,
     start: date,
@@ -5760,11 +6138,28 @@ def report_inventory_sku_valuation(
         "rows": rows_out,
         "accounting_note": (
             "On-hand is live Item quantity (including tank-synced products). "
-            "Cost uses Item.cost with a fallback to list price for zero-cost items. "
+            "Stock is valued at latest purchase cost (Item.cost, set from the most recent bill "
+            "rate), with a fallback to list price for zero-cost items — not weighted average. "
             "Velocity = period quantity ÷ day count. Days of cover = on-hand ÷ average daily period sales; "
             "N/A when there is no period movement."
         ),
     }
+    if station_id is None and not category and not item_ids:
+        # Only a full, company-wide valuation is comparable with the GL inventory accounts.
+        recon = _inventory_gl_reconciliation(company_id, end, tot_cost)
+        out_val["gl_reconciliation"] = recon
+        out_val["accounting_note"] += (
+            " Priced stock %s vs GL inventory accounts %s (live fish held separately at %s)"
+            % (recon["valuation_total"], recon["gl_stock_inventory"], recon["gl_biological_inventory"])
+        )
+        if recon["difference"]:
+            out_val["accounting_note"] += (
+                "; difference %s. Expected under latest-cost valuation: the GL holds what was "
+                "actually paid and relieved through COGS, while this report re-prices the same "
+                "stock at today's purchase rate." % recon["difference"]
+            )
+        else:
+            out_val["accounting_note"] += " — which ties."
     if station_id is not None:
         out_val["filter_station_id"] = station_id
         out_val["accounting_note"] += (
@@ -6857,7 +7252,7 @@ def report_financial_analytics(
     }
     if pond_id is not None:
         pond = AquaculturePond.objects.filter(
-            pk=pond_id, company_id=company_id, is_active=True
+            pk=pond_id, company_id=company_id
         ).only("name").first()
         pname = (pond.name or "").strip() if pond else f"Pond #{pond_id}"
         out_fa["filter_pond_id"] = pond_id

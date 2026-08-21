@@ -8,6 +8,14 @@ import pytest
 from api.models import AquaculturePond, Company
 
 
+@pytest.fixture(autouse=True)
+def _allow_legacy_fish_transfers(legacy_fish_transfers_enabled):
+    """
+    These cover the transfer machinery that historical records and the conversion still run
+    through. The endpoint itself is retired for users — see test_fish_transfer_retired.
+    """
+
+
 @pytest.mark.django_db
 def test_sample_rejects_missing_total_weight(api_client, company_tenant, auth_admin_headers):
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)

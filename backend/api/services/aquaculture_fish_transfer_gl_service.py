@@ -7,7 +7,12 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
 
-from api.models import AquacultureFishPondTransfer, JournalEntry, JournalEntryLine
+from api.models import (
+    AquacultureFishPondTransfer,
+    AquacultureFishPondTransferLine,
+    JournalEntry,
+    JournalEntryLine,
+)
 from api.services.gl_posting import (
     delete_aquaculture_fish_pond_transfer_journal,
     post_aquaculture_fish_pond_transfer_journal,
@@ -84,14 +89,29 @@ def allocate_transfer_gl_amounts(
 
 def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
     """
-    (Re)post AUTO-AQ-FISH-XFER-{id}: Dr 1581 destination / Cr 1581 source per line.
-    Amounts match line cost_amount, capped at source pond 1581 balance when needed.
-    When management cost exceeds 1581, reclassifies pond production expense into 1581 first.
+    Post an inter-pond fish movement as a **sale**: seller's invoice and buyer's bill.
+
+    Fish moving between ponds is a trade, not a re-tag of inventory, so the paperwork carries the
+    economics — ``AUTO-IPT-INV-{transfer}-{line}`` and ``AUTO-IPT-BILL-{transfer}-{line}``,
+    settling through 1595 (see
+    api.services.aquaculture_internal_trade_posting). The old single ``AUTO-AQ-FISH-XFER-{id}``
+    journal is removed whenever this runs, so a transfer recorded under the previous model is
+    re-papered the moment it is touched.
+
+    What has not changed: the selling pond can only relieve the 1581 it actually holds, so the
+    cost leg is still capped at its balance on the transfer date, and pond production expense is
+    still reclassified into 1581 first when the company capitalizes it. The price legs are never
+    capped — the buying pond owes the agreed price either way.
     """
     if not isinstance(transfer, AquacultureFishPondTransfer):
         return {"posted": False, "reason": "invalid_transfer"}
 
+    from api.services.aquaculture_internal_transfer_price import apply_internal_prices_to_transfer
+
     delete_aquaculture_fish_pond_transfer_journal(company_id, transfer.id)
+    # Price before posting, whoever the caller is: an unpriced line has nothing to invoice, and
+    # the seam — not each caller — is what guarantees the sale carries a price.
+    apply_internal_prices_to_transfer(company_id, transfer)
     lines = list(transfer.lines.select_related("to_pond", "to_production_cycle").all())
     total_requested = _money_q(
         sum(
@@ -130,18 +150,17 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
         as_of=transfer.transfer_date,
         lines=lines,
     )
-    # A line priced above its own cost still posts when there is nothing in 1581 to relieve:
-    # the selling pond expensed its costs, so its P&L already carries them.
-    def _has_margin(ln) -> bool:
-        sale = _money_q(Decimal(str(getattr(ln, "sale_amount", None) or 0)))
-        cost = _money_q(Decimal(str(getattr(ln, "cost_amount", None) or 0)))
-        return sale > 0 and sale > cost
+    # Inter-pond trades are sales: cost/kg + company margin (or margin alone when book cost
+    # is still zero). Any line with a sale value must leave AUTO-IPT invoice + bill journals,
+    # even when the seller has nothing left in 1581 to relieve (cost leg is then zero).
+    def _sale(ln) -> Decimal:
+        return _money_q(Decimal(str(getattr(ln, "sale_amount", None) or 0)))
 
-    postable = [(ln, amt) for ln, amt in line_amounts if amt > 0 or _has_margin(ln)]
+    postable = [(ln, amt) for ln, amt in line_amounts if _sale(ln) > 0]
     if not postable:
-        reason = "no_cost_amount"
+        reason = "no_sale_value"
         if total_req > 0 and total_gl <= 0:
-            reason = "source_pond_1581_balance_zero"
+            reason = "source_pond_1581_balance_zero_and_no_sale_price"
         return {
             "posted": False,
             "reason": reason,
@@ -150,28 +169,32 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
             "gl_capped": capped,
         }
 
-    from_name = (transfer.from_pond.name or "").strip() if transfer.from_pond_id else f"Pond #{transfer.from_pond_id}"
-    je = post_aquaculture_fish_pond_transfer_journal(
-        company_id,
-        transfer.id,
-        transfer.transfer_date,
-        from_pond_id=transfer.from_pond_id,
-        from_production_cycle_id=transfer.from_production_cycle_id,
-        from_pond_label=from_name,
-        line_posts=postable,
-        memo=transfer.memo or "",
-        gl_capped=capped,
-        total_requested=total_req,
-    )
+    from api.services.aquaculture_internal_trade_documents import sync_internal_trade_documents
+    from api.services.aquaculture_internal_trade_posting import post_internal_trade_line
+
+    # The documents are the transaction, so they must exist before their journals do.
+    doc_result = sync_internal_trade_documents(company_id, transfer)
+
+    posted_lines: list[dict] = []
+    entry_numbers: list[str] = []
+    for ln, capped_cost in postable:
+        outcome = post_internal_trade_line(company_id, transfer, ln, cost_override=capped_cost)
+        posted_lines.append(outcome)
+        entry_numbers.extend(outcome.get("entries") or [])
+
+    any_posted = any(p.get("posted") or p.get("already_posted") for p in posted_lines)
     return {
-        "posted": je is not None,
-        "journal_entry_id": je.id if je else None,
-        "journal_entry_number": je.entry_number if je else None,
+        "posted": any_posted,
+        "documents": doc_result.get("documents", 0),
+        "document_skips": doc_result.get("skipped", []),
+        "journal_entry_numbers": entry_numbers,
+        "lines": posted_lines,
         "total_requested": str(_money_q(total_req)),
         "total_gl_amount": str(_money_q(total_gl)),
         "gl_capped": capped,
         "gl_cap_note": (
-            "GL amount capped at source pond 1581 book balance after expense reclass."
+            "Cost relieved from the selling pond was capped at its 1581 book balance after "
+            "expense reclass; the sale price to the buying pond is unchanged."
             if capped
             else None
         ),
@@ -180,26 +203,62 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
 
 
 def transfer_gl_status(company_id: int, transfer_id: int) -> dict:
-    """Read-only GL link for API payloads."""
-    je = JournalEntry.objects.filter(
+    """
+    Read-only GL link for API payloads.
+
+    Reports the inter-pond invoice/bill journals. A transfer still carrying the superseded
+    ``AUTO-AQ-FISH-XFER`` journal is reported against that one until it is re-papered, so
+    historical records stay legible.
+    """
+    line_ids = list(
+        AquacultureFishPondTransferLine.objects.filter(transfer_id=transfer_id).values_list(
+            "id", flat=True
+        )
+    )
+    wanted = []
+    for lid in line_ids:
+        wanted.extend(
+            ["AUTO-IPT-INV-%d-%d" % (transfer_id, lid), "AUTO-IPT-BILL-%d-%d" % (transfer_id, lid)]
+        )
+    entries = list(
+        JournalEntry.objects.filter(
+            company_id=company_id, entry_number__in=wanted, is_posted=True
+        )
+    )
+    if entries:
+        cr_total = JournalEntryLine.objects.filter(
+            journal_entry__in=entries,
+            account__account_code="1581",
+            credit__gt=0,
+        ).aggregate(t=Coalesce(Sum("credit"), Decimal("0")))["t"]
+        return {
+            "gl_posted": True,
+            "journal_entry_id": entries[0].id,
+            "journal_entry_number": entries[0].entry_number,
+            "journal_entry_numbers": [e.entry_number for e in entries],
+            "gl_total_amount": str(_money_q(Decimal(str(cr_total or 0)))),
+        }
+
+    legacy = JournalEntry.objects.filter(
         company_id=company_id,
         entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}",
         is_posted=True,
     ).first()
-    if not je:
+    if not legacy:
         return {
             "gl_posted": False,
             "journal_entry_id": None,
             "journal_entry_number": None,
         }
     cr_total = JournalEntryLine.objects.filter(
-        journal_entry=je,
+        journal_entry=legacy,
         account__account_code="1581",
         credit__gt=0,
     ).aggregate(t=Coalesce(Sum("credit"), Decimal("0")))["t"]
     return {
         "gl_posted": True,
-        "journal_entry_id": je.id,
-        "journal_entry_number": je.entry_number,
+        "journal_entry_id": legacy.id,
+        "journal_entry_number": legacy.entry_number,
+        "legacy_transfer_journal": True,
         "gl_total_amount": str(_money_q(Decimal(str(cr_total or 0)))),
     }

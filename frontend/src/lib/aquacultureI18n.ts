@@ -364,6 +364,13 @@ const strings: Dict = {
   transferOtherExpense: { en: 'Other expense', bn: 'অন্যান্য খরচ' },
   fromToCol: { en: 'From → To', bn: 'থেকে → প্রতি' },
   recordTransfer: { en: 'Record transfer', bn: 'স্থানান্তর রেকর্ড' },
+  recordFishSale: { en: 'Record fish sale', bn: 'মাছ বিক্রয় রেকর্ড' },
+  fishTransferRetiredNote: {
+    en:
+      'Fish is no longer moved by transfer. A pond that sells fish — to another pond or to an outside customer — records a sale, and the buying pond records the matching purchase bill, so both ponds show the trade and the selling pond earns its margin. This page keeps the record of past transfers. Feed, medicine, equipment and other supplies still move pond to pond under Stock.',
+    bn:
+      'মাছ আর স্থানান্তরের মাধ্যমে সরানো হয় না। যে পুকুর মাছ বিক্রি করে — অন্য পুকুরে বা বাইরের ক্রেতার কাছে — সে বিক্রয় রেকর্ড করে, আর ক্রেতা পুকুর সংশ্লিষ্ট ক্রয় বিল রেকর্ড করে। ফলে দুই পুকুরেই লেনদেন দেখা যায় এবং বিক্রেতা পুকুর তার মুনাফা পায়। এই পাতায় পুরনো স্থানান্তরের রেকর্ড থাকবে। খাদ্য, ওষুধ, সরঞ্জাম ও অন্যান্য সামগ্রী আগের মতোই Stock থেকে পুকুরে পুকুরে যাবে।',
+  },
   saveTransfer: { en: 'Save transfer', bn: 'স্থানান্তর সংরক্ষণ' },
   editFishTransfer: { en: 'Edit fish pond transfer', bn: 'মাছ পুকুর স্থানান্তর সম্পাদনা' },
   recordFishTransfer: { en: 'Record fish pond transfer', bn: 'মাছ পুকুর স্থানান্তর রেকর্ড' },

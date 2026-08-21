@@ -13,6 +13,7 @@ from django.db import transaction
 from api.models import (
     AquacultureExpense,
     AquacultureExpenseInventoryLine,
+    AquacultureFishPondTransferLine,
     AquacultureFishStockLedger,
     AquacultureLandlordLedgerEntry,
     BankDeposit,
@@ -252,6 +253,23 @@ class Command(BaseCommand):
                     je, err = post_payroll_salary(company_id, pr)
                     if not je:
                         return False, err or "Payroll journal not created"
+                    return True, ""
+
+                if gap_type == "inter_pond_fish_trade":
+                    line = AquacultureFishPondTransferLine.objects.filter(
+                        pk=record_id, transfer__company_id=company_id
+                    ).select_related("transfer").first()
+                    if not line:
+                        return False, "Inter-pond transfer line not found"
+                    from api.services.aquaculture_fish_transfer_gl_service import (
+                        sync_aquaculture_fish_pond_transfer_gl,
+                    )
+
+                    result = sync_aquaculture_fish_pond_transfer_gl(company_id, line.transfer)
+                    if not result.get("posted") and not any(
+                        (p.get("already_posted") for p in (result.get("lines") or []))
+                    ):
+                        return False, result.get("reason") or "Could not post inter-pond trade GL"
                     return True, ""
 
                 return False, f"Unknown gap type {gap_type}"

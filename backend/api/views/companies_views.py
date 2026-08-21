@@ -294,6 +294,9 @@ def _company_to_json(c: Company) -> dict:
         "postal_code": getattr(c, "postal_code", "") or "",
         "country": getattr(c, "country", "") or "",
         "fiscal_year_start": (getattr(c, "fiscal_year_start", None) or "01-01")[:5],
+        "books_locked_through": (
+            c.books_locked_through.isoformat() if getattr(c, "books_locked_through", None) else None
+        ),
         "subdomain": sub_out,
         "custom_domain": dom_out,
         "currency": c.currency or "BDT",
@@ -651,6 +654,22 @@ def company_detail(request, company_id: int):
             if "fiscal_year_start" in body:
                 fy = (str(body.get("fiscal_year_start") or "01-01")).strip()[:5]
                 company.fiscal_year_start = fy if fy else "01-01"
+            if "books_locked_through" in body:
+                raw_lock = body.get("books_locked_through")
+                if raw_lock in (None, ""):
+                    company.books_locked_through = None
+                else:
+                    try:
+                        lock_date = date.fromisoformat(str(raw_lock).strip()[:10])
+                    except ValueError:
+                        return JsonResponse(
+                            {
+                                "detail": "books_locked_through must be a date as YYYY-MM-DD, "
+                                "or blank to reopen the books."
+                            },
+                            status=400,
+                        )
+                    company.books_locked_through = lock_date
             if "email" in body:
                 company.email = (body["email"] or "")[:100]
             if "phone" in body:

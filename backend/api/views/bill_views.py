@@ -1299,7 +1299,10 @@ def bill_detail(request, bill_id: int):
                 },
                 status=409,
             )
-        cleanup_vendor_bill_posting_effects(request.company_id, b)
+        try:
+            cleanup_vendor_bill_posting_effects(request.company_id, b)
+        except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=409)
         b.delete()
         return HttpResponse(status=204)
     return JsonResponse({"detail": "Method not allowed"}, status=405)

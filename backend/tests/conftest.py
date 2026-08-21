@@ -230,3 +230,21 @@ def seed_min_gl_accounts(company) -> None:
 def company_tenant_with_gl(company_tenant):
     seed_min_gl_accounts(company_tenant)
     return company_tenant
+
+
+@pytest.fixture
+def legacy_fish_transfers_enabled(monkeypatch):
+    """
+    Re-open the retired fish-transfer endpoint for one test.
+
+    Fish moves by invoice and bill now, so the endpoint refuses in normal operation. The transfer
+    machinery underneath — stock ledger, biomass sampling, line costing, the GL seam — still runs
+    for historical records and for `convert_fish_transfers_to_documents`, so it stays under test
+    through this fixture rather than going dark.
+    """
+    import api.services.aquaculture_fish_transfer_policy as policy
+    import api.views.aquaculture_views as views
+
+    monkeypatch.setattr(policy, "FISH_POND_TRANSFERS_ENABLED", True)
+    monkeypatch.setattr(views, "fish_pond_transfers_allowed", lambda: True)
+    return True

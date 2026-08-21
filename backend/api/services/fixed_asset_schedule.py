@@ -44,6 +44,16 @@ def amount_for_next_run(asset: FixedAsset) -> Decimal:
     return _q2(min(monthly, remaining))
 
 
+def _step_one_month(d: date) -> date:
+    """Same day next month, clamped to the 28th so short months never raise."""
+    if d.month == 12:
+        return date(d.year + 1, 1, d.day if d.day <= 28 else 28)
+    try:
+        return date(d.year, d.month + 1, d.day)
+    except ValueError:
+        return date(d.year, d.month + 1, 28)
+
+
 def depreciation_schedule(asset: FixedAsset, max_rows: int = 120) -> list[dict[str, Any]]:
     """
     Project remaining straight-line runs from current accumulated depreciation.
@@ -60,6 +70,10 @@ def depreciation_schedule(asset: FixedAsset, max_rows: int = 120) -> list[dict[s
     start = asset.last_depreciation_date or asset.in_service_date or asset.acquisition_date
     if not start:
         start = date.today()
+    if asset.last_depreciation_date:
+        # That month is already depreciated; projecting it again showed a duplicate first row
+        # (and posting would refuse it — run_exists_for_period guards the calendar month).
+        start = _step_one_month(start)
 
     cursor = start
     for n in range(max_rows):
@@ -78,14 +92,7 @@ def depreciation_schedule(asset: FixedAsset, max_rows: int = 120) -> list[dict[s
             }
         )
         sim_accum += amt
-        if cursor.month == 12:
-            cursor = date(cursor.year + 1, 1, cursor.day if cursor.day <= 28 else 28)
-        else:
-            next_month = cursor.month + 1
-            try:
-                cursor = date(cursor.year, next_month, cursor.day)
-            except ValueError:
-                cursor = date(cursor.year, next_month, 28)
+        cursor = _step_one_month(cursor)
     return rows
 
 

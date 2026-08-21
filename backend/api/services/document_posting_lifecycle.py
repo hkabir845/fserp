@@ -20,6 +20,7 @@ from api.services.gl_posting import (
     sync_invoice_gl,
     sync_posted_vendor_bill,
 )
+from api.services.accounting_period_lock import period_lock_error
 from api.services.payment_allocation import refresh_invoice_from_allocations
 
 
@@ -45,8 +46,19 @@ def _bill_amount_paid(bill: Bill) -> Decimal:
     return agg["t"] or Decimal("0")
 
 
+def assert_bill_change_allowed(bill: Bill, *, action: str = "change") -> tuple[bool, str]:
+    """Block any change to a bill whose accounting period has been closed."""
+    err = period_lock_error(bill.company_id, bill.bill_date, action=action)
+    if err:
+        return False, err
+    return True, ""
+
+
 def assert_bill_edit_allowed(bill: Bill) -> tuple[bool, str]:
-    """Block bill edit when payments exist or status is paid/partial (matches UI)."""
+    """Block bill edit when payments exist, status is paid/partial, or the period is closed."""
+    ok_period, err_period = assert_bill_change_allowed(bill, action="edit a bill dated in")
+    if not ok_period:
+        return False, err_period
     paid = _bill_amount_paid(bill)
     if paid > Decimal("0"):
         return (
@@ -61,7 +73,12 @@ def assert_bill_edit_allowed(bill: Bill) -> tuple[bool, str]:
 
 
 def assert_invoice_edit_allowed(company_id: int, inv: Invoice) -> tuple[bool, str]:
-    """Block invoice edit when paid/partial or customer receipts are allocated."""
+    """Block invoice edit when paid/partial, receipts are allocated, or the period is closed."""
+    err_period = period_lock_error(
+        company_id, inv.invoice_date, action="edit an invoice dated in"
+    )
+    if err_period:
+        return False, err_period
     status = (inv.status or "").strip().lower().replace(" ", "_")
     if status in ("paid", "partial", "partially_paid"):
         return False, "Cannot edit a paid or partially paid invoice."
@@ -76,7 +93,17 @@ def assert_invoice_edit_allowed(company_id: int, inv: Invoice) -> tuple[bool, st
 
 
 def assert_invoice_change_allowed(company_id: int, invoice_id: int) -> tuple[bool, str]:
-    """Block invoice edit/delete when linked receipts cannot be rolled back safely."""
+    """Block invoice edit/delete when the period is closed or linked receipts cannot roll back."""
+    inv_date = (
+        Invoice.objects.filter(pk=invoice_id, company_id=company_id)
+        .values_list("invoice_date", flat=True)
+        .first()
+    )
+    err_period = period_lock_error(
+        company_id, inv_date, action="change an invoice dated in"
+    )
+    if err_period:
+        return False, err_period
     alloc_rows = PaymentInvoiceAllocation.objects.filter(
         invoice_id=invoice_id, payment__company_id=company_id
     ).select_related("payment")

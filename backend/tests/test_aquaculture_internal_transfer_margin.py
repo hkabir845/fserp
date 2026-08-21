@@ -25,6 +25,14 @@ from api.services.aquaculture_internal_transfer_price import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _allow_legacy_fish_transfers(legacy_fish_transfers_enabled):
+    """
+    These cover the transfer machinery that historical records and the conversion still run
+    through. The endpoint itself is retired for users — see test_fish_transfer_retired.
+    """
+
+
 def _enable(c: Company) -> None:
     Company.objects.filter(pk=c.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
 
@@ -79,14 +87,27 @@ def _seed_pond_1581_balance(company_id: int, pond, amount: str) -> None:
 
 
 def _journal_lines(company_id: int, transfer_id: int) -> dict[str, tuple[Decimal, Decimal]]:
-    """{account_code: (total debit, total credit)} for the transfer's auto journal."""
-    je = JournalEntry.objects.filter(
-        company_id=company_id, entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}"
-    ).first()
-    if not je:
+    """
+    {account_code: (total debit, total credit)} across the trade's paperwork.
+
+    An inter-pond fish move posts as a seller invoice plus a buyer bill, so the economics are
+    spread over both journals; totalling them is what makes the trade readable as one event.
+    """
+    from api.models import AquacultureFishPondTransferLine
+
+    line_ids = list(
+        AquacultureFishPondTransferLine.objects.filter(transfer_id=transfer_id).values_list(
+            "id", flat=True
+        )
+    )
+    wanted: list[str] = []
+    for lid in line_ids:
+        wanted += [f"AUTO-IPT-INV-{transfer_id}-{lid}", f"AUTO-IPT-BILL-{transfer_id}-{lid}"]
+    entries = list(JournalEntry.objects.filter(company_id=company_id, entry_number__in=wanted))
+    if not entries:
         return {}
     out: dict[str, tuple[Decimal, Decimal]] = {}
-    for ln in JournalEntryLine.objects.filter(journal_entry=je).select_related("account"):
+    for ln in JournalEntryLine.objects.filter(journal_entry__in=entries).select_related("account"):
         code = ln.account.account_code
         d, c = out.get(code, (Decimal("0"), Decimal("0")))
         out[code] = (d + (ln.debit or Decimal("0")), c + (ln.credit or Decimal("0")))
@@ -211,9 +232,13 @@ def test_transfer_posts_an_internal_sale_with_margin(
 
 
 @pytest.mark.django_db
-def test_zero_margin_keeps_the_old_at_cost_journal(
+def test_zero_margin_still_documents_a_sale_but_earns_nothing(
     api_client, company_tenant, auth_admin_headers
 ):
+    """
+    At zero margin the ponds still trade — the paperwork is a sale at cost, not a silent re-tag
+    of inventory. The selling pond simply makes nothing on it.
+    """
     _enable(company_tenant)
     cid = company_tenant.id
     ensure_aquaculture_chart_accounts(cid)
@@ -242,8 +267,9 @@ def test_zero_margin_keeps_the_old_at_cost_journal(
     transfer_id = json.loads(r.content)["transfer"]["id"]
 
     codes = _journal_lines(cid, transfer_id)
-    assert "4245" not in codes and "5245" not in codes
-    assert codes["1581"][0] == codes["1581"][1], "pure re-tag: equal debit and credit on 1581"
+    assert codes["4245"][1] == codes["5245"][0], "sold at cost, so revenue equals cost of sales"
+    assert codes["1581"][0] == codes["1581"][1], "no margin, so the buyer capitalizes the cost"
+    assert codes["1595"][0] == codes["1595"][1], "the two ponds settle against each other"
 
 
 @pytest.mark.django_db

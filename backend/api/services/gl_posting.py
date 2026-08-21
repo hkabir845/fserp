@@ -56,6 +56,11 @@ from api.models import (
     Vendor,
 )
 from api.exceptions import GlPostingError, StockBusinessError
+from api.services.accounting_period_lock import (
+    assert_period_open,
+    books_lock_date,
+    period_lock_error,
+)
 from api.services.entity_gl_scoping import (
     validate_bill_entity_tags_for_gl,
     validate_invoice_entity_tags_for_gl,
@@ -603,6 +608,13 @@ def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
     Per-unit cost for inventory / wet-stock GL (liters, pieces, etc.).
     Prefer Item.cost; if unset, fall back to unit_price so reports and dip GL are not all zero.
 
+    ``Item.cost`` is the LATEST PURCHASE RATE, not a weighted average: every bill save mirrors
+    the line rate onto the item (api.services.bill_item_catalog_sync), deliberately overwriting
+    the AVCO figure that ``recompute_item_average_cost`` computed a moment earlier. That is the
+    owner's chosen basis — stock is valued at what it costs to buy today. It also means priced
+    stock will not equal the GL inventory balance once purchase prices move; the inventory
+    valuation report reconciles the two explicitly.
+
     NOTE: Do NOT use this for COGS-relief journals (Dr COGS / Cr inventory) — use
     item_cogs_unit_cost, which guarantees a COGS amount via the best-available cost.
     """
@@ -632,7 +644,8 @@ def item_cogs_unit_cost(company_id: int, item: Optional[Item]) -> Decimal:
     posts a COGS amount (Dr COGS / Cr inventory) — never silently zero.
 
     Standard perpetual-inventory fallback, most → least reliable:
-      1. Moving-average cost (Item.cost)        — normal AVCO valuation
+      1. Item.cost                              — the carried cost (latest purchase rate; see
+                                                  item_inventory_unit_cost for why it is not AVCO)
       2. Most recent posted purchase unit price — last actual buy price
       3. Opening stock unit cost                — initial valuation
       4. Selling price (unit_price)             — last-resort guarantee (zero-margin sale)
@@ -1045,6 +1058,13 @@ def _create_posted_entry(
     gl_station_id: Optional[int] = None,
     aquaculture_line_costing: Optional[list[Optional[dict]]] = None,
 ) -> Optional[JournalEntry]:
+    # Every auto-posted journal funnels through here, so this is where a closed period is enforced.
+    # An idempotent re-post of a journal that already exists is not new activity, so it is allowed
+    # through and short-circuits below.
+    if not JournalEntry.objects.filter(
+        company_id=company_id, entry_number=entry_number
+    ).exists():
+        assert_period_open(company_id, entry_date, action="post")
     total_debit = sum(_unpack_gl_line(x)[1] for x in lines)
     total_credit = sum(_unpack_gl_line(x)[2] for x in lines)
     if total_debit != total_credit or total_debit <= 0:
@@ -1211,10 +1231,16 @@ def backfill_invoice_cogs_journals(
     """
     Post missing COGS relief journals for posted invoices in [start, end].
     Skips draft/zero-total invoices. With force_repost, deletes existing COGS entries first.
+
+    Invoices in a closed accounting period are counted and left alone: the income statement
+    calls this to self-heal while it renders, and a report must never fail — or quietly
+    reopen a closed period — because of a repair it decided to make on its own.
     """
     posted = 0
     skipped = 0
     removed = 0
+    skipped_locked = 0
+    lock = books_lock_date(company_id)
     qs = (
         Invoice.objects.filter(
             company_id=company_id,
@@ -1226,6 +1252,9 @@ def backfill_invoice_cogs_journals(
         .order_by("id")
     )
     for inv in qs.iterator(chunk_size=200):
+        if lock is not None and inv.invoice_date and inv.invoice_date <= lock:
+            skipped_locked += 1
+            continue
         en = f"AUTO-INV-{inv.id}-COGS"
         if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
             if not force_repost:
@@ -1234,7 +1263,12 @@ def backfill_invoice_cogs_journals(
             removed += delete_invoice_cogs_journal(company_id, inv.id)
         if post_invoice_cogs_journal(company_id, inv):
             posted += 1
-    return {"posted": posted, "skipped_existing": skipped, "removed_for_repost": removed}
+    return {
+        "posted": posted,
+        "skipped_existing": skipped,
+        "removed_for_repost": removed,
+        "skipped_period_locked": skipped_locked,
+    }
 
 
 def post_aquaculture_shop_stock_issue_journal(
@@ -1742,11 +1776,22 @@ def delete_aquaculture_fish_sale_bio_relief_journal(company_id: int, sale_id: in
 
 
 def delete_aquaculture_fish_pond_transfer_journal(company_id: int, transfer_id: int) -> int:
+    """
+    Clear every journal an inter-pond fish trade has posted.
+
+    Covers the seller invoice and buyer bill journals that carry the trade today, plus the
+    superseded transfer journal and its reclass. This is the seam both the delete endpoint and
+    the re-post path use, so a trade cannot leave posted money behind when it is edited away.
+    """
+    from api.services.aquaculture_internal_trade_posting import (
+        delete_internal_trade_journals_for_transfer,
+    )
     from api.services.aquaculture_pond_bio_capitalization import delete_pond_expense_reclass_to_1581
 
     n = delete_pond_expense_reclass_to_1581(
         company_id, f"AUTO-AQ-FISH-XFER-{transfer_id}-RECLASS"
     )
+    n += delete_internal_trade_journals_for_transfer(company_id, transfer_id)
     deleted, _ = JournalEntry.objects.filter(
         company_id=company_id,
         entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}",
@@ -2956,6 +3001,7 @@ def cleanup_vendor_bill_posting_effects(company_id: int, bill: Bill) -> None:
     Before deleting a bill: reverse tank/item receipt, remove AUTO-BILL journal, roll back vendor A/P bump.
     Caller must ensure no payment allocations remain on the bill.
     """
+    assert_period_open(company_id, bill.bill_date, action="reverse a bill dated in")
     with transaction.atomic():
         b = Bill.objects.select_for_update().filter(pk=bill.pk, company_id=company_id).first()
         if not b:
@@ -3147,6 +3193,11 @@ def cleanup_invoice_posting_effects(company_id: int, inv: Invoice) -> tuple[bool
     Aquaculture pond sales use the same AUTO-INV journals; pond inventory expenses use
     ``cleanup_aquaculture_expense_posting_effects``.
     """
+    err = period_lock_error(
+        company_id, inv.invoice_date, action="delete an invoice dated in"
+    )
+    if err:
+        return False, err
     return rollback_invoice_posting_effects(company_id, inv, purge_linked_payments=True)
 
 

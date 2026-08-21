@@ -20,6 +20,7 @@ from api.views.common import parse_json_body, require_company_id
 from django.utils import timezone as django_timezone
 
 from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount, Station
+from api.services.accounting_period_lock import period_lock_error
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.journal_entity_display import journal_entry_site_label, journal_line_site_label
 from api.services.entity_gl_scoping import (
@@ -521,6 +522,11 @@ def journal_entry_detail(request, entry_id: int):
     if request.method == "DELETE":
         if e.is_posted:
             return JsonResponse({"detail": "Cannot delete posted entry"}, status=400)
+        lock_err = period_lock_error(
+            request.company_id, e.entry_date, action="delete a journal dated in"
+        )
+        if lock_err:
+            return JsonResponse({"detail": lock_err, "code": "period_locked"}, status=409)
         e.delete()
         return JsonResponse({"detail": "Deleted"}, status=200)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -551,6 +557,12 @@ def journal_entry_post(request, entry_id: int):
         if not e_out:
             return JsonResponse({"detail": "Journal entry not found"}, status=404)
         return JsonResponse(_entry_to_json(e_out))
+
+    lock_err = period_lock_error(
+        request.company_id, e.entry_date, action="post a journal dated in"
+    )
+    if lock_err:
+        return JsonResponse({"detail": lock_err, "code": "period_locked"}, status=409)
 
     ok, err = _manual_journal_eligible_for_post(e)
     if not ok:
@@ -603,6 +615,11 @@ def journal_entry_unpost(request, entry_id: int):
     if err:
         return err
     body = parsed or {}
+    lock_err = period_lock_error(
+        request.company_id, e.entry_date, action="unpost a journal dated in"
+    )
+    if lock_err:
+        return JsonResponse({"detail": lock_err, "code": "period_locked"}, status=409)
     remove = bool(body.get("remove_system_entry") or body.get("purge_auto_entry"))
     en = (e.entry_number or "").strip()
     if remove and en.startswith("AUTO-"):

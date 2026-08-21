@@ -758,10 +758,16 @@ def test_inter_pond_transfer_moves_biology_without_changing_the_company_total(
             total += (ln.debit or Decimal("0")) - (ln.credit or Decimal("0"))
         return money(total)
 
-    assert pond_bio(dst.id) == Decimal("25000.00"), "destination pond did not receive the fish"
-    assert pond_bio(src.id) == Decimal("35000.00"), "source pond was not relieved"
-    assert gl_balance(cid, "1581") == company_bio_before, (
-        "an internal transfer changed the company's biological asset"
+    # The buying pond capitalizes what it paid — cost plus the inter-pond margin (40 kg x 20).
+    line = transfer.lines.get()
+    price = money(Decimal(str(line.sale_amount)))
+    assert price == Decimal("25800.00")
+    assert pond_bio(dst.id) == price, "destination pond did not receive the fish at its price"
+    assert pond_bio(src.id) == Decimal("35000.00"), "source pond was not relieved at book cost"
+    # Company biological inventory rises by the margin the buying pond has not yet realized;
+    # consolidation writes it back off through 1585, which report_balance_sheet applies.
+    assert gl_balance(cid, "1581") == company_bio_before + (price - Decimal("25000.00")), (
+        "an internal sale moved company biological inventory by more than the unrealized margin"
     )
     assert_ledger_sound(cid)
 

@@ -1124,18 +1124,19 @@ export default function AquacultureFishTransfersPage() {
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
             {uiT('refresh')}
           </button>
-          <button
-            type="button"
-            onClick={openNew}
-            disabled={loading || ponds.length === 0}
-            className={AQ_HERO_BTN_PRIMARY}
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            {aquacultureT('recordTransfer', lang)}
-          </button>
+          {/* Fish is sold now, not transferred: the seller raises a sale and the buyer records
+              the matching purchase bill. This page stays as the record of past moves. */}
+          <Link href="/aquaculture/sales" className={AQ_HERO_BTN_PRIMARY}>
+            <Fish className="h-3.5 w-3.5" aria-hidden />
+            {aquacultureT('recordFishSale', lang)}
+          </Link>
         </>
       }
     >
+      <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+        {aquacultureT('fishTransferRetiredNote', lang)}
+      </p>
+
       {helpNote ? (
         <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground/85">
           {helpNote}

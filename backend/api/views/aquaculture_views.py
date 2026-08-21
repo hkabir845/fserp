@@ -176,6 +176,10 @@ from api.services.aquaculture_internal_trade_documents import (
     internal_trade_documents_for_transfer,
     sync_internal_trade_documents,
 )
+from api.services.aquaculture_fish_transfer_policy import (
+    FISH_TRANSFER_RETIRED_DETAIL,
+    fish_pond_transfers_allowed,
+)
 from api.services.aquaculture_internal_transfer_price import (
     apply_internal_prices_to_transfer,
     internal_transfer_margin_per_kg,
@@ -5040,10 +5044,12 @@ def _fish_transfer_to_json(t: AquacultureFishPondTransfer) -> dict:
     lines = [
         _fish_transfer_line_to_json(x, fry_pool=fry_pool, other_pool=other_pool) for x in t.lines.all()
     ]
-    fry_total = _money_q(sum(Decimal(ln["fry_cost_amount"]) for ln in lines))
-    other_total = _money_q(sum(Decimal(ln["other_expense_amount"]) for ln in lines))
-    cost_total = _money_q(sum(Decimal(ln["cost_amount"]) for ln in lines))
-    sale_total = _money_q(sum(Decimal(ln["sale_amount"]) for ln in lines))
+    # start=Decimal("0"): summing an empty line list returns int 0, which _money_q cannot
+    # quantize — a transfer with no lines used to 500 the whole list endpoint.
+    fry_total = _money_q(sum((Decimal(ln["fry_cost_amount"]) for ln in lines), Decimal("0")))
+    other_total = _money_q(sum((Decimal(ln["other_expense_amount"]) for ln in lines), Decimal("0")))
+    cost_total = _money_q(sum((Decimal(ln["cost_amount"]) for ln in lines), Decimal("0")))
+    sale_total = _money_q(sum((Decimal(ln["sale_amount"]) for ln in lines), Decimal("0")))
     gl = transfer_gl_status(t.company_id, t.id)
     return {
         "id": t.id,
@@ -5319,6 +5325,14 @@ def aquaculture_fish_pond_transfer_preview_cost(request):
     return JsonResponse(payload)
 
 
+def _fish_transfer_retired_response():
+    """Creating or editing a fish transfer is closed off; see aquaculture_fish_transfer_policy."""
+    return JsonResponse(
+        {"detail": FISH_TRANSFER_RETIRED_DETAIL, "code": "fish_transfer_retired"},
+        status=409,
+    )
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 @auth_required
@@ -5387,6 +5401,9 @@ def aquaculture_fish_pond_transfers(request):
                 "transfers": [_fish_transfer_to_json(t) for t in xfer_qs],
             }
         )
+
+    if not fish_pond_transfers_allowed():
+        return _fish_transfer_retired_response()
 
     body, e = parse_json_body(request)
     if e:
@@ -5474,6 +5491,8 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
             }
         )
     if request.method == "PUT":
+        if not fish_pond_transfers_allowed():
+            return _fish_transfer_retired_response()
         body, e = parse_json_body(request)
         if e:
             return e

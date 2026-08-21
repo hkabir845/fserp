@@ -32,6 +32,14 @@ from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_pond_internal_vendor import provision_pond_internal_parties
 from tests.report_registry import ALL_API_REPORT_IDS
 
+
+@pytest.fixture(autouse=True)
+def _allow_legacy_fish_transfers(legacy_fish_transfers_enabled):
+    """
+    These cover the transfer machinery that historical records and the conversion still run
+    through. The endpoint itself is retired for users — see test_fish_transfer_retired.
+    """
+
 START = "2026-01-01"
 END = "2026-12-31"
 
@@ -229,7 +237,10 @@ def test_fish_arrive_exactly_once(api_client, auth_admin_headers, traded_ponds):
 
 @pytest.mark.django_db
 def test_the_sale_hits_the_books_exactly_once(api_client, auth_admin_headers, traded_ponds):
-    """One journal for the trade, and no journal from either document."""
+    """
+    The trade is on the books once: the seller's invoice journal and the buyer's bill journal,
+    and nothing from the ordinary invoice/bill posting machinery on top.
+    """
     cid, nursing, grow = traded_ponds
     h = {**auth_admin_headers, "HTTP_X_COMPANY_ID": str(cid)}
     body = _do_transfer(api_client, h, nursing, grow)
@@ -237,11 +248,24 @@ def test_the_sale_hits_the_books_exactly_once(api_client, auth_admin_headers, tr
     docs = body["transfer"]["internal_documents"]
     sale = Decimal(body["transfer"]["lines"][0]["sale_amount"])
 
+    from api.models import AquacultureFishPondTransferLine
+
+    line_ids = list(
+        AquacultureFishPondTransferLine.objects.filter(transfer_id=transfer_id).values_list(
+            "id", flat=True
+        )
+    )
     entries = JournalEntry.objects.filter(company_id=cid, is_posted=True)
-    trade_entries = [
-        e.entry_number for e in entries if e.entry_number.startswith("AUTO-AQ-FISH-XFER-")
-    ]
-    assert trade_entries == [f"AUTO-AQ-FISH-XFER-{transfer_id}"], "exactly one journal for the move"
+    trade_entries = sorted(
+        e.entry_number for e in entries if e.entry_number.startswith("AUTO-IPT-")
+    )
+    expected = sorted(
+        [f"AUTO-IPT-INV-{transfer_id}-{lid}" for lid in line_ids]
+        + [f"AUTO-IPT-BILL-{transfer_id}-{lid}" for lid in line_ids]
+    )
+    assert trade_entries == expected, "one invoice journal and one bill journal per traded line"
+    # The superseded transfer journal must not come back alongside them.
+    assert not entries.filter(entry_number__startswith="AUTO-AQ-FISH-XFER-").exists()
     assert not entries.filter(entry_number__startswith="AUTO-INV-").exists()
     assert not entries.filter(entry_number__startswith="AUTO-BILL-").exists()
 

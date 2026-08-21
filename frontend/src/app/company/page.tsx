@@ -51,6 +51,8 @@ type CompanyForm = {
   country: string
   currency: string
   fiscal_year_start: string
+  /** Closing date: GL activity on or before it is final. '' = books open. */
+  books_locked_through: string
   date_format: string
   time_format: string
   /** IANA, e.g. Asia/Dhaka */
@@ -78,6 +80,7 @@ const emptyForm = (): CompanyForm => ({
   country: '',
   currency: 'BDT',
   fiscal_year_start: '01-01',
+  books_locked_through: '',
   date_format: DEFAULT_COMPANY_DATE_FORMAT,
   time_format: DEFAULT_COMPANY_TIME_FORMAT,
   time_zone: DEFAULT_COMPANY_TIME_ZONE,
@@ -160,6 +163,7 @@ export default function CompanyPage() {
         country: String(data.country ?? ''),
         currency: String(data.currency || 'BDT').slice(0, 3),
         fiscal_year_start: String(data.fiscal_year_start || '01-01').slice(0, 5),
+        books_locked_through: data.books_locked_through ? String(data.books_locked_through).slice(0, 10) : '',
         date_format: String(data.date_format || DEFAULT_COMPANY_DATE_FORMAT),
         time_format: String(data.time_format || DEFAULT_COMPANY_TIME_FORMAT),
         time_zone: String(
@@ -222,6 +226,7 @@ export default function CompanyPage() {
         country: formData.country.trim(),
         currency: formData.currency.trim().slice(0, 3) || 'BDT',
         fiscal_year_start: formData.fiscal_year_start.trim().slice(0, 5) || '01-01',
+        books_locked_through: formData.books_locked_through.trim() || null,
         date_format: formData.date_format,
         time_format: formData.time_format,
         time_zone: formData.time_zone,
@@ -432,6 +437,20 @@ export default function CompanyPage() {
                         className="w-full rounded-lg border border-border px-3 py-2 font-mono text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                       />
                       <p className="mt-1 text-xs text-muted-foreground">Month-day, e.g. 07-01 for July 1.</p>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground/85">Books closed through</label>
+                      <input
+                        type="date"
+                        value={formData.books_locked_through}
+                        onChange={(e) => updateField('books_locked_through', e.target.value)}
+                        className="w-full rounded-lg border border-border px-3 py-2 text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Closes the accounting period: nothing can be posted, edited, unposted or deleted in the
+                        general ledger on or before this date, so statements already issued cannot change.
+                        Leave blank to keep the books open.
+                      </p>
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-foreground/85">Date format</label>

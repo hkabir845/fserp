@@ -462,6 +462,7 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang
         "load_band_pcs_light",
         "load_band_pcs_comfort",
         "load_band_pcs_stress",
+        "load_area_unit_warning",
     ):
         if key in load_advice:
             out[key] = load_advice[key]

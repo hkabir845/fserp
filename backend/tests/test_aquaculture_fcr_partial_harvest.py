@@ -68,9 +68,10 @@ def test_biomass_load_advice_recommends_partial_harvest_at_high_load():
 
 
 def test_biomass_load_advice_monitor_when_moderate():
+    # 30 kg/dec and 200 pcs/dec → moderate on both metrics.
     out = compute_biomass_load_advice_dict(
         biomass_kg=Decimal("60"),
-        fish_count=50_000,
+        fish_count=400,
         water_area_decimal=Decimal("2.0"),
         pond_role="grow_out",
     )
@@ -84,7 +85,7 @@ def test_biomass_load_advice_intensive_grow_out_bands():
     """Grow-out bands: light <15, moderate 15–40, full 40–55, high_risk ≥55 kg/decimal."""
     understocked = compute_biomass_load_advice_dict(
         biomass_kg=Decimal("20"),
-        fish_count=10_000,
+        fish_count=200,
         water_area_decimal=Decimal("2.0"),
         pond_role="grow_out",
     )
@@ -92,7 +93,7 @@ def test_biomass_load_advice_intensive_grow_out_bands():
 
     full = compute_biomass_load_advice_dict(
         biomass_kg=Decimal("90"),
-        fish_count=50_000,
+        fish_count=400,
         water_area_decimal=Decimal("2.0"),
         pond_role="grow_out",
     )
@@ -114,6 +115,29 @@ def test_biomass_load_advice_bangla():
     assert out["stock_density_pcs_per_decimal"] == "200.00"
     assert out["load_level_label"] == "30 kg/dec · 200 pcs/dec"
     assert "kg/ডেসিমেল" in (out["owner_decision_summary"] or "")
+
+
+def test_load_kg_per_dec_divides_biomass_by_water_area():
+    """Regression: 98.72 vs 9.87 is water area off by 10×, not a formula scale bug."""
+    bio = Decimal("7897.60")
+    wrong = compute_biomass_load_advice_dict(
+        biomass_kg=bio,
+        fish_count=20000,
+        water_area_decimal=Decimal("80"),
+        pond_role="grow_out",
+        lang="en",
+    )
+    right = compute_biomass_load_advice_dict(
+        biomass_kg=bio,
+        fish_count=20000,
+        water_area_decimal=Decimal("800"),
+        pond_role="grow_out",
+        lang="en",
+    )
+    assert wrong["stock_density_kg_per_decimal"] == "98.72"
+    assert right["stock_density_kg_per_decimal"] == "9.87"
+    assert wrong.get("load_area_unit_warning")
+    assert right.get("load_area_unit_warning") in (None, "")
 
 
 def test_load_level_worse_of_kg_and_pcs():

@@ -76,6 +76,8 @@ def compute_water_volume_cu_ft(
 _GROW_LIGHT = Decimal("15")
 _GROW_COMFORT = Decimal("40")
 _GROW_STRESS = Decimal("55")
+# Above this kg/dec on grow-out, water area is often entered in acres (or missing a zero).
+_GROW_AREA_UNIT_WARN_KG_DEC = Decimal("80")
 
 # Standing fish / decimal — BD semi-intensive mono-sex tilapia (non-aerated ~150–230 comfort).
 _GROW_PCS_LIGHT = Decimal("150")
@@ -240,6 +242,7 @@ def compute_stocking_load_advice(
             "load_level_pcs": "unknown",
             "advice_summary": load_set_water_area_summary(lang_n),
             "reference_note": load_unknown_reference_note(lang_n),
+            "load_area_unit_warning": None,
             **band_payload,
         }
 
@@ -262,6 +265,18 @@ def compute_stocking_load_advice(
             f"{summary} বর্তমান {_fmt_density_num(pcs_per_dec)} pcs/ডেসিমেল।",
         )
 
+    area_unit_warning: str | None = None
+    role_n = (pond_role or "grow_out").strip() or "grow_out"
+    if kg_per_dec >= _GROW_AREA_UNIT_WARN_KG_DEC and role_n in ("grow_out", "other", "broodstock"):
+        area_unit_warning = _pick(
+            lang_n,
+            "kg/dec is unusually high — check water area units (1 acre = 100 Bangladesh decimals). "
+            f"Load is biomass ÷ water decimals (currently {_fmt_density_num(kg_per_dec)} kg/dec).",
+            "kg/ডেসিমেল অস্বাভাবিক বেশি — জলের আয়তন একরে না দিয়ে ডেসিমেলে দিন (১ একর = ১০০ ডেসিমেল)। "
+            f"লোড = বায়োমাস ÷ জলের ডেসিমেল (এখন {_fmt_density_num(kg_per_dec)} kg/ডেসিমেল)।",
+        )
+        summary = f"{summary} {area_unit_warning}"
+
     extra = ""
     if kg_per_kcuft is not None:
         extra = load_volume_density_extra(kg_per_kcuft, lang_n)
@@ -276,5 +291,6 @@ def compute_stocking_load_advice(
         "load_level_pcs": level_pcs,
         "advice_summary": summary + extra,
         "reference_note": load_reference_note(lang_n),
+        "load_area_unit_warning": area_unit_warning,
         **band_payload,
     }

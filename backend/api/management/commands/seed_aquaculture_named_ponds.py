@@ -24,6 +24,8 @@ STOCK_MEMO_TAG = "[POND-DEMO-STOCK]"
 
 # Canonical demo rows: idempotent by pond name (case-insensitive) within a company.
 # Mynuddin is a same-site pair: nursing phase + grow-out phase on one physical pond.
+# Areas are Bangladesh land decimals (1 acre = 100 decimals). Never store acre counts here —
+# that understates area by ~100× and inflates kg/dec / pcs/dec by the same factor.
 POND_PROFILES: tuple[dict, ...] = (
     {
         "name": "Digonta",
@@ -31,16 +33,16 @@ POND_PROFILES: tuple[dict, ...] = (
         "physical_site_name": "Digonta",
         "linked_grow_out_name": "Digonta-Grow Out",
         "code_stem": "DIGONTA",
-        "water_area_decimal": Decimal("0.6500"),
-        "leasing_area_decimal": Decimal("0.8000"),
-        "pond_depth_ft": Decimal("4.200"),
+        "water_area_decimal": Decimal("65.00"),
+        "leasing_area_decimal": Decimal("80.00"),
+        "pond_depth_ft": Decimal("4.20"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("95000.00"),
         "notes": (
             "Nursing unit beside the hatchery channel. 40-mesh hapas; daily grading. "
-            "Water ~0.65 dec effective surface; lease measured on 0.8 dec including bank strip."
+            "Water ~65 dec effective surface; lease measured on 80 dec including bank strip."
         ),
         "demo_fish_count": 52000,
         "demo_weight_kg": Decimal("1040.0000"),
@@ -51,16 +53,16 @@ POND_PROFILES: tuple[dict, ...] = (
         "physical_site_name": "Mynuddin",
         "site_pair": True,
         "code_stem": "MYNUDDIN",
-        "water_area_decimal": Decimal("2.4000"),
-        "leasing_area_decimal": Decimal("2.6500"),
-        "pond_depth_ft": Decimal("5.800"),
+        "water_area_decimal": Decimal("240.00"),
+        "leasing_area_decimal": Decimal("265.00"),
+        "pond_depth_ft": Decimal("5.80"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("310000.00"),
         "notes": (
             "Main grow-out: paddlewheel aeration on south corner; monosex tilapia from spring nursing transfer. "
-            "Leasing area includes access path on north bund."
+            "Leasing area includes access path on north bund (~265 dec leased / ~240 dec water)."
         ),
         "demo_fish_count": 11800,
         "demo_weight_kg": Decimal("3540.0000"),
@@ -69,16 +71,16 @@ POND_PROFILES: tuple[dict, ...] = (
         "name": "Ashari-1",
         "role": "grow_out",
         "code_stem": "ASHARI1",
-        "water_area_decimal": Decimal("3.1000"),
-        "leasing_area_decimal": Decimal("3.3500"),
-        "pond_depth_ft": Decimal("6.200"),
+        "water_area_decimal": Decimal("800.00"),
+        "leasing_area_decimal": Decimal("835.00"),
+        "pond_depth_ft": Decimal("6.20"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("400000.00"),
         "notes": (
-            "Largest production cell; deeper average depth for dry-season carry. Improved GIFT line; "
-            "bamboo sluice maintenance budgeted each monsoon."
+            "Largest production cell (~800 dec water / ~8 acres); deeper average depth for dry-season carry. "
+            "Improved GIFT line; bamboo sluice maintenance budgeted each monsoon."
         ),
         "demo_fish_count": 14200,
         "demo_weight_kg": Decimal("4970.0000"),
@@ -87,16 +89,16 @@ POND_PROFILES: tuple[dict, ...] = (
         "name": "Ashari-2",
         "role": "grow_out",
         "code_stem": "ASHARI2",
-        "water_area_decimal": Decimal("1.8500"),
-        "leasing_area_decimal": Decimal("2.0500"),
-        "pond_depth_ft": Decimal("5.000"),
+        "water_area_decimal": Decimal("480.00"),
+        "leasing_area_decimal": Decimal("520.00"),
+        "pond_depth_ft": Decimal("5.00"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("379250.00"),
         "notes": (
-            "Earthen pond with inlet from shared canal; slightly shallower — watch afternoon DO in April–May. "
-            "Lease prepaid through contract term (balance zero in demo)."
+            "Earthen pond with inlet from shared canal (~480 dec water); slightly shallower — watch afternoon DO "
+            "in April–May. Lease prepaid through contract term (balance zero in demo)."
         ),
         "demo_fish_count": 9600,
         "demo_weight_kg": Decimal("2880.0000"),
@@ -143,14 +145,32 @@ def _mid_cycle_for_pond(company_id: int, pond: AquaculturePond) -> AquaculturePr
     )
 
 
-def _apply_profile(p: AquaculturePond, spec: dict) -> None:
+def _apply_profile(p: AquaculturePond, spec: dict, *, force_areas: bool = False) -> None:
+    """
+    Apply demo profile fields.
+
+    Water / leasing / depth are only overwritten when the pond is new, areas are missing,
+    or ``force_areas`` is True. This prevents ``--backfill-existing`` from shrinking real
+    production water areas (e.g. 800 dec) down to an old demo typo and inflating kg/dec ~10–100×.
+    """
     p.pond_role = spec["role"]
     site = (spec.get("physical_site_name") or "").strip()
     if site:
         p.physical_site_name = site[:120]
-    p.water_area_decimal = spec["water_area_decimal"]
-    p.leasing_area_decimal = spec["leasing_area_decimal"]
-    p.pond_depth_ft = spec["pond_depth_ft"]
+    new_wa = spec["water_area_decimal"]
+    new_la = spec["leasing_area_decimal"]
+    new_depth = spec["pond_depth_ft"]
+    if force_areas or p.pk is None:
+        p.water_area_decimal = new_wa
+        p.leasing_area_decimal = new_la
+        p.pond_depth_ft = new_depth
+    else:
+        if p.water_area_decimal is None or p.water_area_decimal <= 0:
+            p.water_area_decimal = new_wa
+        if p.leasing_area_decimal is None or p.leasing_area_decimal <= 0:
+            p.leasing_area_decimal = new_la
+        if p.pond_depth_ft is None or p.pond_depth_ft <= 0:
+            p.pond_depth_ft = new_depth
     p.lease_contract_start = spec["lease_contract_start"]
     p.lease_contract_end = spec["lease_contract_end"]
     p.lease_price_per_decimal_per_year = spec["lease_price_per_decimal_per_year"]
@@ -181,7 +201,15 @@ class Command(BaseCommand):
         parser.add_argument(
             "--backfill-existing",
             action="store_true",
-            help="Update ponds that match these names with the canonical sample lease / area / depth / notes.",
+            help=(
+                "Update ponds that match these names with canonical lease / notes "
+                "(water & leasing areas only filled when missing; use --force-areas to overwrite)."
+            ),
+        )
+        parser.add_argument(
+            "--force-areas",
+            action="store_true",
+            help="With --backfill-existing, overwrite water_area_decimal / leasing_area_decimal / depth.",
         )
         parser.add_argument(
             "--with-demo-stock",
@@ -219,6 +247,7 @@ class Command(BaseCommand):
         skip_auto = not bool(options["provision_pos_customer"])
         fill_page = bool(options["fill_page"])
         backfill = bool(options["backfill_existing"]) or fill_page
+        force_areas = bool(options["force_areas"])
         with_stock = bool(options["with_demo_stock"]) or fill_page
 
         max_sort = AquaculturePond.objects.filter(company_id=cid).aggregate(m=Max("sort_order"))["m"] or 0
@@ -235,9 +264,14 @@ class Command(BaseCommand):
                 if backfill:
                     with transaction.atomic():
                         p = AquaculturePond.objects.select_for_update().get(pk=existing.pk)
-                        _apply_profile(p, spec)
+                        _apply_profile(p, spec, force_areas=force_areas)
                         p.save()
-                    self.stdout.write(self.style.SUCCESS(f"Backfilled sample fields: {name!r}"))
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"Backfilled sample fields: {name!r}"
+                            + (" (areas forced)" if force_areas else " (areas kept if already set)")
+                        )
+                    )
                     backfilled += 1
                 else:
                     self.stdout.write(self.style.WARNING(f"Skip (exists): {name!r} — use --backfill-existing to refresh"))
@@ -253,7 +287,7 @@ class Command(BaseCommand):
                         sort_order=next_order,
                         is_active=True,
                     )
-                    _apply_profile(p, spec)
+                    _apply_profile(p, spec, force_areas=True)
                     p.save()
                     err = maybe_provision_auto_pos_customer(company_id=cid, pond=p, skip_auto=skip_auto)
                     if err:

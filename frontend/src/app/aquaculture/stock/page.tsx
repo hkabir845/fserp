@@ -105,6 +105,8 @@ interface PositionRow {
   load_level?: string
   /** Exact calculated densities, e.g. "30 kg/dec · 200 pcs/dec". */
   load_level_label?: string
+  /** Present when kg/dec is so high the pond water area may be in the wrong unit. */
+  load_area_unit_warning?: string | null
   advice_summary?: string
   reference_note?: string
   current_fish_per_kg?: string | null
@@ -116,6 +118,7 @@ interface PositionRow {
   partial_harvest_target_kg_per_decimal?: string | null
   partial_harvest_post_load_kg_per_decimal?: string | null
   partial_harvest_rationale?: string
+  biomass_kg_for_load?: string | null
 }
 interface LedgerRow {
   id: number
@@ -437,6 +440,19 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
               <span className="text-xs text-muted-foreground">Set water area and depth on pond</span>
             )}
           </span>
+          {r.water_area_decimal ? (
+            <span className="text-[11px] text-muted-foreground" title="kg/dec = biomass ÷ water decimals">
+              Water {formatNumber(Number(r.water_area_decimal), 2)} dec
+              {r.biomass_kg_for_load
+                ? ` · bio ${formatNumber(Number(r.biomass_kg_for_load), 1)} kg`
+                : ''}
+            </span>
+          ) : null}
+          {r.load_area_unit_warning ? (
+            <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[11px] font-medium text-rose-900">
+              {r.load_area_unit_warning}
+            </span>
+          ) : null}
                             {volDensity ? <span className="tabular-nums text-xs text-muted-foreground">{volDensity}</span> : null}
                             {r.partial_harvest_applicable && r.partial_harvest_suggested_kg ? (
                               <span className="rounded border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning-foreground">

@@ -1686,13 +1686,14 @@ export default function AquaculturePondsPage() {
                   inputMode="decimal"
                   step="0.01"
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  placeholder="e.g. 2.40"
+                  placeholder="e.g. 80–300"
                   value={form.water_area_decimal}
                   onChange={(e) => setForm((f) => ({ ...f, water_area_decimal: e.target.value }))}
                 />
                 <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                  Effective water surface for stocking, density (fish per decimal), and comparisons with extension
-                  guides (e.g. tilapia); can differ from leased land if banks or unused strips are not fully watered.
+                  Bangladesh land decimals of water surface (1 acre = 100 decimals). Used for kg/dec and pcs/dec
+                  load: biomass ÷ this area. Do not enter acres here — that makes load ~100× too high. Can differ
+                  from leased land if banks or unused strips are not fully watered.
                 </span>
               </label>
               <label className="block text-sm font-medium text-foreground/85">
@@ -1760,12 +1761,13 @@ export default function AquaculturePondsPage() {
                   inputMode="decimal"
                   step="0.01"
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2"
-                  placeholder="e.g. 2.50"
+                  placeholder="e.g. 90–350"
                   value={form.leasing_area_decimal}
                   onChange={(e) => setForm((f) => ({ ...f, leasing_area_decimal: e.target.value }))}
                 />
                 <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                  Land area your lease is priced on — used only with &quot;price per decimal per year&quot; below for rent.
+                  Leased land in Bangladesh decimals (1 acre = 100 decimals) — used only with &quot;price per
+                  decimal per year&quot; below for rent. Not used for kg/dec load (that uses water area).
                 </span>
               </label>
               <div className="grid gap-3 sm:grid-cols-2">

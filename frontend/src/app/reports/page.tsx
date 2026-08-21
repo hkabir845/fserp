@@ -4561,6 +4561,14 @@ function renderAquacultureFcrBlock(data: Record<string, unknown> | null | undefi
   )
 }
 
+function asMetricNumber(value: unknown): string | number | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') return value
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 function aquacultureLoadHighlightRows(
   reportType: ReportType | null,
   data: Record<string, unknown> | null | undefined,
@@ -4569,16 +4577,26 @@ function aquacultureLoadHighlightRows(
 
   const summary = (data.summary || {}) as Record<string, unknown>
   const fcr = (data.fcr || {}) as Record<string, unknown>
-  const scoped = (fcr.scoped || fcr.portfolio || {}) as Record<string, unknown>
-  const periodGain =
-    summary.biomass_gain_kg ?? scoped.biomass_gain_kg ?? null
+  const scoped = ((fcr.scoped || fcr.portfolio || {}) as Record<string, unknown>)
+  const periodGain = asMetricNumber(summary.biomass_gain_kg ?? scoped.biomass_gain_kg)
 
   if (reportType === 'aquaculture-fcr-biomass' || reportType === 'aquaculture-fish-growth') {
     const rows = Array.isArray(data.load_by_pond) ? data.load_by_pond : []
     return rows.map((r: Record<string, unknown>) => ({
-      ...r,
+      pond_id: r.pond_id as number | string | null | undefined,
+      pond_name: (r.pond_name as string | null | undefined) ?? null,
+      pcs_per_kg: r.pcs_per_kg as string | number | null | undefined,
+      current_fish_per_kg: r.current_fish_per_kg as string | number | null | undefined,
+      load_kg_per_decimal: r.load_kg_per_decimal as string | number | null | undefined,
+      stock_density_kg_per_decimal: r.stock_density_kg_per_decimal as string | number | null | undefined,
+      biomass_kg_for_load: r.biomass_kg_for_load as string | number | null | undefined,
+      effective_net_weight_kg: r.effective_net_weight_kg as string | number | null | undefined,
+      implied_net_weight_kg: r.implied_net_weight_kg as string | number | null | undefined,
+      implied_net_fish_count: r.implied_net_fish_count as number | null | undefined,
       period_biomass_gain_kg: periodGain,
-    })) as Parameters<typeof renderPondLoadMetricCards>[0]
+      load_level: (r.load_level as string | null | undefined) ?? null,
+      load_level_label: (r.load_level_label as string | null | undefined) ?? null,
+    }))
   }
   if (reportType === 'aquaculture-pond-performance') {
     const ponds = Array.isArray(data.ponds) ? data.ponds : []
@@ -4593,7 +4611,7 @@ function aquacultureLoadHighlightRows(
       effective_net_weight_kg: p.biomass_kg as string | number | null | undefined,
       implied_net_weight_kg: p.biomass_kg as string | number | null | undefined,
       implied_net_fish_count: p.fish_count as number | null | undefined,
-      period_biomass_gain_kg: p.biomass_gain_kg ?? periodGain,
+      period_biomass_gain_kg: asMetricNumber(p.biomass_gain_kg) ?? periodGain,
       load_level: (p.load_level as string | null | undefined) ?? null,
       load_level_label: (p.load_level_label as string | null | undefined) ?? null,
     }))
@@ -10745,7 +10763,7 @@ function renderReportTable(
                 stock_density_kg_per_decimal: p.stock_density_kg_per_decimal ?? p.load_kg_per_decimal,
                 biomass_kg_for_load: p.biomass_kg,
                 implied_net_fish_count: p.fish_count,
-                period_biomass_gain_kg: p.biomass_gain_kg ?? summary.biomass_gain_kg,
+                period_biomass_gain_kg: asMetricNumber(p.biomass_gain_kg ?? summary.biomass_gain_kg),
                 load_level: p.load_level,
                 load_level_label: p.load_level_label,
               })),
@@ -10909,7 +10927,7 @@ function renderReportTable(
             {renderPondLoadMetricCards(
               loadRows.map((r: any) => ({
                 ...r,
-                period_biomass_gain_kg: r.period_biomass_gain_kg ?? summary.biomass_gain_kg,
+                period_biomass_gain_kg: asMetricNumber(r.period_biomass_gain_kg ?? summary.biomass_gain_kg),
               })),
             )}
             <div className="overflow-x-auto rounded-lg border border-border">
@@ -11018,8 +11036,9 @@ function renderReportTable(
             {renderPondLoadMetricCards(
               loadRows.map((r: any) => ({
                 ...r,
-                period_biomass_gain_kg:
+                period_biomass_gain_kg: asMetricNumber(
                   r.period_biomass_gain_kg ?? data.summary?.biomass_gain_kg ?? fcr?.scoped?.biomass_gain_kg,
+                ),
               })),
             )}
             <div className="overflow-x-auto rounded-lg border border-border">

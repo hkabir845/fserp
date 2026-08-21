@@ -250,6 +250,22 @@ type ReportType =
   | 'aquaculture-pond-total-inventory'
   | 'aquaculture-pl-management'
 
+/** Aquaculture reports that honour production-cycle (batch) scope for accurate fish metrics. */
+const AQUACULTURE_BATCH_FILTER_REPORT_IDS = new Set<ReportType>([
+  'aquaculture-pond-pl',
+  'aquaculture-fcr-biomass',
+  'aquaculture-fish-growth',
+  'aquaculture-pond-performance',
+  'aquaculture-fish-stock-position',
+  'aquaculture-fish-stock-breakdown',
+  'aquaculture-biological-asset-ledger',
+  'aquaculture-fish-biomass-movements',
+  'aquaculture-fish-stock-adjustments',
+  'aquaculture-sampling',
+  'aquaculture-fish-sales',
+  'aquaculture-pond-sales-comprehensive',
+])
+
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
   'inventory-sku-valuation',
   'item-sales-custom',
@@ -1548,7 +1564,9 @@ function ReportsPageContent() {
   const [fingerlingGrowoutPondId, setFingerlingGrowoutPondId] = useState('')
   const [fingerlingBalance, setFingerlingBalance] = useState<'all' | 'balanced' | 'unbalanced'>('all')
   const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; pond_role?: string }[]>([])
-  const [aquacultureCycles, setAquacultureCycles] = useState<{ id: number; name: string }[]>([])
+  const [aquacultureCycles, setAquacultureCycles] = useState<
+    { id: number; name: string; pond_id?: number; pond_name?: string }[]
+  >([])
   /** null = not loaded yet; false = company setting off */
   const [companyAquacultureEnabled, setCompanyAquacultureEnabled] = useState<boolean | null>(null)
 
@@ -1835,28 +1853,6 @@ function ReportsPageContent() {
   }, [selectedCompany?.id, companyAquacultureEnabled])
 
   useEffect(() => {
-    if (!aquaculturePondId || selectedReport !== 'aquaculture-pond-pl') {
-      setAquacultureCycles([])
-      return
-    }
-    let cancelled = false
-    api
-      .get<{ id: number; name: string }[]>('/aquaculture/production-cycles/', {
-        params: { pond_id: aquaculturePondId },
-      })
-      .then((res) => {
-        if (cancelled) return
-        setAquacultureCycles(Array.isArray(res.data) ? res.data : [])
-      })
-      .catch(() => {
-        if (!cancelled) setAquacultureCycles([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [aquaculturePondId, selectedReport])
-
-  useEffect(() => {
     if (!selectedReport || !CONSUMPTION_REPORT_IDS.has(selectedReport)) {
       setAquacultureFeedItems([])
       setAquacultureMedicineItems([])
@@ -1955,6 +1951,47 @@ function ReportsPageContent() {
     () => resolveEffectiveAquaculturePondId(reportStationId, aquaculturePondId),
     [reportStationId, aquaculturePondId]
   )
+
+  useEffect(() => {
+    if (!selectedReport || !AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport)) {
+      setAquacultureCycles([])
+      return
+    }
+    let cancelled = false
+    const params: Record<string, string> = {}
+    if (effectiveAquaculturePondId && /^\d+$/.test(effectiveAquaculturePondId)) {
+      params.pond_id = effectiveAquaculturePondId
+    }
+    api
+      .get<{ id: number; name: string; pond_id?: number; pond_name?: string }[]>(
+        '/aquaculture/production-cycles/',
+        { params }
+      )
+      .then((res) => {
+        if (cancelled) return
+        const rows = Array.isArray(res.data) ? res.data : []
+        setAquacultureCycles(
+          rows.map((c) => ({
+            id: c.id,
+            name: c.name,
+            pond_id: c.pond_id,
+            pond_name: c.pond_name,
+          }))
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setAquacultureCycles([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [effectiveAquaculturePondId, selectedReport, selectedCompany?.id])
+
+  useEffect(() => {
+    if (!aquacultureCycleId) return
+    if (aquacultureCycles.some((c) => String(c.id) === aquacultureCycleId)) return
+    setAquacultureCycleId('')
+  }, [aquacultureCycles, aquacultureCycleId])
 
   const pondLockedBySiteScope = useMemo(
     () => isPondLockedBySiteScope(reportStationId),
@@ -2186,13 +2223,15 @@ function ReportsPageContent() {
           params.station_id = String(aqScope.id)
         }
       }
-      if (reportId === 'aquaculture-pond-pl') {
-        if (aquacultureCycleId && /^\d+$/.test(aquacultureCycleId)) {
-          params.cycle_id = aquacultureCycleId
-        }
-        if (aquacultureIncludeCycleBreakdown) {
-          params.include_cycle_breakdown = 'true'
-        }
+      if (
+        AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(reportId) &&
+        aquacultureCycleId &&
+        /^\d+$/.test(aquacultureCycleId)
+      ) {
+        params.cycle_id = aquacultureCycleId
+      }
+      if (reportId === 'aquaculture-pond-pl' && aquacultureIncludeCycleBreakdown) {
+        params.include_cycle_breakdown = 'true'
       }
       if (reportId === 'aquaculture-fingerling-transfers') {
         if (fingerlingSearch.trim()) params.q = fingerlingSearch.trim()
@@ -3932,7 +3971,8 @@ function ReportsPageContent() {
                         <div className="mb-6 rounded-lg border border-cyan-200 bg-cyan-50/90 px-4 py-3 text-sm text-cyan-950 shadow-sm">
                           <p className="font-semibold text-cyan-900">Aquaculture filters</p>
                           <p className="mt-1 text-cyan-800/90">
-                            Amounts in BDT — refresh after changing filters.
+                            Amounts in BDT — refresh after changing filters. For fish metrics (load, FCR, growth,
+                            biomass, bio-asset), set Batch to All batches or one production cycle.
                             {pondLockedBySiteScope ? (
                               <span className="ml-1 font-medium">Pond is set by Site scope above.</span>
                             ) : null}
@@ -4013,36 +4053,53 @@ function ReportsPageContent() {
                                 )}
                               </>
                             )}
-                            {selectedReport === 'aquaculture-pond-pl' && (
+                            {selectedReport &&
+                              AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport) && (
                               <>
                                 <div className="flex flex-col gap-1">
                                   <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle">
-                                    Production cycle (optional)
+                                    Batch
                                   </label>
                                   <select
                                     id="aq-report-cycle"
                                     value={aquacultureCycleId}
-                                    onChange={(e) => setAquacultureCycleId(e.target.value)}
-                                    disabled={!effectiveAquaculturePondId}
-                                    className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[12rem] disabled:opacity-50"
+                                    onChange={(e) => {
+                                      const next = e.target.value
+                                      setAquacultureCycleId(next)
+                                      if (!next || pondLockedBySiteScope) return
+                                      const cyc = aquacultureCycles.find((c) => String(c.id) === next)
+                                      if (cyc?.pond_id && !effectiveAquaculturePondId) {
+                                        setAquaculturePondId(String(cyc.pond_id))
+                                      }
+                                    }}
+                                    className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[14rem]"
                                   >
-                                    <option value="">All cycles (pond scope)</option>
+                                    <option value="">All batches</option>
                                     {aquacultureCycles.map((c) => (
                                       <option key={c.id} value={String(c.id)}>
                                         {c.name}
+                                        {!effectiveAquaculturePondId && c.pond_name
+                                          ? ` · ${c.pond_name}`
+                                          : ''}
                                       </option>
                                     ))}
                                   </select>
+                                  <span className="text-[11px] text-cyan-800/80">
+                                    Choose All batches or one production cycle for accurate load, FCR, growth,
+                                    biomass, and bio-asset figures.
+                                  </span>
                                 </div>
-                                <label className="flex items-center gap-2 text-xs font-medium text-cyan-900">
-                                  <input
-                                    type="checkbox"
-                                    checked={aquacultureIncludeCycleBreakdown}
-                                    onChange={(e) => setAquacultureIncludeCycleBreakdown(e.target.checked)}
-                                    className="rounded border-cyan-400"
-                                  />
-                                  Include cycle breakdown (when not filtering by one cycle)
-                                </label>
+                                {selectedReport === 'aquaculture-pond-pl' && (
+                                  <label className="flex items-center gap-2 text-xs font-medium text-cyan-900">
+                                    <input
+                                      type="checkbox"
+                                      checked={aquacultureIncludeCycleBreakdown}
+                                      onChange={(e) => setAquacultureIncludeCycleBreakdown(e.target.checked)}
+                                      className="rounded border-cyan-400"
+                                    />
+                                    Include cycle breakdown (when not filtering by one batch)
+                                  </label>
+                                )}
                               </>
                             )}
                             {selectedReport === 'aquaculture-fingerling-transfers' && (

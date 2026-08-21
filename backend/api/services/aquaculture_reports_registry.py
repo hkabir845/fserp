@@ -269,6 +269,24 @@ def _cycle_filter(company_id: int, raw: str | None) -> tuple[int | None, Aquacul
     return cid, cyc, None
 
 
+def _reconcile_pond_and_cycle(
+    pond_filter_id: int | None,
+    cycle_filter_id: int | None,
+    scoped_cycle: AquacultureProductionCycle | None,
+) -> tuple[int | None, JsonResponse | None]:
+    """Ensure cycle belongs to pond; when only cycle is set, inherit its pond."""
+    if (
+        cycle_filter_id is not None
+        and pond_filter_id is not None
+        and scoped_cycle
+        and scoped_cycle.pond_id != pond_filter_id
+    ):
+        return None, JsonResponse({"detail": "cycle_id does not belong to the selected pond"}, status=400)
+    if cycle_filter_id is not None and scoped_cycle and pond_filter_id is None:
+        return scoped_cycle.pond_id, None
+    return pond_filter_id, None
+
+
 def aquaculture_gate(company_id: int, user) -> JsonResponse | None:
     c = (
         Company.objects.filter(pk=company_id)
@@ -531,9 +549,16 @@ def _report_fish_stock_position(
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     rows = compute_fish_stock_position_rows(
         company_id,
         pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
         include_inactive_ponds=False,
     )
     groups: list[dict[str, Any]] = []
@@ -1044,6 +1069,12 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     qs = (
         AquacultureFishSale.objects.filter(
             company_id=company_id,
@@ -1055,6 +1086,8 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
     )
     if pond_filter_id is not None:
         qs = qs.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        qs = qs.filter(production_cycle_id=cycle_filter_id)
 
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
@@ -1772,6 +1805,12 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     qs = (
         AquacultureBiomassSample.objects.filter(
             company_id=company_id,
@@ -1783,6 +1822,8 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
     )
     if pond_filter_id is not None:
         qs = qs.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        qs = qs.filter(production_cycle_id=cycle_filter_id)
 
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
@@ -1869,9 +1910,12 @@ def _report_fish_stock_breakdown(
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
-    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
     if cerr:
         return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     rows = compute_fish_stock_position_breakdown_rows(
         company_id,
         pond_id=pond_filter_id,
@@ -1958,9 +2002,12 @@ def _report_fish_biomass_movements(
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
-    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
     if cerr:
         return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     rows = compute_fish_biomass_ledger_rows(
         company_id,
         pond_id=pond_filter_id,
@@ -2026,6 +2073,9 @@ def _report_biological_asset_ledger(
     cycle_filter_id, cycle_obj, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
     if cerr:
         return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, cycle_obj)
+    if rerr:
+        return rerr
     as_of = end
 
     def _pond_group(pid: int, pname: str) -> dict[str, Any]:
@@ -2099,6 +2149,12 @@ def _report_fish_stock_adjustments(
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     qs = (
         AquacultureFishStockLedger.objects.filter(
             company_id=company_id,
@@ -2110,6 +2166,8 @@ def _report_fish_stock_adjustments(
     )
     if pond_filter_id is not None:
         qs = qs.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        qs = qs.filter(production_cycle_id=cycle_filter_id)
 
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
@@ -2258,9 +2316,12 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
-    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
     if cerr:
         return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
 
     fcr_block = fcr_period_summary_block(
         company_id,
@@ -2324,9 +2385,12 @@ def _report_fish_growth(company_id: int, start: date, end: date, request: HttpRe
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
-    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
     if cerr:
         return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     species_raw = (request.GET.get("fish_species") or "").strip() or None
 
     body = build_fish_growth_report(
@@ -2349,9 +2413,12 @@ def _report_pond_performance(company_id: int, start: date, end: date, request: H
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
-    cycle_filter_id, _, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
     if cerr:
         return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     species_raw = (request.GET.get("fish_species") or "").strip() or None
 
     body = build_pond_performance_report(

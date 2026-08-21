@@ -10946,13 +10946,19 @@ function renderReportTable(
         {loadRows.length > 0 ? (
           <div className="space-y-4">
             <h4 className="font-semibold text-foreground">Pond load (kg per decimal) — as of period end</h4>
+            <p className="text-xs text-muted-foreground">
+              kg/dec = biomass for load ÷ water area (decimals) from the Pond form. Biomass for load uses the
+              latest sample average × live fish when that is higher than book kg.
+            </p>
             {renderPondLoadMetricCards(loadRows)}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Pond</th>
-                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Live kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Water (dec)</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Book kg</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Load kg</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Live fish</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">pcs/kg</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">kg/dec</th>
@@ -10961,10 +10967,21 @@ function renderReportTable(
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/70 bg-white">
-                  {loadRows.map((r: any) => (
+                  {loadRows.map((r: any) => {
+                    const loadKg = Number(
+                      r.biomass_kg_for_load ?? r.effective_net_weight_kg ?? r.implied_net_weight_kg ?? 0,
+                    )
+                    const bookKg = Number(r.book_net_weight_kg ?? r.implied_net_weight_kg ?? 0)
+                    return (
                     <tr key={r.pond_id}>
                       <td className="px-3 py-2 font-medium">{r.pond_name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(r.implied_net_weight_kg ?? 0), 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {r.water_area_decimal != null && r.water_area_decimal !== ''
+                          ? formatNumber(Number(r.water_area_decimal), 2)
+                          : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(bookKg, 2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">{formatNumber(loadKg, 2)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{(r.implied_net_fish_count ?? 0).toLocaleString()}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.current_fish_per_kg ?? '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.stock_density_kg_per_decimal ?? '—'}</td>
@@ -10978,7 +10995,8 @@ function renderReportTable(
                           : '—'}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

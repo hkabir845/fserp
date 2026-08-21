@@ -2373,6 +2373,10 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
     )
     load_rows: list[dict[str, Any]] = []
     for r in stock_rows:
+        # kg/dec uses sample-adjusted biomass (biomass_kg_for_load), not fry book kg alone.
+        bio_for_load = r.get("biomass_kg_for_load") or r.get("effective_net_weight_kg") or r.get(
+            "implied_net_weight_kg"
+        )
         load_rows.append(
             {
                 "pond_id": r.get("pond_id"),
@@ -2380,9 +2384,13 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
                 "pond_role": r.get("pond_role"),
                 "water_area_decimal": r.get("water_area_decimal"),
                 "implied_net_weight_kg": r.get("implied_net_weight_kg"),
+                "book_net_weight_kg": r.get("book_net_weight_kg") or r.get("implied_net_weight_kg"),
+                "biomass_kg_for_load": bio_for_load,
+                "effective_net_weight_kg": r.get("effective_net_weight_kg"),
                 "implied_net_fish_count": r.get("implied_net_fish_count"),
                 "current_fish_per_kg": r.get("current_fish_per_kg"),
                 "stock_density_kg_per_decimal": r.get("stock_density_kg_per_decimal"),
+                "stock_density_pcs_per_decimal": r.get("stock_density_pcs_per_decimal"),
                 "load_level": r.get("load_level"),
                 "load_level_label": r.get("load_level_label"),
                 "partial_harvest_applicable": r.get("partial_harvest_applicable"),

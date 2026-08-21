@@ -193,6 +193,7 @@ from api.services.aquaculture_pond_stock_service import (
     amend_pond_warehouse_inter_pond_transfer,
     consume_pond_feed_on_advice_apply,
     consume_pond_feed_kg_with_batch_split,
+    consume_pond_item_with_batch_split,
     consume_pond_warehouse_stock,
     feed_inventory_qty_from_kg,
     pond_warehouse_stock_matrix,
@@ -2523,24 +2524,40 @@ def aquaculture_pond_warehouse_consume(request):
         )
 
     try:
-        if cat == "feed_consumed" and cycle_id is None and feed_w_kg is not None and feed_w_kg > 0:
+        if cycle_id is None and cat in ("feed_consumed", "medicine_consumed"):
             sack_sz_consume: int | None = None
-            sack_raw2 = body.get("sack_size_kg")
-            if sack_raw2 not in (None, ""):
-                try:
-                    sack_sz_consume = int(sack_raw2)
-                except (TypeError, ValueError):
-                    sack_sz_consume = None
-            expenses = consume_pond_feed_kg_with_batch_split(
-                company_id=cid,
-                pond=pond,
-                production_cycle_id=None,
-                applied_kg=feed_w_kg,
-                sack_size_kg=sack_sz_consume,
-                item=item,
-                expense_date=ed,
-                memo=memo,
-            )
+            if cat == "feed_consumed":
+                sack_raw2 = body.get("sack_size_kg")
+                if sack_raw2 not in (None, ""):
+                    try:
+                        sack_sz_consume = int(sack_raw2)
+                    except (TypeError, ValueError):
+                        sack_sz_consume = None
+            if cat == "feed_consumed" and feed_w_kg is not None and feed_w_kg > 0:
+                expenses = consume_pond_feed_kg_with_batch_split(
+                    company_id=cid,
+                    pond=pond,
+                    production_cycle_id=None,
+                    applied_kg=feed_w_kg,
+                    sack_size_kg=sack_sz_consume,
+                    item=item,
+                    expense_date=ed,
+                    memo=memo,
+                )
+            else:
+                expenses = consume_pond_item_with_batch_split(
+                    company_id=cid,
+                    pond=pond,
+                    production_cycle_id=None,
+                    expense_category=cat,
+                    expense_date=ed,
+                    item=item,
+                    quantity=quantity,
+                    memo=memo,
+                    feed_weight_kg=feed_w_kg if cat == "feed_consumed" else None,
+                    feed_sack_count=feed_sacks if cat == "feed_consumed" else None,
+                    sack_size_kg=sack_sz_consume if cat == "feed_consumed" else None,
+                )
             expense_obj = expenses[0]
             rows = pond_warehouse_stock_rows(cid, pond_id)
             return JsonResponse(

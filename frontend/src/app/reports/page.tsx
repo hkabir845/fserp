@@ -4566,8 +4566,19 @@ function aquacultureLoadHighlightRows(
   data: Record<string, unknown> | null | undefined,
 ) {
   if (!reportType || !data) return []
+
+  const summary = (data.summary || {}) as Record<string, unknown>
+  const fcr = (data.fcr || {}) as Record<string, unknown>
+  const scoped = (fcr.scoped || fcr.portfolio || {}) as Record<string, unknown>
+  const periodGain =
+    summary.biomass_gain_kg ?? scoped.biomass_gain_kg ?? null
+
   if (reportType === 'aquaculture-fcr-biomass' || reportType === 'aquaculture-fish-growth') {
-    return Array.isArray(data.load_by_pond) ? (data.load_by_pond as Parameters<typeof renderPondLoadMetricCards>[0]) : []
+    const rows = Array.isArray(data.load_by_pond) ? data.load_by_pond : []
+    return rows.map((r: Record<string, unknown>) => ({
+      ...r,
+      period_biomass_gain_kg: periodGain,
+    })) as Parameters<typeof renderPondLoadMetricCards>[0]
   }
   if (reportType === 'aquaculture-pond-performance') {
     const ponds = Array.isArray(data.ponds) ? data.ponds : []
@@ -4578,6 +4589,11 @@ function aquacultureLoadHighlightRows(
       current_fish_per_kg: p.current_fish_per_kg as string | number | null | undefined,
       load_kg_per_decimal: p.load_kg_per_decimal as string | number | null | undefined,
       stock_density_kg_per_decimal: p.stock_density_kg_per_decimal as string | number | null | undefined,
+      biomass_kg_for_load: p.biomass_kg as string | number | null | undefined,
+      effective_net_weight_kg: p.biomass_kg as string | number | null | undefined,
+      implied_net_weight_kg: p.biomass_kg as string | number | null | undefined,
+      implied_net_fish_count: p.fish_count as number | null | undefined,
+      period_biomass_gain_kg: p.biomass_gain_kg ?? periodGain,
       load_level: (p.load_level as string | null | undefined) ?? null,
       load_level_label: (p.load_level_label as string | null | undefined) ?? null,
     }))
@@ -4585,7 +4601,7 @@ function aquacultureLoadHighlightRows(
   return []
 }
 
-/** Highlight pcs/kg, kg/dec, and Load as cards in Summary and above pond-load tables. */
+/** Highlight total biomass, period gain, pcs/kg, kg/dec, and Load. */
 function renderPondLoadMetricCards(
   rows: Array<{
     pond_id?: number | string | null
@@ -4594,6 +4610,11 @@ function renderPondLoadMetricCards(
     pcs_per_kg?: string | number | null
     stock_density_kg_per_decimal?: string | number | null
     load_kg_per_decimal?: string | number | null
+    biomass_kg_for_load?: string | number | null
+    effective_net_weight_kg?: string | number | null
+    implied_net_weight_kg?: string | number | null
+    implied_net_fish_count?: number | null
+    period_biomass_gain_kg?: string | number | null
     load_level?: string | null
     load_level_label?: string | null
   }>,
@@ -4619,6 +4640,17 @@ function renderPondLoadMetricCards(
     const n = Number(raw)
     return Number.isFinite(n) ? formatNumber(n, decimals) : String(raw)
   }
+  const totalBiomassKg = (r: (typeof rows)[number]) => {
+    const raw = r.biomass_kg_for_load ?? r.effective_net_weight_kg ?? r.implied_net_weight_kg
+    if (raw == null || raw === '') return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
+  }
+  const periodGainKg = (r: (typeof rows)[number]) => {
+    if (r.period_biomass_gain_kg == null || r.period_biomass_gain_kg === '') return null
+    const n = Number(r.period_biomass_gain_kg)
+    return Number.isFinite(n) ? n : null
+  }
 
   return (
     <div className="space-y-4">
@@ -4626,12 +4658,36 @@ function renderPondLoadMetricCards(
         const pcs = r.current_fish_per_kg ?? r.pcs_per_kg
         const kgDec = r.stock_density_kg_per_decimal ?? r.load_kg_per_decimal
         const level = r.load_level || undefined
+        const bioKg = totalBiomassKg(r)
+        const gainKg = periodGainKg(r)
+        const fishN =
+          r.implied_net_fish_count != null && Number.isFinite(Number(r.implied_net_fish_count))
+            ? Number(r.implied_net_fish_count)
+            : null
         return (
           <div key={String(r.pond_id ?? r.pond_name ?? idx)} className="space-y-2">
             {rows.length > 1 && r.pond_name ? (
               <h5 className="text-sm font-semibold text-foreground">{r.pond_name}</h5>
             ) : null}
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="rounded-xl border border-primary/30 bg-gradient-to-br from-teal-50 to-white px-4 py-3.5 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-primary">Total biomass</div>
+                <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-teal-950">
+                  {bioKg != null ? `${fmtMetric(bioKg, 2)} kg` : '—'}
+                </div>
+                <p className="mt-1 text-[11px] text-primary/80">
+                  {fishN != null && fishN > 0
+                    ? `Standing stock · ${fishN.toLocaleString()} fish`
+                    : 'Standing stock (sample × fish when available)'}
+                </p>
+              </div>
+              <div className="rounded-xl border border-success/25 bg-gradient-to-br from-green-50 to-white px-4 py-3.5 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-success">Biomass gain</div>
+                <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-green-950">
+                  {gainKg != null ? `${fmtMetric(gainKg, 2)} kg` : '—'}
+                </div>
+                <p className="mt-1 text-[11px] text-success/80">Period gain from sampling (FCR)</p>
+              </div>
               <div className="rounded-xl border border-border bg-white px-4 py-3.5 shadow-sm">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">pcs/kg</div>
                 <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
@@ -10686,6 +10742,10 @@ function renderReportTable(
                 pond_name: p.pond_name,
                 pcs_per_kg: p.pcs_per_kg,
                 load_kg_per_decimal: p.load_kg_per_decimal,
+                stock_density_kg_per_decimal: p.stock_density_kg_per_decimal ?? p.load_kg_per_decimal,
+                biomass_kg_for_load: p.biomass_kg,
+                implied_net_fish_count: p.fish_count,
+                period_biomass_gain_kg: p.biomass_gain_kg ?? summary.biomass_gain_kg,
                 load_level: p.load_level,
                 load_level_label: p.load_level_label,
               })),
@@ -10846,7 +10906,12 @@ function renderReportTable(
         {loadRows.length > 0 ? (
           <div className="space-y-4">
             <h4 className="font-semibold text-foreground">Pond load (kg per decimal) — as of period end</h4>
-            {renderPondLoadMetricCards(loadRows)}
+            {renderPondLoadMetricCards(
+              loadRows.map((r: any) => ({
+                ...r,
+                period_biomass_gain_kg: r.period_biomass_gain_kg ?? summary.biomass_gain_kg,
+              })),
+            )}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">
@@ -10948,9 +11013,15 @@ function renderReportTable(
             <h4 className="font-semibold text-foreground">Pond load (kg per decimal) — as of period end</h4>
             <p className="text-xs text-muted-foreground">
               kg/dec = biomass for load ÷ water area (decimals) from the Pond form. Biomass for load uses the
-              latest sample average × live fish when that is higher than book kg.
+              latest sample average × live fish when a sample size is available.
             </p>
-            {renderPondLoadMetricCards(loadRows)}
+            {renderPondLoadMetricCards(
+              loadRows.map((r: any) => ({
+                ...r,
+                period_biomass_gain_kg:
+                  r.period_biomass_gain_kg ?? data.summary?.biomass_gain_kg ?? fcr?.scoped?.biomass_gain_kg,
+              })),
+            )}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">

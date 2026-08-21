@@ -71,15 +71,15 @@ POND_PROFILES: tuple[dict, ...] = (
         "name": "Ashari-1",
         "role": "grow_out",
         "code_stem": "ASHARI1",
-        "water_area_decimal": Decimal("310.00"),
-        "leasing_area_decimal": Decimal("335.00"),
+        "water_area_decimal": Decimal("400.00"),
+        "leasing_area_decimal": Decimal("490.00"),
         "pond_depth_ft": Decimal("6.20"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("400000.00"),
         "notes": (
-            "Largest production cell (~310 dec water / ~3.1 acres); deeper average depth for dry-season carry. "
+            "Largest production cell (400 dec water / 4.0 acres); deeper average depth for dry-season carry. "
             "Improved GIFT line; bamboo sluice maintenance budgeted each monsoon."
         ),
         "demo_fish_count": 14200,

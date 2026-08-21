@@ -37,13 +37,6 @@ _is_management_entrypoint = _argv0 in ("manage.py", "django-admin", "django-admi
 # (like Gunicorn does) so a real DJANGO_SECRET_KEY is always set in production.
 _PROD_SECRET_REQUIRED_CMDS = frozenset({"collectstatic"})
 
-# Gunicorn/uWSGI load wsgi.py — not manage.py / runserver / pytest.
-_is_wsgi_production = (
-    not _is_runserver
-    and not _is_management_entrypoint
-    and "pytest" not in sys.modules
-)
-
 
 def _csv(name: str) -> list[str]:
     raw = (os.environ.get(name) or "").strip()
@@ -173,38 +166,31 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = "fsms.wsgi.application"
 
-# --- Database ---
+# --- Database (PostgreSQL only) ---
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 if _truthy("FSERP_USE_SQLITE"):
-    DATABASE_URL = ""
-
-if DATABASE_URL:
-    try:
-        import dj_database_url
-    except ImportError as exc:
-        raise ImproperlyConfigured(
-            "DATABASE_URL is set but dj-database-url is missing. "
-            "Use backend venv + pip install -r requirements.txt, or pip install dj-database-url, "
-            "or set FSERP_USE_SQLITE=1 for local SQLite."
-        ) from exc
-    _db = dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
-    _db.setdefault("CONN_HEALTH_CHECKS", True)
-    DATABASES = {"default": _db}
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-
-if _is_wsgi_production and not DATABASE_URL and not _truthy("FSERP_USE_SQLITE"):
     raise ImproperlyConfigured(
-        "Production (Gunicorn) requires DATABASE_URL (PostgreSQL with your existing ERP data) "
-        "or FSERP_USE_SQLITE=1 to use backend/db.sqlite3. "
-        "Without either, the API starts against an empty database and old data will not load. "
-        "Set DATABASE_URL in backend/.env, then: pm2 restart fserp_backend --update-env"
+        "FSERP_USE_SQLITE is not supported. FSERP requires PostgreSQL via DATABASE_URL. "
+        "Remove FSERP_USE_SQLITE from the environment and set DATABASE_URL."
     )
+
+if not DATABASE_URL:
+    raise ImproperlyConfigured(
+        "DATABASE_URL is required (PostgreSQL). "
+        "Set it in backend/.env, e.g. postgresql://USER:PASS@127.0.0.1:5432/fserp"
+    )
+
+try:
+    import dj_database_url
+except ImportError as exc:
+    raise ImproperlyConfigured(
+        "DATABASE_URL is set but dj-database-url is missing. "
+        "Use backend venv + pip install -r requirements.txt, or pip install dj-database-url."
+    ) from exc
+
+_db = dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
+_db.setdefault("CONN_HEALTH_CHECKS", True)
+DATABASES = {"default": _db}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

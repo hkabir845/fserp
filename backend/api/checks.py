@@ -9,10 +9,6 @@ from django.conf import settings
 from django.core.checks import Warning, register
 
 
-def _explicit_sqlite_demo() -> bool:
-    return os.environ.get("FSERP_USE_SQLITE", "").strip().lower() in ("1", "true", "yes")
-
-
 def _is_pytest() -> bool:
     return "pytest" in sys.modules
 
@@ -46,22 +42,17 @@ def check_whitenoise_for_gunicorn(app_configs, **kwargs):
 
 @register(deploy=True)
 def check_production_database(app_configs, **kwargs):
-    """Prefer PostgreSQL when deploying; SQLite is for local / tiny demos."""
+    """FSERP requires PostgreSQL via DATABASE_URL (SQLite is not supported)."""
     if _is_pytest():
         return []
     db = settings.DATABASES.get("default") or {}
     engine = str(db.get("ENGINE") or "")
     if "sqlite" not in engine:
         return []
-    if _explicit_sqlite_demo():
-        return []
     return [
         Warning(
-            "SQLite is active. Use PostgreSQL via DATABASE_URL for production deployments.",
-            hint=(
-                "For intentional SQLite-only setups, set FSERP_USE_SQLITE=1 in the environment "
-                "(see env.example)."
-            ),
+            "SQLite is active but not supported. Set DATABASE_URL to PostgreSQL.",
+            hint="Remove any FSERP_USE_SQLITE setting and configure DATABASE_URL in backend/.env.",
             id="fserp.W001",
         )
     ]

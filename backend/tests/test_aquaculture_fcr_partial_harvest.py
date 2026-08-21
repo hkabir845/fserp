@@ -140,6 +140,34 @@ def test_load_kg_per_dec_divides_biomass_by_water_area():
     assert right.get("load_area_unit_warning") in (None, "")
 
 
+def test_ashari1_c03_load_at_400_decimal_water():
+    """Batch C03: 64878 fish @ 8.76 pcs/kg on Ashari-1 (400 dec) → ~18.52 kg/dec."""
+    fish = 64878
+    pcs = Decimal("8.76")
+    bio = (Decimal(fish) / pcs).quantize(Decimal("0.0001"))
+    assert bio == Decimal("7406.1644")
+    out = compute_biomass_load_advice_dict(
+        biomass_kg=bio,
+        fish_count=fish,
+        water_area_decimal=Decimal("400"),
+        pond_role="grow_out",
+        fish_per_kg=pcs,
+        lang="en",
+    )
+    assert out["stock_density_kg_per_decimal"] == "18.52"
+    assert out["stock_density_pcs_per_decimal"] == "162.20"
+    # Same biomass with ~67 dec reproduces the bad 110.57 screenshot figure.
+    bad = compute_biomass_load_advice_dict(
+        biomass_kg=bio,
+        fish_count=fish,
+        water_area_decimal=Decimal("67"),
+        pond_role="grow_out",
+        fish_per_kg=pcs,
+        lang="en",
+    )
+    assert bad["stock_density_kg_per_decimal"] == "110.54"
+
+
 def test_load_level_worse_of_kg_and_pcs():
     # kg moderate (30) but pcs high_risk (25000) → overall high_risk; label stays exact values.
     out = compute_biomass_load_advice_dict(

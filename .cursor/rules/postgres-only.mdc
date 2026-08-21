@@ -1,0 +1,21 @@
+---
+description: FSERP uses PostgreSQL only — never SQLite
+alwaysApply: true
+---
+
+# PostgreSQL only (no SQLite)
+
+FSERP does **not** use SQLite. Do not set `FSERP_USE_SQLITE=1`, do not fall back to `backend/db.sqlite3`, and do not run pytest/manage.py against SQLite.
+
+## Required
+
+- Always use `DATABASE_URL` (PostgreSQL), e.g. from `backend/.env` or:
+  `postgresql://postgres:postgres@127.0.0.1:5432/fserp`
+- For Django/pytest shells: set `FSERP_USE_SQLITE=0` (or unset it) and ensure `DATABASE_URL` is set.
+- Never suggest SQLite as a workaround for missing Postgres.
+
+## Forbidden
+
+- `FSERP_USE_SQLITE=1`
+- Connecting to `db.sqlite3` / `filling_station_erp.db` for FSERP app data
+- Documenting or adding new SQLite code paths for the main ERP database

@@ -294,6 +294,7 @@ def compute_fish_stock_position_rows(
             water_volume_cu_ft=vol_cu,
             pond_role=role,
             lang=lang,
+            fish_count=max(tc, 0),
         )
         row = {
             "pond_id": pid,
@@ -385,6 +386,7 @@ def _position_row_from_bucket(
         water_volume_cu_ft=vol_cu,
         pond_role=role,
         lang=lang,
+        fish_count=max(tc, 0),
     )
     base_row = {
         "pond_id": p.id,

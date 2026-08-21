@@ -102,16 +102,35 @@ def test_biomass_load_advice_intensive_grow_out_bands():
 
 
 def test_biomass_load_advice_bangla():
+    # 30 kg/dec + 200 pcs/dec → moderate band; label shows numeric ranges (not "মাঝারি").
     out = compute_biomass_load_advice_dict(
         biomass_kg=Decimal("60"),
-        fish_count=50_000,
+        fish_count=400,
         water_area_decimal=Decimal("2.0"),
         pond_role="grow_out",
         lang="bn",
     )
     assert out["load_level"] == "moderate"
-    assert out["load_level_label"] == "মাঝারি"
+    assert out["stock_density_pcs_per_decimal"] == "200.00"
+    assert "15–40 kg/dec" in (out["load_level_label"] or "")
+    assert "150–230 pcs/dec" in (out["load_level_label"] or "")
     assert "kg/ডেসিমেল" in (out["owner_decision_summary"] or "")
+
+
+def test_load_level_worse_of_kg_and_pcs():
+    # kg moderate (30) but pcs high_risk (25000) → overall high_risk; label uses stress ranges.
+    out = compute_biomass_load_advice_dict(
+        biomass_kg=Decimal("60"),
+        fish_count=50_000,
+        water_area_decimal=Decimal("2.0"),
+        pond_role="grow_out",
+        lang="en",
+    )
+    assert out["load_level_kg"] == "moderate"
+    assert out["load_level_pcs"] == "high_risk"
+    assert out["load_level"] == "high_risk"
+    assert "≥ 55 kg/dec" in (out["load_level_label"] or "")
+    assert "≥ 300 pcs/dec" in (out["load_level_label"] or "")
 
 
 @pytest.mark.django_db

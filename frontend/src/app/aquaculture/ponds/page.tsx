@@ -86,8 +86,10 @@ interface Pond extends PondOpeningSource {
   tilapia_net_weight_kg?: string | null
   /** Tilapia kg per water-surface decimal; needs water_area_decimal on the pond. */
   tilapia_kg_per_decimal?: string | null
+  tilapia_pcs_per_decimal?: string | null
   tilapia_kg_per_1000_cu_ft?: string | null
   tilapia_load_level?: string | null
+  /** Active band ranges, e.g. "15–40 kg/dec · 150–230 pcs/dec". */
   tilapia_load_level_label?: string | null
   lease_contract_start: string | null
   lease_contract_end: string | null
@@ -221,6 +223,8 @@ function PondTilapiaLoadCell({ p }: { p: Pond }) {
   const kg = kgStr != null && kgStr !== '' ? Number(kgStr) : null
   const kpdStr = p.tilapia_kg_per_decimal
   const kpd = kpdStr != null && kpdStr !== '' ? Number(kpdStr) : null
+  const ppdStr = p.tilapia_pcs_per_decimal
+  const ppd = ppdStr != null && ppdStr !== '' ? Number(ppdStr) : null
   const label = (p.tilapia_load_level_label || '').trim()
   const level = p.tilapia_load_level
 
@@ -228,6 +232,7 @@ function PondTilapiaLoadCell({ p }: { p: Pond }) {
     (fish == null || Number.isNaN(Number(fish))) &&
     (kg == null || Number.isNaN(kg)) &&
     (kpd == null || Number.isNaN(kpd)) &&
+    (ppd == null || Number.isNaN(ppd)) &&
     !label
   ) {
     return <span className="text-muted-foreground/70">—</span>
@@ -258,10 +263,19 @@ function PondTilapiaLoadCell({ p }: { p: Pond }) {
             kg/dec —
           </span>
         )}
+        {ppd != null && !Number.isNaN(ppd) ? (
+          <>
+            <span className="text-muted-foreground/40"> · </span>
+            <span title="Standing fish count per decimal of water surface">
+              {formatNumber(ppd, 0)} pcs/dec
+            </span>
+          </>
+        ) : null}
       </p>
       {label ? (
         <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${tilapiaLoadBadgeClass(level)}`}
+          className={`inline-flex max-w-[14rem] flex-wrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-snug ${tilapiaLoadBadgeClass(level)}`}
+          title="Indicative load band for this pond role (worse of kg/dec and pcs/dec)"
         >
           {label}
         </span>

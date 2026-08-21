@@ -15,8 +15,10 @@ export type StockMetricsRow = {
   current_fish_per_kg_source?: string | null
   current_avg_weight_kg?: string | null
   stock_density_kg_per_decimal?: string | null
+  stock_density_pcs_per_decimal?: string | null
   stock_density_kg_per_1000_cu_ft?: string | null
   load_level?: string
+  /** Active band ranges, e.g. "15–40 kg/dec · 150–230 pcs/dec". */
   load_level_label?: string
   advice_summary?: string
   partial_harvest_applicable?: boolean
@@ -84,6 +86,21 @@ export function formatKgPerDecimal(row: StockMetricsRow): string | null {
   if (v == null || v === '') return null
   const n = Number(v)
   return Number.isFinite(n) ? `${formatQuantity(n)} kg/dec` : null
+}
+
+export function formatPcsPerDecimal(row: StockMetricsRow): string | null {
+  const v = row.stock_density_pcs_per_decimal
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? `${formatQuantity(n)} pcs/dec` : null
+}
+
+/** Current densities plus active band range from the API. */
+export function formatLoadDensityLine(row: StockMetricsRow): string | null {
+  const kg = formatKgPerDecimal(row)
+  const pcs = formatPcsPerDecimal(row)
+  const parts = [kg, pcs].filter(Boolean)
+  return parts.length ? parts.join(' · ') : null
 }
 
 export function formatPcsPerKg(row: StockMetricsRow): string | null {

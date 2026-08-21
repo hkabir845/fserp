@@ -142,6 +142,7 @@ interface PondDetail {
   tilapia_net_fish_count?: number | null
   tilapia_net_weight_kg?: string | null
   tilapia_kg_per_decimal?: string | null
+  tilapia_pcs_per_decimal?: string | null
   tilapia_load_level?: string | null
   tilapia_load_level_label?: string | null
   lease_contract_start: string | null
@@ -1134,15 +1135,18 @@ export default function PondDetailViewPage() {
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Kg per decimal (tilapia)</dt>
+                  <dt className="text-muted-foreground">Density (tilapia)</dt>
                   <dd className="tabular-nums text-foreground">
                     {pond.tilapia_kg_per_decimal != null && pond.tilapia_kg_per_decimal !== ''
                       ? `${formatNumber(Number(pond.tilapia_kg_per_decimal), 3)} kg/dec`
                       : '—'}
+                    {pond.tilapia_pcs_per_decimal != null && pond.tilapia_pcs_per_decimal !== ''
+                      ? ` · ${formatNumber(Number(pond.tilapia_pcs_per_decimal), 0)} pcs/dec`
+                      : ''}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Load status</dt>
+                  <dt className="text-muted-foreground">Load band</dt>
                   <dd className="font-medium text-foreground">{pond.tilapia_load_level_label || stock?.load_level_label || '—'}</dd>
                 </div>
                 {stock?.current_fish_per_kg ? (

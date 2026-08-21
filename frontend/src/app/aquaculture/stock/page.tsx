@@ -100,8 +100,10 @@ interface PositionRow {
   fish_species?: string
   fish_species_label?: string
   stock_density_kg_per_decimal?: string | null
+  stock_density_pcs_per_decimal?: string | null
   stock_density_kg_per_1000_cu_ft?: string | null
   load_level?: string
+  /** Active band ranges from API, e.g. "15–40 kg/dec · 150–230 pcs/dec". */
   load_level_label?: string
   advice_summary?: string
   reference_note?: string
@@ -361,10 +363,14 @@ function StockPositionMetricCells({ r }: { r: PositionRow }) {
   const netC = r.implied_net_fish_count
   const samp = r.latest_sample_estimated_fish_count
   const diff = samp != null && netC != null ? samp - netC : null
-  const densityLine =
-    r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== ''
-      ? `${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`
-      : null
+  const densityParts: string[] = []
+  if (r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== '') {
+    densityParts.push(`${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`)
+  }
+  if (r.stock_density_pcs_per_decimal != null && r.stock_density_pcs_per_decimal !== '') {
+    densityParts.push(`${formatNumber(Number(r.stock_density_pcs_per_decimal), 0)} pcs/dec`)
+  }
+  const densityLine = densityParts.length ? densityParts.join(' · ') : null
   const volDensity =
     r.stock_density_kg_per_1000_cu_ft != null && r.stock_density_kg_per_1000_cu_ft !== ''
       ? `${formatNumber(Number(r.stock_density_kg_per_1000_cu_ft), 2)} kg/1k cu ft`
@@ -1419,10 +1425,14 @@ function AquacultureStockPageContent() {
                     const netC = r.implied_net_fish_count
                     const samp = r.latest_sample_estimated_fish_count
                     const diff = samp != null && netC != null ? samp - netC : null
-                    const densityLine =
-                      r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== ''
-                        ? `${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`
-                        : null
+                    const densityParts: string[] = []
+                    if (r.stock_density_kg_per_decimal != null && r.stock_density_kg_per_decimal !== '') {
+                      densityParts.push(`${formatNumber(Number(r.stock_density_kg_per_decimal), 2)} kg/dec`)
+                    }
+                    if (r.stock_density_pcs_per_decimal != null && r.stock_density_pcs_per_decimal !== '') {
+                      densityParts.push(`${formatNumber(Number(r.stock_density_pcs_per_decimal), 0)} pcs/dec`)
+                    }
+                    const densityLine = densityParts.length ? densityParts.join(' · ') : null
                     const volDensity =
                       r.stock_density_kg_per_1000_cu_ft != null && r.stock_density_kg_per_1000_cu_ft !== ''
                         ? `${formatNumber(Number(r.stock_density_kg_per_1000_cu_ft), 2)} kg/1k cu ft`

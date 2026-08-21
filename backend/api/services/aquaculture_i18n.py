@@ -70,10 +70,10 @@ def load_set_water_area_summary(lang: str | None = "en") -> str:
 def load_reference_note(lang: str | None = "en") -> str:
     return _pick(
         lang,
-        "Rule-of-thumb bands (not regulatory): grow-out targets ~8–12 t/ha harvest biomass "
-        "(≈35–50 kg/decimal); adjust with aeration, species, and water quality.",
-        "নির্দেশক ব্যান্ড (আইনি নয়): গ্রো-আউট লক্ষ্য ~8–12 টন/হেক্টর (≈35–50 kg/ডেসিমেল); "
-        "এয়ারেশন, প্রজাতি ও পানির গুণমান অনুযায়ী ঠিক করুন।",
+        "Rule-of-thumb bands (not regulatory): grow-out comfort ~15–40 kg/dec and ~150–230 pcs/dec "
+        "(~8–12 t/ha near harvest ≈32–48 kg/dec); adjust with aeration, species, and water quality.",
+        "নির্দেশক ব্যান্ড (আইনি নয়): গ্রো-আউট স্বাচ্ছন্দ্য ~15–40 kg/ডেসিমেল ও ~150–230 pcs/ডেসিমেল "
+        "(ফসলের কাছাকাছি ~8–12 টন/হেক্টর ≈32–48 kg/ডেসিমেল); এয়ারেশন, প্রজাতি ও পানির গুণমান অনুযায়ী ঠিক করুন।",
     )
 
 

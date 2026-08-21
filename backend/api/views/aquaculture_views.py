@@ -905,12 +905,13 @@ def _pond_code_conflict(company_id: int, code: str, exclude_pond_id: int | None)
 
 
 def _tilapia_load_fields(stock_row: dict | None) -> dict:
-    """Pond JSON extras: tilapia-only implied stock and kg-per-decimal load (from movements + pond water area)."""
+    """Pond JSON extras: tilapia-only implied stock and kg/pcs-per-decimal load."""
     if not stock_row:
         return {
             "tilapia_net_fish_count": None,
             "tilapia_net_weight_kg": None,
             "tilapia_kg_per_decimal": None,
+            "tilapia_pcs_per_decimal": None,
             "tilapia_kg_per_1000_cu_ft": None,
             "tilapia_load_level": None,
             "tilapia_load_level_label": None,
@@ -919,6 +920,7 @@ def _tilapia_load_fields(stock_row: dict | None) -> dict:
         "tilapia_net_fish_count": stock_row.get("implied_net_fish_count"),
         "tilapia_net_weight_kg": stock_row.get("implied_net_weight_kg"),
         "tilapia_kg_per_decimal": stock_row.get("stock_density_kg_per_decimal"),
+        "tilapia_pcs_per_decimal": stock_row.get("stock_density_pcs_per_decimal"),
         "tilapia_kg_per_1000_cu_ft": stock_row.get("stock_density_kg_per_1000_cu_ft"),
         "tilapia_load_level": stock_row.get("load_level"),
         "tilapia_load_level_label": stock_row.get("load_level_label"),

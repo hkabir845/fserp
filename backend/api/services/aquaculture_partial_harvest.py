@@ -297,6 +297,7 @@ def compute_biomass_load_advice_dict(
         water_volume_cu_ft=water_volume_cu_ft,
         pond_role=pond_role,
         lang=lang_n,
+        fish_count=max(fish_count, 0),
     )
     harvest = compute_partial_harvest_suggestion(
         bio,
@@ -436,9 +437,12 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang
     out["book_net_weight_kg"] = str(txn_bio)
     for key in (
         "stock_density_kg_per_decimal",
+        "stock_density_pcs_per_decimal",
         "stock_density_kg_per_1000_cu_ft",
         "load_level",
         "load_level_label",
+        "load_level_kg",
+        "load_level_pcs",
         "advice_summary",
         "partial_harvest_applicable",
         "partial_harvest_suggested_kg",
@@ -452,6 +456,12 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang
         "biomass_kg_for_load",
         "fish_count_for_load",
         "comfort_kg_per_decimal",
+        "load_band_kg_light",
+        "load_band_kg_comfort",
+        "load_band_kg_stress",
+        "load_band_pcs_light",
+        "load_band_pcs_comfort",
+        "load_band_pcs_stress",
     ):
         if key in load_advice:
             out[key] = load_advice[key]

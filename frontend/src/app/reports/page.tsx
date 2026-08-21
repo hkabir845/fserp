@@ -10127,7 +10127,6 @@ function renderReportTable(
                       {MoneyBdt(totals.total_cost)}
                     </td>
                     <td colSpan={3} />
-                    </td>
                   </tr>
                 </tfoot>
               </table>

@@ -4511,6 +4511,82 @@ function renderAquacultureFcrBlock(data: Record<string, unknown> | null | undefi
   )
 }
 
+/** Highlight pcs/kg, kg/dec, and Load as cards above pond-load tables. */
+function renderPondLoadMetricCards(
+  rows: Array<{
+    pond_id?: number | string | null
+    pond_name?: string | null
+    current_fish_per_kg?: string | number | null
+    pcs_per_kg?: string | number | null
+    stock_density_kg_per_decimal?: string | number | null
+    load_kg_per_decimal?: string | number | null
+    load_level?: string | null
+    load_level_label?: string | null
+  }>,
+) {
+  if (!rows.length) return null
+
+  const loadCardClass = (level: string | null | undefined) => {
+    if (level === 'high_risk') return 'border-destructive/35 bg-destructive/5'
+    if (level === 'full') return 'border-amber-300/80 bg-amber-50/90'
+    if (level === 'moderate') return 'border-sky-200 bg-sky-50/80'
+    if (level === 'understocked') return 'border-border bg-muted/30'
+    return 'border-border bg-white'
+  }
+  const loadValueClass = (level: string | null | undefined) => {
+    if (level === 'high_risk') return 'text-destructive'
+    if (level === 'full') return 'text-amber-900'
+    if (level === 'moderate') return 'text-sky-950'
+    if (level === 'understocked') return 'text-muted-foreground'
+    return 'text-foreground'
+  }
+  const fmtMetric = (raw: string | number | null | undefined, decimals: number) => {
+    if (raw == null || raw === '') return '—'
+    const n = Number(raw)
+    return Number.isFinite(n) ? formatNumber(n, decimals) : String(raw)
+  }
+
+  return (
+    <div className="space-y-4">
+      {rows.map((r, idx) => {
+        const pcs = r.current_fish_per_kg ?? r.pcs_per_kg
+        const kgDec = r.stock_density_kg_per_decimal ?? r.load_kg_per_decimal
+        const level = r.load_level || undefined
+        return (
+          <div key={String(r.pond_id ?? r.pond_name ?? idx)} className="space-y-2">
+            {rows.length > 1 && r.pond_name ? (
+              <h5 className="text-sm font-semibold text-foreground">{r.pond_name}</h5>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-border bg-white px-4 py-3.5 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">pcs/kg</div>
+                <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+                  {fmtMetric(pcs, 4)}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">Fish size (pieces per kg)</p>
+              </div>
+              <div className="rounded-xl border border-border bg-white px-4 py-3.5 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">kg/dec</div>
+                <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
+                  {fmtMetric(kgDec, 2)}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">Biomass density per decimal</p>
+              </div>
+              <div className={`rounded-xl border px-4 py-3.5 shadow-sm ${loadCardClass(level)}`}>
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Load</div>
+                <div className={`mt-1.5 text-2xl font-semibold tracking-tight ${loadValueClass(level)}`}>
+                  {r.load_level_label || '—'}
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">Stocking load band</p>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 const REPORT_PERIOD_DATE_INPUT_CLS =
   'px-3 py-1.5 border border-blue-300 rounded-md text-sm text-foreground/85 focus:outline-none focus:ring-2 focus:ring-ring focus:border-blue-500 bg-white shadow-sm min-w-[9.5rem]'
 
@@ -10529,8 +10605,19 @@ function renderReportTable(
           </div>
         </div>
         {ponds.length > 0 ? (
-          <div>
-            <h4 className="font-semibold text-foreground mb-2">Pond performance</h4>
+          <div className="space-y-4">
+            <h4 className="font-semibold text-foreground">Pond load</h4>
+            {renderPondLoadMetricCards(
+              ponds.map((p: any) => ({
+                pond_id: p.pond_id,
+                pond_name: p.pond_name,
+                pcs_per_kg: p.pcs_per_kg,
+                load_kg_per_decimal: p.load_kg_per_decimal,
+                load_level: p.load_level,
+                load_level_label: p.load_level_label,
+              })),
+            )}
+            <h4 className="font-semibold text-foreground">Pond performance</h4>
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">
@@ -10541,6 +10628,7 @@ function renderReportTable(
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Bioasset</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">ADG g/fish/day</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">FCR</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">pcs/kg</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">kg/dec</th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Load</th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">Feed kg</th>
@@ -10562,6 +10650,7 @@ function renderReportTable(
                       <td className="px-3 py-2 text-right tabular-nums font-medium text-primary">
                         {p.fcr_biomass ?? '—'}
                       </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.pcs_per_kg ?? '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{p.load_kg_per_decimal ?? '—'}</td>
                       <td className={`px-3 py-2 ${loadLevelClass(p.load_level)}`}>
                         {p.load_level_label ?? '—'}
@@ -10588,7 +10677,7 @@ function renderReportTable(
                       <td className="px-3 py-2 text-right tabular-nums">{MoneyBdt(summary.total_bioasset_value)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{summary.avg_adg_g_per_fish_per_day ?? '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{summary.portfolio_fcr_biomass ?? '—'}</td>
-                      <td className="px-3 py-2" colSpan={4} />
+                      <td className="px-3 py-2" colSpan={5} />
                     </tr>
                   </tfoot>
                 ) : null}
@@ -10682,8 +10771,9 @@ function renderReportTable(
           </p>
         )}
         {loadRows.length > 0 ? (
-          <div>
-            <h4 className="font-semibold text-foreground mb-2">Pond load (kg per decimal) — as of period end</h4>
+          <div className="space-y-4">
+            <h4 className="font-semibold text-foreground">Pond load (kg per decimal) — as of period end</h4>
+            {renderPondLoadMetricCards(loadRows)}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">
@@ -10781,8 +10871,9 @@ function renderReportTable(
           </div>
         ) : null}
         {loadRows.length > 0 ? (
-          <div>
-            <h4 className="font-semibold text-foreground mb-2">Pond load (kg per decimal) — as of period end</h4>
+          <div className="space-y-4">
+            <h4 className="font-semibold text-foreground">Pond load (kg per decimal) — as of period end</h4>
+            {renderPondLoadMetricCards(loadRows)}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">

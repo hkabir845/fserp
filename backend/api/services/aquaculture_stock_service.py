@@ -440,10 +440,14 @@ def compute_fish_stock_position_breakdown_rows(
     fish_species_filter: str | None = None,
     include_inactive_ponds: bool = False,
     entries_after_date: date | None = None,
+    as_of_date: date | None = None,
 ) -> list[dict]:
     """
     Per (pond, production cycle, fish species) implied net and components.
     Respects the same pond / cycle / species filters as compute_fish_stock_position_rows.
+
+    ``as_of_date``: only count movements and samples on or before this date so stock
+    reflects fish still available that day after sales/harvests.
     """
     cid = company_id
     lang = company_language(cid)
@@ -487,6 +491,8 @@ def compute_fish_stock_position_breakdown_rows(
         return cy_id is None or cycle == cy_id
 
     lines_in = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related("transfer")
+    if as_of_date is not None:
+        lines_in = lines_in.filter(transfer__transfer_date__lte=as_of_date)
     if entries_after_date is not None:
         lines_in = lines_in.filter(transfer__transfer_date__gt=entries_after_date)
     for ln in lines_in:
@@ -506,6 +512,8 @@ def compute_fish_stock_position_breakdown_rows(
             in_map_c[key] += int(ln.fish_count)
 
     lines_out = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related("transfer")
+    if as_of_date is not None:
+        lines_out = lines_out.filter(transfer__transfer_date__lte=as_of_date)
     if entries_after_date is not None:
         lines_out = lines_out.filter(transfer__transfer_date__gt=entries_after_date)
     for ln in lines_out:
@@ -529,6 +537,8 @@ def compute_fish_stock_position_breakdown_rows(
         sale_q = sale_q.filter(pond_id=pond_id)
     if cy_id is not None:
         sale_q = sale_q.filter(production_cycle_id=cy_id)
+    if as_of_date is not None:
+        sale_q = sale_q.filter(sale_date__lte=as_of_date)
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     for s in sale_q.only(
@@ -555,6 +565,8 @@ def compute_fish_stock_position_breakdown_rows(
         ledger_q = ledger_q.filter(pond_id=pond_id)
     if cy_id is not None:
         ledger_q = ledger_q.filter(production_cycle_id=cy_id)
+    if as_of_date is not None:
+        ledger_q = ledger_q.filter(entry_date__lte=as_of_date)
     if entries_after_date is not None:
         ledger_q = ledger_q.filter(entry_date__gt=entries_after_date)
     for row in ledger_q.only(
@@ -601,6 +613,8 @@ def compute_fish_stock_position_breakdown_rows(
         bl_q = bl_q.filter(aquaculture_pond_id=pond_id)
     if cy_id is not None:
         bl_q = bl_q.filter(aquaculture_production_cycle_id=cy_id)
+    if as_of_date is not None:
+        bl_q = bl_q.filter(bill__bill_date__lte=as_of_date)
     if entries_after_date is not None:
         bl_q = bl_q.filter(bill__bill_date__gt=entries_after_date)
     for ln in bl_q:
@@ -630,6 +644,8 @@ def compute_fish_stock_position_breakdown_rows(
     smp_q = AquacultureBiomassSample.objects.filter(company_id=cid, pond_id__in=pond_by_id.keys())
     if species_filter_code is not None:
         smp_q = smp_q.filter(fish_species=species_filter_code)
+    if as_of_date is not None:
+        smp_q = smp_q.filter(sample_date__lte=as_of_date)
     if entries_after_date is not None:
         smp_q = smp_q.filter(sample_date__gt=entries_after_date)
     for s in smp_q.order_by("pond_id", "production_cycle_id", "fish_species", "-sample_date", "-id"):

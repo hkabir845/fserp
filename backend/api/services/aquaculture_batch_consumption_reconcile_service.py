@@ -84,7 +84,7 @@ def preview_batch_consumption_reconcile(
     skip_no_batch = 0
     samples: list[dict] = []
     for exp in rows:
-        shares = compute_batch_feed_demand_shares(company_id, int(exp.pond_id))
+        shares = compute_batch_feed_demand_shares(company_id, int(exp.pond_id), as_of_date=exp.expense_date)
         if not shares:
             skip_no_batch += 1
             continue
@@ -341,7 +341,9 @@ def reconcile_batch_consumption_for_company(
 
     for exp in list(_untagged_consumption_qs(company_id, pond_id=pond_id)):
         try:
-            shares = compute_batch_feed_demand_shares(company_id, int(exp.pond_id))
+            shares = compute_batch_feed_demand_shares(
+                company_id, int(exp.pond_id), as_of_date=exp.expense_date
+            )
             if not shares:
                 continue
             if len(shares) == 1:

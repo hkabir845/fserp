@@ -243,8 +243,9 @@ export function BatchFeedAllocationPanel({ row }: { row: FeedingAdviceRow }) {
         Batch feed split
       </h4>
       <p className="mt-1 text-[11px] leading-relaxed text-teal-900/80">
-        Sampling biomass × WorldFish % body-weight demand
-        {total ? ` · total ${total} kg` : ''}. Apply posts one consumption line per batch.
+        Sampling biomass × WorldFish % body-weight as of the feed date (after sales/harvests)
+        {total ? ` · total ${total} kg` : ''}. Apply posts one consumption line per batch still
+        holding fish that day.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="min-w-full text-xs">

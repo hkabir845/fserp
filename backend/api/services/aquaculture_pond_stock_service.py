@@ -851,6 +851,7 @@ def consume_pond_item_with_batch_split(
         pond.id,
         water_temp_c=water_temp_c,
         production_cycle_id=None,
+        as_of_date=expense_date,
     )
     if len(shares) <= 1:
         only_cy = int(shares[0]["production_cycle_id"]) if shares else None

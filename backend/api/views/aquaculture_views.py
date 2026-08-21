@@ -6211,7 +6211,9 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                         snap_temp = Decimal(str(raw_temp))
                     except Exception:
                         snap_temp = None
-                shares = compute_batch_feed_demand_shares(cid, pond.id, water_temp_c=snap_temp)
+                shares = compute_batch_feed_demand_shares(
+                    cid, pond.id, water_temp_c=snap_temp, as_of_date=a.target_date
+                )
                 if len(shares) >= 2:
                     alloc = allocate_feed_kg_across_batches(applied_kg, shares)
                     snap["applied_batch_feed_allocation"] = {

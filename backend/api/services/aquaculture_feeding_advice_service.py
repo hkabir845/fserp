@@ -144,12 +144,13 @@ def compute_batch_feed_demand_shares(
     water_temp_c: Decimal | None = None,
     production_cycle_id: int | None = None,
     fish_species_filter: str | None = "tilapia",
+    as_of_date: date | None = None,
 ) -> list[dict]:
     """
     Per stocking batch (production cycle) daily feed demand from sampling biomass × WorldFish %BW.
 
-    Used to distribute a pond feeding event across co-resident batches so batch FCR / consumption
-    reports can filter by cycle. Rows without a cycle id or with zero demand are omitted.
+    ``as_of_date`` (feeding/medicine/expense date): stock after sales/harvests on or before that
+    day, so batch shares match fish still in the pond when feed/medicine was used.
     """
     lang = company_language(company_id)
     rows = compute_fish_stock_position_breakdown_rows(
@@ -158,6 +159,7 @@ def compute_batch_feed_demand_shares(
         production_cycle_id=production_cycle_id,
         fish_species_filter=fish_species_filter,
         include_inactive_ponds=True,
+        as_of_date=as_of_date,
     )
     shares: list[dict] = []
     for stock_row in rows:
@@ -168,7 +170,10 @@ def compute_batch_feed_demand_shares(
             cy_id_int = int(cy_id)
         except (TypeError, ValueError):
             continue
-        biomass, biomass_src = _select_biomass_for_feeding_kg(stock_row)
+        # After harvests, prefer transaction-implied biomass so sold fish do not keep eating.
+        biomass, biomass_src = _select_biomass_for_feeding_kg(
+            stock_row, honor_harvests=as_of_date is not None
+        )
         if biomass <= 0:
             continue
         worldfish = worldfish_daily_bw_percent(stock_row, water_temp_c=water_temp_c, lang=lang)
@@ -182,6 +187,8 @@ def compute_batch_feed_demand_shares(
             fish_n = int(stock_row.get("implied_net_fish_count") or 0)
         except (TypeError, ValueError):
             fish_n = 0
+        if as_of_date is not None and fish_n <= 0 and biomass <= 0:
+            continue
         shares.append(
             {
                 "production_cycle_id": cy_id_int,
@@ -198,6 +205,7 @@ def compute_batch_feed_demand_shares(
                 "mean_fish_weight_g": worldfish.get("mean_fish_weight_g"),
                 "worldfish": worldfish,
                 "stock_position": _json_safe_stock_row(stock_row),
+                "as_of_date": as_of_date.isoformat() if as_of_date else None,
             }
         )
     return shares
@@ -228,18 +236,50 @@ def allocate_feed_kg_across_batches(
     return out
 
 
-def _select_biomass_for_feeding_kg(stock_row: dict) -> tuple[Decimal, str]:
+def _select_biomass_for_feeding_kg(
+    stock_row: dict,
+    *,
+    honor_harvests: bool = False,
+) -> tuple[Decimal, str]:
     """
     Pick the most reliable biomass to scale daily feed kg, mirroring how mean weight is chosen.
 
-    Order of preference:
+    Order of preference (live / current advice):
     1. Latest biomass sample's `estimated_total_weight_kg` (manager observation; reflects current growth).
     2. `implied_net_weight_kg` from transfers/sales/ledger when positive.
     3. `latest_sample_avg_weight_kg × max(implied_net_fish_count, latest_sample_estimated_fish_count)`
        — recover when transactions show a net negative (e.g., ledger entries lacking a cycle tag).
 
+    When ``honor_harvests`` is True (as-of a feeding/medicine date), prefer transaction-implied
+    biomass first so sales/harvests that day reduce the batch's share.
+
     Returns (kg, source_label). Empty source label when no usable biomass.
     """
+    if honor_harvests:
+        implied_kg = _d(stock_row.get("implied_net_weight_kg"))
+        if implied_kg > 0:
+            return (
+                implied_kg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "implied net biomass as-of date (after sales/harvests)",
+            )
+        avg_kg_raw = stock_row.get("latest_sample_avg_weight_kg")
+        avg_kg = Decimal("0")
+        if avg_kg_raw is not None and str(avg_kg_raw).strip() != "":
+            try:
+                avg_kg = _d(avg_kg_raw)
+            except Exception:
+                avg_kg = Decimal("0")
+        if avg_kg > 0:
+            try:
+                implied_n = int(stock_row.get("implied_net_fish_count") or 0)
+            except (TypeError, ValueError):
+                implied_n = 0
+            if implied_n > 0:
+                est = (avg_kg * Decimal(implied_n)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if est > 0:
+                    return est, "sampled mean weight × fish count as-of date (after harvests)"
+        # Fall through to sample total only if implied is empty (pre-harvest / no sales tagged).
+
     samp_total = stock_row.get("latest_sample_estimated_total_weight_kg")
     if samp_total is not None and str(samp_total).strip() != "":
         try:
@@ -885,6 +925,7 @@ def build_feeding_advice_payload(
         pond_id,
         water_temp_c=water_temp_c,
         production_cycle_id=production_cycle_id,
+        as_of_date=target_date,
     )
 
     rows = compute_fish_stock_position_rows(

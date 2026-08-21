@@ -19,7 +19,8 @@ from api.services.aquaculture_pond_consumption_ledger_service import compute_pon
 
 SOFT_ALLOC_NOTE = (
     "Includes soft-allocated share of pond-level (untagged) consumption by sampling × WorldFish "
-    "demand. Books are unchanged; only the batch report view is split."
+    "demand as of each expense date (after sales/harvests that day). Books are unchanged; "
+    "only the batch report view is split."
 )
 
 
@@ -81,14 +82,24 @@ def soft_allocate_untagged_consumption_for_cycle(
     if not untagged:
         return []
 
-    shares_by_pond: dict[int, list[dict]] = {}
+    shares_cache: dict[tuple[int, str], list[dict]] = {}
     out: list[dict] = []
 
     for r in untagged:
         pid = int(r["pond_id"])
-        if pid not in shares_by_pond:
-            shares_by_pond[pid] = compute_batch_feed_demand_shares(company_id, pid)
-        shares = shares_by_pond[pid]
+        day = (r.get("entry_date") or "")[:10]
+        cache_key = (pid, day)
+        if cache_key not in shares_cache:
+            as_of = None
+            if day:
+                try:
+                    as_of = date.fromisoformat(day)
+                except ValueError:
+                    as_of = None
+            shares_cache[cache_key] = compute_batch_feed_demand_shares(
+                company_id, pid, as_of_date=as_of
+            )
+        shares = shares_cache[cache_key]
         if len(shares) < 2:
             # Single-batch ponds should be hard-tagged by reconcile; skip soft here
             # unless the only share is this cycle.
@@ -179,12 +190,16 @@ def sum_soft_allocated_feed_kg_for_cycle(
     qs = qs.filter(pond_id=cy.pond_id)
 
     total = Decimal("0")
-    shares_cache: dict[int, list[dict]] = {}
-    for exp in qs.only("id", "pond_id", "feed_weight_kg"):
+    shares_cache: dict[tuple[int, str], list[dict]] = {}
+    for exp in qs.only("id", "pond_id", "feed_weight_kg", "expense_date"):
         pid = int(exp.pond_id)
-        if pid not in shares_cache:
-            shares_cache[pid] = compute_batch_feed_demand_shares(company_id, pid)
-        shares = shares_cache[pid]
+        day = exp.expense_date.isoformat() if exp.expense_date else ""
+        cache_key = (pid, day)
+        if cache_key not in shares_cache:
+            shares_cache[cache_key] = compute_batch_feed_demand_shares(
+                company_id, pid, as_of_date=exp.expense_date
+            )
+        shares = shares_cache[cache_key]
         if not shares:
             continue
         if len(shares) == 1:

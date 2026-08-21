@@ -1957,6 +1957,11 @@ function ReportsPageContent() {
     [reportStationId]
   )
 
+  const pondLoadHighlightRows = useMemo(
+    () => aquacultureLoadHighlightRows(selectedReport, reportData),
+    [selectedReport, reportData]
+  )
+
   useEffect(() => {
     if (
       !selectedReport ||
@@ -4265,6 +4270,16 @@ function ReportsPageContent() {
                               )
                             })}
                           </div>
+                          {pondLoadHighlightRows.length > 0 ? (
+                            <div className="mt-4">
+                              {renderPondLoadMetricCards(pondLoadHighlightRows)}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : pondLoadHighlightRows.length > 0 ? (
+                        <div>
+                          <h3 className="text-lg font-semibold text-foreground mb-3">Summary</h3>
+                          {renderPondLoadMetricCards(pondLoadHighlightRows)}
                         </div>
                       ) : null}
 
@@ -4542,7 +4557,31 @@ function renderAquacultureFcrBlock(data: Record<string, unknown> | null | undefi
   )
 }
 
-/** Highlight pcs/kg, kg/dec, and Load as cards above pond-load tables. */
+function aquacultureLoadHighlightRows(
+  reportType: ReportType | null,
+  data: Record<string, unknown> | null | undefined,
+) {
+  if (!reportType || !data) return []
+  if (reportType === 'aquaculture-fcr-biomass' || reportType === 'aquaculture-fish-growth') {
+    return Array.isArray(data.load_by_pond) ? (data.load_by_pond as Parameters<typeof renderPondLoadMetricCards>[0]) : []
+  }
+  if (reportType === 'aquaculture-pond-performance') {
+    const ponds = Array.isArray(data.ponds) ? data.ponds : []
+    return ponds.map((p: Record<string, unknown>) => ({
+      pond_id: p.pond_id as number | string | null | undefined,
+      pond_name: (p.pond_name as string | null | undefined) ?? null,
+      pcs_per_kg: p.pcs_per_kg as string | number | null | undefined,
+      current_fish_per_kg: p.current_fish_per_kg as string | number | null | undefined,
+      load_kg_per_decimal: p.load_kg_per_decimal as string | number | null | undefined,
+      stock_density_kg_per_decimal: p.stock_density_kg_per_decimal as string | number | null | undefined,
+      load_level: (p.load_level as string | null | undefined) ?? null,
+      load_level_label: (p.load_level_label as string | null | undefined) ?? null,
+    }))
+  }
+  return []
+}
+
+/** Highlight pcs/kg, kg/dec, and Load as cards in Summary and above pond-load tables. */
 function renderPondLoadMetricCards(
   rows: Array<{
     pond_id?: number | string | null

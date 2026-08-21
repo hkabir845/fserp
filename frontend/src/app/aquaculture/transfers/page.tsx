@@ -4,9 +4,20 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRightLeft, Beaker, FileBarChart, Fish, Plus, RefreshCw, Trash2, Pencil } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  ArrowRightLeft,
+  Beaker,
+  FileBarChart,
+  Fish,
+  RefreshCw,
+  Trash2,
+  Pencil,
+  Scale,
+} from 'lucide-react'
 import { AquaculturePageShell } from '@/components/aquaculture/AquaculturePageShell'
-import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
+import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, PipelineStatCard } from '@/components/aquaculture/AquacultureUi'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
@@ -1133,12 +1144,13 @@ export default function AquacultureFishTransfersPage() {
         </>
       }
     >
-      <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-        {aquacultureT('fishTransferRetiredNote', lang)}
-      </p>
+      <div className="rounded-lg border border-amber-200/80 bg-amber-50/90 px-3.5 py-2.5 text-sm leading-relaxed text-amber-950">
+        <p className="font-medium">{aquacultureT('transferHistoryHeading', lang)}</p>
+        <p className="mt-1 text-xs text-amber-900/90">{aquacultureT('fishTransferRetiredNote', lang)}</p>
+      </div>
 
       {helpNote ? (
-        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground/85">
+        <p className="mt-3 rounded-lg border border-border bg-muted/30 px-3.5 py-2 text-xs leading-relaxed text-muted-foreground">
           {helpNote}
         </p>
       ) : null}
@@ -1156,189 +1168,266 @@ export default function AquacultureFishTransfersPage() {
         </div>
       ) : (
         <>
-          <p className="mt-4 text-xs text-muted-foreground">
-            Total in list:{' '}
-            <span className="font-medium tabular-nums text-foreground">{formatNumber(totalKg, 2)} kg</span>
-            {totalFish > 0 ? (
-              <>
-                {' '}
-                ·{' '}
-                <span className="font-medium tabular-nums text-foreground">{formatNumber(totalFish, 0)}</span> head
-              </>
-            ) : null}
-          </p>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
-            <table className="min-w-[980px] w-full text-left text-sm">
-              <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">{uiT("date")}</th>
-                  <th className="px-4 py-3">{aquacultureT('fromToCol', lang)}</th>
-                  <th className="px-4 py-3">{aquacultureT('species', lang)}</th>
-                  <th className="px-4 py-3 text-right">Kg</th>
-                  <th className="px-4 py-3 text-right">{pick('Heads', 'Head (টি)')}</th>
-                  <th className="px-4 py-3 text-right">{aquacultureT('transferFryCost', lang)}</th>
-                  <th className="px-4 py-3 text-right">{aquacultureT('transferOtherExpense', lang)}</th>
-                  <th className="px-4 py-3 text-right">{aquacultureT('costMoved', lang)}</th>
-                  <th className="px-4 py-3 text-right">{aquacultureT('soldForCol', lang)}</th>
-                  <th className="px-4 py-3 text-right">{aquacultureT('marginEarnedCol', lang)}</th>
-                  <th className="px-4 py-3">GL 1581</th>
-                  <th className="px-4 py-3 text-right">{uiT("actions")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/70">
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
-                      No transfers yet. Example: log fry on a vendor bill (kg + heads), then record a transfer with each
-                      line showing destination pond, kg moved, and head count (required). Optional cost per line
-                      reallocates nursing biological cost to grow-out ponds.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((t) => {
-                    const kg = t.lines.reduce((a, l) => a + (Number.parseFloat(l.weight_kg) || 0), 0)
-                    const heads = t.lines.reduce((a, l) => a + (l.fish_count != null ? Number(l.fish_count) : 0), 0)
-                    const cost =
-                      Number.parseFloat(t.cost_total ?? '') ||
-                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.cost_amount) || 0), 0)
-                    const fryCost =
-                      Number.parseFloat(t.fry_cost_total ?? '') ||
-                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.fry_cost_amount ?? '') || 0), 0)
-                    const otherExpense =
-                      Number.parseFloat(t.other_expense_total ?? '') ||
-                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.other_expense_amount ?? '') || 0), 0)
-                    const soldFor =
-                      Number.parseFloat(t.sale_total ?? '') ||
-                      t.lines.reduce((a, l) => a + (Number.parseFloat(l.sale_amount ?? '') || 0), 0)
-                    const margin =
-                      Number.parseFloat(t.margin_total ?? '') || (soldFor > 0 ? soldFor - cost : 0)
-                    const priceBasis = t.lines.find((l) => (l.price_basis || '').trim())?.price_basis || ''
-                    const dest = t.lines
-                      .map((l) => {
-                        const h = l.fish_count != null ? `, ${formatNumber(Number(l.fish_count), 0)} head` : ''
-                        return `${l.to_pond_name} (${l.weight_kg} kg${h})`
-                      })
-                      .join('; ')
-                    return (
-                      <tr key={t.id} className="align-top text-foreground">
-                        <td className="px-4 py-3 whitespace-nowrap">{formatDateOnly(t.transfer_date)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-start gap-1.5 font-medium text-foreground">
-                            <ArrowRightLeft className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                            <span>
-                              {t.from_pond_name}
-                              {t.from_production_cycle_name ? (
-                                <span className="font-normal text-muted-foreground"> ({t.from_production_cycle_name})</span>
-                              ) : null}
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <PipelineStatCard
+              title={aquacultureT('totalInList', lang)}
+              value={formatNumber(rows.length, 0)}
+              sub={pick('Transfers', 'স্থানান্তর')}
+              icon={ArrowRightLeft}
+              tone="slate"
+            />
+            <PipelineStatCard
+              title="Kg"
+              value={formatNumber(totalKg, 2)}
+              sub={pick('Total weight', 'মোট ওজন')}
+              icon={Scale}
+              tone="sky"
+            />
+            <PipelineStatCard
+              title={pick('Heads', 'Head (টি)')}
+              value={formatNumber(totalFish, 0)}
+              sub={pick('Total fish', 'মোট মাছ')}
+              icon={Fish}
+              tone="emerald"
+            />
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {rows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-5 py-10 text-center">
+                <p className="text-sm text-muted-foreground">{aquacultureT('noTransfersYet', lang)}</p>
+                <Link
+                  href="/aquaculture/sales"
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                >
+                  <Fish className="h-4 w-4" aria-hidden />
+                  {aquacultureT('goToFishSales', lang)}
+                </Link>
+              </div>
+            ) : (
+              rows.map((t) => {
+                const kg = t.lines.reduce((a, l) => a + (Number.parseFloat(l.weight_kg) || 0), 0)
+                const heads = t.lines.reduce((a, l) => a + (l.fish_count != null ? Number(l.fish_count) : 0), 0)
+                const cost =
+                  Number.parseFloat(t.cost_total ?? '') ||
+                  t.lines.reduce((a, l) => a + (Number.parseFloat(l.cost_amount) || 0), 0)
+                const fryCost =
+                  Number.parseFloat(t.fry_cost_total ?? '') ||
+                  t.lines.reduce((a, l) => a + (Number.parseFloat(l.fry_cost_amount ?? '') || 0), 0)
+                const otherExpense =
+                  Number.parseFloat(t.other_expense_total ?? '') ||
+                  t.lines.reduce((a, l) => a + (Number.parseFloat(l.other_expense_amount ?? '') || 0), 0)
+                const soldFor =
+                  Number.parseFloat(t.sale_total ?? '') ||
+                  t.lines.reduce((a, l) => a + (Number.parseFloat(l.sale_amount ?? '') || 0), 0)
+                const margin =
+                  Number.parseFloat(t.margin_total ?? '') || (soldFor > 0 ? soldFor - cost : 0)
+                const priceBasis = t.lines.find((l) => (l.price_basis || '').trim())?.price_basis || ''
+                const docs = t.internal_documents ?? []
+
+                return (
+                  <article
+                    key={t.id}
+                    className="overflow-hidden rounded-xl border border-border bg-white shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 bg-muted/25 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <time className="text-sm font-semibold tabular-nums text-foreground">
+                            {formatDateOnly(t.transfer_date)}
+                          </time>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-foreground/80 ring-1 ring-border">
+                            {t.fish_species_label || t.fish_species}
+                          </span>
+                          {t.gl_posted ? (
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 ring-1 ring-emerald-200">
+                              {aquacultureT('transferGlPosted', lang)}
+                              {t.gl_total_amount
+                                ? ` · ${sym}${formatNumber(Number(t.gl_total_amount), 2)}`
+                                : ''}
                             </span>
+                          ) : cost > 0 ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-border">
+                              {aquacultureT('transferGlNotPosted', lang)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {t.from_production_cycle_name ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {aquacultureT('cycle', lang)}: {t.from_production_cycle_name}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="inline-flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(t)}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title={aquacultureT('editTransfer', lang)}
+                          aria-label={aquacultureT('editTransfer', lang)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          {uiT('edit')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void remove(t)}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
+                          title={aquacultureT('removeTransferRollback', lang)}
+                          aria-label={aquacultureT('removeTransfer', lang)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                      <div className="min-w-0 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="font-semibold text-foreground">{t.from_pond_name}</span>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            {aquacultureT('transferDestination', lang)}
+                          </span>
+                        </div>
+                        <ul className="space-y-1.5">
+                          {t.lines.map((l) => (
+                            <li
+                              key={l.id}
+                              className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-medium text-foreground">{l.to_pond_name}</p>
+                                {l.to_production_cycle_name ? (
+                                  <p className="text-xs text-muted-foreground">{l.to_production_cycle_name}</p>
+                                ) : null}
+                              </div>
+                              <p className="shrink-0 tabular-nums text-foreground/90">
+                                {formatNumber(Number.parseFloat(l.weight_kg) || 0, 2)} kg
+                                {l.fish_count != null ? (
+                                  <span className="text-muted-foreground">
+                                    {' '}
+                                    · {formatNumber(Number(l.fish_count), 0)} {pick('head', 'টি')}
+                                  </span>
+                                ) : null}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                        {t.memo?.trim() ? (
+                          <p className="text-xs leading-relaxed text-muted-foreground">{t.memo.trim()}</p>
+                        ) : null}
+                      </div>
+
+                      <div className="min-w-0 space-y-3">
+                        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2">
+                            <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              Kg
+                            </dt>
+                            <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+                              {formatNumber(kg, 2)}
+                            </dd>
                           </div>
-                          <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{dest}</p>
-                          {t.memo?.trim() ? <p className="mt-1 text-xs text-muted-foreground">{t.memo.trim()}</p> : null}
-                        </td>
-                        <td className="px-4 py-3 text-foreground/85">{t.fish_species_label || t.fish_species}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatNumber(kg, 2)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatNumber(heads, 0)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {cost > 0 ? `${sym}${formatNumber(fryCost, 2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {cost > 0 ? `${sym}${formatNumber(otherExpense, 2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums font-medium">
+                          <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2">
+                            <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {pick('Heads', 'Head (টি)')}
+                            </dt>
+                            <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+                              {formatNumber(heads, 0)}
+                            </dd>
+                          </div>
+                          <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2">
+                            <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {aquacultureT('transferBookCost', lang)}
+                            </dt>
+                            <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+                              {cost > 0 ? (
+                                `${sym}${formatNumber(cost, 2)}`
+                              ) : kg > 0 ? (
+                                <span className="text-warning-foreground">{pick('Not set', 'সেট নেই')}</span>
+                              ) : (
+                                '—'
+                              )}
+                            </dd>
+                          </div>
+                          <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2">
+                            <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {aquacultureT('soldForCol', lang)}
+                            </dt>
+                            <dd
+                              className="mt-0.5 text-sm font-semibold tabular-nums text-foreground"
+                              title={priceBasis || undefined}
+                            >
+                              {soldFor > 0 ? `${sym}${formatNumber(soldFor, 2)}` : '—'}
+                            </dd>
+                          </div>
+                          <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2">
+                            <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {aquacultureT('marginEarnedCol', lang)}
+                            </dt>
+                            <dd
+                              className={`mt-0.5 text-sm font-semibold tabular-nums ${
+                                soldFor > 0 && margin > 0 ? 'text-primary' : 'text-foreground'
+                              }`}
+                            >
+                              {soldFor > 0 ? `${sym}${formatNumber(margin, 2)}` : '—'}
+                            </dd>
+                          </div>
                           {cost > 0 ? (
-                            `${sym}${formatNumber(cost, 2)}`
-                          ) : kg > 0 ? (
-                            <span className="text-warning-foreground" title="Edit and save to fill from source pond P&L">
-                              Not set
-                            </span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums" title={priceBasis || undefined}>
-                          {soldFor > 0 ? `${sym}${formatNumber(soldFor, 2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums font-medium">
-                          {soldFor > 0 ? (
-                            <span className={margin > 0 ? 'text-primary' : undefined}>
-                              {`${sym}${formatNumber(margin, 2)}`}
-                            </span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {(t.internal_documents ?? []).length > 0 ? (
-                            <div className="mb-1 space-y-0.5">
-                              {(t.internal_documents ?? []).map((d) => (
-                                <div key={d.line_id} className="flex flex-wrap gap-x-1.5">
+                            <div className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2">
+                              <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                {aquacultureT('transferFryCost', lang)} /{' '}
+                                {aquacultureT('transferOtherExpense', lang)}
+                              </dt>
+                              <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground/90">
+                                {sym}
+                                {formatNumber(fryCost, 2)}
+                                <span className="text-muted-foreground"> · </span>
+                                {sym}
+                                {formatNumber(otherExpense, 2)}
+                              </dd>
+                            </div>
+                          ) : null}
+                        </dl>
+
+                        {docs.length > 0 ? (
+                          <div>
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {aquacultureT('transferDocuments', lang)}
+                            </p>
+                            <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                              {docs.map((d) => (
+                                <li key={d.line_id} className="flex flex-wrap gap-1.5">
                                   {d.invoice_number ? (
                                     <Link
                                       href={`/invoices?internal_trade=1&highlight=${d.invoice_id}`}
-                                      className="text-primary hover:underline"
+                                      className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-900 ring-1 ring-sky-200 hover:bg-sky-100"
                                       title={aquacultureT('internalSaleDocsHint', lang)}
                                     >
-                                      {d.invoice_number}
+                                      {aquacultureT('transferInvoice', lang)} {d.invoice_number}
                                     </Link>
                                   ) : null}
                                   {d.bill_number ? (
                                     <Link
                                       href={`/bills?internal_trade=1&highlight=${d.bill_id}`}
-                                      className="text-primary hover:underline"
+                                      className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-900 ring-1 ring-violet-200 hover:bg-violet-100"
                                       title={aquacultureT('internalSaleDocsHint', lang)}
                                     >
-                                      {d.bill_number}
+                                      {aquacultureT('transferBill', lang)} {d.bill_number}
                                     </Link>
                                   ) : null}
-                                </div>
+                                </li>
                               ))}
-                            </div>
-                          ) : null}
-                          {t.gl_posted ? (
-                            <span className="text-primary" title={t.journal_entry_number || undefined}>
-                              Posted
-                              {t.gl_total_amount ? ` · ${sym}${formatNumber(Number(t.gl_total_amount), 2)}` : ''}
-                            </span>
-                          ) : cost > 0 ? (
-                            <span className="text-muted-foreground">Not posted</span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex items-center justify-end gap-0.5">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                openEdit(t)
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted"
-                              title={aquacultureT('editTransfer', lang)}
-                              aria-label={aquacultureT('editTransfer', lang)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void remove(t)
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-rose-700 hover:bg-rose-50"
-                              title={aquacultureT('removeTransferRollback', lang)}
-                              aria-label={aquacultureT('removeTransfer', lang)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            </ul>
                           </div>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                )
+              })
+            )}
           </div>
         </>
       )}

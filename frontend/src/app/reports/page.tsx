@@ -264,6 +264,10 @@ const AQUACULTURE_BATCH_FILTER_REPORT_IDS = new Set<ReportType>([
   'aquaculture-sampling',
   'aquaculture-fish-sales',
   'aquaculture-pond-sales-comprehensive',
+  'aquaculture-feed-consumption',
+  'aquaculture-medicine-consumption',
+  'aquaculture-feed-medicine-consumption',
+  'aquaculture-expenses',
 ])
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [

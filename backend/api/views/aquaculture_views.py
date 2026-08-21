@@ -192,6 +192,7 @@ from api.services.aquaculture_bio_asset_cost_service import lookup_bio_cost_per_
 from api.services.aquaculture_pond_stock_service import (
     amend_pond_warehouse_inter_pond_transfer,
     consume_pond_feed_on_advice_apply,
+    consume_pond_feed_kg_with_batch_split,
     consume_pond_warehouse_stock,
     feed_inventory_qty_from_kg,
     pond_warehouse_stock_matrix,
@@ -2522,6 +2523,36 @@ def aquaculture_pond_warehouse_consume(request):
         )
 
     try:
+        if cat == "feed_consumed" and cycle_id is None and feed_w_kg is not None and feed_w_kg > 0:
+            sack_sz_consume: int | None = None
+            sack_raw2 = body.get("sack_size_kg")
+            if sack_raw2 not in (None, ""):
+                try:
+                    sack_sz_consume = int(sack_raw2)
+                except (TypeError, ValueError):
+                    sack_sz_consume = None
+            expenses = consume_pond_feed_kg_with_batch_split(
+                company_id=cid,
+                pond=pond,
+                production_cycle_id=None,
+                applied_kg=feed_w_kg,
+                sack_size_kg=sack_sz_consume,
+                item=item,
+                expense_date=ed,
+                memo=memo,
+            )
+            expense_obj = expenses[0]
+            rows = pond_warehouse_stock_rows(cid, pond_id)
+            return JsonResponse(
+                {
+                    "pond_id": pond_id,
+                    "expense": _expense_to_json(expense_obj),
+                    "expenses": [_expense_to_json(x) for x in expenses],
+                    "batch_split_count": len(expenses),
+                    "items": rows,
+                },
+                status=201,
+            )
         expense_obj = consume_pond_warehouse_stock(
             company_id=cid,
             pond=pond,
@@ -6118,6 +6149,14 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                 if not Item.objects.filter(pk=feed_item_id, company_id=cid).exists():
                     return JsonResponse({"detail": "feed_item_id not found for this company"}, status=400)
                 try:
+                    snap = a.pond_status_snapshot if isinstance(a.pond_status_snapshot, dict) else {}
+                    raw_temp = snap.get("water_temp_c") if isinstance(snap, dict) else None
+                    apply_temp: Decimal | None = None
+                    if raw_temp not in (None, ""):
+                        try:
+                            apply_temp = Decimal(str(raw_temp))
+                        except Exception:
+                            apply_temp = None
                     expense_obj = consume_pond_feed_on_advice_apply(
                         company_id=cid,
                         pond=pond,
@@ -6127,6 +6166,7 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
                         sack_size_kg=int(a.sack_size_kg) if a.sack_size_kg is not None else None,
                         feed_item_id=feed_item_id,
                         expense_date=a.target_date,
+                        water_temp_c=apply_temp,
                     )
                 except StockBusinessError as ex:
                     return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
@@ -6139,6 +6179,41 @@ def aquaculture_feeding_advice_apply(request, advice_id: int):
         a.applied_by = user
         if expense_obj:
             a.linked_expense = expense_obj
+            if a.production_cycle_id is None:
+                from api.services.aquaculture_feeding_advice_service import (
+                    allocate_feed_kg_across_batches,
+                    compute_batch_feed_demand_shares,
+                )
+
+                snap = a.pond_status_snapshot if isinstance(a.pond_status_snapshot, dict) else {}
+                snap = dict(snap) if isinstance(snap, dict) else {}
+                raw_temp = snap.get("water_temp_c")
+                snap_temp: Decimal | None = None
+                if raw_temp not in (None, ""):
+                    try:
+                        snap_temp = Decimal(str(raw_temp))
+                    except Exception:
+                        snap_temp = None
+                shares = compute_batch_feed_demand_shares(cid, pond.id, water_temp_c=snap_temp)
+                if len(shares) >= 2:
+                    alloc = allocate_feed_kg_across_batches(applied_kg, shares)
+                    snap["applied_batch_feed_allocation"] = {
+                        "method": "sampling_biomass_x_worldfish_bw_pct",
+                        "applied_total_kg": str(applied_kg),
+                        "batch_count": len(alloc),
+                        "batches": [
+                            {
+                                "production_cycle_id": b.get("production_cycle_id"),
+                                "production_cycle_name": b.get("production_cycle_name"),
+                                "allocated_kg": b.get("allocated_kg"),
+                                "share_fraction": b.get("share_fraction"),
+                                "biomass_kg": b.get("biomass_kg"),
+                                "bw_pct_per_day": b.get("bw_pct_per_day"),
+                            }
+                            for b in alloc
+                        ],
+                    }
+                    a.pond_status_snapshot = snap
         a.save()
 
     a = _feeding_advice_for_company(cid, advice_id)

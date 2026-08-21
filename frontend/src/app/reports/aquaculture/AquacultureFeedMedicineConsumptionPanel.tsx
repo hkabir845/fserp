@@ -44,6 +44,8 @@ type ConsumptionLine = {
   amount?: string | number
   source_doc?: string
   memo?: string
+  production_cycle_id?: number | null
+  production_cycle_name?: string
 }
 
 type ConsumptionGroup = {
@@ -218,6 +220,7 @@ function DailyFeedTable({
 
 function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
   if (!lines.length) return null
+  const showBatch = lines.some((l) => (l.production_cycle_name || '').trim() || l.production_cycle_id != null)
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
@@ -225,6 +228,7 @@ function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
           <tr className="border-b text-left text-xs text-muted-foreground">
             <th className="px-2 py-1">Date</th>
             <th className="px-2 py-1">Type</th>
+            {showBatch ? <th className="px-2 py-1">Batch</th> : null}
             <th className="px-2 py-1">Item</th>
             <th className="px-2 py-1 text-right">Qty</th>
             <th className="px-2 py-1 text-right">Sacks</th>
@@ -242,6 +246,11 @@ function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
               <tr key={ln.id ?? `${ln.entry_date}-${ln.kind}-${ln.item_name}`}>
                 <td className="px-2 py-1.5 whitespace-nowrap">{ln.entry_date}</td>
                 <td className="px-2 py-1.5">{ln.kind_label || ln.kind}</td>
+                {showBatch ? (
+                  <td className="px-2 py-1.5 text-muted-foreground">
+                    {(ln.production_cycle_name || '').trim() || '—'}
+                  </td>
+                ) : null}
                 <td className="px-2 py-1.5">{ln.item_name || '—'}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">
                   {ln.quantity != null ? `${ln.quantity}${ln.unit ? ` ${ln.unit}` : ''}` : '—'}
@@ -421,10 +430,10 @@ export function AquacultureFeedMedicineConsumptionPanel({
   const showFarmDaily = showFeed && !pondScopeLabel && groups.length > 1 && farmDaily.length > 0
   const periodHint =
     mode === 'medicine'
-      ? 'Medicine consumed from pond warehouses by day and entry. Optional pond and medicine filters narrow the ledger.'
+      ? 'Medicine consumed from pond warehouses by day and entry. Optional pond, batch, and medicine filters narrow the ledger.'
       : mode === 'feed'
-        ? 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond and feed filters narrow the ledger.'
-        : 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond, feed, and medicine filters narrow the ledger.'
+        ? 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond, batch, and feed filters narrow the ledger. Multi-batch ponds split feed by sampling × WorldFish demand.'
+        : 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond, batch, feed, and medicine filters narrow the ledger.'
   const intro =
     mode === 'medicine'
       ? 'Pond medicine consumption — daily totals and entry detail at inventory cost (BDT).'

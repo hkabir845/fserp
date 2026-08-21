@@ -32,6 +32,7 @@ import { getCurrencySymbol } from '@/utils/currency'
 import {
   AdvicePlanCard,
   AdviceRichText,
+  BatchFeedAllocationPanel,
   FeedingDoseEditor,
   FeedingInsightHero,
   MealPlanTable,
@@ -1146,6 +1147,8 @@ export default function AquacultureFeedingPage() {
                   }
                 />
               )}
+
+              <BatchFeedAllocationPanel row={selected} />
 
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-white px-4 py-3 shadow-sm">
                 <div className="min-w-0 text-xs text-muted-foreground">

@@ -649,10 +649,14 @@ def consume_pond_warehouse_stock(
     feed_weight_kg: Decimal | None = None,
     feed_sack_count: Decimal | None = None,
     sack_size_kg: int | None = None,
+    skip_empty_sacks: bool = False,
 ) -> AquacultureExpense:
     """
     Dr COGS / Cr inventory at average cost; creates expense; decrements pond warehouse.
     Use expense_category feed_consumed or medicine_consumed (same GL pattern as POS-less pond use).
+
+    ``skip_empty_sacks``: when True, do not create empty-sack scrap (used when a multi-batch feed
+    split applies empty sacks once on the total kg).
     """
     ec = (expense_category or "").strip()
     if ec not in POND_WAREHOUSE_CONSUMPTION_CATEGORIES:
@@ -726,7 +730,7 @@ def consume_pond_warehouse_stock(
 
     decrement_pond_lines(company_id, pond.id, lines_data)
 
-    if ec == "feed_consumed":
+    if ec == "feed_consumed" and not skip_empty_sacks:
         opened = apply_empty_sacks_from_feed_consumption(
             company_id=company_id,
             pond_id=pond.id,
@@ -759,30 +763,180 @@ def consume_pond_feed_on_advice_apply(
     sack_size_kg: int | None,
     feed_item_id: int,
     expense_date: date,
+    water_temp_c: Decimal | None = None,
 ) -> AquacultureExpense:
-    """Dr COGS / Cr inventory; creates feed_consumed expense; decrements pond warehouse."""
+    """
+    Dr COGS / Cr inventory; creates feed_consumed expense(s); decrements pond warehouse.
+
+    When ``production_cycle_id`` is None and the pond has multiple stocking batches with
+    sampling/WorldFish demand, posts one expense per batch (kg split by daily demand).
+    Returns the primary expense (largest share) for advice.linked_expense.
+    """
     item = Item.objects.filter(pk=feed_item_id, company_id=company_id).first()
     if not item:
         raise StockBusinessError("Feed item not found for this company.")
 
-    qty = feed_inventory_qty_from_kg(item, applied_kg, sack_size_kg)
-    if qty <= 0:
-        raise StockBusinessError("Computed consumption quantity is zero.")
-
-    memo = f"Pond warehouse feed consumed · feeding advice #{advice_id}"[:5000]
-    return consume_pond_warehouse_stock(
+    expenses = consume_pond_feed_kg_with_batch_split(
         company_id=company_id,
         pond=pond,
         production_cycle_id=production_cycle_id,
-        expense_category="feed_consumed",
-        expense_date=expense_date,
+        applied_kg=applied_kg,
+        sack_size_kg=sack_size_kg,
         item=item,
-        quantity=qty,
-        memo=memo,
-        feed_weight_kg=applied_kg,
-        feed_sack_count=None,
+        expense_date=expense_date,
+        advice_id=advice_id,
+        water_temp_c=water_temp_c,
+    )
+    return expenses[0]
+
+
+@transaction.atomic
+def consume_pond_feed_kg_with_batch_split(
+    *,
+    company_id: int,
+    pond: AquaculturePond,
+    production_cycle_id: int | None,
+    applied_kg: Decimal,
+    sack_size_kg: int | None,
+    item: Item,
+    expense_date: date,
+    advice_id: int | None = None,
+    memo: str | None = None,
+    water_temp_c: Decimal | None = None,
+) -> list[AquacultureExpense]:
+    """
+    Consume ``applied_kg`` of feed from the pond warehouse, tagging production cycles.
+
+    - Explicit ``production_cycle_id`` → single expense on that batch.
+    - Otherwise split across batches by sampling biomass × WorldFish %BW daily demand.
+    - One batch only → tag that cycle.
+    - No batch demand → untagged pond-level expense (legacy behaviour).
+    """
+    from api.services.aquaculture_feeding_advice_service import (
+        allocate_decimal_by_weights,
+        allocate_feed_kg_across_batches,
+        compute_batch_feed_demand_shares,
+    )
+
+    applied = Decimal(str(applied_kg))
+    if applied_kg is None or applied <= 0:
+        raise StockBusinessError("Applied feed kg must be greater than zero.")
+
+    qty_total = feed_inventory_qty_from_kg(item, applied, sack_size_kg)
+    if qty_total <= 0:
+        raise StockBusinessError("Computed consumption quantity is zero.")
+
+    advice_bit = f" · feeding advice #{advice_id}" if advice_id is not None else ""
+    base_memo = (memo or f"Pond warehouse feed consumed{advice_bit}").strip()
+
+    # Manager chose one batch — keep single tagging.
+    if production_cycle_id is not None:
+        return [
+            consume_pond_warehouse_stock(
+                company_id=company_id,
+                pond=pond,
+                production_cycle_id=production_cycle_id,
+                expense_category="feed_consumed",
+                expense_date=expense_date,
+                item=item,
+                quantity=qty_total,
+                memo=base_memo[:5000],
+                feed_weight_kg=applied,
+                feed_sack_count=None,
+                sack_size_kg=sack_size_kg,
+            )
+        ]
+
+    shares = compute_batch_feed_demand_shares(
+        company_id,
+        pond.id,
+        water_temp_c=water_temp_c,
+        production_cycle_id=None,
+    )
+    if len(shares) <= 1:
+        only_cy = int(shares[0]["production_cycle_id"]) if shares else None
+        return [
+            consume_pond_warehouse_stock(
+                company_id=company_id,
+                pond=pond,
+                production_cycle_id=only_cy,
+                expense_category="feed_consumed",
+                expense_date=expense_date,
+                item=item,
+                quantity=qty_total,
+                memo=base_memo[:5000],
+                feed_weight_kg=applied,
+                feed_sack_count=None,
+                sack_size_kg=sack_size_kg,
+            )
+        ]
+
+    allocated = allocate_feed_kg_across_batches(applied, shares)
+    kg_parts = [_d_local(a.get("allocated_kg")) for a in allocated]
+    # Drop zero-kg rounding leftovers (should not happen after remainder sweep).
+    keep = [(a, kg) for a, kg in zip(allocated, kg_parts) if kg > 0]
+    if not keep:
+        raise StockBusinessError("Could not allocate feed kg across batches.")
+
+    weights = [_d_local(a.get("share_weight") or a.get("daily_demand_kg")) for a, _ in keep]
+    qty_parts = allocate_decimal_by_weights(qty_total, weights, quantize_to=Decimal("0.0001"))
+
+    # Pre-check total QOH once.
+    assert_pond_lines_within_qoh(company_id, pond.id, [{"item": item, "quantity": qty_total}])
+
+    expenses: list[AquacultureExpense] = []
+    for (share, kg), qty in zip(keep, qty_parts):
+        if qty <= 0:
+            # Extremely small qty rounding — fold into next by skipping (should be rare).
+            continue
+        cy_id = int(share["production_cycle_id"])
+        cy_name = (share.get("production_cycle_name") or f"Cycle #{cy_id}").strip()
+        frac = share.get("share_fraction") or ""
+        line_memo = (
+            f"{base_memo} · batch {cy_name} ({frac} of pond feed, sampling×WorldFish)"
+        )[:5000]
+        expenses.append(
+            consume_pond_warehouse_stock(
+                company_id=company_id,
+                pond=pond,
+                production_cycle_id=cy_id,
+                expense_category="feed_consumed",
+                expense_date=expense_date,
+                item=item,
+                quantity=qty,
+                memo=line_memo,
+                feed_weight_kg=kg,
+                feed_sack_count=None,
+                sack_size_kg=sack_size_kg,
+                skip_empty_sacks=True,
+            )
+        )
+
+    if not expenses:
+        raise StockBusinessError("Could not post batch-split feed consumption.")
+
+    # Empty sacks once for the full applied kg (avoid ceil double-count across splits).
+    opened = apply_empty_sacks_from_feed_consumption(
+        company_id=company_id,
+        pond_id=pond.id,
+        item=item,
+        quantity=qty_total,
+        feed_weight_kg=applied,
         sack_size_kg=sack_size_kg,
     )
+    if opened > 0:
+        AquacultureExpense.objects.filter(pk=expenses[0].pk).update(empty_sack_count=opened)
+        expenses[0].empty_sack_count = opened
+
+    # Primary = largest kg share (stable for linked_expense).
+    expenses.sort(key=lambda x: (_d_local(x.feed_weight_kg), x.id), reverse=True)
+    return expenses
+
+
+def _d_local(val) -> Decimal:
+    if val is None:
+        return Decimal("0")
+    return Decimal(str(val))
 
 
 def pond_warehouse_stock_rows(company_id: int, pond_id: int) -> list[dict]:

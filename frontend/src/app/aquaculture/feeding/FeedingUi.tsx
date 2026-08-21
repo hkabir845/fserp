@@ -221,6 +221,67 @@ export function DoseSummary({ row, compact }: { row: FeedingAdviceRow; compact?:
   )
 }
 
+/** Sampling × WorldFish share of pond feed across stocking batches. */
+export function BatchFeedAllocationPanel({ row }: { row: FeedingAdviceRow }) {
+  const snap = row.pond_status_snapshot as Record<string, unknown> | undefined
+  const applied = snap?.applied_batch_feed_allocation as Record<string, unknown> | undefined
+  const planned = snap?.batch_feed_allocation as Record<string, unknown> | undefined
+  const block = (applied?.batches ? applied : planned) as Record<string, unknown> | undefined
+  const batches = (Array.isArray(block?.batches) ? block.batches : []) as Array<Record<string, unknown>>
+  if (batches.length < 2) return null
+  const total =
+    (typeof block?.applied_total_kg === 'string' || typeof block?.applied_total_kg === 'number'
+      ? String(block.applied_total_kg)
+      : null) ||
+    (typeof block?.suggested_total_kg === 'string' || typeof block?.suggested_total_kg === 'number'
+      ? String(block.suggested_total_kg)
+      : null) ||
+    row.suggested_feed_kg
+  return (
+    <div className="rounded-xl border border-teal-200/80 bg-teal-50/50 px-4 py-3 shadow-sm">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-teal-950">
+        Batch feed split
+      </h4>
+      <p className="mt-1 text-[11px] leading-relaxed text-teal-900/80">
+        Sampling biomass × WorldFish % body-weight demand
+        {total ? ` · total ${total} kg` : ''}. Apply posts one consumption line per batch.
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="min-w-full text-xs">
+          <thead>
+            <tr className="border-b border-teal-200/80 text-left text-teal-900/70">
+              <th className="py-1 pr-2 font-medium">Batch</th>
+              <th className="px-2 py-1 text-right font-medium">Biomass kg</th>
+              <th className="px-2 py-1 text-right font-medium">%BW/day</th>
+              <th className="px-2 py-1 text-right font-medium">Feed kg</th>
+              <th className="px-2 py-1 text-right font-medium">Share</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-teal-100">
+            {batches.map((b) => {
+              const frac = Number(b.share_fraction ?? 0)
+              const pct = Number.isFinite(frac) ? `${(frac * 100).toFixed(1)}%` : '—'
+              return (
+                <tr key={String(b.production_cycle_id ?? b.production_cycle_name)}>
+                  <td className="py-1.5 pr-2 font-medium text-teal-950">
+                    {String(b.production_cycle_name || '—')}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{String(b.biomass_kg ?? '—')}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{String(b.bw_pct_per_day ?? '—')}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-teal-950">
+                    {String(b.allocated_kg ?? '—')}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-teal-900/80">{pct}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 /** Full-width plan card for the list panel (replaces cramped table rows). */
 export function AdvicePlanCard(props: {
   row: FeedingAdviceRow

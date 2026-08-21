@@ -11,6 +11,7 @@ The COGS / inventory journal is posted with entry_number AUTO-AQ-POND-{expense_i
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -93,6 +94,28 @@ def compute_pond_warehouse_consumption_rows(
     ).only("id", "linked_expense_id", "target_date", "status", "applied_at"):
         if adv.linked_expense_id:
             advice_by_expense[adv.linked_expense_id] = adv
+
+    # Multi-batch apply creates sibling expenses that share the advice id in memo only.
+    advice_ids_needed: set[int] = set()
+    memo_advice_hint: dict[int, int] = {}
+    for x in expenses:
+        if x.id in advice_by_expense:
+            continue
+        m = re.search(r"feeding advice\s*#(\d+)", x.memo or "", re.IGNORECASE)
+        if m:
+            try:
+                aid = int(m.group(1))
+            except (TypeError, ValueError):
+                continue
+            memo_advice_hint[x.id] = aid
+            advice_ids_needed.add(aid)
+    if advice_ids_needed:
+        for adv in AquacultureFeedingAdvice.objects.filter(
+            company_id=cid, pk__in=advice_ids_needed
+        ).only("id", "linked_expense_id", "target_date", "status", "applied_at"):
+            for eid, aid in memo_advice_hint.items():
+                if aid == adv.id and eid not in advice_by_expense:
+                    advice_by_expense[eid] = adv
 
     # Map expense -> auto journal (entry_number AUTO-AQ-POND-{id}-COGS).
     expected_numbers = {f"AUTO-AQ-POND-{eid}-COGS": eid for eid in exp_ids}

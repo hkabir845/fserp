@@ -1547,10 +1547,17 @@ def _report_feed_medicine_consumption(
 
     ``kind``: ``feed``, ``medicine``, or None (both — legacy combined report).
     Primary view: per-pond daily totals with farm grand totals and line detail.
+    Optional ``cycle_id`` filters to one stocking batch (expenses tagged at feed apply).
     """
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     feed_item_id, ferr = _item_filter(company_id, request.GET.get("feed_item_id"))
     if ferr:
         return ferr
@@ -1567,6 +1574,7 @@ def _report_feed_medicine_consumption(
     rows = compute_pond_warehouse_consumption_rows(
         company_id,
         pond_id=pond_filter_id,
+        production_cycle_id=cycle_filter_id,
         date_from=start,
         date_to=end,
         kind=kind_norm,
@@ -1794,6 +1802,10 @@ def _report_feed_medicine_consumption(
     }
     if pond_filter_id is not None:
         out["filter_pond_id"] = pond_filter_id
+    if cycle_filter_id is not None:
+        out["filter_cycle_id"] = cycle_filter_id
+        if scoped_cycle is not None:
+            out["filter_cycle_name"] = (scoped_cycle.name or "").strip() or f"Cycle #{scoped_cycle.id}"
     if feed_item_id is not None:
         out["filter_feed_item_id"] = feed_item_id
     if medicine_item_id is not None:

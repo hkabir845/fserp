@@ -19,7 +19,10 @@ from django.db.models import Sum
 from django.utils import timezone as django_timezone
 
 from api.models import AquacultureExpense, AquaculturePond, AquacultureProductionCycle
-from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+from api.services.aquaculture_stock_service import (
+    compute_fish_stock_position_breakdown_rows,
+    compute_fish_stock_position_rows,
+)
 from api.services.aquaculture_constants import POND_ROLE_LABELS
 from api.services.aquaculture_i18n import company_language, normalize_lang, temp_factor_note, weather_tier_label, _pick
 from api.services.aquaculture_units import format_pond_area_decimal_for_api, format_two_decimal_places_for_api
@@ -97,6 +100,132 @@ def _mean_fish_weight_g_from_stock_row(stock_row: dict) -> tuple[Decimal | None,
         kg_each = bio / Decimal(n)
         return (kg_each * Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "implied net biomass ÷ fish count"
     return None, ""
+
+
+def allocate_decimal_by_weights(
+    total: Decimal,
+    weights: list[Decimal],
+    *,
+    quantize_to: Decimal = Decimal("0.01"),
+) -> list[Decimal]:
+    """
+    Split ``total`` across positive weights; remainder (rounding) sweeps to the largest share.
+    Zero-weight slots get zero. If all weights are zero, returns zeros (caller decides fallback).
+    """
+    if not weights:
+        return []
+    total_q = _d(total).quantize(quantize_to, rounding=ROUND_HALF_UP) if total is not None else Decimal("0")
+    if total_q <= 0:
+        return [Decimal("0")] * len(weights)
+    w_list = [_d(w) if _d(w) > 0 else Decimal("0") for w in weights]
+    w_sum = sum(w_list, Decimal("0"))
+    if w_sum <= 0:
+        return [Decimal("0")] * len(weights)
+    parts: list[Decimal] = []
+    for w in w_list:
+        if w <= 0:
+            parts.append(Decimal("0"))
+            continue
+        parts.append((total_q * w / w_sum).quantize(quantize_to, rounding=ROUND_HALF_UP))
+    allocated = sum(parts, Decimal("0"))
+    remainder = (total_q - allocated).quantize(quantize_to, rounding=ROUND_HALF_UP)
+    if remainder != 0:
+        eligible = [i for i, w in enumerate(w_list) if w > 0]
+        if eligible:
+            sweep_idx = max(eligible, key=lambda i: (parts[i], w_list[i], -i))
+            parts[sweep_idx] = (parts[sweep_idx] + remainder).quantize(quantize_to, rounding=ROUND_HALF_UP)
+    return parts
+
+
+def compute_batch_feed_demand_shares(
+    company_id: int,
+    pond_id: int,
+    *,
+    water_temp_c: Decimal | None = None,
+    production_cycle_id: int | None = None,
+    fish_species_filter: str | None = "tilapia",
+) -> list[dict]:
+    """
+    Per stocking batch (production cycle) daily feed demand from sampling biomass × WorldFish %BW.
+
+    Used to distribute a pond feeding event across co-resident batches so batch FCR / consumption
+    reports can filter by cycle. Rows without a cycle id or with zero demand are omitted.
+    """
+    lang = company_language(company_id)
+    rows = compute_fish_stock_position_breakdown_rows(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species_filter=fish_species_filter,
+        include_inactive_ponds=True,
+    )
+    shares: list[dict] = []
+    for stock_row in rows:
+        cy_id = stock_row.get("production_cycle_id")
+        if cy_id is None:
+            continue
+        try:
+            cy_id_int = int(cy_id)
+        except (TypeError, ValueError):
+            continue
+        biomass, biomass_src = _select_biomass_for_feeding_kg(stock_row)
+        if biomass <= 0:
+            continue
+        worldfish = worldfish_daily_bw_percent(stock_row, water_temp_c=water_temp_c, lang=lang)
+        rate_pct = _d(worldfish.get("chosen_bw_pct_per_day"))
+        if rate_pct <= 0:
+            continue
+        demand = (biomass * rate_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if demand <= 0:
+            continue
+        try:
+            fish_n = int(stock_row.get("implied_net_fish_count") or 0)
+        except (TypeError, ValueError):
+            fish_n = 0
+        shares.append(
+            {
+                "production_cycle_id": cy_id_int,
+                "production_cycle_name": (stock_row.get("production_cycle_name") or "").strip()
+                or f"Cycle #{cy_id_int}",
+                "fish_species": (stock_row.get("fish_species") or "").strip() or "tilapia",
+                "implied_net_fish_count": fish_n,
+                "biomass_kg": str(biomass),
+                "biomass_source": biomass_src or None,
+                "bw_pct_per_day": str(rate_pct),
+                "daily_demand_kg": str(demand),
+                "share_weight": str(demand),
+                "worldfish_stage": worldfish.get("worldfish_stage"),
+                "mean_fish_weight_g": worldfish.get("mean_fish_weight_g"),
+                "worldfish": worldfish,
+                "stock_position": _json_safe_stock_row(stock_row),
+            }
+        )
+    return shares
+
+
+def allocate_feed_kg_across_batches(
+    total_kg: Decimal,
+    shares: list[dict],
+) -> list[dict]:
+    """
+    Attach ``allocated_kg`` (and ``share_fraction``) to each demand share so sums equal ``total_kg``.
+    """
+    total = _d(total_kg)
+    if not shares:
+        return []
+    weights = [_d(s.get("share_weight") or s.get("daily_demand_kg")) for s in shares]
+    parts = allocate_decimal_by_weights(total, weights)
+    w_sum = sum((_d(w) for w in weights if _d(w) > 0), Decimal("0"))
+    out: list[dict] = []
+    for s, kg in zip(shares, parts):
+        row = dict(s)
+        row["allocated_kg"] = str(kg)
+        w = _d(s.get("share_weight") or s.get("daily_demand_kg"))
+        row["share_fraction"] = (
+            str((w / w_sum).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)) if w_sum > 0 and w > 0 else "0"
+        )
+        out.append(row)
+    return out
 
 
 def _select_biomass_for_feeding_kg(stock_row: dict) -> tuple[Decimal, str]:
@@ -541,6 +670,7 @@ def _build_narrative(
     biomass_basis_kg: Decimal | None = None,
     biomass_basis_source: str = "",
     lang: str | None = "en",
+    batch_allocation: list[dict] | None = None,
 ) -> str:
     lang_n = normalize_lang(lang)
     pname = (pond.name or "").strip() or f"Pond #{pond.id}"
@@ -561,6 +691,22 @@ def _build_narrative(
             + (f" উৎপাদন চক্র: **{cycle.name}**।" if cycle else ""),
         )
     )
+    if batch_allocation and len(batch_allocation) >= 2 and cycle is None:
+        bits = []
+        for b in batch_allocation:
+            name = (b.get("production_cycle_name") or f"Cycle #{b.get('production_cycle_id')}").strip()
+            bits.append(f"{name}: **{b.get('allocated_kg')} kg**")
+        paras.append(
+            _pick(
+                lang_n,
+                "**Batch split (sampling × WorldFish %BW):** "
+                + "; ".join(bits)
+                + ". Applying this advice posts feed consumption to each batch in these shares.",
+                "**ব্যাচ ভাগ (নমুনা × WorldFish %BW):** "
+                + "; ".join(bits)
+                + "। প্রয়োগ করলে প্রতিটি ব্যাচে এই অনুপাতে খাবার খরচ লেখা হবে।",
+            )
+        )
     paras.append(
         _pick(
             lang_n,
@@ -717,6 +863,9 @@ def build_feeding_advice_payload(
     """
     Returns dict with keys: ai_advice_text, suggested_feed_kg (Decimal|None), pond_status_snapshot (dict).
     On error returns (None, message).
+
+    When ``production_cycle_id`` is omitted, suggested kg is the sum of WorldFish daily demand across
+    stocking batches (sampling biomass × %BW). Apply will split actual consumption the same way.
     """
     pond = AquaculturePond.objects.filter(pk=pond_id, company_id=company_id).first()
     if not pond:
@@ -730,6 +879,14 @@ def build_feeding_advice_payload(
         if not cycle:
             return None, "Production cycle not found for this pond"
 
+    lang = company_language(company_id)
+    batch_shares = compute_batch_feed_demand_shares(
+        company_id,
+        pond_id,
+        water_temp_c=water_temp_c,
+        production_cycle_id=production_cycle_id,
+    )
+
     rows = compute_fish_stock_position_rows(
         company_id,
         pond_id=pond_id,
@@ -737,18 +894,36 @@ def build_feeding_advice_payload(
         fish_species_filter="tilapia",
         include_inactive_ponds=True,
     )
-    if not rows:
+    if not rows and not batch_shares:
         return None, "Could not compute stock position"
-    stock_row = rows[0]
-    lang = company_language(company_id)
+    stock_row = rows[0] if rows else (batch_shares[0].get("stock_position") or {})
 
     biomass, biomass_basis_source = _select_biomass_for_feeding_kg(stock_row)
     worldfish = worldfish_daily_bw_percent(stock_row, water_temp_c=water_temp_c, lang=lang)
     rate_pct = _d(worldfish.get("chosen_bw_pct_per_day"))
 
     suggested: Decimal | None = None
-    if biomass > 0:
+    batch_allocation: list[dict] | None = None
+    if production_cycle_id is None and len(batch_shares) >= 1:
+        demand_total = sum((_d(s.get("daily_demand_kg")) for s in batch_shares), Decimal("0"))
+        if demand_total > 0:
+            suggested = demand_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            batch_allocation = allocate_feed_kg_across_batches(suggested, batch_shares)
+            biomass = sum((_d(s.get("biomass_kg")) for s in batch_shares), Decimal("0"))
+            biomass_basis_source = (
+                f"sum of {len(batch_shares)} batch sampling/WorldFish daily demands"
+            )
+            # Prefer pond-level narrative rate as demand-weighted average when multi-batch.
+            if biomass > 0:
+                rate_pct = (demand_total * Decimal("100") / biomass).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+    elif biomass > 0:
         suggested = (biomass * rate_pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if batch_shares:
+            batch_allocation = allocate_feed_kg_across_batches(
+                suggested or Decimal("0"), batch_shares
+            )
 
     recent = recent_direct_feed_kg_sum(company_id, pond_id, end_date=target_date, days=7)
 
@@ -787,7 +962,30 @@ def build_feeding_advice_payload(
             "model_note": "WorldFish-style tilapia bands + load/temperature guards; optional LLM hook later.",
         },
         "feeding_schedule": schedule,
-        "stock_position": _json_safe_stock_row(stock_row),
+        "stock_position": _json_safe_stock_row(stock_row) if stock_row else {},
+        "batch_feed_allocation": {
+            "method": "sampling_biomass_x_worldfish_bw_pct",
+            "batch_count": len(batch_allocation or []),
+            "suggested_total_kg": str(suggested) if suggested is not None else None,
+            "batches": [
+                {
+                    "production_cycle_id": b.get("production_cycle_id"),
+                    "production_cycle_name": b.get("production_cycle_name"),
+                    "biomass_kg": b.get("biomass_kg"),
+                    "biomass_source": b.get("biomass_source"),
+                    "bw_pct_per_day": b.get("bw_pct_per_day"),
+                    "daily_demand_kg": b.get("daily_demand_kg"),
+                    "allocated_kg": b.get("allocated_kg"),
+                    "share_fraction": b.get("share_fraction"),
+                    "worldfish_stage": b.get("worldfish_stage"),
+                    "mean_fish_weight_g": b.get("mean_fish_weight_g"),
+                    "implied_net_fish_count": b.get("implied_net_fish_count"),
+                }
+                for b in (batch_allocation or [])
+            ],
+        }
+        if batch_allocation
+        else None,
     }
 
     text = _build_narrative(
@@ -803,6 +1001,7 @@ def build_feeding_advice_payload(
         biomass_basis_kg=biomass if biomass > 0 else None,
         biomass_basis_source=biomass_basis_source,
         lang=lang,
+        batch_allocation=batch_allocation,
     )
 
     return {

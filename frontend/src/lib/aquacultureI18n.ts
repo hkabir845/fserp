@@ -513,10 +513,6 @@ const strings: Dict = {
   codeSort: { en: 'Code {code} · Sort {order}', bn: 'কোড {code} · সাজানো {order}' },
 
   // —— Transfers ——
-  noTransfersYet: {
-    en: 'No transfers yet. Example: log fry on a vendor bill (kg + heads), then record a transfer with each line showing destination pond, kg moved, and head count (required). Optional cost per line reallocates nursing biological cost to grow-out ponds.',
-    bn: 'এখনো স্থানান্তর নেই। উদাহরণ: ভেন্ডর বিলে ফ্রাই (kg + head), তারপর প্রতি লাইনে গন্তব্য পুকুর, kg ও head count সহ স্থানান্তর। লাইনে ঐচ্ছিক খরচ নার্সিং জৈবিক খরচ grow-out-এ স্থানান্তর।',
-  },
   noBookStockSource: { en: 'No book stock in the source pond for this species/cycle.', bn: 'এই প্রজাতি/চক্রের জন্য উৎস পুকুরে বই স্টক নেই।' },
   allFishUsed: { en: 'Other lines already use all available fish — reduce counts or check stock.', bn: 'অন্য লাইনে সব মাছ ব্যবহৃত — সংখ্যা কমান বা স্টক দেখুন।' },
   linkGrowOutFirst: { en: 'Link a grow-out pond on the same physical site from Ponds setup first.', bn: 'প্রথমে Ponds সেটআপ থেকে একই সাইটে grow-out পুকুর লিঙ্ক করুন।' },

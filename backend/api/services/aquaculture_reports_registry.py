@@ -67,6 +67,7 @@ from api.services.report_i18n import (
     note_medicine_consumption,
     note_fish_stock_breakdown,
     note_fish_stock_position,
+    note_fish_transfers,
     note_pond_sales_comprehensive,
     note_pond_total_inventory,
     note_pond_warehouse_stock,
@@ -97,6 +98,138 @@ def _decimal(s: str) -> Decimal:
         return Decimal(str(s))
     except Exception:
         return Decimal("0")
+
+
+def _internal_trade_docs_by_line(
+    company_id: int,
+    line_ids: list[int],
+    transfer_id_by_line: dict[int, int],
+) -> dict[int, dict[str, Any]]:
+    """Invoice, bill, and posted AUTO-IPT journals for inter-pond trade lines."""
+    from api.models import Bill, Invoice, JournalEntry
+    from api.services.aquaculture_internal_trade_posting import internal_trade_entry_numbers
+
+    if not line_ids:
+        return {}
+    inv_by_line = {
+        inv.internal_fish_transfer_line_id: inv
+        for inv in Invoice.all_objects.filter(internal_fish_transfer_line_id__in=line_ids)
+        if inv.internal_fish_transfer_line_id
+    }
+    bill_by_line = {
+        bill.internal_fish_transfer_line_id: bill
+        for bill in Bill.all_objects.filter(internal_fish_transfer_line_id__in=line_ids)
+        if bill.internal_fish_transfer_line_id
+    }
+    numbers: list[str] = []
+    planned: dict[int, tuple[str, str]] = {}
+    for lid in line_ids:
+        tid = transfer_id_by_line.get(lid)
+        if tid is None:
+            continue
+        inv_en, bill_en = internal_trade_entry_numbers(tid, lid)
+        planned[lid] = (inv_en, bill_en)
+        numbers.extend([inv_en, bill_en])
+    posted = set()
+    if numbers:
+        posted = set(
+            JournalEntry.objects.filter(
+                company_id=company_id,
+                entry_number__in=numbers,
+                is_posted=True,
+            ).values_list("entry_number", flat=True)
+        )
+    out: dict[int, dict[str, Any]] = {}
+    for lid in line_ids:
+        inv = inv_by_line.get(lid)
+        bill = bill_by_line.get(lid)
+        inv_en, bill_en = planned.get(lid, ("", ""))
+        inv_je = inv_en if inv_en in posted else ""
+        bill_je = bill_en if bill_en in posted else ""
+        inv_id = inv.id if inv else None
+        bill_id = bill.id if bill else None
+        inv_no = (inv.invoice_number or "").strip() if inv else ""
+        bill_no = (bill.bill_number or "").strip() if bill else ""
+        drill: dict[str, Any] = {}
+        if inv_id:
+            drill["sale_amount"] = {
+                "kind": "invoice",
+                "invoice_id": inv_id,
+                "label": inv_no or f"Invoice #{inv_id}",
+            }
+        if bill_id:
+            drill["cost_amount"] = {
+                "kind": "bill",
+                "bill_id": bill_id,
+                "label": bill_no or f"Bill #{bill_id}",
+            }
+            drill["total_cost"] = drill["cost_amount"]
+            drill["receiving_pond_liability"] = drill["cost_amount"]
+        out[lid] = {
+            "invoice_id": inv_id,
+            "invoice_number": inv_no,
+            "bill_id": bill_id,
+            "bill_number": bill_no,
+            "invoice_journal_number": inv_je,
+            "bill_journal_number": bill_je,
+            "gl_posted": bool(inv_je and bill_je),
+            "accounts": {
+                "interpond_current": "1595",
+                "internal_revenue": "4245",
+                "internal_cogs": "5245",
+                "biological_inventory": "1581",
+            },
+            "_drill": drill,
+        }
+    return out
+
+
+def _attach_internal_trade_docs_to_rows(company_id: int, body: dict[str, Any]) -> None:
+    """Stamp invoice/bill/journal fields onto fingerling statement and transfer lines."""
+    statement = body.get("statement_lines") or []
+    line_ids: list[int] = []
+    transfer_id_by_line: dict[int, int] = {}
+    for row in statement:
+        try:
+            lid = int(row.get("line_id") or 0)
+            tid = int(row.get("transfer_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if lid <= 0 or tid <= 0:
+            continue
+        line_ids.append(lid)
+        transfer_id_by_line[lid] = tid
+    docs = _internal_trade_docs_by_line(company_id, line_ids, transfer_id_by_line)
+    keys = (
+        "invoice_id",
+        "invoice_number",
+        "bill_id",
+        "bill_number",
+        "invoice_journal_number",
+        "bill_journal_number",
+        "gl_posted",
+        "accounts",
+        "_drill",
+    )
+
+    def _apply(row: dict[str, Any]) -> None:
+        try:
+            lid = int(row.get("line_id") or row.get("id") or 0)
+        except (TypeError, ValueError):
+            return
+        doc = docs.get(lid) or {}
+        for k in keys:
+            row[k] = doc.get(k) if k != "gl_posted" else bool(doc.get("gl_posted"))
+        if not row.get("accounts"):
+            row["accounts"] = {}
+        if not row.get("_drill"):
+            row["_drill"] = {}
+
+    for row in statement:
+        _apply(row)
+    for t in body.get("transfers") or []:
+        for ln in t.get("lines") or []:
+            _apply(ln)
 
 
 def _fish_per_kg_from_count_weight(count: int | None, weight_kg) -> str:
@@ -917,7 +1050,7 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
             sale_date__gte=start,
             sale_date__lte=end,
         )
-        .select_related("pond", "production_cycle")
+        .select_related("pond", "production_cycle", "invoice")
         .order_by("pond_id", "sale_date", "id")
     )
     if pond_filter_id is not None:
@@ -928,6 +1061,15 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
     for s in qs:
         sp = getattr(s, "fish_species", None) or "tilapia"
         spo = getattr(s, "fish_species_other", None) or ""
+        inv = s.invoice if s.invoice_id else None
+        inv_no = (inv.invoice_number or "").strip() if inv else ""
+        drill = {}
+        if s.invoice_id:
+            drill["total_amount"] = {
+                "kind": "invoice",
+                "invoice_id": s.invoice_id,
+                "label": inv_no or f"Invoice #{s.invoice_id}",
+            }
         by_pond[s.pond_id].append(
             {
                 "id": s.id,
@@ -943,6 +1085,10 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
                 "total_amount": str(s.total_amount),
                 "buyer_name": s.buyer_name or "",
                 "memo": (s.memo or "")[:200],
+                "invoice_id": s.invoice_id,
+                "invoice_number": inv_no,
+                "accounting_posted": bool(s.invoice_id),
+                "_drill": drill,
             }
         )
         pond_names[s.pond_id] = (s.pond.name or "").strip() if s.pond_id else ""
@@ -1245,6 +1391,8 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
                 "source_station_name": (e.source_station.station_name or "").strip()
                 if getattr(e, "source_station_id", None) and getattr(e, "source_station", None)
                 else "",
+                "bill_id": None,
+                "bill_number": "",
             }
         )
 
@@ -1282,12 +1430,21 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
         pid = line.aquaculture_pond_id
         pname = (brow.get("pond_name") or "").strip() or f"Pond #{pid}"
         pond_names[pid] = pname
+        bill_id = brow.get("bill_id")
+        bill_no = brow.get("bill_number") or ""
+        drill = {}
+        if bill_id:
+            drill["amount"] = {
+                "kind": "bill",
+                "bill_id": bill_id,
+                "label": bill_no or f"Bill #{bill_id}",
+            }
         by_pond[pid].append(
             {
                 "id": line.id,
                 "source": "bill",
-                "bill_id": brow.get("bill_id"),
-                "bill_number": brow.get("bill_number") or "",
+                "bill_id": bill_id,
+                "bill_number": bill_no,
                 "expense_date": brow["expense_date"],
                 "expense_category": brow["expense_category"],
                 "expense_category_label": brow["expense_category_label"],
@@ -1299,6 +1456,7 @@ def _report_expenses(company_id: int, start: date, end: date, request: HttpReque
                 "pond_allocations": [],
                 "source_station_id": None,
                 "source_station_name": "",
+                "_drill": drill,
             }
         )
 
@@ -2032,6 +2190,69 @@ def _report_fish_stock_adjustments(
     }
 
 
+def _fcr_data_coverage(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    pond_id: int | None = None,
+    production_cycle_id: int | None = None,
+) -> dict[str, Any]:
+    """Why an FCR figure is blank: what feed/sampling/harvest rows exist in (and outside) the period."""
+    feed_qs = AquacultureExpense.objects.filter(
+        company_id=company_id, expense_category__in=["feed_purchase", "feed_consumed"]
+    )
+    sample_qs = AquacultureBiomassSample.objects.filter(company_id=company_id)
+    sale_qs = AquacultureFishSale.objects.filter(company_id=company_id, income_type="fish_harvest_sale")
+    if pond_id is not None:
+        feed_qs = feed_qs.filter(pond_id=pond_id)
+        sample_qs = sample_qs.filter(pond_id=pond_id)
+        sale_qs = sale_qs.filter(pond_id=pond_id)
+    if production_cycle_id is not None:
+        feed_qs = feed_qs.filter(production_cycle_id=production_cycle_id)
+        sample_qs = sample_qs.filter(production_cycle_id=production_cycle_id)
+        sale_qs = sale_qs.filter(production_cycle_id=production_cycle_id)
+
+    feed_in = feed_qs.filter(expense_date__gte=start, expense_date__lte=end)
+    feed_with_kg = feed_in.filter(feed_weight_kg__isnull=False, feed_weight_kg__gt=0).count()
+    feed_rows = feed_in.count()
+    samples_in = sample_qs.filter(sample_date__gte=start, sample_date__lte=end).count()
+    sales_in = sale_qs.filter(sale_date__gte=start, sale_date__lte=end).count()
+
+    last_feed = feed_qs.order_by("-expense_date").values_list("expense_date", flat=True).first()
+    last_sample = sample_qs.order_by("-sample_date").values_list("sample_date", flat=True).first()
+    last_sale = sale_qs.order_by("-sale_date").values_list("sale_date", flat=True).first()
+
+    hints: list[str] = []
+    if feed_rows == 0:
+        hints.append(
+            "No feed expense in this date range"
+            + (f" — latest feed entry is {last_feed.isoformat()}." if last_feed else " — no feed expense recorded at all.")
+        )
+    elif feed_with_kg == 0:
+        hints.append(
+            f"{feed_rows} feed expense(s) in range, but none carry a feed weight (kg), so feed kg stays 0."
+        )
+    if samples_in < 2:
+        hints.append(
+            f"Biomass gain needs at least two samplings inside the range ({samples_in} found)"
+            + (f" — latest sampling is {last_sample.isoformat()}." if last_sample else " — no sampling recorded at all.")
+        )
+    if sales_in == 0 and last_sale:
+        hints.append(f"No harvest sale in this date range — latest harvest sale is {last_sale.isoformat()}.")
+
+    return {
+        "feed_rows_in_period": feed_rows,
+        "feed_rows_with_weight_in_period": feed_with_kg,
+        "sample_rows_in_period": samples_in,
+        "harvest_sale_rows_in_period": sales_in,
+        "latest_feed_date": last_feed.isoformat() if last_feed else None,
+        "latest_sample_date": last_sample.isoformat() if last_sample else None,
+        "latest_harvest_sale_date": last_sale.isoformat() if last_sale else None,
+        "hints": hints,
+    }
+
+
 def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRequest) -> dict[str, Any]:
     """Dedicated FCR, feed consumption, biomass gain, and pond load report for a date range."""
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
@@ -2075,20 +2296,25 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
             }
         )
 
-    portfolio = fcr_block.get("portfolio") or {}
+    # Summary cards follow the report scope: the pond's own numbers when a pond
+    # filter is on, portfolio totals otherwise.
+    headline = (fcr_block.get("scoped") if pond_filter_id is not None else None) or fcr_block.get("portfolio") or {}
     return {
         "period": _period_block(start, end),
         "currency_code": BDT,
         "summary": {
-            "feed_kg": portfolio.get("feed_kg"),
-            "biomass_gain_kg": portfolio.get("biomass_gain_kg"),
-            "harvest_kg": portfolio.get("harvest_kg"),
-            "fcr_biomass": portfolio.get("fcr_biomass"),
-            "fcr_harvest": portfolio.get("fcr_harvest"),
+            "feed_kg": headline.get("feed_kg"),
+            "biomass_gain_kg": headline.get("biomass_gain_kg"),
+            "harvest_kg": headline.get("harvest_kg"),
+            "fcr_biomass": headline.get("fcr_biomass"),
+            "fcr_harvest": headline.get("fcr_harvest"),
             "pond_count_with_load": len(load_rows),
         },
         "fcr": fcr_block,
         "load_by_pond": load_rows,
+        "data_coverage": _fcr_data_coverage(
+            company_id, start, end, pond_id=pond_filter_id, production_cycle_id=cycle_filter_id
+        ),
         "methodology": fcr_block.get("methodology"),
     }
 
@@ -2282,6 +2508,8 @@ def _report_fingerling_transfers(company_id: int, start: date, end: date, reques
         pond_filter_id=pond_filter_id,
         filters=filters,
     )
+    _attach_internal_trade_docs_to_rows(company_id, body)
+    body["accounting_note"] = note_fish_transfers(company_id)
     return {
         "period": _period_block(start, end),
         "currency_code": BDT,
@@ -2308,21 +2536,35 @@ def _report_fish_transfers(company_id: int, start: date, end: date, request: Htt
             models.Q(from_pond_id=pond_filter_id) | models.Q(lines__to_pond_id=pond_filter_id)
         ).distinct()
 
+    transfers = list(qs)
+    transfer_id_by_line: dict[int, int] = {}
+    line_ids: list[int] = []
+    for t in transfers:
+        for ln in t.lines.all():
+            line_ids.append(ln.id)
+            transfer_id_by_line[ln.id] = t.id
+    docs = _internal_trade_docs_by_line(company_id, line_ids, transfer_id_by_line)
+
     groups: list[dict[str, Any]] = []
     grand_wt = Decimal("0")
     grand_cost = Decimal("0")
+    grand_sale = Decimal("0")
     grand_lines = 0
-    for t in qs:
+    for t in transfers:
         from_name = (t.from_pond.name or "").strip() if t.from_pond_id else ""
         line_rows: list[dict[str, Any]] = []
         sub_wt = Decimal("0")
         sub_cost = Decimal("0")
+        sub_sale = Decimal("0")
         for ln in t.lines.all():
             wt = ln.weight_kg or Decimal("0")
             cost = ln.cost_amount or Decimal("0")
+            sale = ln.sale_amount or Decimal("0")
             sub_wt += wt
             sub_cost += cost
+            sub_sale += sale
             to_name = (ln.to_pond.name or "").strip() if ln.to_pond_id else ""
+            doc = docs.get(ln.id) or {}
             line_rows.append(
                 {
                     "id": ln.id,
@@ -2336,10 +2578,22 @@ def _report_fish_transfers(company_id: int, start: date, end: date, request: Htt
                     "weight_kg": str(wt),
                     "fish_count": ln.fish_count,
                     "cost_amount": str(cost),
+                    "sale_rate_per_kg": str(ln.sale_rate_per_kg) if ln.sale_rate_per_kg is not None else "",
+                    "sale_amount": str(sale),
+                    "invoice_id": doc.get("invoice_id"),
+                    "invoice_number": doc.get("invoice_number") or "",
+                    "bill_id": doc.get("bill_id"),
+                    "bill_number": doc.get("bill_number") or "",
+                    "invoice_journal_number": doc.get("invoice_journal_number") or "",
+                    "bill_journal_number": doc.get("bill_journal_number") or "",
+                    "gl_posted": bool(doc.get("gl_posted")),
+                    "accounts": doc.get("accounts") or {},
+                    "_drill": doc.get("_drill") or {},
                 }
             )
         grand_wt += sub_wt
         grand_cost += sub_cost
+        grand_sale += sub_sale
         grand_lines += len(line_rows)
         sp = getattr(t, "fish_species", None) or "tilapia"
         spo = getattr(t, "fish_species_other", None) or ""
@@ -2360,6 +2614,7 @@ def _report_fish_transfers(company_id: int, start: date, end: date, request: Htt
                 "lines": line_rows,
                 "subtotal_weight_kg": str(_money_q(sub_wt)),
                 "subtotal_cost_amount": str(_money_q(sub_cost)),
+                "subtotal_sale_amount": str(_money_q(sub_sale)),
                 "line_count": len(line_rows),
             }
         )
@@ -2369,16 +2624,20 @@ def _report_fish_transfers(company_id: int, start: date, end: date, request: Htt
         "line_count": grand_lines,
         "total_weight_kg": float(_money_q(grand_wt)),
         "total_cost_amount_bdt": float(_money_q(grand_cost)),
+        "total_sale_amount_bdt": float(_money_q(grand_sale)),
+        "posted_line_count": sum(1 for g in groups for ln in g["lines"] if ln.get("gl_posted")),
     }
     return {
         "period": _period_block(start, end),
         "currency_code": BDT,
         "summary": summary,
         "groups": groups,
+        "accounting_note": note_fish_transfers(company_id),
         "totals": {
             "transfer_count": len(groups),
             "line_count": grand_lines,
             "total_weight_kg": str(_money_q(grand_wt)),
             "total_cost_amount": str(_money_q(grand_cost)),
+            "total_sale_amount": str(_money_q(grand_sale)),
         },
     }

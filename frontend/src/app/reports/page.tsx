@@ -747,7 +747,8 @@ const reports: ReportCard[] = [
   {
     id: 'aquaculture-fish-transfers',
     title: 'Aquaculture — Inter-pond fish transfers',
-    description: 'Fish moves between ponds with weight, head count, and cost allocation (BDT)',
+    description:
+      'Internal pond-to-pond sales: invoice and bill per line, book cost vs sale price, and AUTO-IPT GL (1595 / 4245 / 5245 / 1581)',
     icon: Fish,
     category: 'aquaculture',
   },
@@ -9427,6 +9428,7 @@ function renderReportTable(
                         <th className="px-2 py-1 text-right">Weight (kg)</th>
                         <th className="px-2 py-1 text-right">Amount (BDT)</th>
                         <th className="px-2 py-1">Buyer</th>
+                        <th className="px-2 py-1">Invoice</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/70">
@@ -9438,8 +9440,17 @@ function renderReportTable(
                           <td className="px-2 py-1.5 text-right tabular-nums">
                             {Number(ln.weight_kg).toLocaleString()}
                           </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.total_amount, ln, 'total_amount')}</td>
                           <td className="px-2 py-1.5 text-muted-foreground">{ln.buyer_name || '—'}</td>
+                          <td className="px-2 py-1.5 font-mono text-xs">
+                            {ln.invoice_id ? (
+                              <Link href={`/invoices?highlight=${ln.invoice_id}`} className="text-primary underline-offset-2 hover:underline">
+                                {ln.invoice_number || `INV #${ln.invoice_id}`}
+                              </Link>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -9451,6 +9462,7 @@ function renderReportTable(
                         <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-foreground">
                           {MoneyBdt(g.subtotal_amount)}
                         </td>
+                        <td />
                         <td />
                       </tr>
                     </tfoot>
@@ -9613,6 +9625,7 @@ function renderReportTable(
                       <th className="px-2 py-1 text-right">Weight (kg)</th>
                       <th className="px-2 py-1 text-right">Amount (BDT)</th>
                       <th className="px-2 py-1">Buyer</th>
+                      <th className="px-2 py-1">Invoice</th>
                     </tr>
                   </thead>
                 ) : null}
@@ -9623,6 +9636,7 @@ function renderReportTable(
                       <th className="px-2 py-1">Category</th>
                       <th className="px-2 py-1 text-right">Amount (BDT)</th>
                       <th className="px-2 py-1">Vendor / memo</th>
+                      <th className="px-2 py-1">Bill</th>
                     </tr>
                   </thead>
                 ) : null}
@@ -9665,16 +9679,34 @@ function renderReportTable(
                           <td className="px-2 py-1.5">{ln.income_type_label}</td>
                           <td className="px-2 py-1.5">{ln.fish_species_label || '—'}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.weight_kg).toLocaleString()}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.total_amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.total_amount, ln, 'total_amount')}</td>
                           <td className="px-2 py-1.5 text-muted-foreground">{ln.buyer_name || '—'}</td>
+                          <td className="px-2 py-1.5 font-mono text-xs">
+                            {ln.invoice_id ? (
+                              <Link href={`/invoices?highlight=${ln.invoice_id}`} className="text-primary underline-offset-2 hover:underline">
+                                {ln.invoice_number || `INV #${ln.invoice_id}`}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">{ln.accounting_posted ? '—' : 'Unposted'}</span>
+                            )}
+                          </td>
                         </>
                       ) : null}
                       {reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets' ? (
                         <>
                           <td className="px-2 py-1.5 whitespace-nowrap">{ln.expense_date}</td>
                           <td className="px-2 py-1.5">{ln.expense_category_label}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount, ln, 'amount')}</td>
                           <td className="px-2 py-1.5 text-muted-foreground">{ln.vendor_name || '—'}</td>
+                          <td className="px-2 py-1.5 font-mono text-xs">
+                            {ln.bill_id ? (
+                              <Link href={`/bills?highlight=${ln.bill_id}`} className="text-primary underline-offset-2 hover:underline">
+                                {ln.bill_number || `BILL #${ln.bill_id}`}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">{ln.source === 'bill' ? '—' : 'Register'}</span>
+                            )}
+                          </td>
                         </>
                       ) : null}
                       {reportType === 'aquaculture-sampling' ? (
@@ -9724,6 +9756,7 @@ function renderReportTable(
                         {MoneyBdt(g.subtotal_amount)}
                       </td>
                       <td />
+                      <td />
                     </tr>
                   ) : null}
                   {reportType === 'aquaculture-expenses' || reportType === 'aquaculture-equipment-assets' ? (
@@ -9734,6 +9767,7 @@ function renderReportTable(
                       <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-foreground">
                         {MoneyBdt(g.subtotal_amount)}
                       </td>
+                      <td />
                       <td />
                     </tr>
                   ) : null}
@@ -9857,6 +9891,9 @@ function renderReportTable(
                     <th className="px-2 py-1 text-right">Fry purchase</th>
                     <th className="px-2 py-1 text-right">Other costs</th>
                     <th className="px-2 py-1 text-right">Total liability</th>
+                    <th className="px-2 py-1">Invoice</th>
+                    <th className="px-2 py-1">Bill</th>
+                    <th className="px-2 py-1">GL</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/70">
@@ -9889,7 +9926,36 @@ function renderReportTable(
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.purchase_cost)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.other_expenses_cost)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{MoneyBdt(ln.total_cost)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{MoneyBdt(ln.total_cost, ln, 'total_cost')}</td>
+                      <td className="px-2 py-1.5 font-mono text-xs">
+                        {ln.invoice_id ? (
+                          <Link
+                            href={`/invoices?internal_trade=1&highlight=${ln.invoice_id}`}
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {ln.invoice_number || `INV #${ln.invoice_id}`}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-xs">
+                        {ln.bill_id ? (
+                          <Link
+                            href={`/bills?internal_trade=1&highlight=${ln.bill_id}`}
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {ln.bill_number || `BILL #${ln.bill_id}`}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                        {ln.gl_posted
+                          ? [ln.invoice_journal_number, ln.bill_journal_number].filter(Boolean).join(' · ')
+                          : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -9913,6 +9979,8 @@ function renderReportTable(
                     </td>
                     <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
                       {MoneyBdt(totals.total_cost)}
+                    </td>
+                    <td colSpan={3} />
                     </td>
                   </tr>
                 </tfoot>
@@ -10089,7 +10157,8 @@ function renderReportTable(
             'Transfers filtered by transfer date within this range.'
           )}
         <p className="text-sm font-medium text-foreground/85">
-          Inter-pond fish moves — weight and optional biological cost allocation in <strong>BDT</strong>.
+          Internal pond-to-pond sale in <strong>BDT</strong>
+          {data.accounting_note ? ` — ${String(data.accounting_note)}` : '.'}
         </p>
         {groups.map((g: any) => (
           <div key={`xfer-${g.id}`} className="rounded-lg border border-border bg-white shadow-sm">
@@ -10109,7 +10178,11 @@ function renderReportTable(
                     <th className="px-2 py-1">To pond</th>
                     <th className="px-2 py-1 text-right">Weight (kg)</th>
                     <th className="px-2 py-1 text-right">Fish count</th>
-                    <th className="px-2 py-1 text-right">Cost (BDT)</th>
+                    <th className="px-2 py-1 text-right">Book cost</th>
+                    <th className="px-2 py-1 text-right">Sale price</th>
+                    <th className="px-2 py-1">Invoice</th>
+                    <th className="px-2 py-1">Bill</th>
+                    <th className="px-2 py-1">GL journals</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/70">
@@ -10118,7 +10191,37 @@ function renderReportTable(
                       <td className="px-2 py-1.5">{ln.to_pond_name || '—'}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{Number(ln.weight_kg).toLocaleString()}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{ln.fish_count ?? '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.cost_amount)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.cost_amount, ln, 'cost_amount')}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.sale_amount, ln, 'sale_amount')}</td>
+                      <td className="px-2 py-1.5 font-mono text-xs">
+                        {ln.invoice_id ? (
+                          <Link
+                            href={`/invoices?internal_trade=1&highlight=${ln.invoice_id}`}
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {ln.invoice_number || `INV #${ln.invoice_id}`}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-xs">
+                        {ln.bill_id ? (
+                          <Link
+                            href={`/bills?internal_trade=1&highlight=${ln.bill_id}`}
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {ln.bill_number || `BILL #${ln.bill_id}`}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
+                        {ln.gl_posted
+                          ? [ln.invoice_journal_number, ln.bill_journal_number].filter(Boolean).join(' · ')
+                          : 'Unposted'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -10128,6 +10231,8 @@ function renderReportTable(
                     <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{Number(g.subtotal_weight_kg).toLocaleString()}</td>
                     <td />
                     <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{MoneyBdt(g.subtotal_cost_amount)}</td>
+                    <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{MoneyBdt(g.subtotal_sale_amount)}</td>
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
@@ -10137,7 +10242,8 @@ function renderReportTable(
         <div className="rounded-lg border-2 border-border bg-muted/40 px-4 py-3 text-sm font-bold text-foreground">
           <span>Total — {summary.transfer_count ?? groups.length} transfer(s)</span>
           <span className="float-right tabular-nums">
-            {Number(totals.total_weight_kg ?? 0).toLocaleString()} kg · {MoneyBdt(totals.total_cost_amount)}
+            {Number(totals.total_weight_kg ?? 0).toLocaleString()} kg · cost {MoneyBdt(totals.total_cost_amount)} · sale{' '}
+            {MoneyBdt(totals.total_sale_amount)}
           </span>
         </div>
       </div>
@@ -10617,6 +10723,8 @@ function renderReportTable(
     const portfolio = fcr.portfolio || {}
     const loadRows: any[] = Array.isArray(data.load_by_pond) ? data.load_by_pond : []
     const perPond: any[] = Array.isArray(fcr.per_pond) ? fcr.per_pond : []
+    const coverage = (data.data_coverage || {}) as Record<string, any>
+    const coverageHints: string[] = Array.isArray(coverage.hints) ? coverage.hints : []
     return (
       <div className="space-y-8">
         {hasPeriod &&
@@ -10627,6 +10735,17 @@ function renderReportTable(
             handleReportDateChange,
             'FCR uses feed kg on pond expenses and biomass gain from first-to-last sampling in this range.'
           )}
+        {coverageHints.length > 0 ? (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-semibold">Why some figures are zero for this period</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs leading-relaxed">
+              {coverageHints.map((h, i) => (
+                <li key={i}>{h}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs">Widen the date range (or pick a preset) to cover the dates above, then refresh.</p>
+          </div>
+        ) : null}
         {renderAquacultureFcrBlock(data)}
         {perPond.length > 0 ? (
           <div>

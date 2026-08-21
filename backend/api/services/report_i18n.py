@@ -148,3 +148,19 @@ def note_medicine_consumption(company_id: int) -> str:
         "প্রতিটি পুকুর গুদাম থেকে ব্যবহৃত ঔষধ (ম্যানুয়াল চিকিৎসা)। "
         "দৈনিক মোট ও এন্ট্রি বিস্তারিত ইনভেন্টরি মূল্যে খরচ (COGS) দেখায়।",
     )
+
+
+def note_fish_transfers(company_id: int) -> str:
+    return pick_for_company(
+        company_id,
+        "Each line is an internal sale: the selling pond raises an invoice and the buying pond "
+        "records a bill, settled on 1595 Inter-Pond Current Account (never cash). "
+        "Seller journals AUTO-IPT-INV (Dr 1595 / Cr 4245 at price; Dr 5245 / Cr 1581 at book cost). "
+        "Buyer journals AUTO-IPT-BILL (Dr 1581 / Cr 1595 at price). Company-wide 1595 cancels; "
+        "4245/5245 are eliminated on consolidation so company profit does not move.",
+        "প্রতিটি লাইন অভ্যন্তরীণ বিক্রি: বিক্রেতা পুকুর ইনভয়েস, ক্রেতা পুকুর বিল — "
+        "১৫৯৫ আন্তঃ-পুকুর চলতি হিসাবে নিষ্পত্তি (নগদ নয়)। "
+        "বিক্রেতা AUTO-IPT-INV (মূল্যে Dr 1595 / Cr 4245; বই খরচে Dr 5245 / Cr 1581)। "
+        "ক্রেতা AUTO-IPT-BILL (মূল্যে Dr 1581 / Cr 1595)। কোম্পানি পর্যায়ে 1595 বাতিল; "
+        "একত্রীকরণে 4245/5245 বাদ যায় বলে কোম্পানি মুনাফা নড়ে না।",
+    )

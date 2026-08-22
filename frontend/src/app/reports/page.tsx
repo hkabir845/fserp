@@ -3700,7 +3700,8 @@ function ReportsPageContent() {
             userRole !== 'operator' &&
             userRole !== 'pump_attendant' &&
             (reportStationList.length > 0 || showPondsInSiteScope) &&
-            !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) && (
+            !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
+            !(selectedReport && reportData) && (
               <div className="flex flex-col gap-2 rounded-lg border border-border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-2 text-sm text-muted-foreground">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -3976,6 +3977,35 @@ function ReportsPageContent() {
                   </div>
                     </div>
 
+                    {userRole != null &&
+                    userRole !== 'operator' &&
+                    userRole !== 'pump_attendant' &&
+                    (reportStationList.length > 0 || showPondsInSiteScope) &&
+                    !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
+                    !userHasHomeStation ? (
+                      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border bg-muted/30 px-3 py-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+                        <div className="min-w-0 flex-1">
+                          <label
+                            className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                            htmlFor="report-station-scope-inline"
+                          >
+                            Site
+                          </label>
+                          <ReportSiteScopeSelect
+                            id="report-station-scope-inline"
+                            value={reportStationId}
+                            onChange={applyReportSiteScopeChange}
+                            stations={reportStationList}
+                            ponds={aquaculturePonds}
+                            className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
+                          />
+                        </div>
+                        <p className="shrink-0 text-xs text-muted-foreground sm:pb-2 sm:text-right">
+                          Saved in this browser · refreshes the open report
+                        </p>
+                      </div>
+                    ) : null}
+
                     {selectedReport &&
                     isAquaculturePeriodReport(selectedReport) &&
                     REPORTS_WITH_PERIOD.has(selectedReport) ? (
@@ -4013,7 +4043,7 @@ function ReportsPageContent() {
                             Amounts in BDT — refresh after changing filters.
                             {pondLockedBySiteScope
                               ? ' Fish / Tilapia Batch appears when Site is a pond — choose All Batch or one cycle for accurate load, FCR, growth, biomass, and bio-asset.'
-                              : ' Select a pond in Site above to filter by Fish / Tilapia Batch.'}
+                              : ' Select a pond in Site (above) to filter by Fish / Tilapia Batch.'}
                           </p>
                           <div className="mt-3 flex flex-wrap items-end gap-3">
                             {selectedReport &&

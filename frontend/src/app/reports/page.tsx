@@ -4277,7 +4277,18 @@ function ReportsPageContent() {
                         <div>
                           <h3 className="text-lg font-semibold text-foreground mb-3">Summary</h3>
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-                            {Object.entries(reportData.summary as Record<string, unknown>).map(([key, value], idx) => {
+                            {Object.entries(reportData.summary as Record<string, unknown>)
+                              .filter(([key]) => {
+                                // Highlight cards already show period biomass gain — skip duplicates.
+                                if (
+                                  pondLoadHighlightRows.length > 0 &&
+                                  (key === 'biomass_gain_kg' || key === 'portfolio_biomass_gain_kg')
+                                ) {
+                                  return false
+                                }
+                                return true
+                              })
+                              .map(([key, value], idx) => {
                               const summaryEntryKey = `${idx}-${key}`
                               const colorClasses = [
                                 'from-accent to-blue-100 border-primary/25 text-primary',
@@ -4667,7 +4678,7 @@ function aquacultureLoadHighlightRows(
   return []
 }
 
-/** Highlight total biomass, period gain, pcs/kg, kg/dec, and Load. */
+/** Highlight total biomass, period gain, pcs/kg, and Load (kg/dec is inside Load label). */
 function renderPondLoadMetricCards(
   rows: Array<{
     pond_id?: number | string | null
@@ -4722,7 +4733,6 @@ function renderPondLoadMetricCards(
     <div className="space-y-4">
       {rows.map((r, idx) => {
         const pcs = r.current_fish_per_kg ?? r.pcs_per_kg
-        const kgDec = r.stock_density_kg_per_decimal ?? r.load_kg_per_decimal
         const level = r.load_level || undefined
         const bioKg = totalBiomassKg(r)
         const gainKg = periodGainKg(r)
@@ -4735,7 +4745,7 @@ function renderPondLoadMetricCards(
             {rows.length > 1 && r.pond_name ? (
               <h5 className="text-sm font-semibold text-foreground">{r.pond_name}</h5>
             ) : null}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-primary/30 bg-gradient-to-br from-teal-50 to-white px-4 py-3.5 shadow-sm">
                 <div className="text-xs font-medium uppercase tracking-wide text-primary">Total biomass</div>
                 <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-teal-950">
@@ -4761,19 +4771,12 @@ function renderPondLoadMetricCards(
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">Fish size (pieces per kg)</p>
               </div>
-              <div className="rounded-xl border border-border bg-white px-4 py-3.5 shadow-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">kg/dec</div>
-                <div className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-                  {fmtMetric(kgDec, 2)}
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Biomass density per decimal</p>
-              </div>
               <div className={`rounded-xl border px-4 py-3.5 shadow-sm ${loadCardClass(level)}`}>
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Load</div>
                 <div className={`mt-1.5 text-2xl font-semibold tracking-tight ${loadValueClass(level)}`}>
                   {r.load_level_label || '—'}
                 </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Stocking load band</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">kg/dec · pcs/dec (stocking band)</p>
               </div>
             </div>
           </div>
@@ -10770,7 +10773,7 @@ function renderReportTable(
             handleReportDateChange,
             'FCR and ADG use this date range. Biomass, load, and bioasset are as of the period end date.'
           )}
-        {renderAquacultureFcrBlock(data)}
+        {/* FCR block + pond-load highlight cards are in the Summary section above — avoid duplicates here. */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
             <div className="text-xs text-muted-foreground">Ponds</div>
@@ -10805,21 +10808,6 @@ function renderReportTable(
         </div>
         {ponds.length > 0 ? (
           <div className="space-y-4">
-            <h4 className="font-semibold text-foreground">Pond load</h4>
-            {renderPondLoadMetricCards(
-              ponds.map((p: any) => ({
-                pond_id: p.pond_id,
-                pond_name: p.pond_name,
-                pcs_per_kg: p.pcs_per_kg,
-                load_kg_per_decimal: p.load_kg_per_decimal,
-                stock_density_kg_per_decimal: p.stock_density_kg_per_decimal ?? p.load_kg_per_decimal,
-                biomass_kg_for_load: p.biomass_kg,
-                implied_net_fish_count: p.fish_count,
-                period_biomass_gain_kg: asMetricNumber(p.biomass_gain_kg ?? summary.biomass_gain_kg),
-                load_level: p.load_level,
-                load_level_label: p.load_level_label,
-              })),
-            )}
             <h4 className="font-semibold text-foreground">Pond performance</h4>
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
@@ -10910,8 +10898,8 @@ function renderReportTable(
             handleReportDateChange,
             'Growth is measured between consecutive biomass samples; FCR and load use the same period.'
           )}
-        {renderAquacultureFcrBlock(data)}
-        <div className="grid gap-3 sm:grid-cols-4">
+        {/* FCR + biomass gain + load highlights are in the Summary section above — avoid duplicates here. */}
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
             <div className="text-xs text-muted-foreground">Samples</div>
             <div className="font-semibold tabular-nums">{summary.sample_count ?? 0}</div>
@@ -10919,16 +10907,6 @@ function renderReportTable(
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
             <div className="text-xs text-muted-foreground">Growth intervals</div>
             <div className="font-semibold tabular-nums">{summary.interval_count ?? 0}</div>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
-            <div className="text-xs text-muted-foreground">Period biomass gain</div>
-            <div className="font-semibold tabular-nums">
-              {summary.biomass_gain_kg != null ? `${formatNumber(Number(summary.biomass_gain_kg), 2)} kg` : '—'}
-            </div>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
-            <div className="text-xs text-muted-foreground">Period FCR (biomass)</div>
-            <div className="font-semibold tabular-nums text-primary">{summary.fcr_biomass ?? '—'}</div>
           </div>
         </div>
         {intervals.length > 0 ? (
@@ -10976,12 +10954,6 @@ function renderReportTable(
         {loadRows.length > 0 ? (
           <div className="space-y-4">
             <h4 className="font-semibold text-foreground">Pond load (kg per decimal) — as of period end</h4>
-            {renderPondLoadMetricCards(
-              loadRows.map((r: any) => ({
-                ...r,
-                period_biomass_gain_kg: asMetricNumber(r.period_biomass_gain_kg ?? summary.biomass_gain_kg),
-              })),
-            )}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">
@@ -11033,6 +11005,7 @@ function renderReportTable(
             handleReportDateChange,
             'FCR uses feed kg on pond expenses and biomass gain from first-to-last sampling in this range.'
           )}
+        {/* Summary cards already cover feed / gain / FCR; load highlights are above — avoid duplicates. */}
         {coverageHints.length > 0 ? (
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Why some figures are zero for this period</p>
@@ -11044,7 +11017,6 @@ function renderReportTable(
             <p className="mt-2 text-xs">Widen the date range (or pick a preset) to cover the dates above, then refresh.</p>
           </div>
         ) : null}
-        {renderAquacultureFcrBlock(data)}
         {perPond.length > 0 ? (
           <div>
             <h4 className="font-semibold text-foreground mb-2">FCR by pond</h4>
@@ -11085,14 +11057,6 @@ function renderReportTable(
               kg/dec = biomass for load ÷ water area (decimals) from the Pond form. Biomass for load uses the
               latest sample average × live fish when a sample size is available.
             </p>
-            {renderPondLoadMetricCards(
-              loadRows.map((r: any) => ({
-                ...r,
-                period_biomass_gain_kg: asMetricNumber(
-                  r.period_biomass_gain_kg ?? data.summary?.biomass_gain_kg ?? fcr?.scoped?.biomass_gain_kg,
-                ),
-              })),
-            )}
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="min-w-full divide-y divide-border text-sm">
                 <thead className="bg-muted/40">

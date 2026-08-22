@@ -3976,6 +3976,24 @@ function ReportsPageContent() {
                   </div>
                     </div>
 
+                    {selectedReport &&
+                    isAquaculturePeriodReport(selectedReport) &&
+                    REPORTS_WITH_PERIOD.has(selectedReport) ? (
+                      <div className="mb-6">
+                        {renderPeriodFilter(
+                          (reportData as { period?: { start_date?: string; end_date?: string } }).period ||
+                            {},
+                          effectivePeriodDateRange,
+                          selectedReport,
+                          handleReportDateChange,
+                          selectedReport === 'aquaculture-fcr-biomass'
+                            ? 'FCR uses feed kg on pond expenses and biomass gain from first-to-last sampling in this range.'
+                            : 'Data is filtered by this date range. Biomass, load, and bioasset use stock as of the period end date.',
+                          companyFiscalYearStart,
+                        )}
+                      </div>
+                    ) : null}
+
                     {reportSiteScope && (
                       <div className="mb-6 flex gap-3 rounded-lg border border-warning/30/90 bg-warning/10/95 px-4 py-3 text-sm text-warning-foreground shadow-sm dark:border-amber-800/60 dark:bg-amber-950/35 dark:text-amber-100">
                         <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground dark:text-amber-300" />
@@ -5057,7 +5075,11 @@ function renderReportTable(
     rt?: ReportType,
     onChange?: (field: 'startDate' | 'endDate' | 'range', value: string, reportId?: string) => void,
     desc?: string
-  ) => renderPeriodFilter(periodArg, dr, rt, onChange, desc, fiscalYearStart)
+  ) =>
+    // Aquaculture period filter is shown under the report title (outside this table).
+    isAquaculturePeriodReport(reportType)
+      ? null
+      : renderPeriodFilter(periodArg, dr, rt, onChange, desc, fiscalYearStart)
   const hasPeriod =
     REPORTS_WITH_PERIOD.has(reportType) &&
     (period.start_date ||

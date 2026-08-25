@@ -3640,7 +3640,13 @@ export default function BillsPage() {
                           className="border border-border rounded-lg p-3 min-w-0 bg-white shadow-sm"
                         >
                           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
-                            <div className="col-span-12 lg:col-span-2 min-w-0">
+                            <div
+                              className={`min-w-0 ${
+                                billLineKind(line) === 'expense'
+                                  ? 'col-span-12 lg:col-span-4'
+                                  : 'col-span-12 lg:col-span-2'
+                              }`}
+                            >
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {billLineKind(line) === 'item' ? 'Item / product' : 'Expense account'}
                               </label>
@@ -3651,7 +3657,7 @@ export default function BillsPage() {
                                 itemId={line.item_id}
                                 expenseAccountId={line.expense_account_id}
                                 suggestedAccountId={suggestedExpenseAccountIdForLine(line)}
-                                className={`${BILL_LINE_CTL} max-w-full`}
+                                className="w-full min-w-0 min-h-9 max-w-full px-2 text-sm border border-border rounded-md focus:ring-1 focus:ring-ring focus:border-blue-500"
                                 onChangeKind={(k) => setBillLineKind(index, k)}
                                 onSelectItem={(id) => applyBillLinePickerSelection(index, { kind: 'item', id })}
                                 onSelectAccount={(id) =>
@@ -4146,7 +4152,13 @@ export default function BillsPage() {
                           className="border border-border rounded-lg p-3 min-w-0 bg-muted/40/80 shadow-sm"
                         >
                           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
-                            <div className="col-span-12 lg:col-span-2 min-w-0">
+                            <div
+                              className={`min-w-0 ${
+                                billLineKind(line) === 'expense'
+                                  ? 'col-span-12 lg:col-span-4'
+                                  : 'col-span-12 lg:col-span-2'
+                              }`}
+                            >
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
                                 {billLineKind(line) === 'item' ? 'Item / product' : 'Expense account'}
                               </label>
@@ -4157,7 +4169,7 @@ export default function BillsPage() {
                                 itemId={line.item_id}
                                 expenseAccountId={line.expense_account_id}
                                 suggestedAccountId={suggestedExpenseAccountIdForLine(line)}
-                                className={`${BILL_LINE_CTL} max-w-full`}
+                                className="w-full min-w-0 min-h-9 max-w-full px-2 text-sm border border-border rounded-md focus:ring-1 focus:ring-ring focus:border-blue-500"
                                 onChangeKind={(k) => setBillLineKind(index, k)}
                                 onSelectItem={(id) => applyBillLinePickerSelection(index, { kind: 'item', id })}
                                 onSelectAccount={(id) =>

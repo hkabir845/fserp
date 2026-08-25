@@ -14,13 +14,21 @@ function humanizeLabel(s: string | undefined): string {
 }
 
 /**
+ * Compact closed-field label: code — name (no type meta).
+ */
+export function formatCoaCodeNameLabel(account: CoaLike): string {
+  const code = (account.account_code || '').trim()
+  const name = (account.account_name || '').trim()
+  if (code && name) return `${code} — ${name}`
+  return code || name || 'Account'
+}
+
+/**
  * Dropdown label: code — name (account type · subtype).
  * Subtype omitted when empty.
  */
 export function formatCoaOptionLabel(account: CoaLike): string {
-  const code = (account.account_code || '').trim()
-  const name = (account.account_name || '').trim()
-  const core = code && name ? `${code} — ${name}` : code || name || 'Account'
+  const core = formatCoaCodeNameLabel(account)
 
   const typePart = humanizeLabel(account.account_type)
   const subPart = humanizeLabel(account.account_sub_type)

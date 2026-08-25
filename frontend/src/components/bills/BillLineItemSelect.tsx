@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Package, Receipt } from 'lucide-react'
-import { formatCoaOptionLabel, type CoaLike } from '@/utils/coaOptionLabel'
+import { formatCoaCodeNameLabel, formatCoaOptionLabel, type CoaLike } from '@/utils/coaOptionLabel'
 import { formatNumber } from '@/utils/currency'
 import { safeSelectInput } from '@/utils/safeSelectInput'
 
@@ -140,18 +140,25 @@ export function BillLineItemSelect({
     }
     if (expenseAccountId) {
       const account = expenseAccounts.find((a) => a.id === expenseAccountId)
-      if (account) return formatCoaOptionLabel(account)
+      if (account) {
+        // Closed expense field: full code + name (no type meta so it stays readable).
+        return mode === 'expense' ? formatCoaCodeNameLabel(account) : formatCoaOptionLabel(account)
+      }
     }
     return ''
-  }, [itemId, expenseAccountId, items, expenseAccounts])
+  }, [itemId, expenseAccountId, items, expenseAccounts, mode])
 
   const selectedTitle = useMemo(() => {
     if (itemId) {
       const item = items.find((i) => i.id === itemId)
       if (item) return itemPickerTitle(item)
     }
+    if (expenseAccountId) {
+      const account = expenseAccounts.find((a) => a.id === expenseAccountId)
+      if (account) return formatCoaOptionLabel(account)
+    }
     return selectedLabel || placeholder
-  }, [itemId, items, selectedLabel, placeholder])
+  }, [itemId, expenseAccountId, items, expenseAccounts, selectedLabel, placeholder])
 
   const { itemOptions, accountOptions, flatOptions } = useMemo(() => {
     const itemOpts: PickerOption[] = []
@@ -253,6 +260,11 @@ export function BillLineItemSelect({
   }, [open, query, flatOptions.length])
 
   const inputDisplay = open ? query : selectedLabel
+  const selectedExpenseAccount =
+    mode === 'expense' && expenseAccountId
+      ? expenseAccounts.find((a) => a.id === expenseAccountId)
+      : undefined
+  const showExpenseFullLabel = Boolean(selectedExpenseAccount && !open && selectedLabel)
 
   /** Long labels (items, expense COA); widen list beyond the line column. */
   const listboxLayoutClass =
@@ -263,6 +275,35 @@ export function BillLineItemSelect({
   return (
     <div className="relative min-w-0" ref={rootRef}>
       <div className="relative">
+        {showExpenseFullLabel && selectedExpenseAccount ? (
+          <button
+            type="button"
+            title={selectedTitle}
+            className={`${className} flex min-h-9 w-full items-start justify-between gap-2 py-1.5 pr-8 text-left whitespace-normal break-words leading-snug`}
+            onClick={() => {
+              setOpen(true)
+              setQuery(selectedLabel)
+              requestAnimationFrame(() => {
+                inputRef.current?.focus()
+                if (inputRef.current) safeSelectInput(inputRef.current)
+              })
+            }}
+          >
+            <span className="min-w-0 flex-1">
+              {(selectedExpenseAccount.account_code || '').trim() ? (
+                <span className="font-medium tabular-nums text-foreground">
+                  {(selectedExpenseAccount.account_code || '').trim()}
+                </span>
+              ) : null}
+              {(selectedExpenseAccount.account_name || '').trim() ? (
+                <span className="text-foreground">
+                  {(selectedExpenseAccount.account_code || '').trim() ? ' — ' : ''}
+                  {(selectedExpenseAccount.account_name || '').trim()}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        ) : null}
         <input
           ref={inputRef}
           type="text"
@@ -275,7 +316,7 @@ export function BillLineItemSelect({
           placeholder={placeholder}
           value={inputDisplay}
           title={selectedTitle}
-          className={`${className} pr-8 ${open ? '' : 'truncate'}`}
+          className={`${className} pr-8 ${showExpenseFullLabel ? 'sr-only' : open ? '' : 'truncate'}`}
           onFocus={(e) => {
             setOpen(true)
             setQuery(selectedLabel)
@@ -314,7 +355,9 @@ export function BillLineItemSelect({
           type="button"
           tabIndex={-1}
           aria-label="Show options"
-          className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted-foreground/70 hover:text-muted-foreground"
+          className={`absolute right-1 p-1 text-muted-foreground/70 hover:text-muted-foreground ${
+            showExpenseFullLabel ? 'top-2' : 'top-1/2 -translate-y-1/2'
+          }`}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             if (open) {

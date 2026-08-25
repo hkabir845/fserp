@@ -244,6 +244,7 @@ _PROD_ORIGINS = [
     "https://mahasoftcorporation.com",
     "https://www.mahasoftcorporation.com",
     "https://adib.mahasoftcorporation.com",
+    "https://nobinagro.sascorporationbd.com",
 ]
 # Capacitor Android/iOS WebView origins (API calls from the native app shell).
 _CAPACITOR_ORIGINS = [
@@ -269,11 +270,13 @@ if _env_cors_regexes:
 elif _is_runserver:
     CORS_ALLOWED_ORIGIN_REGEXES = [
         r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
+        r"^https://[a-zA-Z0-9-]+\.sascorporationbd\.com$",
         _LOCALHOST_SUBDOMAIN,
     ]
 else:
     CORS_ALLOWED_ORIGIN_REGEXES = [
         r"^https://[a-zA-Z0-9-]+\.mahasoftcorporation\.com$",
+        r"^https://[a-zA-Z0-9-]+\.sascorporationbd\.com$",
     ]
 
 CORS_ALLOW_HEADERS = list(default_headers) + [

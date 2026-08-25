@@ -48,7 +48,6 @@ import {
   applyAquacultureCategoryToBillLine,
   billExpenseCategoriesFromApi,
   findBillCategory,
-  isAquacultureOperatingCoaCode,
   type AquacultureBillExpenseCategory,
 } from '@/lib/aquacultureBillLine'
 import {
@@ -1500,9 +1499,24 @@ export default function BillsPage() {
     [fuelStationBillCategories]
   )
 
-  const aquacultureCoaAccounts = useMemo(
-    () => expenseAccounts.filter((a) => isAquacultureOperatingCoaCode(a.account_code)),
-    [expenseAccounts]
+  /** Suggested GL for an expense line: category default → vendor/template fallback. User may override. */
+  const suggestedExpenseAccountIdForLine = useCallback(
+    (line: BillLineItem): number | undefined => {
+      if (billLineKind(line) !== 'expense') return undefined
+      const aq = findBillCategory(billExpenseCategories, line.aquaculture_expense_category)
+      const aqId = coaPickIdIfValid(aq?.default_coa_account_id, billExpenseCoaOptions)
+      if (aqId) return aqId
+      const fuel = findFuelBillCategory(billFuelCategories, line.fuel_station_expense_category)
+      const fuelId = coaPickIdIfValid(fuel?.default_coa_account_id, billExpenseCoaOptions)
+      if (fuelId) return fuelId
+      return templateBillExpenseAccountId || undefined
+    },
+    [
+      billExpenseCategories,
+      billFuelCategories,
+      billExpenseCoaOptions,
+      templateBillExpenseAccountId,
+    ]
   )
 
   const billLineExpenseRecommendLabel = useMemo(() => {
@@ -1751,8 +1765,13 @@ export default function BillsPage() {
               })
             )
         )
+        // Same universe as billExpenseCoaOptions: expense + COGS so the picker can show every
+        // billable debit account; category/vendor still suggest a default the user may change.
         setExpenseAccounts(
-          active.filter((acc: ExpenseAccount) => acc.account_type.toLowerCase() === 'expense'),
+          active.filter((acc: ExpenseAccount) => {
+            const t = (acc.account_type || '').toLowerCase()
+            return t === 'expense' || t === 'cost_of_goods_sold'
+          }),
         )
       }
 
@@ -2089,7 +2108,17 @@ export default function BillsPage() {
       }
 
       if (field === '__entity_bundle__') {
-        newLines[index] = { ...newLines[index], ...(value as BillLineItem) }
+        const incoming = { ...(value as BillLineItem) }
+        const lineNo = newLines[index].line_number
+        // Keep a manually chosen expense account when category / charge-to updates.
+        if (
+          billLineExpenseTouchedRef.current.has(lineNo) &&
+          newLines[index].expense_account_id != null &&
+          Number(newLines[index].expense_account_id) > 0
+        ) {
+          incoming.expense_account_id = newLines[index].expense_account_id
+        }
+        newLines[index] = { ...newLines[index], ...incoming }
         const cleanPond =
           newLines[index].aquaculture_pond_id === '' || newLines[index].aquaculture_pond_id == null
             ? ''
@@ -2132,13 +2161,31 @@ export default function BillsPage() {
 
       if (field === 'aquaculture_expense_category') {
         const cat = findBillCategory(billExpenseCategories, String(value))
-        newLines[index] = applyAquacultureCategoryToBillLine(newLines[index], cat, billExpenseCoaOptions)
+        const prior = newLines[index]
+        const next = applyAquacultureCategoryToBillLine(prior, cat, billExpenseCoaOptions)
+        if (
+          billLineExpenseTouchedRef.current.has(prior.line_number) &&
+          prior.expense_account_id != null &&
+          Number(prior.expense_account_id) > 0
+        ) {
+          next.expense_account_id = prior.expense_account_id
+        }
+        newLines[index] = next
         return { ...prev, lines: newLines }
       }
 
       if (field === 'fuel_station_expense_category') {
         const cat = findFuelBillCategory(billFuelCategories, String(value))
-        newLines[index] = applyFuelCategoryToBillLine(newLines[index], cat, billExpenseCoaOptions)
+        const prior = newLines[index]
+        const next = applyFuelCategoryToBillLine(prior, cat, billExpenseCoaOptions)
+        if (
+          billLineExpenseTouchedRef.current.has(prior.line_number) &&
+          prior.expense_account_id != null &&
+          Number(prior.expense_account_id) > 0
+        ) {
+          next.expense_account_id = prior.expense_account_id
+        }
+        newLines[index] = next
         return { ...prev, lines: newLines }
       }
 
@@ -3603,6 +3650,7 @@ export default function BillsPage() {
                                 expenseAccounts={expenseAccounts}
                                 itemId={line.item_id}
                                 expenseAccountId={line.expense_account_id}
+                                suggestedAccountId={suggestedExpenseAccountIdForLine(line)}
                                 className={`${BILL_LINE_CTL} max-w-full`}
                                 onChangeKind={(k) => setBillLineKind(index, k)}
                                 onSelectItem={(id) => applyBillLinePickerSelection(index, { kind: 'item', id })}
@@ -3617,12 +3665,13 @@ export default function BillsPage() {
                                     className="mt-1"
                                   />
                                 )}
-                                {billLineKind(line) === 'expense' && !line.expense_account_id && (
+                                {billLineKind(line) === 'expense' ? (
                                   <p className="mt-1 text-[11px] text-muted-foreground">
-                                    Pick an expense account, or leave blank for{' '}
-                                    {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
+                                    {line.expense_account_id
+                                      ? 'Suggested account is filled — search and change anytime.'
+                                      : `Pick an account, or leave blank for ${billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.`}
                                   </p>
-                                )}
+                                ) : null}
                               </BillLineTypePicker>
                             </div>
                             {availableTanks.length > 0 && (
@@ -4107,6 +4156,7 @@ export default function BillsPage() {
                                 expenseAccounts={expenseAccounts}
                                 itemId={line.item_id}
                                 expenseAccountId={line.expense_account_id}
+                                suggestedAccountId={suggestedExpenseAccountIdForLine(line)}
                                 className={`${BILL_LINE_CTL} max-w-full`}
                                 onChangeKind={(k) => setBillLineKind(index, k)}
                                 onSelectItem={(id) => applyBillLinePickerSelection(index, { kind: 'item', id })}
@@ -4121,12 +4171,13 @@ export default function BillsPage() {
                                     className="mt-1"
                                   />
                                 )}
-                                {billLineKind(line) === 'expense' && !line.expense_account_id && (
+                                {billLineKind(line) === 'expense' ? (
                                   <p className="mt-1 text-[11px] text-muted-foreground">
-                                    Pick an expense account, or leave blank for{' '}
-                                    {billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.
+                                    {line.expense_account_id
+                                      ? 'Suggested account is filled — search and change anytime.'
+                                      : `Pick an account, or leave blank for ${billLineExpenseRecommendLabel.replace(/^— | —$/g, '')} at post.`}
                                   </p>
-                                )}
+                                ) : null}
                               </BillLineTypePicker>
                             </div>
 

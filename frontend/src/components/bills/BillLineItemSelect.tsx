@@ -100,6 +100,8 @@ type Props = {
   expenseAccounts: BillLineSelectAccount[]
   itemId?: number
   expenseAccountId?: number
+  /** Category/vendor suggested COA — pinned at top; user may still pick any account. */
+  suggestedAccountId?: number
   onSelectItem: (itemId: number) => void
   onSelectAccount: (accountId: number) => void
   className?: string
@@ -117,6 +119,7 @@ export function BillLineItemSelect({
   expenseAccounts,
   itemId,
   expenseAccountId,
+  suggestedAccountId,
   onSelectItem,
   onSelectAccount,
   className = '',
@@ -168,7 +171,31 @@ export function BillLineItemSelect({
 
     const accountOpts: PickerOption[] = []
     if (mode !== 'item') {
+      const pinnedIds: number[] = []
+      if (expenseAccountId != null && expenseAccountId > 0) pinnedIds.push(expenseAccountId)
+      if (
+        suggestedAccountId != null &&
+        suggestedAccountId > 0 &&
+        suggestedAccountId !== expenseAccountId
+      ) {
+        pinnedIds.push(suggestedAccountId)
+      }
+      const seen = new Set<number>()
+      for (const id of pinnedIds) {
+        const account = expenseAccounts.find((a) => a.id === id)
+        if (!account) continue
+        const searchText = buildAccountSearchText(account)
+        if (!matchesQuery(searchText, query)) continue
+        seen.add(id)
+        accountOpts.push({
+          kind: 'account',
+          id: account.id,
+          label: formatCoaOptionLabel(account),
+          searchText,
+        })
+      }
       for (const account of expenseAccounts) {
+        if (seen.has(account.id)) continue
         const searchText = buildAccountSearchText(account)
         if (!matchesQuery(searchText, query)) continue
         accountOpts.push({
@@ -186,7 +213,7 @@ export function BillLineItemSelect({
       accountOptions: accountOpts,
       flatOptions: [...itemOpts, ...accountOpts],
     }
-  }, [items, expenseAccounts, query, mode])
+  }, [items, expenseAccounts, query, mode, expenseAccountId, suggestedAccountId])
 
   const trimmedQuery = normalizeSearch(query)
   const itemsTruncated = trimmedQuery === '' && items.length > MAX_PER_GROUP && itemOptions.length >= MAX_PER_GROUP
@@ -374,8 +401,8 @@ export function BillLineItemSelect({
               })}
               {accountOptions.length > 0 && (
                 <li className="mt-1 border-t border-border/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-                  Expense accounts
-                  {accountsTruncated ? ` (first ${MAX_PER_GROUP} — type to narrow)` : ''}
+                  All expense &amp; COGS accounts
+                  {accountsTruncated ? ` (first ${MAX_PER_GROUP} — type to search any)` : ''}
                 </li>
               )}
               {accountOptions.map((opt, idx) => {
@@ -390,6 +417,10 @@ export function BillLineItemSelect({
                   typePart && subPart
                     ? `${typePart} · ${subPart}`
                     : typePart || subPart
+                const isSuggested =
+                  suggestedAccountId != null &&
+                  suggestedAccountId > 0 &&
+                  opt.id === suggestedAccountId
                 return (
                   <li
                     key={`account-${opt.id}`}
@@ -403,7 +434,7 @@ export function BillLineItemSelect({
                     onMouseEnter={() => setActiveIndex(flatIdx)}
                     onClick={() => pick(opt)}
                   >
-                    <span className="block text-sm leading-snug">
+                    <span className="flex flex-wrap items-center gap-1.5 text-sm leading-snug">
                       {code ? (
                         <>
                           <span className="font-medium tabular-nums">{code}</span>
@@ -412,6 +443,11 @@ export function BillLineItemSelect({
                       ) : (
                         name || opt.label
                       )}
+                      {isSuggested ? (
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800">
+                          Suggested
+                        </span>
+                      ) : null}
                     </span>
                     {meta ? (
                       <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground capitalize">
@@ -435,6 +471,8 @@ type TypePickerProps = {
   expenseAccounts: BillLineSelectAccount[]
   itemId?: number
   expenseAccountId?: number
+  /** Suggested COA from category/vendor — pre-filled elsewhere; shown pinned in the list. */
+  suggestedAccountId?: number
   onChangeKind: (kind: BillLineKind) => void
   onSelectItem: (itemId: number) => void
   onSelectAccount: (accountId: number) => void
@@ -454,6 +492,7 @@ export function BillLineTypePicker({
   expenseAccounts,
   itemId,
   expenseAccountId,
+  suggestedAccountId,
   onChangeKind,
   onSelectItem,
   onSelectAccount,
@@ -506,9 +545,10 @@ export function BillLineTypePicker({
         expenseAccounts={expenseAccounts}
         itemId={isItem ? itemId : undefined}
         expenseAccountId={isItem ? undefined : expenseAccountId}
+        suggestedAccountId={isItem ? undefined : suggestedAccountId}
         mode={isItem ? 'item' : 'expense'}
         className={className}
-        placeholder={isItem ? 'Search products / services…' : 'Search expense accounts…'}
+        placeholder={isItem ? 'Search products / services…' : 'Search all expense accounts…'}
         onSelectItem={onSelectItem}
         onSelectAccount={onSelectAccount}
       />

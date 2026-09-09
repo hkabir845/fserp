@@ -24,6 +24,11 @@ from api.services.reference_code import assign_string_code_if_empty, user_suppli
 from api.services.station_defaults import parse_optional_pond_fk, parse_optional_station_fk
 from api.services.contact_ledgers import build_vendor_ledger, ledger_dates_and_search
 from api.services.payment_allocation import compute_vendor_balance_due
+from api.services.vendor_purchase_terms import (
+    apply_facility_fields,
+    upsert_rate_card_from_body,
+    vendor_list_purchase_fields,
+)
 from api.utils.transaction_filters import filter_json_transactions
 
 
@@ -78,6 +83,10 @@ def _vendor_to_json(v, *, company_id: int | None = None):
             if getattr(v, "default_expense_account_id", None) and getattr(v, "default_expense_account", None)
             else ""
         ),
+        **vendor_list_purchase_fields(int(cid), v, balance),
+        "credit_start_date": _serialize_date(getattr(v, "credit_start_date", None)),
+        "square_off_date": _serialize_date(getattr(v, "square_off_date", None)),
+        "require_zero_on_square_off": bool(getattr(v, "require_zero_on_square_off", True)),
     }
 
 
@@ -113,6 +122,7 @@ def _vendor_apply_q(qs, raw_q: str):
         | Q(contact_person__icontains=q)
         | Q(default_station__station_name__icontains=q)
         | Q(default_aquaculture_pond__name__icontains=q)
+        | Q(supplier_category__icontains=q)
     )
 
 
@@ -151,6 +161,9 @@ def vendors_list_or_create(request):
             # Pond selling identities are for inter-pond documents, not manual vendor entry.
             qs = qs.exclude(is_internal=True)
         qs = _vendor_apply_q(qs, request.GET.get("q", ""))
+        cat_filter = (request.GET.get("supplier_category") or "").strip().lower()
+        if cat_filter:
+            qs = qs.filter(supplier_category=cat_filter)
         qs = _vendor_apply_sort(qs, request)
         if wants_paged_response(request):
             skip, limit = parse_skip_limit(request, default_limit=50, max_limit=500)
@@ -218,7 +231,13 @@ def vendors_list_or_create(request):
             is_active=body.get("is_active", True),
             vendor_number=vcode or "",
         )
+        ferr = apply_facility_fields(v, body)
+        if ferr:
+            return JsonResponse({"detail": ferr}, status=400)
         v.save()
+        _, rerr = upsert_rate_card_from_body(v, body)
+        if rerr:
+            return JsonResponse({"detail": rerr}, status=400)
         if not v.vendor_number:
             assigned, aerr = assign_string_code_if_empty(
                 request.company_id, Vendor, "vendor_number", "VND", v.pk, None, None
@@ -306,7 +325,13 @@ def vendor_detail(request, vendor_id: int):
             if de_err:
                 return JsonResponse({"detail": de_err}, status=400)
             v.default_expense_account_id = deid
+        ferr = apply_facility_fields(v, body)
+        if ferr:
+            return JsonResponse({"detail": ferr}, status=400)
         v.save()
+        _, rerr = upsert_rate_card_from_body(v, body)
+        if rerr:
+            return JsonResponse({"detail": rerr}, status=400)
         if "opening_balance" in body and "current_balance" not in body:
             from api.services.party_balance_sync import refresh_vendor_balance
 

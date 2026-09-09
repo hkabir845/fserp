@@ -33,6 +33,7 @@ from api.views import (
     nozzle_views,
     customer_views,
     vendor_views,
+    vendor_purchase_views,
     chart_of_accounts_views,
     bank_accounts_views,
     journal_entries_views,
@@ -395,6 +396,17 @@ urlpatterns = [
     path("cashier/cash-donation/", cashier_views.cashier_cash_donation),
     path("cashier/cash-donation", cashier_views.cashier_cash_donation),
     path("vendors/", vendor_views.vendors_list_or_create),
+    path("vendors/<int:vendor_id>/purchase-terms/", vendor_purchase_views.vendor_purchase_terms),
+    path("vendors/<int:vendor_id>/rate-cards/", vendor_purchase_views.vendor_rate_cards_list_or_create),
+    path(
+        "vendors/<int:vendor_id>/rate-cards/<int:card_id>/",
+        vendor_purchase_views.vendor_rate_card_detail,
+    ),
+    path("vendors/<int:vendor_id>/credits/", vendor_purchase_views.vendor_credits_list_or_create),
+    path(
+        "vendors/<int:vendor_id>/credits/<int:credit_id>/",
+        vendor_purchase_views.vendor_credit_detail,
+    ),
     path("vendors/<int:vendor_id>/ledger/", vendor_views.vendor_ledger),
     path("vendors/<int:vendor_id>/", vendor_views.vendor_detail),
     # Accounting

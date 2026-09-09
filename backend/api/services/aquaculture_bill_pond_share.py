@@ -9,6 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.http import JsonResponse
 
 from api.models import AquaculturePond, Item
+from api.services.vendor_purchase_terms import split_purchase_term_amounts
 
 
 def _money_q(value: Decimal) -> Decimal:
@@ -157,6 +158,7 @@ def expand_parsed_bill_line_for_pond_share(
         return [], JsonResponse({"detail": perr}, status=400)
     assert pairs is not None
 
+    orig_amt = pl["amount"]
     outs: list[dict] = []
     for pid, portion in pairs:
         child = {
@@ -165,6 +167,7 @@ def expand_parsed_bill_line_for_pond_share(
             "aquaculture_pond_id": pid,
             "aquaculture_production_cycle_id": None,
         }
+        split_purchase_term_amounts(child, portion, orig_amt)
         if not item_id:
             child["quantity"] = Decimal("1")
             child["unit_price"] = portion

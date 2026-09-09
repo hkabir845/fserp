@@ -358,6 +358,7 @@ def _item_to_json(i, *, company_id: int | None = None, include_location_stocks: 
         "tracks_inventory": item_tracks_physical_stock(i),
         "unit_price": _serialize_decimal(i.unit_price),
         "cost": _serialize_decimal(i.cost),
+        "mrp": _serialize_decimal(getattr(i, "mrp", 0) or 0),
         "quantity_on_hand": _serialize_quantity(_effective_quantity_on_hand(i)),
         "unit": i.unit or "piece",
         "pos_category": i.pos_category or "general",
@@ -564,17 +565,22 @@ def items_list_or_create(request):
             return JsonResponse({"detail": "name is required"}, status=400)
         unit_price = _parse_decimal(body.get("unit_price"), "0")
         cost = _parse_decimal(body.get("cost"), "0")
+        mrp = _parse_decimal(body.get("mrp"), "0")
         qty = _parse_decimal(body.get("quantity_on_hand"), "0")
         if unit_price is None:
             return JsonResponse({"detail": "Invalid unit_price"}, status=400)
         if cost is None:
             return JsonResponse({"detail": "Invalid cost"}, status=400)
+        if mrp is None:
+            return JsonResponse({"detail": "Invalid mrp"}, status=400)
         if qty is None:
             return JsonResponse({"detail": "Invalid quantity_on_hand"}, status=400)
         if unit_price < 0:
             return JsonResponse({"detail": "unit_price cannot be negative"}, status=400)
         if cost < 0:
             return JsonResponse({"detail": "cost cannot be negative"}, status=400)
+        if mrp < 0:
+            return JsonResponse({"detail": "mrp cannot be negative"}, status=400)
         if qty < 0:
             return JsonResponse({"detail": "quantity_on_hand cannot be negative"}, status=400)
         conflict = find_item_name_conflict(request.company_id, name)
@@ -658,6 +664,7 @@ def items_list_or_create(request):
             item_type=_coerce_item_type_for_storage(body.get("item_type")),
             unit_price=unit_price,
             cost=cost,
+            mrp=mrp if mrp is not None else 0,
             quantity_on_hand=qty,
             unit=_truncate(body.get("unit") or "piece", 20) or "piece",
             pos_category=_truncate(body.get("pos_category") or "general", 64) or "general",
@@ -806,6 +813,13 @@ def item_detail(request, item_id: int):
             if c < 0:
                 return JsonResponse({"detail": "cost cannot be negative"}, status=400)
             i.cost = c
+        if "mrp" in body and body["mrp"] is not None:
+            mrp_val = _parse_decimal(body["mrp"])
+            if mrp_val is None:
+                return JsonResponse({"detail": "Invalid mrp"}, status=400)
+            if mrp_val < 0:
+                return JsonResponse({"detail": "mrp cannot be negative"}, status=400)
+            i.mrp = mrp_val
         # Catalog / pricing fields must persist even when quantity rules fail below (e.g. missing
         # station_id for multi-site shop stock, or tank_id for multi-tank fuel). Previously quantity
         # validation returned 400 before any save(), so unit_price/cost updates were silently dropped.

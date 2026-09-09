@@ -52,6 +52,14 @@ from api.services.gl_posting import (
     sync_posted_vendor_bill,
     undo_bill_stock_receipt,
 )
+from api.services.vendor_purchase_terms import (
+    apply_bill_cash_payment,
+    bill_line_purchase_term_kwargs,
+    credit_limit_error_response,
+    evaluate_bill_credit_limit,
+    parse_cash_payment_amount,
+    price_parsed_bill_line,
+)
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.utils.transaction_filters import (
@@ -186,7 +194,11 @@ def _drop_invalid_bill_line_expense_account_id(company_id: int, row: dict) -> No
 
 
 def _parse_bill_lines_from_body(
-    company_id: int, lines_body: list | None
+    company_id: int,
+    lines_body: list | None,
+    *,
+    vendor: Vendor | None = None,
+    bill_date=None,
 ) -> tuple[list[dict], JsonResponse | None]:
     """Parse request line rows into BillLine create kwargs (with optional pond-share expansion)."""
     parsed_lines: list[dict] = []
@@ -249,6 +261,12 @@ def _parse_bill_lines_from_body(
             **aq_kw,
             **fish_kw,
         }
+        item_obj = None
+        if item_id:
+            item_obj = Item.objects.filter(pk=item_id, company_id=company_id).first()
+        price_err = price_parsed_bill_line(row, pl, vendor, bill_date, item_obj)
+        if price_err:
+            return [], price_err
         bucket = str(row.get("aquaculture_cost_bucket") or "").strip()[:40]
         if bucket:
             pl["aquaculture_cost_bucket"] = bucket
@@ -274,6 +292,30 @@ def _parse_bill_lines_from_body(
             return [], exp_err
         parsed_lines.extend(expanded)
     return parsed_lines, None
+
+
+def _create_bill_line(bill: Bill, pl: dict) -> BillLine:
+    return BillLine.objects.create(
+        bill=bill,
+        item_id=pl["item_id"],
+        tank_id=pl["tank_id"],
+        description=pl["description"],
+        quantity=pl["quantity"],
+        unit_price=pl["unit_price"],
+        amount=pl["amount"],
+        aquaculture_pond_id=pl.get("aquaculture_pond_id"),
+        aquaculture_production_cycle_id=pl.get("aquaculture_production_cycle_id"),
+        aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
+        aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
+        aquaculture_fish_count=pl.get("aquaculture_fish_count"),
+        aquaculture_fish_species=pl.get("aquaculture_fish_species") or "",
+        aquaculture_fish_species_other=pl.get("aquaculture_fish_species_other") or "",
+        expense_account_id=pl.get("expense_account_id"),
+        fuel_station_expense_category=pl.get("fuel_station_expense_category") or "",
+        tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
+        receipt_station_id=pl.get("receipt_station_id"),
+        **bill_line_purchase_term_kwargs(pl),
+    )
 
 
 def _parse_bill_line_aquaculture(company_id: int, row: dict):
@@ -556,6 +598,9 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
         "unit_price": str(l.unit_price),
         "unit_cost": str(l.unit_price),
         "amount": str(l.amount),
+        "mrp": str(getattr(l, "mrp", 0) or 0),
+        "instant_discount_amount": str(getattr(l, "instant_discount_amount", 0) or 0),
+        "transport_amount": str(getattr(l, "transport_amount", 0) or 0),
         "expense_account_id": getattr(l, "expense_account_id", None),
         "tank_id": getattr(l, "tank_id", None),
         "tank_name": (
@@ -628,6 +673,30 @@ def _bill_receipt_pond_summary(b) -> tuple[int | None, str]:
     return None, ""
 
 
+def _bill_line_term_sum(b, field: str) -> Decimal:
+    total = Decimal("0")
+    for ln in b.lines.all():
+        if field == "gross_mrp":
+            qty = ln.quantity if ln.quantity is not None else Decimal("0")
+            mrp = getattr(ln, "mrp", None) or Decimal("0")
+            total += (qty * mrp)
+        else:
+            total += getattr(ln, field, None) or Decimal("0")
+    return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _bill_gross_mrp(b) -> Decimal:
+    return _bill_line_term_sum(b, "gross_mrp")
+
+
+def _bill_instant_total(b) -> Decimal:
+    return _bill_line_term_sum(b, "instant_discount_amount")
+
+
+def _bill_transport_total(b) -> Decimal:
+    return _bill_line_term_sum(b, "transport_amount")
+
+
 def _bill_to_json(
     b,
     *,
@@ -669,6 +738,9 @@ def _bill_to_json(
         "total_amount": str(total),
         "amount_paid": str(paid),
         "balance_due": str(bal),
+        "gross_mrp_total": str(_bill_gross_mrp(b)),
+        "instant_discount_total": str(_bill_instant_total(b)),
+        "transport_total": str(_bill_transport_total(b)),
     }
     if not include_lines:
         receipt_pond_id, receipt_pond_display_name = _bill_receipt_pond_summary(b)
@@ -919,7 +991,12 @@ def bills_create(request):
     if err:
         return err
     vendor_id = body.get("vendor_id")
-    if not vendor_id or not Vendor.objects.filter(id=vendor_id, company_id=request.company_id).exists():
+    vendor = (
+        Vendor.objects.filter(id=vendor_id, company_id=request.company_id).first()
+        if vendor_id
+        else None
+    )
+    if not vendor:
         return JsonResponse({"detail": "Valid vendor_id required"}, status=400)
     bill_date = _parse_date(body.get("bill_date")) or date.today()
     due_date = _normalize_due_date(bill_date, _parse_date(body.get("due_date")))
@@ -941,15 +1018,13 @@ def bills_create(request):
                 status=400,
             )
     else:
-        vrow = (
-            Vendor.objects.filter(pk=vendor_id, company_id=request.company_id)
-            .only("default_station_id", "default_aquaculture_pond_id")
-            .first()
-        )
+        vrow = vendor
         # Vendor default site and/or default pond (pond → shop linked on Station when set).
         receipt_station_id = receipt_station_id_for_vendor(request.company_id, vrow)
 
-    parsed_lines, parse_err = _parse_bill_lines_from_body(request.company_id, body.get("lines"))
+    parsed_lines, parse_err = _parse_bill_lines_from_body(
+        request.company_id, body.get("lines"), vendor=vendor, bill_date=bill_date
+    )
     if parse_err:
         return parse_err
     item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
@@ -967,6 +1042,19 @@ def bills_create(request):
     )
     if line_purpose_err:
         return JsonResponse({"detail": line_purpose_err}, status=400)
+
+    line_net = sum((pl.get("amount") or Decimal("0")) for pl in parsed_lines)
+    posted_net = line_net + tax_total
+    if status in ("open", "paid", "partial", "overdue") and posted_net > 0:
+        lim_err = evaluate_bill_credit_limit(
+            request.company_id,
+            vendor,
+            posted_net,
+            bill_date=bill_date,
+            cash_applied=parse_cash_payment_amount(body),
+        )
+        if lim_err:
+            return credit_limit_error_response(lim_err)
 
     try:
         with transaction.atomic():
@@ -987,26 +1075,7 @@ def bills_create(request):
             b.save()
             assign_auto_production_cycles_for_parsed_bill_lines(request.company_id, b, parsed_lines)
             for pl in parsed_lines:
-                BillLine.objects.create(
-                    bill=b,
-                    item_id=pl["item_id"],
-                    tank_id=pl["tank_id"],
-                    description=pl["description"],
-                    quantity=pl["quantity"],
-                    unit_price=pl["unit_price"],
-                    amount=pl["amount"],
-                    aquaculture_pond_id=pl.get("aquaculture_pond_id"),
-                    aquaculture_production_cycle_id=pl.get("aquaculture_production_cycle_id"),
-                    aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
-                    aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
-                    aquaculture_fish_count=pl.get("aquaculture_fish_count"),
-                    aquaculture_fish_species=pl.get("aquaculture_fish_species") or "",
-                    aquaculture_fish_species_other=pl.get("aquaculture_fish_species_other") or "",
-                    expense_account_id=pl.get("expense_account_id"),
-                    fuel_station_expense_category=pl.get("fuel_station_expense_category") or "",
-                    tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
-                    receipt_station_id=pl.get("receipt_station_id"),
-                )
+                _create_bill_line(b, pl)
             b.tax_total = tax_total
             b.save(update_fields=["tax_total", "updated_at"])
             _refresh_bill_totals_from_lines(b)
@@ -1031,6 +1100,9 @@ def bills_create(request):
                     b,
                     acknowledge_tank_overfill=ack_tank_overfill,
                 )
+                cash_err = apply_bill_cash_payment(request.company_id, b, body)
+                if cash_err:
+                    raise GlPostingError(cash_err)
             repair_stale_aquaculture_bill_line_cycles(
                 request.company_id,
                 bill_ids=[b.id],
@@ -1158,8 +1230,14 @@ def bill_detail(request, bill_id: int):
         lines_in_body = "lines" in body
         material_bill = body_has_material_bill_change(body, lines_changed=lines_in_body)
         if lines_in_body:
+            vendor_for_lines = Vendor.objects.filter(
+                pk=b.vendor_id, company_id=request.company_id
+            ).first()
             parsed_lines, parse_err = _parse_bill_lines_from_body(
-                request.company_id, body.get("lines")
+                request.company_id,
+                body.get("lines"),
+                vendor=vendor_for_lines,
+                bill_date=b.bill_date,
             )
             if parse_err:
                 return parse_err
@@ -1198,6 +1276,30 @@ def bill_detail(request, bill_id: int):
             )
             if line_purpose_err:
                 return JsonResponse({"detail": line_purpose_err}, status=400)
+        if parsed_lines is not None:
+            posted_net = sum(
+                (pl.get("amount") or Decimal("0")) for pl in parsed_lines
+            ) + (b.tax_total or Decimal("0"))
+        else:
+            posted_net = b.total or Decimal("0")
+        vendor_for_limit = Vendor.objects.filter(
+            pk=b.vendor_id, company_id=request.company_id
+        ).first()
+        if (
+            vendor_for_limit
+            and (b.status or "").strip().lower() in ("open", "paid", "partial", "overdue")
+            and posted_net > 0
+        ):
+            lim_err = evaluate_bill_credit_limit(
+                request.company_id,
+                vendor_for_limit,
+                posted_net,
+                bill_date=b.bill_date,
+                exclude_bill_id=b.id,
+                cash_applied=parse_cash_payment_amount(body),
+            )
+            if lim_err:
+                return credit_limit_error_response(lim_err)
         try:
             with transaction.atomic():
                 b.save()
@@ -1208,26 +1310,7 @@ def bill_detail(request, bill_id: int):
                     b.lines.all().delete()
                     assign_auto_production_cycles_for_parsed_bill_lines(request.company_id, b, parsed_lines)
                     for pl in parsed_lines:
-                        BillLine.objects.create(
-                            bill=b,
-                            item_id=pl["item_id"],
-                            tank_id=pl["tank_id"],
-                            description=pl["description"],
-                            quantity=pl["quantity"],
-                            unit_price=pl["unit_price"],
-                            amount=pl["amount"],
-                            aquaculture_pond_id=pl.get("aquaculture_pond_id"),
-                            aquaculture_production_cycle_id=pl.get("aquaculture_production_cycle_id"),
-                            aquaculture_cost_bucket=pl.get("aquaculture_cost_bucket") or "",
-                            aquaculture_fish_weight_kg=pl.get("aquaculture_fish_weight_kg"),
-                            aquaculture_fish_count=pl.get("aquaculture_fish_count"),
-                            aquaculture_fish_species=pl.get("aquaculture_fish_species") or "",
-                            aquaculture_fish_species_other=pl.get("aquaculture_fish_species_other") or "",
-                            expense_account_id=pl.get("expense_account_id"),
-                            fuel_station_expense_category=pl.get("fuel_station_expense_category") or "",
-                            tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
-                            receipt_station_id=pl.get("receipt_station_id"),
-                        )
+                        _create_bill_line(b, pl)
                 _refresh_bill_totals_from_lines(b)
                 b.refresh_from_db()
                 b = (
@@ -1259,6 +1342,9 @@ def bill_detail(request, bill_id: int):
                             b,
                             acknowledge_tank_overfill=ack_tank_overfill,
                         )
+                    cash_err = apply_bill_cash_payment(request.company_id, b, body)
+                    if cash_err:
+                        raise GlPostingError(cash_err)
                 repair_stale_aquaculture_bill_line_cycles(
                     request.company_id,
                     bill_ids=[b.id],

@@ -79,6 +79,10 @@ import { scopeDisplayLabel } from '@/app/reporting-categories/reportingCategorie
 import { useCompany } from '@/contexts/CompanyContext'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
 import {
+  vendorUsesPurchaseTerms,
+  type VendorPurchaseTerms,
+} from '@/lib/vendorSupplierCategory'
+import {
   fetchEntityScopeDirectory,
   parsePondsFromApi,
   parseStationsFromApi,
@@ -148,6 +152,9 @@ interface BillLineItem {
   item_catalog?: BillLineItemCatalogEdits
   /** UI only: owner typed Amount by hand on a standard line — don't overwrite it with Qty × Rate. */
   amount_manual?: boolean
+  mrp?: number
+  instant_discount_amount?: number
+  transport_amount?: number
   /** Optional: tag line to a pond/cycle for aquaculture P&L when the bill posts (GL). */
   aquaculture_pond_id?: number | '' | null
   pond_name?: string
@@ -342,6 +349,12 @@ interface Vendor {
   default_station_name?: string | null
   default_aquaculture_pond_id?: number | null
   default_aquaculture_pond_name?: string | null
+  supplier_category?: string
+  uses_purchase_terms?: boolean
+  credit_facility_enabled?: boolean
+  credit_limit?: string | number
+  credit_available?: string | number | null
+  cash_only?: boolean
 }
 
 interface Item {
@@ -361,6 +374,8 @@ interface Item {
   category?: string
   /** Fish / fry: pieces (heads) per 1 kg — Line on item form */
   pieces_per_kg?: number | string | null
+  mrp?: number | string
+  content_weight_kg?: number | string | null
 }
 
 function isFishTypeItem(item: Item | undefined): boolean {
@@ -415,6 +430,35 @@ function roundBillMoney(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+function applyMillTermsToLine(
+  line: BillLineItem,
+  item: Item | undefined,
+  terms: VendorPurchaseTerms | null
+): BillLineItem {
+  if (!terms?.rate_card) return line
+  const qty = Number(line.quantity) || 1
+  const mrp = Number(line.mrp || item?.mrp || 0)
+  if (!(mrp > 0) || !(qty > 0)) return line
+  const pct = Number(terms.rate_card.instant_discount_percent) || 0
+  const perUnit = Number(terms.rate_card.instant_discount_per_unit) || 0
+  const tUnit = Number(terms.rate_card.transport_per_unit) || 0
+  const tKg = Number(terms.rate_card.transport_per_kg) || 0
+  const sackKg = Number(item?.content_weight_kg) || 0
+  const gross = qty * mrp
+  const instant = (gross * pct) / 100 + qty * perUnit
+  const transport = qty * tUnit + qty * sackKg * tKg
+  const amount = Math.max(0, roundBillMoney(gross - instant - transport))
+  return {
+    ...line,
+    mrp,
+    instant_discount_amount: roundBillMoney(instant),
+    transport_amount: roundBillMoney(transport),
+    amount,
+    unit_cost: roundBillMoney(amount / qty),
+    amount_manual: true,
+  }
+}
+
 function roundFishWeightKg(n: number): number {
   return Math.round(n * 10000) / 10000
 }
@@ -442,11 +486,12 @@ function syncStandardBillLineAmount(line: BillLineItem): BillLineItem {
 }
 
 function finalizeBillLinesForSave(lines: BillLineItem[], itemList: Item[]): BillLineItem[] {
-  return lines.map((line) =>
-    isFishBillLineAutoMode(line, itemList) || line.amount_manual
+  return lines.map((line) => {
+    if (Number(line.mrp) > 0) return line
+    return isFishBillLineAutoMode(line, itemList) || line.amount_manual
       ? line
       : syncStandardBillLineAmount(line)
-  )
+  })
 }
 
 function itemPiecesPerKg(item: Item | undefined): number | null {
@@ -1039,6 +1084,9 @@ function serializeBillLineForApi(
     quantity: normalized.quantity,
     unit_cost: normalized.unit_cost,
     amount: normalized.amount,
+    mrp: Number(normalized.mrp) || 0,
+    instant_discount_amount: Number(normalized.instant_discount_amount) || 0,
+    transport_amount: Number(normalized.transport_amount) || 0,
     tax_amount: normalized.tax_amount || 0,
     ...(fish
       ? {
@@ -1273,6 +1321,8 @@ export default function BillsPage() {
   const [siteFilterKey, setSiteFilterKey] = useState<string>('')
   const [allocationDrilldown, setAllocationDrilldown] = useState<Bill | null>(null)
   const [showModal, setShowModal] = useState(false)
+  const [vendorPurchaseTerms, setVendorPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
+  const [cashWithBill, setCashWithBill] = useState('')
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -1446,6 +1496,7 @@ export default function BillsPage() {
     const vendor_id = parseInt(rawVendorId, 10) || 0
     if (!vendor_id) {
       setFormData((prev) => ({ ...prev, vendor_id: 0 }))
+      setVendorPurchaseTerms(null)
       return
     }
     const vendor = vendors.find((v) => v.id === vendor_id)
@@ -1463,6 +1514,14 @@ export default function BillsPage() {
       })
       return { ...prev, vendor_id, lines }
     })
+    if (vendorUsesPurchaseTerms(vendor?.supplier_category) || vendor?.credit_facility_enabled) {
+      void api
+        .get(`/vendors/${vendor_id}/purchase-terms/`)
+        .then((res) => setVendorPurchaseTerms(res.data as VendorPurchaseTerms))
+        .catch(() => setVendorPurchaseTerms(null))
+    } else {
+      setVendorPurchaseTerms(null)
+    }
   }
 
   const detectedBillPurpose = useMemo(
@@ -2304,7 +2363,12 @@ export default function BillsPage() {
         value &&
         !isFishBillLineAutoMode(newLines[index], items)
       ) {
-        newLines[index] = syncStandardBillLineAmount(newLines[index])
+        const picked = items.find((it) => it.id === Number(value))
+        newLines[index] = applyMillTermsToLine(
+          syncStandardBillLineAmount(newLines[index]),
+          picked,
+          vendorPurchaseTerms
+        )
       }
 
       return { ...prev, lines: newLines }
@@ -2355,6 +2419,10 @@ export default function BillsPage() {
       total_amount: total,
       status: approveBill ? 'open' : 'draft',
       acknowledge_tank_overfill: sendAck ? true : undefined,
+      cash_payment:
+        approveBill && parseFloat(cashWithBill) > 0
+          ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
+          : undefined,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -2458,6 +2526,9 @@ export default function BillsPage() {
             quantity: Number(line.quantity),
             unit_cost: Number(line.unit_cost ?? line.unit_price ?? 0),
             amount: Number(line.amount),
+            mrp: Number(line.mrp || 0),
+            instant_discount_amount: Number(line.instant_discount_amount || 0),
+            transport_amount: Number(line.transport_amount || 0),
             tax_amount: Number(line.tax_amount || 0),
             aquaculture_fish_weight_kg:
               line.aquaculture_fish_weight_kg != null && String(line.aquaculture_fish_weight_kg) !== ''
@@ -2511,6 +2582,12 @@ export default function BillsPage() {
           })) || [],
         })
         setShowEditModal(true)
+        if (fullBill.vendor_id) {
+          void api
+            .get(`/vendors/${fullBill.vendor_id}/purchase-terms/`)
+            .then((res) => setVendorPurchaseTerms(res.data as VendorPurchaseTerms))
+            .catch(() => setVendorPurchaseTerms(null))
+        }
       } else {
         toast.error('Failed to load bill details')
       }
@@ -2560,6 +2637,10 @@ export default function BillsPage() {
       total_amount: total,
       status: nextStatus,
       acknowledge_tank_overfill: sendAck ? true : undefined,
+      cash_payment:
+        willPostReceipt && parseFloat(cashWithBill) > 0
+          ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
+          : undefined,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -2897,6 +2978,8 @@ export default function BillsPage() {
     })
     setEditingBill(null)
     setApproveBill(false)
+    setVendorPurchaseTerms(null)
+    setCashWithBill('')
   }
 
   const handleCloseModal = () => {
@@ -3553,6 +3636,36 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
+                    {vendorPurchaseTerms ? (
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
+                        <p>
+                          {vendorPurchaseTerms.supplier_category_label}
+                          {vendorPurchaseTerms.credit_facility_enabled
+                            ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
+                            : ''}
+                          {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
+                        </p>
+                        {vendorPurchaseTerms.uses_purchase_terms ? (
+                          <p className="text-muted-foreground">
+                            MRP lines: instant discount and transport come from this mill&apos;s rate card (net is stock cost).
+                          </p>
+                        ) : null}
+                        {(vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0) ? (
+                          <label className="block text-xs font-medium pt-1">
+                            Cash with this bill
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={cashWithBill}
+                              onChange={(e) => setCashWithBill(e.target.value)}
+                              className={`${BILL_LINE_CTL} mt-1`}
+                              placeholder="Required when credit is full"
+                            />
+                          </label>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -4055,6 +4168,36 @@ export default function BillsPage() {
                     )}
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
+                    ) : null}
+                    {vendorPurchaseTerms ? (
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
+                        <p>
+                          {vendorPurchaseTerms.supplier_category_label}
+                          {vendorPurchaseTerms.credit_facility_enabled
+                            ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
+                            : ''}
+                          {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
+                        </p>
+                        {vendorPurchaseTerms.uses_purchase_terms ? (
+                          <p className="text-muted-foreground">
+                            MRP lines: instant discount and transport come from this mill&apos;s rate card (net is stock cost).
+                          </p>
+                        ) : null}
+                        {(vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0) ? (
+                          <label className="block text-xs font-medium pt-1">
+                            Cash with this bill
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={cashWithBill}
+                              onChange={(e) => setCashWithBill(e.target.value)}
+                              className={`${BILL_LINE_CTL} mt-1`}
+                              placeholder="Required when credit is full"
+                            />
+                          </label>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                   <div>

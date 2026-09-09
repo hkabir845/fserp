@@ -24,6 +24,17 @@ import {
 } from 'lucide-react'
 import { vendorUsualReceivingLabel } from '@/lib/vendorReceivingDefaults'
 import { VendorDefaultReceivingSelect } from '@/components/vendors/VendorDefaultReceivingSelect'
+import {
+  VendorPurchaseTermsFields,
+  rateCardFormFromPayload,
+} from '@/components/vendors/VendorPurchaseTermsFields'
+import {
+  VENDOR_SUPPLIER_CATEGORIES,
+  emptyRateCardForm,
+  vendorSupplierCategoryLabel,
+  vendorUsesPurchaseTerms,
+  type VendorPurchaseTerms,
+} from '@/lib/vendorSupplierCategory'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
@@ -79,6 +90,17 @@ interface Vendor {
   default_expense_account_id?: number | null
   default_expense_account_code?: string | null
   default_expense_account_name?: string | null
+  supplier_category?: string
+  supplier_category_label?: string
+  uses_purchase_terms?: boolean
+  credit_facility_enabled?: boolean
+  credit_limit?: string | number
+  credit_used?: string | number | null
+  credit_available?: string | number | null
+  cash_only?: boolean
+  credit_start_date?: string | null
+  square_off_date?: string | null
+  require_zero_on_square_off?: boolean
 }
 
 interface StationOption {
@@ -145,7 +167,18 @@ export default function VendorsPage() {
     /** '' | `s:${stationId}` | `p:${pondId}` — default receiving location for bills */
     default_receiving: '' as string,
     default_expense_account_id: '' as string,
+    supplier_category: 'general',
+    credit_facility_enabled: false,
+    credit_limit: '0',
+    credit_start_date: '',
+    square_off_date: '',
+    require_zero_on_square_off: true,
   })
+  const [rateCardForm, setRateCardForm] = useState(emptyRateCardForm)
+  const [purchaseTerms, setPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
+  const [millCreditAmount, setMillCreditAmount] = useState('')
+  const [millCreditKind, setMillCreditKind] = useState('manual')
+  const [millCreditMemo, setMillCreditMemo] = useState('')
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -368,6 +401,41 @@ export default function VendorsPage() {
     return Number.isFinite(n) && n > 0 ? n : null
   }
 
+  const purchasePayload = () => {
+    const payload: Record<string, unknown> = {
+      supplier_category: formData.supplier_category || 'general',
+    }
+    if (vendorUsesPurchaseTerms(formData.supplier_category)) {
+      payload.credit_facility_enabled = formData.credit_facility_enabled
+      payload.credit_limit = parseFloat(formData.credit_limit) || 0
+      payload.credit_start_date = formData.credit_start_date || null
+      payload.square_off_date = formData.square_off_date || null
+      payload.require_zero_on_square_off = formData.require_zero_on_square_off
+      payload.rate_card = {
+        effective_from: rateCardForm.effective_from,
+        instant_discount_percent: parseFloat(rateCardForm.instant_discount_percent) || 0,
+        instant_discount_per_unit: parseFloat(rateCardForm.instant_discount_per_unit) || 0,
+        transport_per_unit: parseFloat(rateCardForm.transport_per_unit) || 0,
+        transport_per_kg: parseFloat(rateCardForm.transport_per_kg) || 0,
+        monthly_rebate_percent: parseFloat(rateCardForm.monthly_rebate_percent) || 0,
+        yearly_rebate_percent: parseFloat(rateCardForm.yearly_rebate_percent) || 0,
+        yearly_target_kg: parseFloat(rateCardForm.yearly_target_kg) || 0,
+      }
+    }
+    return payload
+  }
+
+  const loadPurchaseTerms = async (vendorId: number) => {
+    try {
+      const res = await api.get(`/vendors/${vendorId}/purchase-terms/`)
+      const data = res.data as VendorPurchaseTerms
+      setPurchaseTerms(data)
+      setRateCardForm(rateCardFormFromPayload(data.rate_card))
+    } catch {
+      setPurchaseTerms(null)
+    }
+  }
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -389,6 +457,7 @@ export default function VendorsPage() {
         default_station_id,
         default_aquaculture_pond_id,
         default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
+        ...purchasePayload(),
         ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
       toast.success(tr('entityCreated', { entity: ct('Vendor') }))
@@ -431,8 +500,21 @@ export default function VendorsPage() {
         vendor.default_expense_account_id != null && vendor.default_expense_account_id > 0
           ? String(vendor.default_expense_account_id)
           : '',
+      supplier_category: vendor.supplier_category || 'general',
+      credit_facility_enabled: Boolean(vendor.credit_facility_enabled),
+      credit_limit: String(vendor.credit_limit ?? '0'),
+      credit_start_date: vendor.credit_start_date
+        ? String(vendor.credit_start_date).split('T')[0]
+        : '',
+      square_off_date: vendor.square_off_date ? String(vendor.square_off_date).split('T')[0] : '',
+      require_zero_on_square_off: vendor.require_zero_on_square_off !== false,
     })
+    setRateCardForm(emptyRateCardForm())
+    setPurchaseTerms(null)
     setShowModal(true)
+    if (vendorUsesPurchaseTerms(vendor.supplier_category)) {
+      void loadPurchaseTerms(vendor.id)
+    }
   }
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -458,6 +540,7 @@ export default function VendorsPage() {
         default_station_id,
         default_aquaculture_pond_id,
         default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
+        ...purchasePayload(),
       })
       toast.success(tr('entityUpdated', { entity: ct('Vendor') }))
       setShowModal(false)
@@ -513,7 +596,18 @@ export default function VendorsPage() {
       is_active: true,
       default_receiving: '',
       default_expense_account_id: '',
+      supplier_category: 'general',
+      credit_facility_enabled: false,
+      credit_limit: '0',
+      credit_start_date: '',
+      square_off_date: '',
+      require_zero_on_square_off: true,
     })
+    setRateCardForm(emptyRateCardForm())
+    setPurchaseTerms(null)
+    setMillCreditAmount('')
+    setMillCreditKind('manual')
+    setMillCreditMemo('')
     setVendorRefCode('')
     setEditingVendor(null)
   }
@@ -706,6 +800,9 @@ export default function VendorsPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Company
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">
+                    Type
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Display Name
                   </th>
@@ -737,6 +834,12 @@ export default function VendorsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                       {vendor.company_name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground hidden sm:table-cell">
+                      {vendor.supplier_category_label || vendorSupplierCategoryLabel(vendor.supplier_category)}
+                      {vendor.cash_only ? (
+                        <span className="ml-2 text-[10px] font-semibold uppercase text-amber-700">Cash only</span>
+                      ) : null}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                       {vendor.display_name}
@@ -893,6 +996,24 @@ export default function VendorsPage() {
                       onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                       className="erp-field"
                     />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-foreground">
+                      Supplier type
+                    </label>
+                    <select
+                      value={formData.supplier_category}
+                      onChange={(e) =>
+                        setFormData({ ...formData, supplier_category: e.target.value })
+                      }
+                      className="erp-field"
+                    >
+                      {VENDOR_SUPPLIER_CATEGORIES.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -1064,6 +1185,97 @@ export default function VendorsPage() {
                       </div>
                     </div>
                   </div>
+                  <div className="col-span-2">
+                    <VendorPurchaseTermsFields
+                      supplierCategory={formData.supplier_category}
+                      creditFacilityEnabled={formData.credit_facility_enabled}
+                      creditLimit={formData.credit_limit}
+                      creditStartDate={formData.credit_start_date}
+                      squareOffDate={formData.square_off_date}
+                      requireZeroOnSquareOff={formData.require_zero_on_square_off}
+                      rateCard={rateCardForm}
+                      onFacilityChange={(patch) => setFormData({ ...formData, ...patch })}
+                      onRateCardChange={(patch) => setRateCardForm({ ...rateCardForm, ...patch })}
+                    />
+                  </div>
+                  {editingVendor && vendorUsesPurchaseTerms(formData.supplier_category) && purchaseTerms ? (
+                    <div className="col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
+                      <p className="text-sm font-medium text-foreground">
+                        Used {currencySymbol}
+                        {Number(purchaseTerms.used).toLocaleString()}
+                        {purchaseTerms.available != null
+                          ? ` · Available ${currencySymbol}${Number(purchaseTerms.available).toLocaleString()}`
+                          : ''}
+                        {purchaseTerms.cash_only ? ' · Cash only' : ''}
+                      </p>
+                      {purchaseTerms.scheme ? (
+                        <p className="text-xs text-muted-foreground">
+                          This month MRP {currencySymbol}
+                          {Number(purchaseTerms.scheme.month_mrp).toLocaleString()} · est. monthly credit{' '}
+                          {currencySymbol}
+                          {Number(purchaseTerms.scheme.estimated_monthly_credit).toLocaleString()}
+                          {' · '}YTD {Number(purchaseTerms.scheme.year_kg).toLocaleString()} kg
+                          {Number(purchaseTerms.scheme.yearly_target_kg) > 0
+                            ? ` of ${Number(purchaseTerms.scheme.yearly_target_kg).toLocaleString()} kg target`
+                            : ''}
+                        </p>
+                      ) : null}
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="Mill credit amount"
+                          value={millCreditAmount}
+                          onChange={(e) => setMillCreditAmount(e.target.value)}
+                          className="erp-field"
+                        />
+                        <select
+                          value={millCreditKind}
+                          onChange={(e) => setMillCreditKind(e.target.value)}
+                          className="erp-field"
+                        >
+                          <option value="manual">Manual</option>
+                          <option value="monthly">Monthly scheme</option>
+                          <option value="yearly">Yearly scheme</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Memo"
+                          value={millCreditMemo}
+                          onChange={(e) => setMillCreditMemo(e.target.value)}
+                          className="erp-field col-span-2"
+                        />
+                        <button
+                          type="button"
+                          className="col-span-2 text-sm px-3 py-2 rounded-md bg-emerald-700 text-white hover:bg-emerald-800"
+                          onClick={async () => {
+                            const amt = parseFloat(millCreditAmount)
+                            if (!(amt > 0)) {
+                              toast.error('Enter a mill credit amount')
+                              return
+                            }
+                            try {
+                              await api.post(`/vendors/${editingVendor.id}/credits/`, {
+                                amount: amt,
+                                credit_kind: millCreditKind,
+                                memo: millCreditMemo,
+                              })
+                              toast.success('Mill account credit recorded (no cash).')
+                              setMillCreditAmount('')
+                              setMillCreditMemo('')
+                              void loadPurchaseTerms(editingVendor.id)
+                              void fetchVendors()
+                            } catch (err) {
+                              toast.error(extractErrorMessage(err, 'Could not record mill credit'))
+                            }
+                          }}
+                        >
+                          Record mill account credit
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Opening Balance ({currencySymbol})

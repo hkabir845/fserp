@@ -20,6 +20,7 @@ from api.models import (
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
     Vendor,
+    VendorCredit,
 )
 from api.services.gl_posting import _is_walkin_customer, invoice_sale_used_ar
 
@@ -320,7 +321,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
     """
     A/P subledger movements for one vendor.
 
-    Balance (debit − credit) = opening + bills − payments made.
+    Balance (debit − credit) = opening + bills − payments made − mill account credits.
     Must match vendor profile / list balance (accounts payable).
     """
     rows: list[_Row] = []
@@ -401,6 +402,27 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                 credit=amt,
                 related_id=pay.id,
                 allocations=allocs or None,
+            )
+        )
+
+    for cred in VendorCredit.objects.filter(
+        company_id=company_id, vendor_id=vendor.id
+    ).order_by("credit_date", "id"):
+        amt = _d(cred.amount)
+        if amt <= 0:
+            continue
+        memo = (cred.memo or cred.period_label or cred.credit_kind or "").strip()
+        rows.append(
+            _Row(
+                sort_date=cred.credit_date,
+                seq=2,
+                sort_id=cred.id,
+                kind="supplier_credit",
+                reference=cred.period_label or f"VCRED-{cred.id}",
+                description=f"Mill account credit ({cred.credit_kind}){f' — {memo}' if memo else ''}",
+                debit=Decimal("0"),
+                credit=amt,
+                related_id=cred.id,
             )
         )
     return rows

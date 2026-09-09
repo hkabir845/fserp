@@ -461,6 +461,12 @@ class Item(models.Model):
     item_type = models.CharField(max_length=32, default="inventory")  # inventory, non_inventory, service
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     cost = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    mrp = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="List / maximum retail price per unit (feed and medicine mill invoices). 0 means unset.",
+    )
     quantity_on_hand = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     unit = models.CharField(max_length=20, default="piece")
     pos_category = models.CharField(max_length=64, default="general")
@@ -865,6 +871,23 @@ class Customer(models.Model):
 
 
 class Vendor(models.Model):
+    CATEGORY_GENERAL = "general"
+    CATEGORY_FEED = "feed"
+    CATEGORY_MEDICINE = "medicine"
+    CATEGORY_FISH_FRY = "fish_fry"
+    CATEGORY_EQUIPMENT = "equipment"
+    CATEGORY_OTHER = "other"
+    CATEGORY_CHOICES = (
+        (CATEGORY_GENERAL, "General"),
+        (CATEGORY_FEED, "Feed"),
+        (CATEGORY_MEDICINE, "Medicine"),
+        (CATEGORY_FISH_FRY, "Fish fry & fingerling"),
+        (CATEGORY_EQUIPMENT, "Equipment"),
+        (CATEGORY_OTHER, "Other"),
+    )
+    # Mill dealer schemes (instant MRP discount, transport deduction, volume rebates).
+    PURCHASE_TERMS_CATEGORIES = (CATEGORY_FEED, CATEGORY_MEDICINE)
+
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="vendors")
     default_station = models.ForeignKey(
         "Station",
@@ -901,6 +924,36 @@ class Vendor(models.Model):
     bank_name = models.CharField(max_length=200, blank=True)
     bank_branch = models.CharField(max_length=200, blank=True)
     bank_routing_number = models.CharField(max_length=64, blank=True)
+    supplier_category = models.CharField(
+        max_length=32,
+        default=CATEGORY_GENERAL,
+        db_index=True,
+        help_text="What this party mainly supplies. Feed/medicine unlock mill credit and purchase terms.",
+    )
+    credit_facility_enabled = models.BooleanField(
+        default=False,
+        help_text="When true and credit_limit > 0, posted bills cannot exceed available credit unless cash covers the shortfall.",
+    )
+    credit_limit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Promised dealer credit ceiling (user-entered; not a system default).",
+    )
+    credit_start_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date this credit year started; square-off is the same date next year unless overridden.",
+    )
+    square_off_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="By this date remaining credit must be paid to zero. Blank = anniversary of credit_start_date.",
+    )
+    require_zero_on_square_off = models.BooleanField(
+        default=True,
+        help_text="After square-off date, new purchases are cash-only until the balance is zero.",
+    )
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     opening_balance_date = models.DateField(null=True, blank=True)
     opening_balance_journal = models.ForeignKey(
@@ -934,6 +987,69 @@ class Vendor(models.Model):
 
     class Meta:
         db_table = "vendor"
+
+
+class VendorRateCard(models.Model):
+    """Dated mill commercial terms. Percentages are never hardcoded; clerks set them per supplier."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="vendor_rate_cards")
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="rate_cards")
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    instant_discount_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
+    instant_discount_per_unit = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    transport_per_unit = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    transport_per_kg = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    monthly_rebate_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
+    yearly_rebate_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
+    yearly_target_kg = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "vendor_rate_card"
+        ordering = ["-effective_from", "-id"]
+        indexes = [
+            models.Index(fields=["vendor", "effective_from"]),
+        ]
+
+
+class VendorCredit(models.Model):
+    """Mill account credit (scheme rebate). Reduces A/P; never a bank receipt."""
+
+    KIND_MONTHLY = "monthly"
+    KIND_YEARLY = "yearly"
+    KIND_MANUAL = "manual"
+    KIND_CHOICES = (
+        (KIND_MONTHLY, "Monthly scheme"),
+        (KIND_YEARLY, "Yearly scheme"),
+        (KIND_MANUAL, "Manual mill credit"),
+    )
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="vendor_credits")
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="scheme_credits")
+    credit_date = models.DateField()
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    credit_kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_MANUAL)
+    period_label = models.CharField(max_length=32, blank=True, default="")
+    mrp_base_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    percent_applied = models.DecimalField(max_digits=8, decimal_places=4, default=0)
+    memo = models.CharField(max_length=500, blank=True, default="")
+    vendor_ap_decremented = models.BooleanField(default=False)
+    journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendor_scheme_credits",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "vendor_credit"
+        ordering = ["-credit_date", "-id"]
 
 
 class Employee(models.Model):
@@ -1643,6 +1759,24 @@ class BillLine(models.Model):
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    mrp = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Unit MRP when the mill invoices on list price. 0 = not used (qty × unit_price is the amount).",
+    )
+    instant_discount_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Instant trade discount deducted from qty × MRP on this line.",
+    )
+    transport_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Supplier transport deducted from this line (reduces net payable).",
+    )
     expense_account = models.ForeignKey(
         "ChartOfAccount",
         null=True,

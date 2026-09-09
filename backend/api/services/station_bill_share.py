@@ -9,6 +9,7 @@ from django.http import JsonResponse
 
 from api.models import Station
 from api.services.aquaculture_bill_pond_share import equal_split_amounts, _money_q
+from api.services.vendor_purchase_terms import split_purchase_term_amounts
 
 
 def _stations_valid_for_company(company_id: int, station_ids: list[int]) -> bool:
@@ -133,10 +134,12 @@ def expand_parsed_bill_line_for_station_share(
         return [], JsonResponse({"detail": perr}, status=400)
     assert pairs is not None
 
+    orig_amt = pl["amount"]
     item_id = pl.get("item_id")
     outs: list[dict] = []
     for sid, portion in pairs:
         child = {**pl, "amount": portion, "receipt_station_id": sid}
+        split_purchase_term_amounts(child, portion, orig_amt)
         if not item_id:
             child["quantity"] = Decimal("1")
             child["unit_price"] = portion

@@ -679,6 +679,7 @@ def company_detail(request, company_id: int):
                 company.fiscal_year_start = fy if fy else "01-01"
             if "books_locked_through" in body:
                 raw_lock = body.get("books_locked_through")
+                previous_lock = company.books_locked_through
                 if raw_lock in (None, ""):
                     company.books_locked_through = None
                 else:
@@ -693,6 +694,33 @@ def company_detail(request, company_id: int):
                             status=400,
                         )
                     company.books_locked_through = lock_date
+                # Moving the close line — above all, moving it back — reopens finalised periods
+                # for restatement. That is the single most consequential switch in the ledger,
+                # so who moved it and when has to survive on the audit trail.
+                if company.books_locked_through != previous_lock:
+                    from api.services.financial_audit import record_financial_audit
+
+                    record_financial_audit(
+                        company_id=company.id,
+                        action="books_lock_change",
+                        entity_type="company",
+                        entity_id=int(company.id),
+                        entity_ref=company.name or "",
+                        reason=(str(body.get("reason") or ""))[:2000],
+                        before={
+                            "books_locked_through": (
+                                previous_lock.isoformat() if previous_lock else None
+                            )
+                        },
+                        after={
+                            "books_locked_through": (
+                                company.books_locked_through.isoformat()
+                                if company.books_locked_through
+                                else None
+                            )
+                        },
+                        actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+                    )
             if "email" in body:
                 company.email = (body["email"] or "")[:100]
             if "phone" in body:

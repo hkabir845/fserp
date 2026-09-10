@@ -1426,6 +1426,21 @@ def payment_detail_update_delete(request, payment_id: int):
                     ok, msg = reverse_payment_received_posting(cid, p)
                     if not ok:
                         raise _PaymentReversalRejected(msg)
+                    from api.services.financial_audit import record_document_deletion
+
+                    record_document_deletion(
+                        request,
+                        company_id=cid,
+                        entity_type="payment",
+                        entity_id=int(p.id),
+                        entity_ref=getattr(p, "payment_number", "") or journal_ref,
+                        before={
+                            "payment_type": p.payment_type,
+                            "payment_date": str(p.payment_date or ""),
+                            "amount": amt,
+                            "journal_ref": journal_ref,
+                        },
+                    )
                     p.delete()
             except _PaymentReversalRejected as e:
                 return JsonResponse({"detail": e.detail}, status=400)
@@ -1460,6 +1475,21 @@ def payment_detail_update_delete(request, payment_id: int):
                     ok, msg = reverse_payment_made_posting(cid, p)
                     if not ok:
                         raise _PaymentReversalRejected(msg)
+                    from api.services.financial_audit import record_document_deletion
+
+                    record_document_deletion(
+                        request,
+                        company_id=cid,
+                        entity_type="payment",
+                        entity_id=int(p.id),
+                        entity_ref=getattr(p, "payment_number", "") or journal_ref,
+                        before={
+                            "payment_type": p.payment_type,
+                            "payment_date": str(p.payment_date or ""),
+                            "amount": amt,
+                            "journal_ref": journal_ref,
+                        },
+                    )
                     p.delete()
             except _PaymentReversalRejected as e:
                 return JsonResponse({"detail": e.detail}, status=400)

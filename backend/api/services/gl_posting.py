@@ -3344,9 +3344,9 @@ def rollback_invoice_posting_effects(
                     m = nz.meter
                     t = nz.tank
                     if m is not None:
-                        Meter.objects.filter(pk=m.pk).update(
-                            current_reading=F("current_reading") - qty
-                        )
+                        from api.services.meter_reading import advance_meter_by_quantity
+
+                        advance_meter_by_quantity(int(m.pk), -qty)
                     if t is not None:
                         Tank.objects.filter(pk=t.pk).update(
                             current_stock=F("current_stock") + qty

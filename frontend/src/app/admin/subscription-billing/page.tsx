@@ -11,8 +11,8 @@ import api from '@/lib/api'
 import { formatCurrency, formatAmountPlain } from '@/utils/currency'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
-import {
 import { readStoredAccessToken } from '@/lib/authSession'
+import {
   ArrowLeft,
   BarChart3,
   Banknote,

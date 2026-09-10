@@ -201,10 +201,11 @@ def test_segments_reconcile_to_the_company_through_the_consolidation_bridge(
     bridge = out["consolidation_bridge"]
     assert bridge["reconciles"] is True, bridge
     assert bridge["unexplained_residual"] == "0.00"
-    assert bridge["internal_trade_removed_on_consolidation"] > 0, (
+    assert Decimal(str(bridge["internal_trade_removed_on_consolidation"])) > 0, (
         "the ponds traded, so consolidation must remove the profit they made on each other"
     )
     assert (
-        bridge["segment_net_income"] - bridge["internal_trade_removed_on_consolidation"]
-        == pytest.approx(bridge["company_net_income"])
+        Decimal(str(bridge["segment_net_income"]))
+        - Decimal(str(bridge["internal_trade_removed_on_consolidation"]))
+        == Decimal(str(bridge["company_net_income"]))
     )

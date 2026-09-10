@@ -49,7 +49,9 @@ def unsettled_accrued_interest(loan: Loan, *, exclude_repayment_id: int | None =
         accrued += a.amount or Decimal("0")
     if accrued <= 0:
         return Decimal("0")
-    paid_qs = LoanRepayment.objects.filter(loan_id=loan.id, journal_entry__isnull=False)
+    paid_qs = LoanRepayment.objects.filter(
+        loan_id=loan.id, journal_entry__isnull=False, reversed_at__isnull=True
+    )
     if exclude_repayment_id is not None:
         paid_qs = paid_qs.exclude(pk=exclude_repayment_id)
     paid = Decimal("0")
@@ -245,12 +247,16 @@ def post_loan_repayment(company_id: int, r: LoanRepayment) -> bool:
     return True
 
 
+@transaction.atomic
 def reverse_loan_repayment(company_id: int, r: LoanRepayment, reversal_date) -> bool:
     """
     Opposite of post_loan_repayment; restores principal to outstanding and total_repaid_principal.
     """
-    loan = r.loan
-    if loan.company_id != company_id or r.reversed_at:
+    loan = Loan.objects.select_for_update().filter(pk=r.loan_id, company_id=company_id).first()
+    if loan is None:
+        return False
+    r = LoanRepayment.objects.select_for_update().get(pk=r.pk, loan_id=loan.pk)
+    if r.reversed_at:
         return False
     if not r.journal_entry_id:
         return False
@@ -262,16 +268,11 @@ def reverse_loan_repayment(company_id: int, r: LoanRepayment, reversal_date) -> 
     if (p + i - total).copy_abs() > Decimal("0.02"):
         logger.warning("loan repayment reverse %s: principal+interest != amount", r.id)
         return False
-    settlement = loan.settlement_account
-    principal = loan.principal_account
-    interest_acc = loan.interest_account
-    if not _coa_ok(company_id, settlement) or not _coa_ok(company_id, principal):
-        return False
-    if i > 0 and not _coa_ok(company_id, interest_acc):
-        logger.warning("loan repayment reverse %s: interest > 0 but no interest_account", r.id)
+    original = r.journal_entry
+    if original.company_id != company_id or not original.is_posted:
         return False
     entry_number = f"AUTO-LOAN-PMT-REV-{r.id}"
-    settle_lbl = _coa_label(settlement)
+    settle_lbl = _coa_label(loan.settlement_account)
     base = f"Rev pmt #{r.id} {loan.loan_no}".strip()
     isl = loan_uses_islamic_terminology(loan)
     je_desc = (
@@ -287,23 +288,15 @@ def reverse_loan_repayment(company_id: int, r: LoanRepayment, reversal_date) -> 
             else f"Reverse loan repayment {loan.loan_no}"
         )
     )
-    memo_prin = ((f"Rev financing principal · {base}") if isl else (f"Rev principal · {base}"))[:280]
-    memo_int = ((f"Rev profit / return · {base}") if isl else (f"Rev interest · {base}"))[:280]
-    memo_settle = (f"Rev payment/settlement {settle_lbl} · {base}")[:280]
-    lines: list = []
-    if loan.direction == Loan.DIRECTION_BORROWED:
-        lines.append((settlement, total, Decimal("0"), memo_settle))
-        if p > 0:
-            lines.append((principal, Decimal("0"), p, memo_prin))
-        if i > 0 and interest_acc:
-            lines.append((interest_acc, Decimal("0"), i, memo_int))
-    else:
-        if p > 0:
-            lines.append((principal, p, Decimal("0"), memo_prin))
-        if i > 0 and interest_acc:
-            lines.append((interest_acc, i, Decimal("0"), memo_int))
-        lines.append((settlement, Decimal("0"), total, memo_settle))
-    gst = _loan_gl_station_id(loan)
+    # Reverse the recorded accounts, including accrued-interest settlements,
+    # rather than rebuilding from today's loan configuration.
+    lines = [
+        (line.account, line.credit, line.debit, f"Reverse {base}"[:280], line.station_id)
+        for line in original.lines.select_related("account").all()
+    ]
+    if not lines:
+        return False
+    gst = original.station_id
     je = _create_posted_entry(
         company_id,
         reversal_date,
@@ -319,11 +312,15 @@ def reverse_loan_repayment(company_id: int, r: LoanRepayment, reversal_date) -> 
     new_rp = (loan.total_repaid_principal or Decimal("0")) - p
     if new_rp < Decimal("0"):
         new_rp = Decimal("0")
-    st = "closed" if new_out <= Decimal("0.005") else "active"
     with transaction.atomic():
         LoanRepayment.objects.filter(pk=r.pk).update(
             reversed_at=timezone.now(),
             reversal_journal_entry_id=je.id,
+        )
+        st = (
+            "closed"
+            if new_out <= Decimal("0.005") and unsettled_accrued_interest(loan) <= Decimal("0.005")
+            else "active"
         )
         Loan.objects.filter(pk=loan.pk).update(
             outstanding_principal=new_out,

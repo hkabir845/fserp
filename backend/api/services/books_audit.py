@@ -89,7 +89,12 @@ def find_orphan_journal_lines(company_id: int, *, limit: int = 100) -> list[dict
     ]
 
 
-def _control_account_balance(company_id: int, code: str) -> Decimal | None:
+def _control_account_balance(company_id: int, code: str, as_of=None) -> Decimal | None:
+    from datetime import date
+    from api.services.reporting import _chart_opening_as_of
+    from api.services.coa_constants import is_debit_normal_chart_type
+
+    as_of = as_of or date.today()
     acc = ChartOfAccount.objects.filter(
         company_id=company_id, account_code=code, is_active=True
     ).first()
@@ -98,12 +103,16 @@ def _control_account_balance(company_id: int, code: str) -> Decimal | None:
     agg = JournalEntryLine.objects.filter(
         journal_entry__company_id=company_id,
         journal_entry__is_posted=True,
+        journal_entry__entry_date__lte=as_of,
         account_id=acc.id,
     ).aggregate(
         debit=Coalesce(Sum("debit"), Decimal("0")),
         credit=Coalesce(Sum("credit"), Decimal("0")),
     )
-    return _d(agg["debit"]) - _d(agg["credit"])
+    opening = _chart_opening_as_of(acc, as_of)
+    if not is_debit_normal_chart_type(acc.account_type):
+        opening = -opening
+    return opening + _d(agg["debit"]) - _d(agg["credit"])
 
 
 def subledger_control_checks(company_id: int) -> list[dict[str, Any]]:
@@ -164,14 +173,14 @@ def subledger_control_checks(company_id: int) -> list[dict[str, Any]]:
             or 0
         )
         # Prefer embedded GL reconciliation when the report already computed it.
-        recon = inv.get("_inventory_gl_reconciliation") or inv.get("inventory_gl_reconciliation")
+        recon = inv.get("gl_reconciliation") or inv.get("_inventory_gl_reconciliation") or inv.get("inventory_gl_reconciliation")
         if isinstance(recon, dict) and recon.get("difference") is not None:
             diff = _d(recon.get("difference"))
             findings.append(
                 {
                     "check": "inventory_vs_control",
-                    "subledger_total": str(_d(recon.get("subledger_total") or inv_sub).quantize(Decimal("0.01"))),
-                    "gl_balance": str(_d(recon.get("gl_balance") or 0).quantize(Decimal("0.01"))),
+                    "subledger_total": str(_d(recon.get("valuation_total", recon.get("subledger_total", inv_sub))).quantize(Decimal("0.01"))),
+                    "gl_balance": str(_d(recon.get("gl_stock_inventory", recon.get("gl_balance", 0))).quantize(Decimal("0.01"))),
                     "difference": str(diff.quantize(Decimal("0.01"))),
                     "ok": abs(diff) <= Decimal("5.00"),
                 }

@@ -14,6 +14,13 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
       bn: 'অ্যাকাউন্ট অনুযায়ী পোস্ট করা ডেবিট ও ক্রেডিট — বহু স্টেশন GL-এর জন্য ঐচ্ছিক সাইট ফিল্টার',
     },
   },
+  'vat-return': {
+    title: { en: 'VAT Return (GL)', bn: 'VAT রিটার্ন (GL)' },
+    description: {
+      en: 'Output VAT (2100) minus input VAT (1170) for the period — the book figure a Bangladesh VAT return must tie to',
+      bn: 'সময়সীমায় আউটপুট VAT (2100) বিয়োগ ইনপুট VAT (1170) — বাংলাদেশ VAT রিটার্ন যে বইয়ের অঙ্কের সাথে মিলতে হবে',
+    },
+  },
   'balance-sheet': {
     title: { en: 'Balance Sheet', bn: 'ব্যালেন্স শীট' },
     description: {
@@ -71,10 +78,10 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
     },
   },
   'cash-flow': {
-    title: { en: 'Cash Flow Summary', bn: 'নগদ প্রবাহ সারাংশ' },
+    title: { en: 'Cash Flow Statement', bn: 'নগদ প্রবাহ বিবরণী' },
     description: {
-      en: 'Company bank accounts plus cash flow by every station, pond, and head office (clear site filter)',
-      bn: 'কোম্পানি ব্যাংক অ্যাকাউন্ট ও প্রতি স্টেশন, পুকুর ও হেড অফিসের নগদ প্রবাহ (সাইট ফিল্টার সাফ করুন)',
+      en: 'Direct-method cash flow: operating, investing and financing from posted cash/bank GL, tying opening cash to closing cash',
+      bn: 'সরাসরি পদ্ধতির নগদ প্রবাহ: পোস্ট করা ক্যাশ/ব্যাংক GL থেকে পরিচালন, বিনিয়োগ ও অর্থায়ন — শুরুর নগদ শেষের নগদের সাথে মিলে',
     },
   },
   'expense-detail': {
@@ -475,16 +482,6 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
     description: {
       en: 'Per-pond medicine use from warehouse with daily totals, entry detail, and period cost (BDT)',
       bn: 'পুকুর গুদাম থেকে ঔষধ ব্যবহার — দৈনিক মোট, এন্ট্রি বিস্তারিত ও সময়সীমার খরচ (BDT)',
-    },
-  },
-  'aquaculture-feed-medicine-consumption': {
-    title: {
-      en: 'Aquaculture — Feed & medicine consumption',
-      bn: 'অ্যাকোয়াকালচার — খাবার ও ঔষধ ব্যবহার',
-    },
-    description: {
-      en: 'Feed and medicine consumed from pond warehouses with quantities, costs, and period totals (BDT)',
-      bn: 'পুকুর গুদাম থেকে ব্যবহৃত খাবার ও ঔষধ — পরিমাণ, খরচ ও সময়সীমার মোট (BDT)',
     },
   },
   'aquaculture-production-cycles': {

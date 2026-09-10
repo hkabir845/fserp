@@ -142,6 +142,7 @@ BACKUP_EXCLUDED_MODELS: frozenset[str] = frozenset(
     {
         "api.passwordresettoken",
         "api.backuprestoreaudit",
+        "api.financialauditevent",
         "api.brainusagelog",
         "api.brainconversation",
         "api.braininsight",
@@ -635,6 +636,9 @@ def delete_tenant_company_data(company_id: int) -> None:
     TenantPlatformReleaseEvent.objects.filter(company_id=cid).delete()
     BrainCompanyDocument.objects.filter(company_id=cid).delete()
     BrainCompanySettings.objects.filter(company_id=cid).delete()
+    from api.models import FinancialAuditEvent
+
+    FinancialAuditEvent.objects.filter(company_id=cid).delete()
     Company.objects.filter(pk=cid).delete()
 
 

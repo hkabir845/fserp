@@ -1,31 +1,14 @@
 /** Company Brain PWA — login, logout, session (standalone from full ERP). */
 
-import { invalidateCurrentCompanyCache } from '@/lib/api'
+import { clearAuthStorage } from '@/lib/api'
+import { logoutTo } from '@/lib/auth'
 import { isAccessTokenExpired, readStoredAccessToken } from '@/lib/authSession'
 
 export const BRAIN_LOGIN_PATH = '/brain-app/login'
 export const BRAIN_HOME_PATH = '/brain-app'
 
 export function clearBrainSession(): void {
-  const keys = [
-    'access_token',
-    'refresh_token',
-    'user',
-    'superadmin_selected_company',
-    'login_endpoint_cache',
-  ]
-  for (const key of keys) {
-    try {
-      localStorage.removeItem(key)
-    } catch {
-      /* ignore */
-    }
-  }
-  try {
-    invalidateCurrentCompanyCache()
-  } catch {
-    /* ignore */
-  }
+  clearAuthStorage()
 }
 
 export function hasValidBrainSession(): boolean {
@@ -36,8 +19,7 @@ export function hasValidBrainSession(): boolean {
 
 /** Hard navigation — reliable in iOS/Android PWA standalone mode. */
 export function logoutBrainApp(): void {
-  clearBrainSession()
-  window.location.assign(BRAIN_LOGIN_PATH)
+  void logoutTo(BRAIN_LOGIN_PATH).catch(() => undefined)
 }
 
 export function enterBrainAppAfterLogin(): void {

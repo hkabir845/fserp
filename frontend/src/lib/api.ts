@@ -177,6 +177,9 @@ export function clearAuthStorage(): void {
     localStorage.removeItem('user')
     localStorage.removeItem('superadmin_selected_company')
     localStorage.removeItem('fserp_report_station_id')
+    localStorage.removeItem('platform_token')
+    localStorage.removeItem('is_platform_mode')
+    localStorage.removeItem('login_endpoint_cache')
     localStorage.removeItem(FSERP_AUTH_API_ORIGIN_KEY)
     invalidateCurrentCompanyCache()
   } catch {

@@ -378,6 +378,8 @@ export default function CashierPOSPage() {
   const scopeUi = POS_SCOPE_UI[posSaleScope]
 
   const [loading, setLoading] = useState(true)
+  const [saleSubmitting, setSaleSubmitting] = useState(false)
+  const saleSubmittingRef = useRef(false)
   const [currencySymbol, setCurrencySymbol] = useState<string>("৳") // Default to BDT
   
   // Get API base URL for image construction
@@ -1103,6 +1105,7 @@ export default function CashierPOSPage() {
   }, [customerId, customers])
 
   const canCompleteUnifiedSale =
+    !saleSubmitting &&
     Number.isFinite(grandTotal) &&
     grandTotal > 0 &&
     !(cartEntries.length > 0 && cartTotals.hasNegativeTotal) &&
@@ -1162,6 +1165,7 @@ export default function CashierPOSPage() {
   }
 
   const handleUnifiedSale = async () => {
+    if (saleSubmittingRef.current) return
     const fuelLines: { nozzle_id: number; quantity: number; amount: number }[] = []
     if (posSaleScope !== "general" && selectedNozzle && quantity) {
       const qty = parseFloat(quantity)
@@ -1274,6 +1278,12 @@ export default function CashierPOSPage() {
       return
     }
 
+    saleSubmittingRef.current = true
+    setSaleSubmitting(true)
+    const idempotencyKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `pos-${Date.now()}-${Math.random().toString(36).slice(2)}`
     try {
       const payload: Record<string, unknown> = {
         sale_type: "general",
@@ -1300,7 +1310,9 @@ export default function CashierPOSPage() {
         payload.station_id = posStationId
       }
 
-      const res = await api.post("/cashier/pos/", payload)
+      const res = await api.post("/cashier/pos/", payload, {
+        headers: { "Idempotency-Key": idempotencyKey },
+      })
       const msg = res.data?.detail
       toast.success(typeof msg === "string" ? msg : "Sale completed successfully.")
       setCartEntries([])
@@ -1337,6 +1349,9 @@ export default function CashierPOSPage() {
         }
       }
       toast.error(message)
+    } finally {
+      saleSubmittingRef.current = false
+      setSaleSubmitting(false)
     }
   }
 
@@ -2854,8 +2869,12 @@ export default function CashierPOSPage() {
                             disabled={!canCompleteUnifiedSale}
                             className="inline-flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 min-[500px]:min-h-11"
                           >
-                            <ShoppingCart className="h-4 w-4" />
-                            Complete sale
+                            {saleSubmitting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ShoppingCart className="h-4 w-4" />
+                            )}
+                            {saleSubmitting ? "Completing sale…" : "Complete sale"}
                           </button>
                         </div>
                       </div>

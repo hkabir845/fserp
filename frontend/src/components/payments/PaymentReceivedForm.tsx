@@ -437,7 +437,6 @@ export function PaymentReceivedForm({
     if (initialCustomerId == null || !Number.isFinite(initialCustomerId)) return
     prefillApplied.current = true
     handleCustomerSelectChange(String(initialCustomerId))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customers.length, initialCustomerId])
 
   const selectedCustomer =

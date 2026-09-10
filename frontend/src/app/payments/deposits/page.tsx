@@ -16,8 +16,8 @@ import {
 } from '@/lib/bankAccountDisplay'
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
-import {
 import { readStoredAccessToken } from '@/lib/authSession'
+import {
   AlertCircle,
   ArrowLeft,
   Banknote,

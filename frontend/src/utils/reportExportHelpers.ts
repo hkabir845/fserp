@@ -218,11 +218,17 @@ export function buildExtraFinancialReportCsv(
 
   if (reportId === 'cash-flow') {
     const op = (data.operating as Record<string, number>) ?? {}
+    const inv = (data.investing as Record<string, number>) ?? {}
+    const fin = (data.financing as Record<string, number>) ?? {}
     const cash = (data.cash_summary as Record<string, number>) ?? {}
     let out = 'Metric,Value\n'
-    out += `Net income (P&L),${op.net_income ?? 0}\n`
-    out += `Customer payments received,${op.customer_payments_received ?? 0}\n`
-    out += `Vendor payments made,${op.vendor_payments_made ?? 0}\n`
+    out += `Net income (P&L, disclosure),${op.net_income ?? 0}\n`
+    out += `Cash from operations,${cash.cash_from_operating ?? op.cash_from_operations ?? 0}\n`
+    out += `Cash from investing,${cash.cash_from_investing ?? inv.cash_from_investing ?? 0}\n`
+    out += `Cash from financing,${cash.cash_from_financing ?? fin.cash_from_financing ?? 0}\n`
+    out += `Cash transfers,${cash.cash_transfers ?? 0}\n`
+    out += `Customer payments received (Payments module),${op.customer_payments_received ?? 0}\n`
+    out += `Vendor payments made (Payments module),${op.vendor_payments_made ?? 0}\n`
     out += `Beginning cash,${cash.beginning_cash ?? 0}\n`
     out += `Net change in cash,${cash.net_change_in_cash ?? 0}\n`
     out += `Ending cash,${cash.ending_cash ?? 0}\n`
@@ -243,13 +249,14 @@ export function buildExtraFinancialReportCsv(
     }
     const entityCsv = (title: string, rows: Record<string, unknown>[]) => {
       if (!rows.length) return ''
-      let s = `\n${title}\nEntity,Net income,Inflows,Outflows,Net cash change,Ending cash\n`
+      let s = `\n${title}\nEntity,Net income,Operating,Investing,Financing,Net cash change,Ending cash\n`
       rows.forEach((r) => {
         s += [
           escapeCsvValue(r.entity_name),
           r.net_income ?? 0,
-          r.customer_payments_received ?? 0,
-          r.vendor_payments_made ?? 0,
+          r.cash_from_operating ?? 0,
+          r.cash_from_investing ?? 0,
+          r.cash_from_financing ?? 0,
           r.net_change_in_cash ?? 0,
           r.ending_cash ?? 0,
         ].join(',')
@@ -699,8 +706,7 @@ export function buildAquaculturePrintHtml(
 
   if (
     (reportId === 'aquaculture-feed-consumption' ||
-      reportId === 'aquaculture-medicine-consumption' ||
-      reportId === 'aquaculture-feed-medicine-consumption') &&
+      reportId === 'aquaculture-medicine-consumption') &&
     Array.isArray(data.groups)
   ) {
     const mode =
@@ -1359,9 +1365,10 @@ export function buildExtraFinancialPrintHtml(
   if (reportId === 'cash-flow') {
     const op = (data.operating as Record<string, number>) ?? {}
     const cash = (data.cash_summary as Record<string, number>) ?? {}
-    return `<div class="summary"><p><strong>Net income:</strong> ${fmtMoney(op.net_income)}</p>
-      <p><strong>Customer receipts:</strong> ${fmtMoney(op.customer_payments_received)}</p>
-      <p><strong>Vendor payments:</strong> ${fmtMoney(op.vendor_payments_made)}</p>
+    return `<div class="summary"><p><strong>Net income (P&L):</strong> ${fmtMoney(op.net_income)}</p>
+      <p><strong>Cash from operations:</strong> ${fmtMoney(cash.cash_from_operating ?? op.cash_from_operations)}</p>
+      <p><strong>Cash from investing:</strong> ${fmtMoney(cash.cash_from_investing)}</p>
+      <p><strong>Cash from financing:</strong> ${fmtMoney(cash.cash_from_financing)}</p>
       <p><strong>Beginning cash:</strong> ${fmtMoney(cash.beginning_cash)}</p>
       <p><strong>Net change:</strong> ${fmtMoney(cash.net_change_in_cash)}</p>
       <p><strong>Ending cash:</strong> ${fmtMoney(cash.ending_cash)}</p></div>`

@@ -470,6 +470,15 @@ def chart_of_account_detail(request, account_id: int):
 
         try:
             with transaction.atomic():
+                a = ChartOfAccount.objects.select_for_update().get(pk=a.pk, company_id=request.company_id)
+                if (
+                    normalize_chart_account_type(nt) != normalize_chart_account_type(a.account_type)
+                    and JournalEntryLine.objects.filter(account_id=a.pk).exists()
+                ):
+                    return JsonResponse(
+                        {"detail": "Cannot change the type of an account used in journal entries. Create a new account instead."},
+                        status=400,
+                    )
                 if body.get("account_code"):
                     a.account_code = (body["account_code"] or "").strip() or a.account_code
                 if body.get("account_name"):

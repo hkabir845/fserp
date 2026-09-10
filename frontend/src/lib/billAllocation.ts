@@ -1,6 +1,7 @@
 import type { AquacultureBillExpenseCategory } from '@/lib/aquacultureBillLine'
 import type { FuelStationBillExpenseCategory } from '@/lib/fuelStationBillLine'
 import { isShopHubStationId } from '@/utils/stationCapabilities'
+import { formatAmountPlain, roundToDecimals } from '@/utils/currency'
 
 export type BillPurpose = 'station' | 'pond' | 'office' | 'mixed'
 
@@ -169,8 +170,8 @@ export function validateBillLinePondAllocation(
       Number(r.amount) > 0
   )
   if (valid.length < 2) return `Line ${n}: manual split needs at least two ponds with amounts.`
-  const sum = valid.reduce((s, r) => s + Number(r.amount), 0)
-  if (Math.abs(sum - amt) > 0.009) {
+  const sum = valid.reduce((s, r) => s + Math.round(roundToDecimals(r.amount) * 100), 0)
+  if (sum !== Math.round(roundToDecimals(amt) * 100)) {
     return `Line ${n}: manual pond amounts must sum to the line amount (${amt.toFixed(2)}).`
   }
   return null
@@ -220,8 +221,8 @@ export function validateBillLineStationAllocation(
       Number(r.amount) > 0
   )
   if (valid.length < 2) return `Line ${n}: manual split needs at least two stations with amounts.`
-  const sum = valid.reduce((s, r) => s + Number(r.amount), 0)
-  if (Math.abs(sum - amt) > 0.009) {
+  const sum = valid.reduce((s, r) => s + Math.round(roundToDecimals(r.amount) * 100), 0)
+  if (sum !== Math.round(roundToDecimals(amt) * 100)) {
     return `Line ${n}: manual station amounts must sum to the line amount (${amt.toFixed(2)}).`
   }
   return null
@@ -249,7 +250,7 @@ export function pondSharePayload(line: BillLineAllocationFields): Record<string,
       )
       .map((r) => ({
         pond_id: Number(r.pond_id),
-        amount: Number(r.amount).toFixed(2),
+        amount: formatAmountPlain(r.amount),
       }))
     return {
       aquaculture_cost_mode: 'shared_manual',
@@ -282,7 +283,7 @@ export function stationSharePayload(line: BillLineAllocationFields): Record<stri
       )
       .map((r) => ({
         station_id: Number(r.station_id),
-        amount: Number(r.amount).toFixed(2),
+        amount: formatAmountPlain(r.amount),
       }))
     return {
       station_cost_mode: 'shared_manual',

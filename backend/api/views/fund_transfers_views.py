@@ -11,7 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import FundTransfer, BankAccount
 from api.services.gl_posting import delete_auto_fund_transfer_journal, post_fund_transfer_journal
 
@@ -169,6 +169,7 @@ def fund_transfer_detail(request, transfer_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fund_transfers")
 def fund_transfer_post(request, transfer_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -191,6 +192,7 @@ def fund_transfer_post(request, transfer_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fund_transfers")
 def fund_transfer_unpost(request, transfer_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)

@@ -719,13 +719,8 @@ export default function InvoicesPage() {
       return (hasItem || hasDescription) && hasQuantity && hasPrice
     })
 
-    if (validLines.length === 0) {
-      toast.error('Please ensure all line items have an item selected (or description), quantity > 0, and unit price > 0')
-      return
-    }
-
     if (validLines.length !== formData.lines.length) {
-      toast.error('Some line items are invalid. Please check that all items have quantity > 0 and unit price > 0')
+      toast.error('Please ensure all line items have an item selected (or description), quantity > 0, and unit price > 0')
       return
     }
 
@@ -909,7 +904,7 @@ export default function InvoicesPage() {
       return (hasItem || hasDescription) && hasQuantity && hasPrice
     })
 
-    if (validLines.length === 0) {
+    if (validLines.length !== formData.lines.length) {
       toast.error('Please ensure all line items have an item selected (or description), quantity > 0, and unit price > 0')
       return
     }

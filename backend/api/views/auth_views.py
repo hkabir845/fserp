@@ -277,7 +277,11 @@ def refresh(request):
         if isinstance(access_token, bytes):
             access_token = access_token.decode("utf-8")
         body = {"access_token": access_token, "token_type": "bearer"}
-        if _auth_client(request) != "browser":
+        # Never hand the refresh token back in JSON when it arrived in the HttpOnly cookie.
+        # `_auth_client` reads a caller-supplied header, so same-origin JavaScript could ask
+        # for "native" and be given a fresh 7-day token — defeating the point of the cookie.
+        # A genuine native client sends the token in the body, so used_cookie is False for it.
+        if not used_cookie and _auth_client(request) != "browser":
             body["refresh_token"] = rotated_refresh_token
         response = JsonResponse(body)
         return _set_refresh_cookie(response, rotated_refresh_token)

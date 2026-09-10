@@ -135,7 +135,7 @@ def test_voiding_a_posted_invoice_removes_its_journals(
     headers["HTTP_X_SELECTED_COMPANY_ID"] = str(cid)
     r = api_client.put(
         f"/api/invoices/{inv.id}/status/",
-        data={"status": "void"},
+        data={"status": "void", "reason": "audit test void"},
         content_type="application/json",
         **headers,
     )

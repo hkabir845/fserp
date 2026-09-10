@@ -445,3 +445,51 @@ document posted and bumped register balances *before* posting the journal, with 
 - `payment_detail_update_delete` (the whole edit/delete endpoint), `reverse_payment_made_posting`,
   bank deposits, bill DELETE, and `remove_system_entry` purge of non-payroll `AUTO-*` journals all
   have **zero** coverage.
+
+---
+
+# Fourth pass — new-commits security review (2026-09-10)
+
+Findings raised against commits `29da513`…`fd3d674`, each verified against the code rather than
+carried over from the earlier notes. Two items on the original list turned out to be **already
+fixed** by the time they were re-checked and are recorded as such — they were not re-fixed.
+
+## Fixed in this pass
+
+| Id | Finding | Fix | Test |
+| --- | --- | --- | --- |
+| H2 | `PUT /api/invoices/{id}/status/` could void an invoice with no reason and no `FinancialAuditEvent` — the gate lived inline in the PUT *detail* path only, so the status endpoint was a second, unguarded door onto the same destructive change. | Gate extracted to `_void_audit_error` in `api/views/invoice_views.py` and called from **both** paths. | `test_invoice_void_via_status_endpoint_requires_reason` |
+| H3a | Deleting an invoice, bill or payment left no audit trail at all. The document's journals are removed with it, so nothing survived to show a posted document had ever existed. | `record_document_deletion` in `api/services/financial_audit.py`, called from all four delete branches (invoice, bill, payment received, payment made). A reason is recorded when supplied but **not demanded** — the existing delete buttons send no body, and blocking them would remove a routine correction. | `test_deleting_an_invoice_leaves_an_audit_row` |
+| H3b | Moving `Company.books_locked_through` — including *reopening* closed books for restatement — was unaudited. | `books_lock_change` audit event in `api/views/companies_views.py`, recorded in both directions with before/after dates. (Access was already restricted to platform administrators; that part needed no change.) | `test_moving_the_books_lock_leaves_an_audit_row` |
+| H7a | `fund_transfer_post` / `fund_transfer_unpost` moved cash through the GL with no permission check, while the equivalent journal-entry endpoints were gated. | `@require_permission("app.page.fund_transfers")` on both. | `test_cashier_cannot_post_or_unpost_fund_transfer` |
+| H7b | Bank register create / edit / delete and `link-unlinked-to-chart` (which creates chart accounts) were ungated. | `@require_permission("app.page.chart_of_accounts", "app.page.fund_transfers", …)` — **writes only**. GET stays open because cashiers, payroll and the payments screens all read the register list; gating reads would break their day for no security gain. | `test_cashier_can_read_but_not_write_bank_accounts` |
+| H6 | Migration 0189 adds 5 unique and 4 check constraints with no pre-check. A constraint that fails part-way through `migrate` leaves a deploy half-applied. | Two `RunPython` operations ahead of the constraints, modelled on 0177: duplicate reference numbers are **renamed** (`~DUP2`), never deleted; negative amounts are **not** auto-corrected — the migration stops and names the offending rows, because rewriting a stored amount restates the books without anyone deciding to. | `tests/test_migration_0189_precheck.py` (3 tests) |
+
+## Already fixed — verified, not re-fixed
+
+| Id | Finding | Verified state |
+| --- | --- | --- |
+| H8 | `Invoice.stock_relieved` double-restoring fuel wet stock and shift totals on void-then-delete. | Closed by `fd3d674`. `rollback_invoice_posting_effects` captures `needs_stock_restore` *before* `undo_invoice_stock_relief` clears the flag, and guards the shift unrecord on the sale journal still being present. `test_void_then_delete_fuel_sale_restores_stock_only_once` passes. |
+| — | `formatNumber` rounding via `Number#toFixed`, the POS permission guard, and `skip_gl`. | All three already fixed; earlier notes calling them open were reading stale results. |
+
+## False positive corrected
+
+`test_no_company_level_report_moves_on_an_internal_transfer` failed against nine aquaculture
+reports. It was **not** a leak. Every aquaculture report now carries a shared `fcr` envelope — a
+biomass-operations block — and an inter-pond transfer legitimately moves its `transfer_in_kg` /
+`transfer_out_kg`. With `fcr` removed, all nine payloads are byte-identical before and after.
+
+The guard was made *more* precise rather than merely loosened: the envelope is split out of the
+payload comparison and checked separately by `_fcr_movement_error`, which pins the FCR figures an
+internal transfer must never touch — `feed_kg`, `harvest_kg`, `mortality_loss_kg`,
+`stocking_in_kg`, `manual_biomass_in_kg`. No fish were sold, harvested, lost or fed.
+
+## Still open — needs a decision, not a patch
+
+| Id | Item | Why it is not simply fixed |
+| --- | --- | --- |
+| C1 | Rotate the VPS `sas` SSH credential. | Still recoverable from git history (`git show 1fa268e^:scripts/_vps_digonto_api.py`). Scrubbing the working tree does not scrub the history — the credential must be rotated on the server. **Owner action.** |
+| H7c | `require_permission` missing on ~89 further mutating endpoints. | Gating these changes who can do what. If staff currently rely on ungated access it breaks their working day. The two highest-risk modules (cash movement, bank registers) are done; the rest needs the owner to say which roles should keep write access. |
+| M12 | `FSERP_NUM_PROXIES` unset in production. | Behind nginx every user shares one rate-limit bucket, so one noisy client can lock everyone out of login. **Environment change, not code.** |
+| H5 | Legacy `jti`-less refresh tokens still accepted. | Deliberate: rejecting them signs out every client that has not yet rolled over. Safe to close once clients are known to be current. |
+| — | Data repair: 2,106,499.98 of customer opening balances with no opening journal (18 customers), and 1,016,054.35 of unapplied receipts sitting in A/R (14 customers). | These are **data**, not code. Journalling the openings and reclassifying the advances to a customer-advances liability both restate reported balances, so they need the owner's sign-off before anything is written. |

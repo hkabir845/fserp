@@ -33,6 +33,10 @@ from api.utils.rounding import money
 
 PERIOD_START = date(2026, 1, 1)
 PERIOD_END = date(2026, 12, 31)
+
+
+def report_decimal(value) -> Decimal:
+    return Decimal(str(value))
 CENT = 0.02
 
 
@@ -190,11 +194,11 @@ def test_harvest_gross_profit_is_revenue_less_the_cost_of_the_fish(api_client, f
 
     inc = report_income_statement(cid, PERIOD_START, PERIOD_END)
     income = inc["income"]["total"]
-    cogs = inc["cost_of_goods_sold"]["total"]
-    assert income == 180000.00
+    cogs = report_decimal(inc["cost_of_goods_sold"]["total"])
+    assert report_decimal(income) == Decimal("180000.00")
     assert cogs > 0, "harvest revenue with no cost of goods sold overstates gross profit"
-    assert abs(inc["gross_profit"] - (income - cogs)) <= CENT
-    assert inc["gross_profit"] < income, "gross profit should be below revenue once cost is booked"
+    assert abs(report_decimal(inc["gross_profit"]) - (report_decimal(income) - cogs)) <= CENT
+    assert report_decimal(inc["gross_profit"]) < report_decimal(income), "gross profit should be below revenue once cost is booked"
 
 
 @pytest.mark.django_db
@@ -214,7 +218,7 @@ def test_the_cost_of_fish_sold_lands_on_the_pond_that_grew_them(api_client, farm
     assert tagged.exists(), "cost of fish sold has no pond tag"
 
     pond_pl = report_income_statement(cid, PERIOD_START, PERIOD_END, pond_id=pond.id)
-    assert pond_pl["cost_of_goods_sold"]["total"] > 0, "the pond P&L shows no cost for its harvest"
+    assert report_decimal(pond_pl["cost_of_goods_sold"]["total"]) > 0, "the pond P&L shows no cost for its harvest"
 
 
 @pytest.mark.django_db
@@ -277,10 +281,10 @@ def test_harvest_leaves_the_statements_balanced(api_client, farm):
     tb = report_trial_balance(cid, PERIOD_START, PERIOD_END)
     assert tb["debits_equal_credits"] is True
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
-    assert bs["auto_plug_amount"] == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
+    assert report_decimal(bs["auto_plug_amount"]) == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
 
     inc = report_income_statement(cid, PERIOD_START, PERIOD_END)
-    assert abs(bs["net_income_cumulative"] - inc["net_income"]) <= CENT
+    assert abs(report_decimal(bs["net_income_cumulative"]) - report_decimal(inc["net_income"])) <= CENT
 
 
 @pytest.mark.django_db

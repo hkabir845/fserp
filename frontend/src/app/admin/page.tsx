@@ -45,8 +45,8 @@ import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate, formatDateOnly } from '@/utils/date'
 import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import { RESTORE_CONFIRM_PHRASE } from '@/utils/tenantBackup'
-import {
 import { readStoredAccessToken } from '@/lib/authSession'
+import {
   COMPANY_TIME_ZONE_OPTIONS,
   DEFAULT_COMPANY_TIME_ZONE,
   isKnownCompanyTimeZone,

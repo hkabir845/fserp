@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import { fetchCurrentCompany, invalidateCurrentCompanyCache } from '@/lib/api'
-import { hasStoredSession } from '@/lib/authSession'
+import { hasStoredSession, readStoredAccessToken } from '@/lib/authSession'
 import { useCompany } from '@/contexts/CompanyContext'
 import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 import {

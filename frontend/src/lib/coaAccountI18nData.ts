@@ -52,6 +52,10 @@ export const COA_ACCOUNT_I18N: Record<string, CoaAccountI18nRow> = {
     name: { en: "Loans Receivable — Principal (Money Lent)", bn: "ঋণ পাওনা — মূল (ধার দেওয়া)" },
     description: { en: "Balance-sheet principal for funds you lent to others. Use as **Principal GL** on Loans → **Lent**.\n\nFSERP / system use: Loans — principal receivable: Principal GL for money you **lent** (Loans → Lent). Chart type Loan, subtype loan receivable.", bn: "অন্যদের ধার দেওয়া তহবিলের ব্যালেন্স-শীট মূল। Loans → Lent-এ **Principal GL** হিসেবে ব্যবহার করুন।\n\nFSERP / সিস্টেম ব্যবহার: Loans — principal receivable: আপনি **lent** করা টাকার Principal GL (Loans → Lent)। Chart type Loan, subtype loan receivable।" },
   },
+  '1170': {
+    name: { en: "VAT Input / VAT Receivable", bn: "ইনপুট VAT / VAT পাওনা" },
+    description: { en: "Input VAT on vendor bills, recoverable against output VAT (2100) on the VAT return.\n\nFSERP / system use: Bill header tax debits 1170 instead of office expense so a VAT return can tie to the GL.", bn: "সরবরাহকারী বিলের ইনপুট VAT, VAT রিটার্নে আউটপুট VAT (2100) এর বিপরীতে আদায়যোগ্য।\n\nFSERP / সিস্টেম ব্যবহার: বিল হেডার ট্যাক্স অফিস খরচের বদলে 1170 ডেবিট করে যাতে VAT রিটার্ন GL-এর সাথে মিলে।" },
+  },
   '1200': {
     name: { en: "Inventory — Fuel (Wet Stock at Cost)", bn: "ইনভেন্টরি — জ্বালানি (খরচে ভেজা স্টক)" },
     description: { en: "Tank inventory valued at cost (FIFO/weighted average per policy).\n\nFSERP / system use: Fuel (wet-stock) inventory: credited when COGS posts for fuel lines with item cost.", bn: "খরচে মূল্যায়িত ট্যাংক ইনভেন্টরি (নীতি অনুযায়ী FIFO/weighted average)।\n\nFSERP / সিস্টেম ব্যবহার: Fuel (wet-stock) inventory: item cost সহ fuel line-এ COGS post হলে credit।" },
@@ -138,7 +142,7 @@ export const COA_ACCOUNT_I18N: Record<string, CoaAccountI18nRow> = {
   },
   '2100': {
     name: { en: "Sales / VAT Payable", bn: "বিক্রয় / VAT দেনা" },
-    description: { en: "Collected sales or value-added tax remitted to authority.\n\nFSERP / system use: Collected VAT / sales tax on invoices and bills (output and simplified input side on bills).", bn: "কর্তৃপক্ষে জমা দেওয়ার জন্য সংগৃহীত বিক্রয় বা VAT।\n\nFSERP / সিস্টেম ব্যবহার: Invoice ও bill-এ collected VAT / sales tax (output ও bill-এ simplified input side)।" },
+    description: { en: "Collected sales or value-added tax remitted to authority.\n\nFSERP / system use: Output VAT on invoices (credits 2100). Input VAT on bills posts to 1170.", bn: "কর্তৃপক্ষে জমা দেওয়ার জন্য সংগৃহীত বিক্রয় বা VAT।\n\nFSERP / সিস্টেম ব্যবহার: Invoice-এ output VAT (2100 credit)। Bill-এ input VAT 1170-এ পোস্ট হয়।" },
   },
   '2110': {
     name: { en: "Excise / Fuel Duty Payable", bn: "আবগ / জ্বালানি শুল্ক দেনা" },

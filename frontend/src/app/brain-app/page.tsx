@@ -86,7 +86,7 @@ function BrainAppContent() {
         redirectBrainLoginIfNeeded()
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount after login redirect
+    // Run once on mount, after the login redirect.
   }, [])
 
   return (

@@ -15,7 +15,7 @@
     "dev:clean": "npm run clean:next && node scripts/ensure-next-manifest.mjs && next dev -p 3000 -H 0.0.0.0 --webpack",
     "build": "next build",
     "prestart": "node scripts/free-port-3000.mjs",
-    "start": "next start -H 127.0.0.1 -p ${PORT:-3000}",
+    "start": "node scripts/start-production.mjs",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -46,6 +46,6 @@
       "brace-expansion": "^1.1.18"
     },
     "postcss": "^8.5.23",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4"
   }
 }

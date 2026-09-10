@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -204,3 +205,82 @@ def test_body_refresh_skips_origin_check(company_tenant):
         HTTP_ORIGIN="https://evil.attacker.example",
     )
     assert res.status_code == 200, res.content.decode()
+
+
+def _bank_pair(company):
+    from api.models import BankAccount, ChartOfAccount
+
+    c1 = ChartOfAccount.objects.create(
+        company=company, account_code="PBX1", account_name="Perm Bank 1", account_type="asset"
+    )
+    c2 = ChartOfAccount.objects.create(
+        company=company, account_code="PBX2", account_name="Perm Bank 2", account_type="asset"
+    )
+    b1 = BankAccount.objects.create(
+        company=company, chart_account=c1, account_name="PB One", account_number="PB1", bank_name="T"
+    )
+    b2 = BankAccount.objects.create(
+        company=company, chart_account=c2, account_name="PB Two", account_number="PB2", bank_name="T"
+    )
+    return b1, b2
+
+
+def test_cashier_cannot_post_or_unpost_fund_transfer(api_client: Client, company_tenant):
+    """Fund transfers move cash through the GL, so they need the same gate as journal entries."""
+    from api.models import FundTransfer
+
+    b1, b2 = _bank_pair(company_tenant)
+    ft = FundTransfer.objects.create(
+        company=company_tenant,
+        from_bank=b1,
+        to_bank=b2,
+        amount=Decimal("25.00"),
+        transfer_date=date(2026, 1, 15),
+    )
+    _make_user(company_tenant, username="ft_denied@test.com", role="cashier")
+    headers = _login(api_client, "ft_denied@test.com")
+
+    posted = api_client.post(f"/api/fund-transfers/{ft.id}/post/", **headers)
+    assert posted.status_code == 403
+    ft.refresh_from_db()
+    assert ft.is_posted is False
+
+    ft.is_posted = True
+    ft.save(update_fields=["is_posted"])
+    unposted = api_client.post(f"/api/fund-transfers/{ft.id}/unpost/", **headers)
+    assert unposted.status_code == 403
+    ft.refresh_from_db()
+    assert ft.is_posted is True
+
+
+def test_cashier_can_read_but_not_write_bank_accounts(api_client: Client, company_tenant):
+    """Cashiers pick a deposit register, so GET stays open; creating/editing one does not."""
+    b1, _b2 = _bank_pair(company_tenant)
+    _make_user(company_tenant, username="bank_ro@test.com", role="cashier")
+    headers = _login(api_client, "bank_ro@test.com")
+
+    assert api_client.get("/api/bank-accounts/", **headers).status_code == 200
+    assert api_client.get(f"/api/bank-accounts/{b1.id}/", **headers).status_code == 200
+
+    created = api_client.post(
+        "/api/bank-accounts/",
+        data=json.dumps({"account_name": "Sneaky", "account_number": "999", "bank_name": "X"}),
+        content_type="application/json",
+        **headers,
+    )
+    assert created.status_code == 403
+
+    renamed = api_client.put(
+        f"/api/bank-accounts/{b1.id}/",
+        data=json.dumps({"account_name": "Renamed"}),
+        content_type="application/json",
+        **headers,
+    )
+    assert renamed.status_code == 403
+    b1.refresh_from_db()
+    assert b1.account_name == "PB One"
+
+    assert api_client.delete(f"/api/bank-accounts/{b1.id}/", **headers).status_code == 403
+    assert (
+        api_client.post("/api/bank-accounts/link-unlinked-to-chart/", **headers).status_code == 403
+    )

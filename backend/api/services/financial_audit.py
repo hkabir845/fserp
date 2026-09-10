@@ -86,3 +86,45 @@ def require_mutation_reason(
     if len(raw) < 3:
         return None, "A reason of at least 3 characters is required for this change."
     return raw[:2000], None
+
+
+def record_document_deletion(
+    request,
+    *,
+    company_id: int,
+    entity_type: str,
+    entity_id: int,
+    entity_ref: str = "",
+    before: dict | None = None,
+) -> None:
+    """
+    Trail one deleted financial document.
+
+    Deleting an invoice / bill / payment removes its journals with it, so without a row here the
+    only evidence a posted document ever existed disappears with it. A reason is recorded when the
+    caller supplies one, but is not demanded — the delete buttons predate this trail and blocking
+    them would take away a routine correction.
+    """
+    body = {}
+    try:
+        import json as _json
+
+        raw = getattr(request, "body", None)
+        if raw:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, dict):
+                body = parsed
+    except Exception:
+        body = {}
+    reason, _err = require_mutation_reason(body)
+    record_financial_audit(
+        company_id=company_id,
+        action="delete",
+        entity_type=entity_type,
+        entity_id=int(entity_id),
+        entity_ref=entity_ref or "",
+        reason=reason or "",
+        before=before or {},
+        after={"deleted": True},
+        actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+    )

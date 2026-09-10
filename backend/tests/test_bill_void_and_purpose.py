@@ -52,7 +52,7 @@ def test_void_open_bill_reverses_auto_gl(api_client, company_tenant, auth_admin_
 
     rv = api_client.put(
         f"/api/bills/{bill_id}/",
-        data=json.dumps({"status": "void"}),
+        data=json.dumps({"status": "void", "reason": "vendor bill cancelled"}),
         content_type="application/json",
         **auth_admin_headers,
     )

@@ -207,9 +207,7 @@ function parseAmountToNumber(amount: number | string | null | undefined): number
   return parseFloat(cleaned)
 }
 
-/**
- * Round to a fixed number of decimal places (half-up via `toFixed`).
- */
+/** Round to fixed decimals using symmetric half-away-from-zero semantics. */
 export function roundToDecimals(
   amount: number | string | null | undefined,
   decimals: number = 2
@@ -217,7 +215,15 @@ export function roundToDecimals(
   const d = normalizeFractionDigits(decimals, 2)
   const numAmount = parseAmountToNumber(amount)
   if (!Number.isFinite(numAmount)) return 0
-  return Number(numAmount.toFixed(d))
+  const magnitude = Math.abs(numAmount)
+  // Decimal exponent shifting avoids the binary multiplication error behind
+  // 1.005 -> 1.00 and 10.075 -> 10.07 with Number#toFixed.
+  const [coefficient, exponent = '0'] = String(magnitude).split('e')
+  const shifted = Number(`${coefficient}e${Number(exponent) + d}`)
+  if (!Number.isFinite(shifted)) return numAmount
+  const [roundedCoefficient, roundedExponent = '0'] = String(Math.round(shifted)).split('e')
+  const rounded = Number(`${roundedCoefficient}e${Number(roundedExponent) - d}`)
+  return Object.is(numAmount, -0) || numAmount < 0 ? -rounded : rounded
 }
 
 /**
@@ -254,7 +260,10 @@ export function formatNumber(
     return "0" + (d > 0 ? "." + "0".repeat(d) : "")
   }
 
-  const rounded = Number(numAmount.toFixed(d))
+  // Not Number#toFixed: it rounds the binary double, so 2.675 displays as 2.67 while the
+  // ledger stores 2.68 (Decimal ROUND_HALF_UP). roundToDecimals shifts the decimal exponent
+  // instead, which matches the backend.
+  const rounded = roundToDecimals(numAmount, d)
 
   return rounded.toLocaleString("en-US", {
     minimumFractionDigits: d,
@@ -292,4 +301,3 @@ export function formatCurrency(
     return `${formattedAmount} ${code}`
   }
 }
-

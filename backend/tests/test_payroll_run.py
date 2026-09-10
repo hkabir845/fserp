@@ -692,7 +692,7 @@ def test_payroll_reverts_to_draft_when_salary_journal_removed(
 
     r = api_client.post(
         f"/api/journal-entries/{je_id}/unpost/",
-        data=json.dumps({"remove_system_entry": True}),
+        data=json.dumps({"remove_system_entry": True, "reason": "payroll correction"}),
         content_type="application/json",
         **auth_admin_headers,
     )

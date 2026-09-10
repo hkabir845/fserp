@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.utils.transaction_filters import filter_json_transactions
-from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
+from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id, require_permission
 from api.models import BankAccount, ChartOfAccount
 from api.services.journal_statement import (
     build_statement_transactions,
@@ -295,6 +295,7 @@ def _wants_fund_transfer_list(request) -> bool:
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts", "app.page.fund_transfers", methods=("POST",))
 def bank_accounts_list_or_create(request):
     if request.method == "GET":
         ensure_bank_registers_from_chart(request.company_id)
@@ -358,6 +359,7 @@ def bank_accounts_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts", "app.page.fund_transfers", methods=("POST", "PUT", "PATCH", "DELETE"))
 def bank_account_detail(request, account_id: int):
     b = (
         BankAccount.objects.filter(id=account_id, company_id=request.company_id)
@@ -436,6 +438,7 @@ def bank_account_detail(request, account_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts", "app.page.fund_transfers")
 def bank_accounts_link_unlinked_to_chart(request):
     """POST: create GL lines with auto codes for every bank register missing chart_account_id."""
     if request.method != "POST":

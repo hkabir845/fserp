@@ -149,7 +149,6 @@ const AQUACULTURE_REPORT_IDS = new Set([
   'aquaculture-expenses',
   'aquaculture-feed-consumption',
   'aquaculture-medicine-consumption',
-  'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',

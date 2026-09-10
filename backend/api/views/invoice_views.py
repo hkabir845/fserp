@@ -416,6 +416,8 @@ def invoice_detail(request, invoice_id: int):
         if not ok_edit:
             return JsonResponse({"detail": err_edit}, status=409)
         old_status = inv.status
+        # None unless this request is a void; _record_void_audit is a no-op for None.
+        void_reason = None
         material = body_has_material_invoice_change(body) and inv.status != "draft"
         inv.invoice_date = _parse_date(body.get("invoice_date")) or inv.invoice_date
         inv.due_date = _parse_date(body.get("due_date"))
@@ -430,23 +432,9 @@ def invoice_detail(request, invoice_id: int):
             if walk_err:
                 return JsonResponse({"detail": walk_err}, status=400)
             target = (new_status or inv.status or "").strip().lower()
-            if target == "void" and (old_status or "").strip().lower() != "void":
-                from api.services.financial_audit import require_mutation_reason, record_financial_audit
-
-                reason, rerr = require_mutation_reason(body)
-                if rerr:
-                    return JsonResponse({"detail": rerr}, status=400)
-                record_financial_audit(
-                    company_id=cid,
-                    action="void",
-                    entity_type="invoice",
-                    entity_id=int(inv.id),
-                    entity_ref=inv.invoice_number or "",
-                    reason=reason or "",
-                    before={"status": old_status, "total": str(inv.total)},
-                    after={"status": "void"},
-                    actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
-                )
+            void_reason, verr = _void_reason_error(old_status, target, body)
+            if verr:
+                return verr
             inv.status = new_status or inv.status
         if "payment_method" in body:
             inv.payment_method = (body.get("payment_method") or "").strip()[:32]
@@ -501,6 +489,7 @@ def invoice_detail(request, invoice_id: int):
                         raise _InvoiceEditRejected(err_rb)
                     inv.stock_relieved = False
                 inv.save()
+                _record_void_audit(request, cid, inv, old_status, void_reason)
                 if line_payload is not None:
                     inv.lines.all().delete()
                     for pl, rid in parsed_rows:
@@ -571,11 +560,72 @@ def invoice_detail(request, invoice_id: int):
                 ok, err = cleanup_invoice_posting_effects(cid, inv)
                 if not ok:
                     raise _InvoiceEditRejected(err)
+                from api.services.financial_audit import record_document_deletion
+
+                record_document_deletion(
+                    request,
+                    company_id=cid,
+                    entity_type="invoice",
+                    entity_id=int(inv.id),
+                    entity_ref=inv.invoice_number or "",
+                    before={
+                        "status": inv.status,
+                        "invoice_date": str(inv.invoice_date or ""),
+                        "customer_id": inv.customer_id,
+                        "total": str(inv.total),
+                    },
+                )
                 inv.delete()
         except _InvoiceEditRejected as e:
             return JsonResponse({"detail": e.detail}, status=409)
         return HttpResponse(status=204)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+def _void_reason_error(old_status: str, target: str, body: dict):
+    """
+    Validate the reason a void needs. Returns ``(reason, None)``, ``(None, None)`` when this is
+    not a void, or ``(None, error_response)``.
+
+    This gate lived inline in the PUT detail path, so ``PUT /api/invoices/{id}/status/`` could
+    void an invoice with no reason and no FinancialAuditEvent — the same destructive change
+    through a second door. Both paths now share it.
+    """
+    if (target or "").strip().lower() != "void":
+        return None, None
+    if (old_status or "").strip().lower() == "void":
+        return None, None
+    from api.services.financial_audit import require_mutation_reason
+
+    reason, rerr = require_mutation_reason(body)
+    if rerr:
+        return None, JsonResponse({"detail": rerr}, status=400)
+    return reason or "", None
+
+
+def _record_void_audit(request, cid: int, inv, old_status: str, reason: str | None) -> None:
+    """
+    Trail the void — called from **inside** the caller's transaction.
+
+    Recording before the transaction would leave a row claiming an invoice was voided when the
+    posting was then rejected and the status rolled back. An audit trail that reports a void that
+    never happened is worse than one that misses it.
+    """
+    if reason is None:
+        return
+    from api.services.financial_audit import record_financial_audit
+
+    record_financial_audit(
+        company_id=cid,
+        action="void",
+        entity_type="invoice",
+        entity_id=int(inv.id),
+        entity_ref=inv.invoice_number or "",
+        reason=reason,
+        before={"status": old_status, "total": str(inv.total)},
+        after={"status": "void"},
+        actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+    )
 
 
 @csrf_exempt
@@ -604,12 +654,18 @@ def invoice_status(request, invoice_id: int):
         if walk_err:
             return JsonResponse({"detail": walk_err}, status=400)
         old_status = inv.status
+        void_reason, verr = _void_reason_error(
+            old_status, (new_status or inv.status or ""), body
+        )
+        if verr:
+            return verr
         inv.status = new_status or inv.status
         try:
             # Status and journal move together. Committing the status first meant a failed
             # posting left an invoice reading "sent" with nothing in the ledger behind it.
             with transaction.atomic():
                 inv.save()
+                _record_void_audit(request, cid, inv, old_status, void_reason)
                 inv.refresh_from_db()
                 ok_unpost, err_unpost = _unpost_invoice_if_leaving_posted_state(
                     cid, inv, old_status

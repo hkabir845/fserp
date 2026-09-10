@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import F
 
 from api.models import Meter
@@ -32,6 +33,7 @@ def meter_quantity_from_readings(
     return (max_r - prev) + cur + Decimal("1")
 
 
+@transaction.atomic
 def advance_meter_by_quantity(meter_id: int, quantity: Decimal) -> None:
     """
     Add ``quantity`` to ``Meter.current_reading``, wrapping at ``max_reading`` when set.
@@ -41,7 +43,7 @@ def advance_meter_by_quantity(meter_id: int, quantity: Decimal) -> None:
     qty = Decimal(quantity)
     if qty == 0:
         return
-    m = Meter.objects.filter(pk=meter_id).only("id", "current_reading", "max_reading").first()
+    m = Meter.objects.select_for_update().filter(pk=meter_id).only("id", "current_reading", "max_reading").first()
     if not m:
         return
     max_r = m.max_reading
@@ -51,8 +53,5 @@ def advance_meter_by_quantity(meter_id: int, quantity: Decimal) -> None:
     # Compute wrap in Python then write absolute value (still under row lock in caller TX).
     new_val = Decimal(m.current_reading or 0) + qty
     span = Decimal(max_r) + Decimal("1")
-    while new_val > max_r:
-        new_val -= span
-    while new_val < 0:
-        new_val += span
+    new_val = ((new_val % span) + span) % span
     Meter.objects.filter(pk=meter_id).update(current_reading=new_val)

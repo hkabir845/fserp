@@ -103,13 +103,18 @@ def test_refresh_uses_httponly_cookie_and_logout_clears_it(api_client: Client, u
     assert login.status_code == 200
 
     refreshed = api_client.post(
-        "/api/auth/refresh/", data=json.dumps({}), content_type="application/json"
+        "/api/auth/refresh/",
+        data=json.dumps({}),
+        content_type="application/json",
+        HTTP_ORIGIN="http://localhost:3000",
     )
     assert refreshed.status_code == 200
     assert "access_token" in json.loads(refreshed.content)
     assert refreshed.cookies.get("fserp_refresh") is not None
 
-    logged_out = api_client.post("/api/auth/logout/")
+    logged_out = api_client.post(
+        "/api/auth/logout/", HTTP_ORIGIN="http://localhost:3000"
+    )
     assert logged_out.status_code == 200
     assert logged_out.cookies["fserp_refresh"]["max-age"] == 0
 

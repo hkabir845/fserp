@@ -48,8 +48,8 @@ import type { PrintBranding } from '@/utils/printBranding'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { formatDateOnly, localDateISO } from '@/utils/date'
-import {
 import { readStoredAccessToken } from '@/lib/authSession'
+import {
   MAX_ANNUAL_APR,
   annualAprFromInterestFormInput,
   convertInterestFieldOnCounterpartyChange,

@@ -55,8 +55,8 @@ import {
   type ErpAppMenuItem,
 } from '@/navigation/erpAppMenu'
 import { safeLogError } from '@/utils/connectionError'
-import {
 import { readStoredAccessToken } from '@/lib/authSession'
+import {
   getRoleDashboardConfig,
   getLocalizedDashboardFocus,
   type DashboardStatKey,

@@ -192,7 +192,10 @@ def test_manual_journal_cannot_be_posted_or_unposted_in_a_closed_period(
         description="already posted", is_posted=True,
     )
     r2 = api_client.post(
-        "/api/journal-entries/%d/unpost/" % posted.id, data="{}", content_type="application/json", **h
+        "/api/journal-entries/%d/unpost/" % posted.id,
+        data='{"reason":"closed-period verification"}',
+        content_type="application/json",
+        **h,
     )
     assert r2.status_code == 409, r2.content.decode()
     posted.refresh_from_db()

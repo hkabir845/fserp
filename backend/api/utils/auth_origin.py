@@ -47,13 +47,17 @@ def cookie_refresh_origin_error(request, *, used_cookie: bool) -> str | None:
     When the refresh token is taken from the HttpOnly cookie (not the JSON body),
     require a browser Origin/Referer that is on the CORS allow-list.
 
-    Native / Capacitor clients send the token in the body (or X-Auth-Client: native)
-    and are not subject to this check.
+    Native / Capacitor clients send the token in the JSON body and return early above —
+    they never reach the Origin check.
+
+    ``X-Auth-Client: native`` is deliberately NOT honoured here. A native client cannot hold a
+    browser HttpOnly cookie, so a cookie-borne refresh carrying that header is same-origin
+    JavaScript, i.e. XSS. Skipping the check for it handed that script a fresh 7-day refresh
+    token in the response body — the exact exfiltration the HttpOnly cookie exists to prevent.
+    With SameSite=None in production this Origin check is the only CSRF defence on this
+    endpoint, so it must not have an opt-out that the caller controls.
     """
     if not used_cookie:
-        return None
-    client = (request.META.get("HTTP_X_AUTH_CLIENT") or "").strip().lower()
-    if client == "native":
         return None
     origin = request_origin(request)
     if not origin:

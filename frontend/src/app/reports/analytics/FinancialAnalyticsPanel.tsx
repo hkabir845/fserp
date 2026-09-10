@@ -33,8 +33,8 @@ import {
 import { EntityAnalyticsBreakdown } from './EntityAnalyticsBreakdown'
 import type { AquacultureAnalyticsSummary, EntityAnalyticsRow } from './analyticsEntityTypes'
 import { parseReportSiteScopeKey } from '../reportSiteScope'
-import {
 import { readStoredAccessToken } from '@/lib/authSession'
+import {
   ResponsiveContainer,
   ComposedChart,
   Line,

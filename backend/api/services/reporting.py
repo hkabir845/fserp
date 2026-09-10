@@ -6361,7 +6361,7 @@ def report_inventory_sku_valuation(
         company_id=company_id,
         invoice_date__gte=start,
         invoice_date__lte=end,
-    )
+    ).exclude(status__in=("draft", "void"))
     if station_id is not None:
         inv_q = inv_q.filter(station_id=station_id)
     inv_ids = inv_q.values_list("id", flat=True)
@@ -6398,6 +6398,10 @@ def report_inventory_sku_valuation(
 
     for item in scope_items:
         if not item_tracks_physical_stock(item):
+            continue
+        # Fish catalogue quantity is a head count, while its cost may be per kg.
+        # Biological inventory is already reported separately from account 1581.
+        if (item.pos_category or "").strip().lower() == "fish":
             continue
         if station_id is not None:
             qoh = _item_qoh_at_station(company_id, item, station_id)

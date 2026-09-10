@@ -41,6 +41,10 @@ PERIOD_END = date(2026, 12, 31)
 CENT = Decimal("0.02")
 
 
+def report_decimal(value) -> Decimal:
+    return Decimal(str(value))
+
+
 def _headers(auth_super_headers, company_master):
     from tests.test_api_production_audit import _audit_master_headers
 
@@ -148,7 +152,7 @@ def test_fuel_purchase_and_pump_sales_leave_a_sound_ledger(api_client, fuel_stat
     tb = report_trial_balance(cid, PERIOD_START, PERIOD_END)
     assert tb["debits_equal_credits"] is True
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
-    assert bs["auto_plug_amount"] == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
+    assert report_decimal(bs["auto_plug_amount"]) == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
 
 
 @pytest.mark.django_db
@@ -227,8 +231,8 @@ def test_pump_sale_relieves_inventory_and_books_cost_of_fuel_sold(api_client, fu
     assert relieved > 0, "a fuel sale must relieve inventory"
 
     inc = report_income_statement(cid, PERIOD_START, PERIOD_END)
-    assert inc["income"]["total"] > 0
-    assert inc["cost_of_goods_sold"]["total"] > 0, "fuel sold with no cost of fuel sold"
+    assert report_decimal(inc["income"]["total"]) > 0
+    assert report_decimal(inc["cost_of_goods_sold"]["total"]) > 0, "fuel sold with no cost of fuel sold"
     assert_ledger_sound(cid)
     assert_no_gl_gaps(cid)
 
@@ -350,7 +354,7 @@ def test_pond_fry_and_feed_purchases_leave_a_sound_ledger(api_client, aquacultur
     assert_no_gl_gaps(cid)
 
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
-    assert bs["auto_plug_amount"] == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
+    assert report_decimal(bs["auto_plug_amount"]) == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
     tb = report_trial_balance(cid, PERIOD_START, PERIOD_END)
     assert tb["debits_equal_credits"] is True
 
@@ -421,7 +425,7 @@ def test_capitalized_pond_feed_becomes_a_biological_asset_not_an_expense(
 
     assert gl_balance(cid, "1581") == Decimal("9999.99"), "feed did not capitalize to 1581"
     pond_pl = report_income_statement(cid, PERIOD_START, PERIOD_END, pond_id=pond_id)
-    assert pond_pl["expenses"]["total"] == 0, (
+    assert report_decimal(pond_pl["expenses"]["total"]) == 0, (
         "capitalized feed must not also hit the pond P&L - that would double-count the cost"
     )
     assert_ledger_sound(cid)
@@ -441,7 +445,7 @@ def test_expensed_pond_feed_hits_the_pond_profit_and_loss(api_client, aquacultur
 
     assert gl_balance(cid, "1581") == Decimal("0.00"), "expensed feed must not touch 1581"
     pond_pl = report_income_statement(cid, PERIOD_START, PERIOD_END, pond_id=pond_id)
-    assert pond_pl["expenses"]["total"] > 0, "expensed pond feed never reached the pond P&L"
+    assert report_decimal(pond_pl["expenses"]["total"]) > 0, "expensed pond feed never reached the pond P&L"
     assert_ledger_sound(cid)
     assert_no_gl_gaps(cid)
 
@@ -475,8 +479,8 @@ def test_pond_scoped_pl_never_exceeds_the_company_pl(api_client, aquaculture):
     assert med.status_code == 201, med.content.decode()
     company = report_income_statement(cid, PERIOD_START, PERIOD_END)
     pond = report_income_statement(cid, PERIOD_START, PERIOD_END, pond_id=aquaculture["grow"].id)
-    assert pond["expenses"]["total"] <= company["expenses"]["total"] + float(CENT)
-    assert pond["income"]["total"] <= company["income"]["total"] + float(CENT)
+    assert report_decimal(pond["expenses"]["total"]) <= report_decimal(company["expenses"]["total"]) + CENT
+    assert report_decimal(pond["income"]["total"]) <= report_decimal(company["income"]["total"]) + CENT
 
 
 # =========================================================== both lines together
@@ -567,23 +571,23 @@ def test_fuel_and_aquaculture_report_separately_without_losing_anything(
     bundle = report_entities_financial_summary(cid, PERIOD_START, PERIOD_END)
     parts = bundle["by_station"] + bundle["by_pond"] + [bundle["unscoped"]]
     for key in ("income", "cost_of_goods_sold", "expenses", "net_income"):
-        segment = sum(r[key] for r in parts)
-        company = bundle["company_total"][key]
-        assert abs(segment - company) <= float(CENT), (
+        segment = sum((report_decimal(r[key]) for r in parts), Decimal("0"))
+        company = report_decimal(bundle["company_total"][key])
+        assert abs(segment - company) <= CENT, (
             f"{key}: fuel + pond + head office = {segment}, company = {company}"
         )
 
     # The pond must not absorb fuel cost, and the station must not absorb pond feed.
     station_row = next(r for r in bundle["by_station"] if r["entity_id"] == station.id)
     pond_row = next(r for r in bundle["by_pond"] if r["entity_id"] == pond.id)
-    assert station_row["income"] > 0, "fuel revenue did not land on the station"
-    assert pond_row["income"] == 0, "pond reported fuel revenue as its own"
-    assert station_row["expenses"] == 0, "the station absorbed the pond's feed cost"
+    assert report_decimal(station_row["income"]) > 0, "fuel revenue did not land on the station"
+    assert report_decimal(pond_row["income"]) == 0, "pond reported fuel revenue as its own"
+    assert report_decimal(station_row["expenses"]) == 0, "the station absorbed the pond's feed cost"
     # Pond feed capitalizes to 1581 by default, so it shows as the pond's asset, not its expense.
     assert gl_balance(cid, "1581") > 0, "pond feed did not reach biological inventory"
 
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
-    assert bs["auto_plug_amount"] == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
+    assert report_decimal(bs["auto_plug_amount"]) == 0, f"balance sheet needed a plug of {bs['auto_plug_amount']}"
 
 
 @pytest.mark.django_db

@@ -206,34 +206,39 @@ def _shift_for_sale(company_id: int, body: dict, station_id: int | None) -> Shif
 def _parse_general_lines(company_id: int, items: list) -> list:
     lines_data = []
     for row in items:
+        if not isinstance(row, dict):
+            raise ValueError("Each shop line must be an object.")
         item_id = row.get("item_id")
         qty = row.get("quantity")
         unit_price = row.get("unit_price")
         discount_percent = row.get("discount_percent") or 0
         if not item_id or qty is None:
-            continue
+            raise ValueError("Each shop line requires an item and quantity.")
         try:
             q = Decimal(str(qty))
-            if q <= 0:
-                continue
         except Exception:
-            continue
+            raise ValueError("Shop quantity must be a positive number.")
+        if not q.is_finite() or q <= 0:
+            raise ValueError("Shop quantity must be a positive number.")
         item = Item.objects.filter(id=item_id, company_id=company_id).first()
         if not item:
-            continue
+            raise ValueError("Shop item not found for this company.")
         up = unit_price
         if up is not None:
             try:
                 up = Decimal(str(up))
             except Exception:
-                up = item.unit_price or Decimal("0")
+                raise ValueError("Shop unit price must be a non-negative number.")
         else:
             up = item.unit_price or Decimal("0")
+        if not up.is_finite() or up < 0:
+            raise ValueError("Shop unit price must be a non-negative number.")
         try:
             d = Decimal(str(discount_percent))
-            d = max(Decimal("0"), min(Decimal("100"), d))
         except Exception:
-            d = Decimal("0")
+            raise ValueError("Discount must be between 0 and 100 percent.")
+        if not d.is_finite() or not Decimal("0") <= d <= Decimal("100"):
+            raise ValueError("Discount must be between 0 and 100 percent.")
         line_amount = (q * up * (1 - d / 100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         lines_data.append(
             {
@@ -253,16 +258,18 @@ def _parse_fuel_lines(
     """Parse fuel_lines; unknown nozzle returns 404."""
     result = []
     for row in fuel_lines:
+        if not isinstance(row, dict):
+            raise ValueError("Each fuel line must be an object.")
         nozzle_id = row.get("nozzle_id")
         quantity = row.get("quantity")
         if not nozzle_id or quantity is None:
-            continue
+            raise ValueError("Each fuel line requires a nozzle and quantity.")
         try:
             qty = Decimal(str(quantity))
         except Exception:
-            continue
-        if qty <= 0:
-            continue
+            raise ValueError("Fuel quantity must be a positive number.")
+        if not qty.is_finite() or qty <= 0:
+            raise ValueError("Fuel quantity must be a positive number.")
         nozzle = (
             Nozzle.objects.filter(id=nozzle_id, company_id=company_id)
             .select_related("meter", "tank", "product")
@@ -391,8 +398,11 @@ def _cashier_pos_unified(
     items = list(items_raw) if isinstance(items_raw, list) else []
     fuel_lines_in = list(fuel_raw) if isinstance(fuel_raw, list) else []
 
-    lines_data = _parse_general_lines(company_id, items)
-    fuel_entries, ferr = _parse_fuel_lines(company_id, fuel_lines_in)
+    try:
+        lines_data = _parse_general_lines(company_id, items)
+        fuel_entries, ferr = _parse_fuel_lines(company_id, fuel_lines_in)
+    except (ValueError, TypeError, ArithmeticError) as exc:
+        return _cashier_pos_error(f"Invalid sale lines: {exc}")
     if ferr:
         return ferr
 

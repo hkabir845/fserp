@@ -1028,19 +1028,20 @@ export function renderExtraFinancialReport(
     const byPond = (data.by_pond as Record<string, unknown>[]) ?? []
     const unscoped = data.unscoped as Record<string, unknown> | undefined
     const showEntities = byStation.length > 0 || byPond.length > 0
+    const operatingCash = Number(cash.cash_from_operating ?? op.cash_from_operations ?? 0)
+    const investingCash = Number(cash.cash_from_investing ?? 0)
+    const financingCash = Number(cash.cash_from_financing ?? 0)
 
-    const entityTable = (title: string, rows: Record<string, unknown>[], pondCols: boolean) => (
+    const entityTable = (title: string, rows: Record<string, unknown>[]) => (
       <div className="overflow-x-auto rounded-lg border border-border">
         <h3 className="bg-muted/40 px-4 py-3 text-sm font-semibold text-foreground border-b">{title}</h3>
         <table className="min-w-full divide-y divide-border text-sm">
           <thead className="bg-muted/40">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Entity</th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Net income</th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">
-                {pondCols ? 'Pond sales' : 'Customer rcpts'}
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Vendor pmt</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Operating</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Investing</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Financing</th>
               <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Net cash change</th>
               <th className="px-3 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Ending cash</th>
             </tr>
@@ -1050,13 +1051,13 @@ export function renderExtraFinancialReport(
               <tr key={`${String(r.entity_type)}-${String(r.entity_id ?? 'u')}`} className="hover:bg-muted/40">
                 <td className="px-4 py-3 font-medium text-foreground">{String(r.entity_name ?? '')}</td>
                 <td className="px-3 py-3 text-right">
-                  <ReportAmountCell amount={Number(r.net_income ?? 0)} row={r} field="net_income" scope={ctx.drillScope} />
+                  <ReportAmountCell amount={Number(r.cash_from_operating ?? 0)} row={r} field="cash_from_operating" scope={ctx.drillScope} />
                 </td>
-                <td className="px-3 py-3 text-right text-success">
-                  <ReportAmountCell amount={Number(r.customer_payments_received ?? 0)} row={r} field="customer_payments_received" scope={ctx.drillScope} />
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.cash_from_investing ?? 0)} row={r} field="cash_from_investing" scope={ctx.drillScope} />
                 </td>
-                <td className="px-3 py-3 text-right text-destructive">
-                  <ReportAmountCell amount={Number(r.vendor_payments_made ?? 0)} row={r} field="vendor_payments_made" scope={ctx.drillScope} />
+                <td className="px-3 py-3 text-right">
+                  <ReportAmountCell amount={Number(r.cash_from_financing ?? 0)} row={r} field="cash_from_financing" scope={ctx.drillScope} />
                 </td>
                 <td className="px-3 py-3 text-right font-medium">
                   <ReportAmountCell amount={Number(r.net_change_in_cash ?? 0)} row={r} field="net_change_in_cash" scope={ctx.drillScope} />
@@ -1073,22 +1074,22 @@ export function renderExtraFinancialReport(
 
     return (
       <div className="space-y-6">
-        {periodFilter('Company cash flow; clear the site filter to see every station and pond.')}
+        {periodFilter('Company cash flow from posted cash and bank journals; clear the site filter to see every station and pond.')}
         {typeof data.accounting_note === 'string' && (
           <p className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-foreground/85">{data.accounting_note}</p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white border rounded-lg p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground uppercase">Net income (P&L)</p>
-            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={Number(op.net_income ?? 0)} row={op} field="net_income" scope={ctx.drillScope ?? {}} /></p>
+            <p className="text-xs text-muted-foreground uppercase">Cash from operations</p>
+            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={operatingCash} row={cash} field="cash_from_operating" scope={ctx.drillScope ?? {}} /></p>
           </div>
           <div className="bg-white border rounded-lg p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground uppercase">Customer payments received</p>
-            <p className="text-xl font-bold mt-1 text-success"><ReportAmountCell amount={Number(op.customer_payments_received ?? 0)} row={op} field="customer_payments_received" scope={ctx.drillScope ?? {}} /></p>
+            <p className="text-xs text-muted-foreground uppercase">Cash from investing</p>
+            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={investingCash} row={cash} field="cash_from_investing" scope={ctx.drillScope ?? {}} /></p>
           </div>
           <div className="bg-white border rounded-lg p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground uppercase">Vendor payments made</p>
-            <p className="text-xl font-bold mt-1 text-destructive"><ReportAmountCell amount={Number(op.vendor_payments_made ?? 0)} row={op} field="vendor_payments_made" scope={ctx.drillScope ?? {}} /></p>
+            <p className="text-xs text-muted-foreground uppercase">Cash from financing</p>
+            <p className="text-xl font-bold mt-1"><ReportAmountCell amount={financingCash} row={cash} field="cash_from_financing" scope={ctx.drillScope ?? {}} /></p>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1105,14 +1106,18 @@ export function renderExtraFinancialReport(
             <p className="text-2xl font-bold text-green-900 mt-1"><ReportAmountCell amount={Number(cash.ending_cash ?? 0)} row={cash} field="ending_cash" scope={ctx.drillScope ?? {}} /></p>
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          P&amp;L net income is accrual profit, not cash. Payment-module receipts and vendor
+          payments are shown for reference and do not have to equal cash from operations.
+        </p>
 
         {showEntities ? (
           <div className="space-y-6">
             <p className="text-sm font-semibold text-foreground">Cash flow by entity (each station, shop hub, and pond)</p>
-            {entityTable('Fuel filling stations', byFuel, false)}
-            {entityTable('Shop hubs (no fuel)', byShop, false)}
-            {byPond.length > 0 ? entityTable('Ponds (pond-tagged bank GL + registered sales)', byPond, true) : null}
-            {unscoped ? entityTable('Head office / unassigned', [unscoped], false) : null}
+            {entityTable('Fuel filling stations', byFuel)}
+            {entityTable('Shop hubs (no fuel)', byShop)}
+            {byPond.length > 0 ? entityTable('Ponds (pond-tagged cash GL)', byPond) : null}
+            {unscoped ? entityTable('Head office / unassigned', [unscoped]) : null}
           </div>
         ) : null}
 

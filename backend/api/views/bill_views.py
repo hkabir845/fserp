@@ -1478,6 +1478,21 @@ def bill_detail(request, bill_id: int):
         mill_vendor = b.vendor if uses_purchase_terms(getattr(b, "vendor", None)) else None
         mill_date = b.bill_date
         mill_company = request.company_id
+        from api.services.financial_audit import record_document_deletion
+
+        record_document_deletion(
+            request,
+            company_id=request.company_id,
+            entity_type="bill",
+            entity_id=int(b.id),
+            entity_ref=getattr(b, "bill_number", "") or "",
+            before={
+                "status": b.status,
+                "bill_date": str(b.bill_date or ""),
+                "vendor_id": b.vendor_id,
+                "total": str(b.total),
+            },
+        )
         b.delete()
         if mill_vendor:
             sync_monthly_scheme_reserve(mill_company, mill_vendor, mill_date)

@@ -153,15 +153,23 @@ def mark_pos_stock_relieved(company_id: int, inv: Invoice) -> None:
         return
     station_id = inv.station_id
     for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
-        if not _line_moves_stock(company_id, line):
+        # Match the actual POS decrement, which also moves inventory with no
+        # cost basis. The manual-invoice eligibility rule is narrower.
+        it = line.item
+        if (
+            it is None
+            or line.nozzle_id is not None
+            or not item_tracks_physical_stock(it)
+            or it.quantity_on_hand is None
+        ):
             continue
         qty = line.quantity or Decimal("0")
+        uses_bins = item_uses_station_bins(company_id, it)
+        if qty <= 0 or (uses_bins and station_id is None):
+            continue
         station_evidence = (
             int(station_id)
-            if qty > 0
-            and station_id is not None
-            and line.item is not None
-            and item_uses_station_bins(company_id, line.item)
+            if station_id is not None and uses_bins
             else None
         )
         InvoiceLine.objects.filter(pk=line.pk).update(

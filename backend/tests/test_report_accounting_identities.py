@@ -33,13 +33,17 @@ from api.services.reporting import (
 PERIOD_START = date(2026, 1, 1)
 PERIOD_END = date(2026, 12, 31)
 
-CENT = 0.02  # reports return floats; allow a rounding cent when comparing
+CENT = Decimal("0.02")
 
 AGING_BUCKETS = ("current", "days_1_30", "days_31_60", "days_61_90", "days_over_90")
 
 
-def _bucket_sum(row: dict) -> float:
-    return sum(row[k] for k in AGING_BUCKETS)
+def _d(value) -> Decimal:
+    return Decimal(str(value))
+
+
+def _bucket_sum(row: dict) -> Decimal:
+    return sum((_d(row[k]) for k in AGING_BUCKETS), Decimal("0"))
 
 
 @pytest.fixture
@@ -140,9 +144,9 @@ def books(api_client, auth_super_headers, company_master):
 def test_trial_balance_debits_equal_credits(books):
     tb = report_trial_balance(books["cid"], PERIOD_START, PERIOD_END)
     assert tb["debits_equal_credits"] is True
-    assert abs(tb["debit_credit_difference"]) <= CENT
-    assert tb["total_debit"] > 0
-    assert abs(tb["total_debit"] - tb["total_credit"]) <= CENT
+    assert abs(_d(tb["debit_credit_difference"])) <= CENT
+    assert _d(tb["total_debit"]) > 0
+    assert abs(_d(tb["total_debit"]) - _d(tb["total_credit"])) <= CENT
 
 
 @pytest.mark.django_db
@@ -156,32 +160,32 @@ def test_trial_balance_has_no_orphan_account_rows(books):
 @pytest.mark.django_db
 def test_balance_sheet_balances_without_an_automatic_plug(books):
     bs = report_balance_sheet(books["cid"], PERIOD_START, PERIOD_END)
-    assert bs["auto_plug_amount"] == 0, (
+    assert _d(bs["auto_plug_amount"]) == 0, (
         "balance sheet needed a tie-out plug of "
         f"{bs['auto_plug_amount']}; assets {bs['assets']['total']} vs "
         f"liabilities+equity {bs['total_liabilities_and_equity']}"
     )
     assert bs["is_balanced"] is True
-    assert abs(bs["assets_minus_liabilities_equity"]) <= CENT
+    assert abs(_d(bs["assets_minus_liabilities_equity"])) <= CENT
 
 
 @pytest.mark.django_db
 def test_balance_sheet_accounting_equation_holds(books):
     bs = report_balance_sheet(books["cid"], PERIOD_START, PERIOD_END)
-    assets = bs["assets"]["total"]
-    liabilities = bs["liabilities"]["total"]
-    equity = bs["equity"]["total"]
+    assets = _d(bs["assets"]["total"])
+    liabilities = _d(bs["liabilities"]["total"])
+    equity = _d(bs["equity"]["total"])
     assert abs(assets - (liabilities + equity)) <= CENT
 
 
 @pytest.mark.django_db
 def test_income_statement_totals_are_internally_consistent(books):
     inc = report_income_statement(books["cid"], PERIOD_START, PERIOD_END)
-    income = inc["income"]["total"]
-    cogs = inc["cost_of_goods_sold"]["total"]
-    expenses = inc["expenses"]["total"]
-    assert abs(inc["gross_profit"] - (income - cogs)) <= CENT
-    assert abs(inc["net_income"] - (income - cogs - expenses)) <= CENT
+    income = _d(inc["income"]["total"])
+    cogs = _d(inc["cost_of_goods_sold"]["total"])
+    expenses = _d(inc["expenses"]["total"])
+    assert abs(_d(inc["gross_profit"]) - (income - cogs)) <= CENT
+    assert abs(_d(inc["net_income"]) - (income - cogs - expenses)) <= CENT
 
 
 @pytest.mark.django_db
@@ -198,8 +202,8 @@ def test_income_statement_period_matches_cumulative_movement(books):
 def test_goods_sold_always_carry_a_cost(books):
     """Revenue from inventory items with no COGS overstates profit."""
     inc = report_income_statement(books["cid"], PERIOD_START, PERIOD_END)
-    assert inc["income"]["total"] > 0
-    assert inc["cost_of_goods_sold"]["total"] > 0, (
+    assert _d(inc["income"]["total"]) > 0
+    assert _d(inc["cost_of_goods_sold"]["total"]) > 0, (
         "inventory was sold but no COGS reached the P&L"
     )
 
@@ -212,7 +216,7 @@ def test_balance_sheet_net_income_ties_to_the_income_statement(books):
     """
     bs = report_balance_sheet(books["cid"], PERIOD_START, PERIOD_END)
     inc = report_income_statement(books["cid"], PERIOD_START, PERIOD_END)
-    assert abs(bs["net_income_cumulative"] - inc["net_income"]) <= CENT
+    assert abs(_d(bs["net_income_cumulative"]) - _d(inc["net_income"])) <= CENT
 
 
 @pytest.mark.django_db
@@ -227,9 +231,10 @@ def test_trial_balance_reconciles_to_the_balance_sheet_and_income_statement(book
 
     pl_types = {"income", "cost_of_goods_sold", "expense"}
     pl_movement = sum(
-        a["credit"] - a["debit"] for a in tb["accounts"] if a["account_type"] in pl_types
+        _d(a["credit"]) - _d(a["debit"])
+        for a in tb["accounts"] if a["account_type"] in pl_types
     )
-    assert abs(pl_movement - inc["net_income"]) <= CENT, (
+    assert abs(pl_movement - _d(inc["net_income"])) <= CENT, (
         f"trial-balance P&L movement {pl_movement} vs income statement {inc['net_income']}"
     )
 
@@ -243,9 +248,9 @@ def test_ar_aging_buckets_sum_to_the_total_outstanding(books):
     rows = ar.get("customers", [])
     assert rows, "the credit invoice should be aged somewhere"
     for row in rows:
-        assert abs(_bucket_sum(row) - row["total"]) <= CENT, row
-    assert abs(_bucket_sum(ar["totals"]) - ar["totals"]["total"]) <= CENT
-    assert abs(sum(r["total"] for r in rows) - ar["totals"]["total"]) <= CENT
+        assert abs(_bucket_sum(row) - _d(row["total"])) <= CENT, row
+    assert abs(_bucket_sum(ar["totals"]) - _d(ar["totals"]["total"])) <= CENT
+    assert abs(sum((_d(r["total"]) for r in rows), Decimal("0")) - _d(ar["totals"]["total"])) <= CENT
 
 
 @pytest.mark.django_db
@@ -254,9 +259,9 @@ def test_ap_aging_buckets_sum_to_the_total_outstanding(books):
     rows = ap.get("vendors", [])
     assert rows, "the open vendor bill should be aged somewhere"
     for row in rows:
-        assert abs(_bucket_sum(row) - row["total"]) <= CENT, row
-    assert abs(_bucket_sum(ap["totals"]) - ap["totals"]["total"]) <= CENT
-    assert abs(sum(r["total"] for r in rows) - ap["totals"]["total"]) <= CENT
+        assert abs(_bucket_sum(row) - _d(row["total"])) <= CENT, row
+    assert abs(_bucket_sum(ap["totals"]) - _d(ap["totals"]["total"])) <= CENT
+    assert abs(sum((_d(r["total"]) for r in rows), Decimal("0")) - _d(ap["totals"]["total"])) <= CENT
 
 
 @pytest.mark.django_db
@@ -265,8 +270,8 @@ def test_ar_aging_total_matches_the_customer_balances_report(books):
     cid = books["cid"]
     ar = report_ar_aging(cid, PERIOD_START, PERIOD_END)
     balances = report_customer_balances(cid, PERIOD_START, PERIOD_END)
-    aging_total = sum(r["total"] for r in ar.get("customers", []))
-    ledger_total = sum(r["balance"] for r in balances.get("customers", []))
+    aging_total = sum((_d(r["total"]) for r in ar.get("customers", [])), Decimal("0"))
+    ledger_total = sum((_d(r["balance"]) for r in balances.get("customers", [])), Decimal("0"))
     assert abs(aging_total - ledger_total) <= CENT, (
         f"AR aging {aging_total} vs customer balances {ledger_total}"
     )
@@ -277,8 +282,8 @@ def test_ap_aging_total_matches_the_vendor_balances_report(books):
     cid = books["cid"]
     ap = report_ap_aging(cid, PERIOD_START, PERIOD_END)
     balances = report_vendor_balances(cid, PERIOD_START, PERIOD_END)
-    aging_total = sum(r["total"] for r in ap.get("vendors", []))
-    ledger_total = sum(r["balance"] for r in balances.get("vendors", []))
+    aging_total = sum((_d(r["total"]) for r in ap.get("vendors", [])), Decimal("0"))
+    ledger_total = sum((_d(r["balance"]) for r in balances.get("vendors", [])), Decimal("0"))
     assert abs(aging_total - ledger_total) <= CENT, (
         f"AP aging {aging_total} vs vendor balances {ledger_total}"
     )
@@ -295,11 +300,11 @@ def test_cash_flow_ending_cash_matches_the_balance_sheet(books):
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
 
     bs_cash = sum(
-        a["balance"]
+        _d(a["balance"])
         for a in bs["assets"]["accounts"]
         if str(a["account_code"]) in ("1010", "1020", "1030", "1040", "1050")
     )
-    ending = cf["cash_summary"]["ending_cash"]
+    ending = _d(cf["cash_summary"]["ending_cash"])
     assert abs(ending - bs_cash) <= CENT, (
         f"cash flow ending {ending} vs balance sheet cash {bs_cash}"
     )
@@ -308,15 +313,15 @@ def test_cash_flow_ending_cash_matches_the_balance_sheet(books):
 @pytest.mark.django_db
 def test_cash_flow_movement_reconciles_opening_to_closing(books):
     cs = report_cash_flow(books["cid"], PERIOD_START, PERIOD_END)["cash_summary"]
-    assert abs((cs["beginning_cash"] + cs["net_change_in_cash"]) - cs["ending_cash"]) <= CENT
-    assert abs((cs["total_deposits"] - cs["total_withdrawals"]) - cs["net_change_in_cash"]) <= CENT
+    assert abs((_d(cs["beginning_cash"]) + _d(cs["net_change_in_cash"])) - _d(cs["ending_cash"])) <= CENT
+    assert abs((_d(cs["total_deposits"]) - _d(cs["total_withdrawals"])) - _d(cs["net_change_in_cash"])) <= CENT
     sections = (
-        cs["cash_from_operating"]
-        + cs["cash_from_investing"]
-        + cs["cash_from_financing"]
-        + cs["cash_transfers"]
+        _d(cs["cash_from_operating"])
+        + _d(cs["cash_from_investing"])
+        + _d(cs["cash_from_financing"])
+        + _d(cs["cash_transfers"])
     )
-    assert abs((cs["beginning_cash"] + sections) - cs["ending_cash"]) <= CENT
+    assert abs((_d(cs["beginning_cash"]) + sections) - _d(cs["ending_cash"])) <= CENT
 
 
 @pytest.mark.django_db
@@ -328,8 +333,8 @@ def test_cash_flow_sees_cash_on_hand_not_only_bank_typed_accounts(books):
     cf = report_cash_flow(books["cid"], PERIOD_START, PERIOD_END)
     codes = {str(r["account_code"]) for r in cf["bank_accounts"]}
     assert "1010" in codes, f"cash on hand missing from the cash flow statement: {codes}"
-    assert cf["cash_summary"]["ending_cash"] > 0
-    assert cf["cash_summary"]["total_deposits"] > 0
+    assert _d(cf["cash_summary"]["ending_cash"]) > 0
+    assert _d(cf["cash_summary"]["total_deposits"]) > 0
 
 
 @pytest.mark.django_db
@@ -416,8 +421,8 @@ def test_every_posted_line_lands_in_exactly_one_entity_segment(books):
 def test_entity_segment_net_income_sums_to_the_company_total(books):
     bundle = report_entities_financial_summary(books["cid"], PERIOD_START, PERIOD_END)
     parts = bundle["by_station"] + bundle["by_pond"] + [bundle["unscoped"]]
-    segment_net = sum(r["net_income"] for r in parts)
-    company_net = bundle["company_total"]["net_income"]
+    segment_net = sum((_d(r["net_income"]) for r in parts), Decimal("0"))
+    company_net = _d(bundle["company_total"]["net_income"])
     assert abs(segment_net - company_net) <= CENT, (
         f"segments net to {segment_net} but the company total is {company_net}"
     )
@@ -428,8 +433,8 @@ def test_entity_segment_income_and_expense_sum_to_the_company_total(books):
     bundle = report_entities_financial_summary(books["cid"], PERIOD_START, PERIOD_END)
     parts = bundle["by_station"] + bundle["by_pond"] + [bundle["unscoped"]]
     for key in ("income", "cost_of_goods_sold", "expenses"):
-        segment = sum(r[key] for r in parts)
-        company = bundle["company_total"][key]
+        segment = sum((_d(r[key]) for r in parts), Decimal("0"))
+        company = _d(bundle["company_total"][key])
         assert abs(segment - company) <= CENT, (
             f"{key}: segments {segment} vs company {company}"
         )

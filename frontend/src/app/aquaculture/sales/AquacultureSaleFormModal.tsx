@@ -493,7 +493,10 @@ export function AquacultureSaleFormModal({
         if (fail === 0) {
           toast.success(ok === 1 ? 'Sale saved' : `${ok} sale lines saved`)
         } else if (ok > 0) {
-          toast.error(`${ok} line(s) saved, ${fail} failed — refresh and complete missing lines`)
+          setLines(lines.filter((_, index) => results[index].status === 'rejected'))
+          toast.error(`${ok} line(s) saved. ${fail} failed line(s) remain below for correction and retry.`)
+          onSaved()
+          return
         } else {
           const first = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
           throw first?.reason

@@ -188,14 +188,55 @@ def _do_transfer(api_client, headers, nursing, grow):
     return json.loads(r.content)
 
 
+# Every aquaculture report carries the same ``fcr`` envelope — a biomass-operations block, not a
+# financial one. A transfer really does move biomass between ponds, so FCR's transfer_in_kg /
+# transfer_out_kg must change; that is the block doing its job, not a leak. It is split out of the
+# payload comparison and checked separately by _fcr_movement_error below, which pins the figures
+# an internal transfer must NOT touch (no fish were sold, harvested, lost or fed).
+_FCR_ONLY_MOVES = frozenset({"transfer_in_kg", "transfer_out_kg"})
+
+
+def _split_fcr(blob: str) -> tuple[str, dict]:
+    """Return (payload without the fcr envelope, the fcr envelope)."""
+    try:
+        d = json.loads(blob)
+    except Exception:
+        return blob, {}
+    if not isinstance(d, dict):
+        return blob, {}
+    fcr = d.pop("fcr", None)
+    return json.dumps(d, sort_keys=True), fcr if isinstance(fcr, dict) else {}
+
+
+def _fcr_movement_error(before: dict, after: dict) -> str | None:
+    """None when the only FCR figures that moved are the transfer legs."""
+    b = (before or {}).get("portfolio") or {}
+    a = (after or {}).get("portfolio") or {}
+    for key in sorted(set(b) | set(a)):
+        if key in _FCR_ONLY_MOVES or key.startswith("biomass_") or key.startswith("fcr_"):
+            continue
+        if b.get(key) != a.get(key):
+            return f"FCR portfolio.{key} moved on an internal transfer: {b.get(key)} -> {a.get(key)}"
+    return None
+
+
 def _snapshot_reports(api_client, headers) -> dict[str, str]:
+    payloads, _fcr = _snapshot_reports_and_fcr(api_client, headers)
+    return payloads
+
+
+def _snapshot_reports_and_fcr(api_client, headers) -> tuple[dict[str, str], dict[str, dict]]:
     out: dict[str, str] = {}
+    fcr: dict[str, dict] = {}
     for rid in ALL_API_REPORT_IDS:
         r = api_client.get(
             f"/api/reports/{rid}/", {"start_date": START, "end_date": END}, **headers
         )
-        out[rid] = r.content.decode() if r.status_code == 200 else f"__status_{r.status_code}__"
-    return out
+        if r.status_code != 200:
+            out[rid] = f"__status_{r.status_code}__"
+            continue
+        out[rid], fcr[rid] = _split_fcr(r.content.decode())
+    return out, fcr
 
 
 @pytest.mark.django_db
@@ -205,9 +246,16 @@ def test_no_company_level_report_moves_on_an_internal_transfer(
     cid, nursing, grow = traded_ponds
     h = {**auth_admin_headers, "HTTP_X_COMPANY_ID": str(cid)}
 
-    before = _snapshot_reports(api_client, h)
+    before, fcr_before = _snapshot_reports_and_fcr(api_client, h)
     _do_transfer(api_client, h, nursing, grow)
-    after = _snapshot_reports(api_client, h)
+    after, fcr_after = _snapshot_reports_and_fcr(api_client, h)
+
+    fcr_errors = [
+        f"{rid}: {err}"
+        for rid in sorted(set(fcr_before) | set(fcr_after))
+        if (err := _fcr_movement_error(fcr_before.get(rid), fcr_after.get(rid)))
+    ]
+    assert not fcr_errors, fcr_errors
 
     moved = {rid for rid in before if before[rid] != after[rid]}
     leaked = sorted(moved - EXPECTED_TO_MOVE)

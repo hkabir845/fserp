@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0185_employee_ledger_journal"),
+        ("api", "0180_mill_truck_transport_and_scheme_reserve"),
     ]
 
     operations = [

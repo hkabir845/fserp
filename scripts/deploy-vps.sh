@@ -80,6 +80,8 @@ python manage.py check --deploy || true
 
 echo "==> Frontend: install + build"
 cd "$REPO_ROOT/frontend"
+# npm ci removes node_modules first; a half-written tree can fail with ENOTEMPTY.
+rm -rf node_modules
 npm ci
 npm run build
 

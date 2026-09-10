@@ -37,7 +37,7 @@ function fromCard(card: VendorRateCardPayload | null | undefined): BillMillTerms
     yearly_rebate_percent: String(card?.yearly_rebate_percent ?? empty.yearly_rebate_percent),
     yearly_target_tons: String(
       card?.yearly_target_tons ??
-        (Number(card?.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : empty.yearly_target_tons)
+        (Number(card?.yearly_target_kg) ? Number(card?.yearly_target_kg) / 1000 : empty.yearly_target_tons)
     ),
   }
 }

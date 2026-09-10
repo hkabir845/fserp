@@ -491,17 +491,27 @@ function renderEntitySectionTables(
           )
         : null}
       {kind === 'pl' && !stationScopeId && scopedByPond.length > 0 ? (
-        <PondScopedAquaculturePlBlock
-          data={reportData}
-          pondId={pondScopeId ?? (scopedByPond.length === 1 ? Number(scopedByPond[0]?.pond_id ?? scopedByPond[0]?.entity_id ?? 0) : null)}
-          pondName={
-            pondEntityName(byPond, pondScopeId) ??
-            (scopedByPond.length === 1 ? String(scopedByPond[0]?.pond_name ?? scopedByPond[0]?.entity_name ?? '') : null)
-          }
-          pondRows={scopedByPond}
-          primaryPl={pondScopeId != null}
-          glReferenceData={pondScopeId != null ? reportData : undefined}
-        />
+        <div className="space-y-3">
+          {!pondScopeId ? (
+            <p className="rounded-lg border border-teal-200 bg-teal-50/50 px-4 py-3 text-sm text-teal-950">
+              Pond table columns above are <span className="font-medium">posted GL</span> (Income / COGS / Expenses).
+              The aquaculture register below lists <span className="font-medium">all pond income and expense
+              categories</span> from the register. When pond inputs are capitalized to biological inventory,
+              GL Expenses stay low until harvest COGS — use the register lists for full period costs.
+            </p>
+          ) : null}
+          <PondScopedAquaculturePlBlock
+            data={reportData}
+            pondId={pondScopeId ?? (scopedByPond.length === 1 ? Number(scopedByPond[0]?.pond_id ?? scopedByPond[0]?.entity_id ?? 0) : null)}
+            pondName={
+              pondEntityName(byPond, pondScopeId) ??
+              (scopedByPond.length === 1 ? String(scopedByPond[0]?.pond_name ?? scopedByPond[0]?.entity_name ?? '') : null)
+            }
+            pondRows={scopedByPond}
+            primaryPl={pondScopeId != null}
+            glReferenceData={pondScopeId != null ? reportData : undefined}
+          />
+        </div>
       ) : null}
       {!pondScopeId && unscoped ? renderSection(`${label} — head office / unassigned`, [unscoped]) : null}
     </>

@@ -3966,7 +3966,11 @@ def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[
             + " Category totals sum fuel stations, shop hubs (no fuel), and ponds separately. "
             "Company total is all GL, after removing profit ponds made selling to each other, so the "
             "segment rows can total more than the company — see consolidation_bridge. "
-            "Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT)."
+            "Pond management_revenue_bdt / management_profit_bdt are aquaculture register totals (BDT). "
+            "Important: pond GL Expenses can be much lower than the aquaculture register below when "
+            "pond feed/medicine/inputs are capitalized to biological inventory (1581) and only hit "
+            "P&L later as harvest COGS (5240) — register costs are still listed in full under "
+            "All pond expenses / All pond income."
         ),
         segment_totals=_entity_pl_segment_totals(bundle),
     )

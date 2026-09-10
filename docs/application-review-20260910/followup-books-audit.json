@@ -1,0 +1,88 @@
+[
+  {
+    "company_id": 1,
+    "gl_posting_gaps": {
+      "company_id": 1,
+      "gaps_by_type": {},
+      "total_gaps": 0
+    },
+    "unbalanced_journals": [],
+    "duplicate_entry_numbers": [],
+    "orphan_journal_lines": [],
+    "subledger_control_checks": [
+      {
+        "check": "ar_vs_1100",
+        "subledger_total": "0.00",
+        "gl_balance": "0.00",
+        "difference": "0.00",
+        "ok": true
+      },
+      {
+        "check": "ap_vs_2000",
+        "subledger_total": "0.00",
+        "gl_balance_credit": "0.00",
+        "difference": "0.00",
+        "ok": true,
+        "note": "raw_gl_debit_minus_credit=0"
+      },
+      {
+        "check": "inventory_vs_control",
+        "subledger_total": "129400.00",
+        "gl_balance": "0.00",
+        "difference": "129400.00",
+        "ok": false
+      }
+    ],
+    "summary": {
+      "gl_posting_gap_count": 0,
+      "unbalanced_journal_count": 0,
+      "duplicate_entry_number_count": 0,
+      "orphan_journal_line_count": 0,
+      "subledger_control_fail_count": 1,
+      "healthy": false
+    }
+  },
+  {
+    "company_id": 2,
+    "gl_posting_gaps": {
+      "company_id": 2,
+      "gaps_by_type": {},
+      "total_gaps": 0
+    },
+    "unbalanced_journals": [],
+    "duplicate_entry_numbers": [],
+    "orphan_journal_lines": [],
+    "subledger_control_checks": [
+      {
+        "check": "ar_vs_1100",
+        "subledger_total": "359889.50",
+        "gl_balance": "-656164.85",
+        "difference": "1016054.35",
+        "ok": false
+      },
+      {
+        "check": "ap_vs_2000",
+        "subledger_total": "6914687.13",
+        "gl_balance_credit": "5392661.58",
+        "difference": "1522025.55",
+        "ok": false,
+        "note": "raw_gl_debit_minus_credit=-5392661.58"
+      },
+      {
+        "check": "inventory_vs_control",
+        "subledger_total": "2221860.61",
+        "gl_balance": "6494294.37",
+        "difference": "-4272433.76",
+        "ok": false
+      }
+    ],
+    "summary": {
+      "gl_posting_gap_count": 0,
+      "unbalanced_journal_count": 0,
+      "duplicate_entry_number_count": 0,
+      "orphan_journal_line_count": 0,
+      "subledger_control_fail_count": 3,
+      "healthy": false
+    }
+  }
+]

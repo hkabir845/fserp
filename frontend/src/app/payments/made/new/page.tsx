@@ -15,6 +15,7 @@ import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/curren
 import { formatDateOnly, localDateISO } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
+import type { VendorPurchaseTerms } from '@/lib/vendorSupplierCategory'
 import {
   formatBankAccountWithBalances,
   normalizeBankAccountsFromApi,
@@ -250,6 +251,11 @@ function RecordPaymentMadeInner() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳')
+  const [millTerms, setMillTerms] = useState<VendorPurchaseTerms | null>(null)
+  const [millApplyDiscount, setMillApplyDiscount] = useState(false)
+  const [millApplyLorry, setMillApplyLorry] = useState(false)
+  const [millApplyMonthly, setMillApplyMonthly] = useState(false)
+  const [millApplyYearly, setMillApplyYearly] = useState(false)
 
   useEffect(() => {
     const token = readStoredAccessToken()
@@ -289,6 +295,11 @@ function RecordPaymentMadeInner() {
   useEffect(() => {
     if (!selectedVendorId) {
       setOutstandingBills([])
+      setMillTerms(null)
+      setMillApplyDiscount(false)
+      setMillApplyLorry(false)
+      setMillApplyMonthly(false)
+      setMillApplyYearly(false)
       return
     }
     ;(async () => {
@@ -309,6 +320,17 @@ function RecordPaymentMadeInner() {
             discount_amount: 0,
           }))
         )
+        try {
+          const termsRes = await api.get(`/vendors/${selectedVendorId}/purchase-terms/`)
+          const terms = termsRes.data as VendorPurchaseTerms
+          setMillTerms(terms.uses_purchase_terms ? terms : null)
+        } catch {
+          setMillTerms(null)
+        }
+        setMillApplyDiscount(false)
+        setMillApplyLorry(false)
+        setMillApplyMonthly(false)
+        setMillApplyYearly(false)
       } catch (e) {
         console.error('Error fetching bills:', e)
         setOutstandingBills([])
@@ -602,6 +624,15 @@ function RecordPaymentMadeInner() {
           ...al,
           allocated_amount: roundMoney(al.allocated_amount),
         })),
+        mill_apply:
+          millTerms && (millApplyDiscount || millApplyLorry || millApplyMonthly || millApplyYearly)
+            ? {
+                discount: millApplyDiscount,
+                transport: millApplyLorry,
+                monthly: millApplyMonthly,
+                yearly: millApplyYearly,
+              }
+            : undefined,
       })
       alert('Payment recorded successfully!')
       router.push('/payments/made')
@@ -834,6 +865,67 @@ function RecordPaymentMadeInner() {
                   />
                 </div>
               </div>
+
+              {millTerms?.uses_purchase_terms ? (
+                <div className="mt-6 rounded-md border border-amber-200 bg-amber-50/80 p-4">
+                  <h3 className="text-sm font-semibold text-foreground">Mill credit notes (when they approve)</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Discount and lorry on credit purchases wait for the mill. Tick a box only when they have
+                    posted that credit note. Monthly {millTerms.scheme?.monthly_rebate_percent || 0}% and yearly{' '}
+                    {millTerms.scheme?.yearly_rebate_percent || 0}% keep counting automatically.
+                  </p>
+                  <div className="mt-3 grid gap-2 text-sm">
+                    {millTerms.pending_terms?.can_post_discount ? (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={millApplyDiscount}
+                          onChange={(e) => setMillApplyDiscount(e.target.checked)}
+                        />
+                        Apply discount credit note ({formatNumber(Number(millTerms.pending_terms.discount))})
+                      </label>
+                    ) : null}
+                    {millTerms.pending_terms?.can_post_transport ? (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={millApplyLorry}
+                          onChange={(e) => setMillApplyLorry(e.target.checked)}
+                        />
+                        Apply lorry credit note ({formatNumber(Number(millTerms.pending_terms.transport))})
+                      </label>
+                    ) : null}
+                    {millTerms.pending_terms?.can_post_monthly ? (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={millApplyMonthly}
+                          onChange={(e) => setMillApplyMonthly(e.target.checked)}
+                        />
+                        Apply monthly commission (
+                        {formatNumber(Number(millTerms.pending_terms.estimated_monthly))})
+                      </label>
+                    ) : null}
+                    {millTerms.pending_terms?.can_post_yearly ? (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={millApplyYearly}
+                          onChange={(e) => setMillApplyYearly(e.target.checked)}
+                        />
+                        Apply yearly commission (
+                        {formatNumber(Number(millTerms.pending_terms.estimated_yearly))})
+                      </label>
+                    ) : null}
+                    {!millTerms.pending_terms?.can_post_discount &&
+                    !millTerms.pending_terms?.can_post_transport &&
+                    !millTerms.pending_terms?.can_post_monthly &&
+                    !millTerms.pending_terms?.can_post_yearly ? (
+                      <p className="text-xs text-muted-foreground">No mill credit notes waiting to apply.</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
 
               {selectedVendorId && outstandingBills.length > 0 && (
                 <div className="mt-6">

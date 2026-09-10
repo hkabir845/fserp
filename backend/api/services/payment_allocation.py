@@ -17,6 +17,7 @@ from api.models import (
     PaymentBillAllocation,
     PaymentInvoiceAllocation,
     Vendor,
+    VendorCredit,
 )
 from api.services.gl_posting import _is_walkin_customer
 
@@ -262,6 +263,15 @@ def compute_vendor_balance_due(company_id: int, vendor_id: int) -> Decimal:
     return vendor_ap_balance(company_id, vendor_id)
 
 
+def mill_credits_allocated_to_bill(company_id: int, bill_id: int) -> Decimal:
+    s = (
+        VendorCredit.objects.filter(company_id=company_id, bill_id=bill_id).aggregate(
+            total=Sum("amount")
+        )["total"]
+    )
+    return s or Decimal("0")
+
+
 def total_allocated_to_bill(company_id: int, bill_id: int) -> Decimal:
     s = (
         PaymentBillAllocation.objects.filter(
@@ -269,16 +279,17 @@ def total_allocated_to_bill(company_id: int, bill_id: int) -> Decimal:
             payment__company_id=company_id,
         ).aggregate(total=Sum("amount"))["total"]
     )
-    return s or Decimal("0")
+    return (s or Decimal("0")) + mill_credits_allocated_to_bill(company_id, bill_id)
 
 
 def total_allocated_for_bill(bill: Bill, company_id: int) -> Decimal:
     cache = getattr(bill, "_prefetched_objects_cache", None)
     if cache and "payment_allocations" in cache:
-        return sum(
+        paid = sum(
             (a.amount for a in bill.payment_allocations.all()),
             start=Decimal("0"),
         )
+        return paid + mill_credits_allocated_to_bill(company_id, bill.id)
     return total_allocated_to_bill(company_id, bill.id)
 
 
@@ -300,7 +311,12 @@ def total_allocated_to_bill_as_of(company_id: int, bill_id: int, as_of) -> Decim
             payment__payment_date__lte=as_of,
         ).aggregate(total=Sum("amount"))["total"]
     )
-    return s or Decimal("0")
+    mill = (
+        VendorCredit.objects.filter(
+            company_id=company_id, bill_id=bill_id, credit_date__lte=as_of
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    return (s or Decimal("0")) + (mill or Decimal("0"))
 
 
 def bill_open_amount_as_of(bill: Bill, company_id: int, as_of) -> Decimal:
@@ -330,7 +346,7 @@ def total_allocated_to_bill_excluding_payment(
         .exclude(payment_id=exclude_payment_id)
         .aggregate(total=Sum("amount"))["total"]
     )
-    return s or Decimal("0")
+    return (s or Decimal("0")) + mill_credits_allocated_to_bill(company_id, bill_id)
 
 
 def refresh_bill_from_allocations(bill: Bill, company_id: int) -> None:

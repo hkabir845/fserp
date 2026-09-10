@@ -392,6 +392,11 @@ _CORE_POSTING_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
     # Supplier rebates and other miscellaneous income land here. Without it a mill credit
     # could not post its journal, and the vendor A/P decrement had nothing behind it.
     CODE_OTHER_REV: ("Other Operating Revenue", "income", "other_income"),
+    "5130": ("Purchase discounts — mill", "income", "other_income"),
+    "5131": ("Lorry / transport allowance — mill", "income", "other_income"),
+    "5132": ("Mill commission — monthly", "income", "other_income"),
+    "5133": ("Mill commission — yearly", "income", "other_income"),
+    "7100": ("Freight & lorry fare", "expense", "supplies_materials"),
     # Output VAT must auto-provision too. Without 2100 the sale journal used to drop the tax
     # line and the balancing pass folded the whole tax amount into a revenue account, so tax
     # collected on behalf of the authority was recognised as income and never showed as a

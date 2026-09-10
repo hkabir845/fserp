@@ -68,9 +68,9 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
             Mill terms (feed / medicine)
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Instant discount and lorry transport apply on <span className="font-medium text-foreground">this bill</span>.
-            Monthly and yearly commissions are mill scheme rates — they do not reduce this receipt; post them later
-            with <span className="font-medium text-foreground">Post monthly / yearly scheme</span> on the vendor.
+            Instant discount % and mill lorry share are the mill's terms. On credit they wait for
+            the mill's credit note; when the limit is full they come off the bank transfer immediately.
+            Monthly and yearly commissions are counted automatically and posted when the mill approves.
           </p>
         </div>
         <div className="px-4 py-3 space-y-5">
@@ -90,7 +90,7 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
                   value={form.instant_discount_percent}
                   onChange={(e) => setForm({ ...form, instant_discount_percent: e.target.value })}
                 />
-                <p className="mt-0.5 text-[11px] text-muted-foreground">Cash or within credit limit</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">Immediate on cash; credit note on account</p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">

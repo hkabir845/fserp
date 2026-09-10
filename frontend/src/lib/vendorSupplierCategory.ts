@@ -73,6 +73,16 @@ export type VendorPurchaseTerms = {
     year_start: string
     year_end: string
   } | null
+  pending_terms?: {
+    discount: string
+    transport: string
+    can_post_discount: boolean
+    can_post_transport: boolean
+    can_post_monthly: boolean
+    can_post_yearly: boolean
+    estimated_monthly: string
+    estimated_yearly: string
+  } | null
   recent_credits?: Array<{
     id: number
     credit_date: string

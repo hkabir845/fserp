@@ -433,10 +433,30 @@ function roundBillMoney(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+function millBillMrp(lines: BillLineItem[], items: Item[]): number {
+  return roundBillMoney(
+    lines.reduce((sum, line) => {
+      const item = items.find((i) => i.id === line.item_id)
+      const qty = Number(line.quantity) || 0
+      const mrp = Number(line.mrp || item?.mrp || 0)
+      if (mrp > 0 && qty > 0) return sum + qty * mrp
+      return sum + (Number(line.amount) || 0)
+    }, 0)
+  )
+}
+
+function millUsesCreditLane(terms: VendorPurchaseTerms | null, billMrp: number): boolean {
+  if (!terms?.credit_facility_enabled) return false
+  if (terms.cash_only || terms.square_off_hold) return false
+  const available = Number(terms.available ?? 0)
+  return available + 0.005 >= billMrp
+}
+
 function applyMillTermsToLine(
   line: BillLineItem,
   item: Item | undefined,
-  terms: VendorPurchaseTerms | null
+  terms: VendorPurchaseTerms | null,
+  keepGross = false
 ): BillLineItem {
   if (!terms?.rate_card) return line
   const qty = Number(line.quantity) || 1
@@ -450,9 +470,9 @@ function applyMillTermsToLine(
   const sackKg = Number(item?.content_weight_kg) || 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
-  // Variable transport: % of MRP and/or fixed ৳. Per-truck is once on the bill, not × qty.
   const transport = (gross * tPct) / 100 + qty * tUnit + qty * sackKg * tKg
-  const amount = Math.max(0, roundBillMoney(gross - instant - transport))
+  const net = Math.max(0, roundBillMoney(gross - instant - transport))
+  const amount = keepGross ? roundBillMoney(gross) : net
   return {
     ...line,
     mrp,
@@ -469,12 +489,20 @@ function millTermsBanner(
   opts: {
     truckTransportAmount: string
     setTruckTransportAmount: (v: string) => void
+    actualLorryFare: string
+    setActualLorryFare: (v: string) => void
     cashWithBill: string
     setCashWithBill: (v: string) => void
+    cashLane: boolean
+    limitFull: boolean
+    millPayNow: number
     onOpenMillTerms: () => void
     fieldClass: string
   }
 ) {
+  const millShare = parseFloat(opts.truckTransportAmount) || 0
+  const actual = parseFloat(opts.actualLorryFare) || 0
+  const extra = actual > 0 && millShare > 0 ? Math.max(0, roundBillMoney(actual - millShare)) : 0
   return (
     <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
       <p>
@@ -482,13 +510,18 @@ function millTermsBanner(
         {vendorPurchaseTerms.credit_facility_enabled
           ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
           : ''}
-        {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
+        {opts.limitFull
+          ? ' · Credit full — pay mill now (discount + lorry off the transfer)'
+          : opts.cashLane
+            ? ' · Discount and mill lorry come off this bill'
+            : ' · On credit (MRP on mill account)'}
       </p>
       {vendorPurchaseTerms.uses_purchase_terms ? (
         <>
           <p className="text-muted-foreground">
-            Instant % of MRP and transport fixed per lorry apply on this bill. Monthly / yearly commission %
-            are set in Mill terms and posted later from the vendor (not bank cash).
+            {opts.cashLane
+              ? 'Bank transfer = MRP − discount − mill lorry share. Then they send the feed. Monthly/yearly still wait for the mill credit note.'
+              : 'This load goes on the mill account at MRP. Discount and mill lorry wait for their credit note. Pay the driver the real fare below.'}
           </p>
           <div className="flex flex-wrap items-end gap-2 pt-1">
             <button
@@ -496,10 +529,10 @@ function millTermsBanner(
               className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
               onClick={opts.onOpenMillTerms}
             >
-              Mill terms (v2)…
+              Mill terms…
             </button>
             <label className="block text-xs font-medium flex-1 min-w-[10rem]">
-              Transport this lorry (fixed ৳)
+              Mill lorry share (fixed ৳)
               <input
                 type="number"
                 min={0}
@@ -507,15 +540,32 @@ function millTermsBanner(
                 value={opts.truckTransportAmount}
                 onChange={(e) => opts.setTruckTransportAmount(e.target.value)}
                 className={`${opts.fieldClass} mt-1`}
-                placeholder="0 = skip"
+                placeholder="e.g. 950"
+              />
+            </label>
+            <label className="block text-xs font-medium flex-1 min-w-[10rem]">
+              Fare paid to driver
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={opts.actualLorryFare}
+                onChange={(e) => opts.setActualLorryFare(e.target.value)}
+                className={`${opts.fieldClass} mt-1`}
+                placeholder="e.g. 1500"
               />
             </label>
           </div>
+          {extra > 0 ? (
+            <p className="text-muted-foreground">
+              Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill {formatNumber(millShare)})
+            </p>
+          ) : null}
           {vendorPurchaseTerms.rate_card &&
           (Number(vendorPurchaseTerms.rate_card.monthly_rebate_percent) > 0 ||
             Number(vendorPurchaseTerms.rate_card.yearly_rebate_percent) > 0) ? (
             <p className="text-muted-foreground pt-0.5">
-              Scheme:
+              Scheme counting:
               {Number(vendorPurchaseTerms.rate_card.monthly_rebate_percent) > 0
                 ? ` monthly ${vendorPurchaseTerms.rate_card.monthly_rebate_percent}% of MRP`
                 : ''}
@@ -526,13 +576,14 @@ function millTermsBanner(
                       : ''
                   }`
                 : ''}
+              {' '}— applied when the mill posts the credit note.
             </p>
           ) : null}
         </>
       ) : null}
-      {vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0 ? (
+      {opts.limitFull ? (
         <label className="block text-xs font-medium pt-1">
-          Cash with this bill
+          Pay mill now (MRP − discount − lorry)
           <input
             type="number"
             min={0}
@@ -540,7 +591,7 @@ function millTermsBanner(
             value={opts.cashWithBill}
             onChange={(e) => opts.setCashWithBill(e.target.value)}
             className={`${opts.fieldClass} mt-1`}
-            placeholder="Required when credit is full"
+            placeholder={opts.millPayNow > 0 ? String(opts.millPayNow) : 'Required'}
           />
         </label>
       ) : null}
@@ -1444,6 +1495,7 @@ export default function BillsPage() {
   const [showModal, setShowModal] = useState(false)
   const [vendorPurchaseTerms, setVendorPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
   const [truckTransportAmount, setTruckTransportAmount] = useState('')
+  const [actualLorryFare, setActualLorryFare] = useState('')
   const [showMillTermsDialog, setShowMillTermsDialog] = useState(false)
   const [cashWithBill, setCashWithBill] = useState('')
   const [approveBill, setApproveBill] = useState(false)
@@ -1697,7 +1749,12 @@ export default function BillsPage() {
       ...prev,
       lines: prev.lines.map((line) => {
         const item = items.find((i) => i.id === line.item_id)
-        return applyMillTermsToLine(line, item, nextTerms)
+        return applyMillTermsToLine(
+          line,
+          item,
+          nextTerms,
+          millUsesCreditLane(nextTerms, millBillMrp(prev.lines, items))
+        )
       }),
     }))
 
@@ -2172,9 +2229,38 @@ export default function BillsPage() {
     const lineSum = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)
     const taxAmount = lines.reduce((sum, line) => sum + (Number(line.tax_amount) || 0), 0)
     const truck = parseFloat(truckTransportAmount) || 0
-    const subtotal = Math.max(0, roundBillMoney(lineSum - truck))
+    const mrp = millBillMrp(lines, items)
+    const creditLane = millUsesCreditLane(vendorPurchaseTerms, mrp)
+    const subtotal = creditLane
+      ? roundBillMoney(lineSum)
+      : Math.max(0, roundBillMoney(lineSum - truck))
     const total = subtotal + taxAmount
     return { subtotal, taxAmount, total }
+  }
+
+  const millMrpTotal = millBillMrp(formData.lines, items)
+  const millCreditLane = millUsesCreditLane(vendorPurchaseTerms, millMrpTotal)
+  const millCashLane = Boolean(vendorPurchaseTerms?.uses_purchase_terms && !millCreditLane)
+  const millDiscountTotal = formData.lines.reduce(
+    (s, l) => s + (Number(l.instant_discount_amount) || 0),
+    0
+  )
+  const millPayNow = Math.max(
+    0,
+    roundBillMoney(millMrpTotal - millDiscountTotal - (parseFloat(truckTransportAmount) || 0))
+  )
+  const millBannerOpts = {
+    truckTransportAmount,
+    setTruckTransportAmount,
+    actualLorryFare,
+    setActualLorryFare,
+    cashWithBill,
+    setCashWithBill,
+    cashLane: millCashLane,
+    limitFull: Boolean(vendorPurchaseTerms?.credit_facility_enabled && millCashLane),
+    millPayNow,
+    onOpenMillTerms: () => setShowMillTermsDialog(true),
+    fieldClass: BILL_LINE_CTL,
   }
 
   const addBillLine = (kind: BillLineKind) => {
@@ -2565,7 +2651,8 @@ export default function BillsPage() {
             newLines[index] = applyMillTermsToLine(
               newLines[index],
               lineItem,
-              vendorPurchaseTerms
+              vendorPurchaseTerms,
+              millUsesCreditLane(vendorPurchaseTerms, millBillMrp(newLines, items))
             )
           }
         }
@@ -2578,7 +2665,8 @@ export default function BillsPage() {
         newLines[index] = applyMillTermsToLine(
           syncStandardBillLineAmount(newLines[index]),
           picked,
-          vendorPurchaseTerms
+          vendorPurchaseTerms,
+          millUsesCreditLane(vendorPurchaseTerms, millBillMrp(newLines, items))
         )
       }
 
@@ -2631,10 +2719,15 @@ export default function BillsPage() {
       status: approveBill ? 'open' : 'draft',
       acknowledge_tank_overfill: sendAck ? true : undefined,
       cash_payment:
-        approveBill && parseFloat(cashWithBill) > 0
-          ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
+        approveBill && (parseFloat(cashWithBill) > 0 || (millCashLane && Boolean(vendorPurchaseTerms?.credit_facility_enabled) && millPayNow > 0))
+          ? {
+              amount:
+                parseFloat(cashWithBill) > 0 ? parseFloat(cashWithBill) : millPayNow,
+              payment_method: 'cash',
+            }
           : undefined,
       truck_transport_amount: parseFloat(truckTransportAmount) || 0,
+      actual_lorry_fare: parseFloat(actualLorryFare) || 0,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -2724,6 +2817,8 @@ export default function BillsPage() {
         }
         const truckOnBill = Number(fullBill.truck_transport_amount) || 0
         setTruckTransportAmount(truckOnBill > 0 ? String(truckOnBill) : '')
+        const fareOnBill = Number(fullBill.actual_lorry_fare) || 0
+        setActualLorryFare(fareOnBill > 0 ? String(fareOnBill) : '')
         const mappedLines = (fullBill.lines || []).map((line: BillLineItem) => ({
             id: line.id,
             line_number: line.line_number,
@@ -2857,6 +2952,7 @@ export default function BillsPage() {
           ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
           : undefined,
       truck_transport_amount: parseFloat(truckTransportAmount) || 0,
+      actual_lorry_fare: parseFloat(actualLorryFare) || 0,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -3197,6 +3293,7 @@ export default function BillsPage() {
     setVendorPurchaseTerms(null)
     setCashWithBill('')
     setTruckTransportAmount('')
+    setActualLorryFare('')
   }
 
   const handleCloseModal = () => {
@@ -3853,16 +3950,7 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
-                    {vendorPurchaseTerms
-                      ? millTermsBanner(vendorPurchaseTerms, {
-                          truckTransportAmount,
-                          setTruckTransportAmount,
-                          cashWithBill,
-                          setCashWithBill,
-                          onOpenMillTerms: () => setShowMillTermsDialog(true),
-                          fieldClass: BILL_LINE_CTL,
-                        })
-                      : null}
+                    {vendorPurchaseTerms ? millTermsBanner(vendorPurchaseTerms, millBannerOpts) : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -4366,16 +4454,7 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
-                    {vendorPurchaseTerms
-                      ? millTermsBanner(vendorPurchaseTerms, {
-                          truckTransportAmount,
-                          setTruckTransportAmount,
-                          cashWithBill,
-                          setCashWithBill,
-                          onOpenMillTerms: () => setShowMillTermsDialog(true),
-                          fieldClass: BILL_LINE_CTL,
-                        })
-                      : null}
+                    {vendorPurchaseTerms ? millTermsBanner(vendorPurchaseTerms, millBannerOpts) : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">

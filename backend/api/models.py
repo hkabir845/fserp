@@ -1097,14 +1097,26 @@ class VendorCredit(models.Model):
     KIND_MONTHLY = "monthly"
     KIND_YEARLY = "yearly"
     KIND_MANUAL = "manual"
+    KIND_DISCOUNT = "discount"
+    KIND_TRANSPORT = "transport"
     KIND_CHOICES = (
         (KIND_MONTHLY, "Monthly scheme"),
         (KIND_YEARLY, "Yearly scheme"),
         (KIND_MANUAL, "Manual mill credit"),
+        (KIND_DISCOUNT, "Discount"),
+        (KIND_TRANSPORT, "Lorry / transport"),
     )
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="vendor_credits")
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="scheme_credits")
+    bill = models.ForeignKey(
+        "Bill",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="mill_credits",
+        help_text="When set, this mill credit note applies to that bill's open balance.",
+    )
     credit_date = models.DateField()
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     credit_kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_MANUAL)
@@ -1931,7 +1943,19 @@ class Bill(models.Model):
         max_digits=14,
         decimal_places=2,
         default=0,
-        help_text="Per-bill/truck transport deducted from mill MRP bills. 0 = not used on this bill.",
+        help_text="Mill's fixed lorry share for this load (rate card). Applied now only on cash-only mill bills.",
+    )
+    actual_lorry_fare = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="What we paid the driver. Extra over mill share is our transport cost.",
+    )
+    mill_settlement = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        help_text="credit = payable at MRP (terms wait for mill credit notes); cash = discount+lorry taken now.",
     )
     stock_receipt_applied = models.BooleanField(
         default=False,

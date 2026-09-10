@@ -36,14 +36,9 @@ def _invoice_amount_paid(inv: Invoice) -> Decimal:
 
 
 def _bill_amount_paid(bill: Bill) -> Decimal:
-    cache = getattr(bill, "_prefetched_objects_cache", None)
-    if cache and "payment_allocations" in cache:
-        return sum(
-            (a.amount for a in bill.payment_allocations.all()),
-            start=Decimal("0"),
-        )
-    agg = PaymentBillAllocation.objects.filter(bill_id=bill.id).aggregate(t=Sum("amount"))
-    return agg["t"] or Decimal("0")
+    from api.services.payment_allocation import total_allocated_to_bill
+
+    return total_allocated_to_bill(bill.company_id, bill.id)
 
 
 def assert_bill_change_allowed(bill: Bill, *, action: str = "change") -> tuple[bool, str]:

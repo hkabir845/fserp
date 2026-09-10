@@ -1304,6 +1304,48 @@ export default function VendorsPage() {
                         >
                           Record mill account credit
                         </button>
+                        {purchaseTerms.pending_terms?.can_post_discount ? (
+                          <button
+                            type="button"
+                            className="col-span-2 text-sm px-3 py-2 rounded-md border border-amber-700 text-amber-900 hover:bg-amber-50"
+                            onClick={async () => {
+                              try {
+                                await api.post(`/vendors/${editingVendor.id}/mill-credit-notes/`, {
+                                  credit_kind: 'discount',
+                                  memo: millCreditMemo,
+                                })
+                                toast.success('Discount mill credit note posted to the mill account.')
+                                void loadPurchaseTerms(editingVendor.id)
+                                void fetchVendors()
+                              } catch (err) {
+                                toast.error(extractErrorMessage(err, 'Could not post discount credit note'))
+                              }
+                            }}
+                          >
+                            Post discount credit note ({purchaseTerms.pending_terms.discount})
+                          </button>
+                        ) : null}
+                        {purchaseTerms.pending_terms?.can_post_transport ? (
+                          <button
+                            type="button"
+                            className="col-span-2 text-sm px-3 py-2 rounded-md border border-amber-700 text-amber-900 hover:bg-amber-50"
+                            onClick={async () => {
+                              try {
+                                await api.post(`/vendors/${editingVendor.id}/mill-credit-notes/`, {
+                                  credit_kind: 'transport',
+                                  memo: millCreditMemo,
+                                })
+                                toast.success('Lorry mill credit note posted to the mill account.')
+                                void loadPurchaseTerms(editingVendor.id)
+                                void fetchVendors()
+                              } catch (err) {
+                                toast.error(extractErrorMessage(err, 'Could not post lorry credit note'))
+                              }
+                            }}
+                          >
+                            Post lorry credit note ({purchaseTerms.pending_terms.transport})
+                          </button>
+                        ) : null}
                         {Number(purchaseTerms.scheme?.monthly_rebate_percent) > 0 ? (
                           <button
                             type="button"

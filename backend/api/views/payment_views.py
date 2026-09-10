@@ -1,6 +1,7 @@
 """Payments API: received, made, deposits, outstanding (company-scoped)."""
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import IntegrityError, transaction
@@ -958,6 +959,8 @@ def _outstanding_bill_payload(cid: int, b: Bill, exclude_payment_id: int | None 
         "amount_paid": str(paid),
         "balance_due": str(bal),
         "days_overdue": days_overdue,
+        "mill_settlement": getattr(b, "mill_settlement", "") or "",
+        "truck_transport_amount": str(getattr(b, "truck_transport_amount", 0) or 0),
     }
 
 
@@ -1126,6 +1129,29 @@ def payments_made_create(request):
             )
             if not ok:
                 raise _PaymentAllocationRejected(msg)
+            mill_apply = body.get("mill_apply")
+            if mill_apply:
+                from api.services.vendor_purchase_terms import apply_mill_flags
+
+                vendor_row = Vendor.objects.filter(
+                    pk=int(vendor_id), company_id=request.company_id
+                ).first()
+                mill_resp = apply_mill_flags(request.company_id, vendor_row, mill_apply) if vendor_row else None
+                if mill_resp is not None:
+                    try:
+                        mill_detail = json.loads(mill_resp.content.decode()).get("detail")
+                    except Exception:
+                        mill_detail = "Mill credit note could not be applied."
+                    raise _PaymentAllocationRejected(mill_detail or "Mill credit note could not be applied.")
+                ok, msg, cleaned, on_acct = _validate_bill_allocations(
+                    request.company_id,
+                    int(vendor_id),
+                    amount,
+                    alloc_rows,
+                    lock_bills=True,
+                )
+                if not ok:
+                    raise _PaymentAllocationRejected(msg)
             if on_acct and on_acct > 0:
                 _align_stored_ap_before_made_payment(
                     request.company_id, int(vendor_id)

@@ -35,6 +35,7 @@ from api.services.gl_posting import (
     CODE_AP,
     _coa,
     _create_posted_entry,
+    _debit_account_for_paid_sale,
     _ensure_core_posting_account,
     bill_eligible_for_posting,
     sync_payment_made_gl,
@@ -42,6 +43,7 @@ from api.services.gl_posting import (
 from api.services.party_balance_sync import refresh_vendor_balance
 from api.services.payment_allocation import (
     compute_vendor_balance_due,
+    refresh_bill_from_allocations,
     refresh_bills_touched_by_payment,
 )
 
@@ -49,6 +51,21 @@ _MONEY = Decimal("0.01")
 _Q4 = Decimal("0.0001")
 CODE_REBATE_INCOME = "4400"
 CODE_OTHER_REV = "4230"
+CODE_PURCHASE_DISCOUNT = "5130"
+CODE_LORRY_ALLOWANCE = "5131"
+CODE_MILL_COMMISSION_MONTHLY = "5132"
+CODE_MILL_COMMISSION_YEARLY = "5133"
+CODE_FREIGHT_EXPENSE = "7100"
+
+MILL_SETTLEMENT_CASH = "cash"
+MILL_SETTLEMENT_CREDIT = "credit"
+
+MILL_CREDIT_KIND_INCOME = {
+    "discount": CODE_PURCHASE_DISCOUNT,
+    "transport": CODE_LORRY_ALLOWANCE,
+    "monthly": CODE_MILL_COMMISSION_MONTHLY,
+    "yearly": CODE_MILL_COMMISSION_YEARLY,
+}
 
 SUPPLIER_CATEGORY_LABELS: dict[str, str] = {
     Vendor.CATEGORY_GENERAL: "General",
@@ -434,6 +451,138 @@ def apply_bill_truck_transport(
     return truck, None
 
 
+def mill_mrp_of_parsed_lines(parsed_lines: list[dict]) -> Decimal:
+    total = Decimal("0.00")
+    for pl in parsed_lines:
+        mrp = _q(pl.get("mrp"))
+        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+        if mrp > 0 and qty > 0:
+            total += _q(qty * mrp)
+    return total
+
+
+def restore_parsed_lines_to_mrp(parsed_lines: list[dict]) -> None:
+    """Credit-lane mill bills: payable and stock at MRP; keep discount/lorry on the line for later notes."""
+    for pl in parsed_lines:
+        mrp = _q(pl.get("mrp"))
+        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+        if mrp <= 0 or qty <= 0:
+            continue
+        gross = _q(qty * mrp)
+        pl["amount"] = gross
+        pl["unit_price"] = _q(gross / qty)
+
+
+def mill_settlement_lane(
+    company_id: int,
+    vendor: Optional[Vendor],
+    mrp_gross: Decimal,
+    *,
+    bill_date: Optional[date] = None,
+    exclude_bill_id: Optional[int] = None,
+) -> str:
+    """credit = still inside limit (payable at MRP); cash = limit full or no facility (net now)."""
+    if not uses_purchase_terms(vendor):
+        return MILL_SETTLEMENT_CASH
+    if not credit_facility_active(vendor):
+        return MILL_SETTLEMENT_CASH
+    snap = vendor_credit_snapshot(
+        company_id,
+        vendor,
+        as_of=bill_date or date.today(),
+        extra_bill_net=Decimal("0"),
+        exclude_bill_id=exclude_bill_id,
+    )
+    if snap.get("cash_only") or snap.get("square_off_hold"):
+        return MILL_SETTLEMENT_CASH
+    available = snap.get("available")
+    if available is None:
+        return MILL_SETTLEMENT_CASH
+    if _q(available) + Decimal("0.005") >= _q(mrp_gross):
+        return MILL_SETTLEMENT_CREDIT
+    return MILL_SETTLEMENT_CASH
+
+
+def apply_mill_bill_settlement(
+    parsed_lines: list[dict],
+    vendor: Optional[Vendor],
+    bill_date: Optional[date],
+    body: Optional[dict],
+    company_id: int,
+    *,
+    exclude_bill_id: Optional[int] = None,
+) -> tuple[Decimal, str, Optional[JsonResponse]]:
+    """Truck share on the bill, then credit-lane restore to MRP or keep cash net."""
+    truck, err = apply_bill_truck_transport(parsed_lines, vendor, bill_date, body)
+    if err:
+        return Decimal("0.00"), MILL_SETTLEMENT_CASH, err
+    if not uses_purchase_terms(vendor):
+        return truck, "", None
+    mrp = mill_mrp_of_parsed_lines(parsed_lines)
+    lane = mill_settlement_lane(
+        company_id,
+        vendor,
+        mrp,
+        bill_date=bill_date,
+        exclude_bill_id=exclude_bill_id,
+    )
+    if lane == MILL_SETTLEMENT_CREDIT:
+        restore_parsed_lines_to_mrp(parsed_lines)
+    return truck, lane, None
+
+
+def mill_cash_required_error(
+    vendor: Vendor,
+    posted_net: Decimal,
+    cash_applied: Decimal,
+) -> Optional[dict[str, Any]]:
+    """When the mill limit is full, the whole load is cash: pay MRP − discount − lorry."""
+    if _q(cash_applied) + Decimal("0.005") >= _q(posted_net):
+        return None
+    need = _q(_q(posted_net) - _q(cash_applied))
+    return {
+        "detail": (
+            "Credit limit is full. Pay this feed by cash/bank at MRP minus discount and lorry "
+            f"(need {need})."
+        ),
+        "code": "vendor_credit_limit",
+        "cash_only": True,
+        "cash_required": str(_q(posted_net)),
+        "bill_net": str(_q(posted_net)),
+        "cash_applied": str(_q(cash_applied)),
+        "credit_limit": str(_q(vendor.credit_limit)),
+    }
+
+
+def bill_gross_mrp(bill: Bill) -> Decimal:
+    total = Decimal("0.00")
+    for ln in bill.lines.all() if hasattr(bill, "lines") else BillLine.objects.filter(bill_id=bill.id):
+        mrp = _q(getattr(ln, "mrp", 0))
+        qty = _q(getattr(ln, "quantity", 1) or 1, Decimal("0.0001"))
+        if mrp > 0:
+            total += _q(qty * mrp)
+    return total
+
+
+def bill_instant_discount_total(bill: Bill) -> Decimal:
+    total = Decimal("0.00")
+    qs = bill.lines.all() if hasattr(bill, "lines") else BillLine.objects.filter(bill_id=bill.id)
+    for ln in qs:
+        total += _q(getattr(ln, "instant_discount_amount", 0))
+    return total
+
+
+def bill_transport_total(bill: Bill) -> Decimal:
+    truck = _q(getattr(bill, "truck_transport_amount", 0))
+    if truck > 0:
+        return truck
+    total = Decimal("0.00")
+    qs = bill.lines.all() if hasattr(bill, "lines") else BillLine.objects.filter(bill_id=bill.id)
+    for ln in qs:
+        total += _q(getattr(ln, "transport_amount", 0))
+    return total
+
+
 def evaluate_bill_credit_limit(
     company_id: int,
     vendor: Vendor,
@@ -738,10 +887,12 @@ def purchase_terms_payload(company_id: int, vendor: Vendor, as_of: Optional[date
         }
         for r in VendorSchemeReserve.objects.filter(company_id=company_id, vendor_id=vendor.id)[:24]
     ]
+    pending = pending_mill_term_credits(company_id, vendor) if uses_purchase_terms(vendor) else None
     return {
         **snap,
         "rate_card": rate_card_to_json(card),
         "scheme": scheme_progress(company_id, vendor, as_of) if uses_purchase_terms(vendor) else None,
+        "pending_terms": pending,
         "recent_credits": credits,
         "recent_reserves": reserves,
     }
@@ -936,15 +1087,25 @@ def vendor_credit_to_json(c: VendorCredit) -> dict[str, Any]:
         "percent_applied": str(_q(c.percent_applied, _Q4)),
         "memo": c.memo or "",
         "journal_id": c.journal_id,
+        "bill_id": c.bill_id,
     }
+
+
+def _income_account_for_mill_credit(company_id: int, kind: str):
+    code = MILL_CREDIT_KIND_INCOME.get(kind)
+    if code:
+        acc = _ensure_core_posting_account(company_id, code)
+        if acc:
+            return acc
+    return (
+        _coa(company_id, CODE_REBATE_INCOME)
+        or _ensure_core_posting_account(company_id, CODE_OTHER_REV)
+    )
 
 
 def _post_vendor_credit_journal(company_id: int, credit: VendorCredit) -> Optional[JournalEntry]:
     ap = _ensure_core_posting_account(company_id, CODE_AP)
-    income = (
-        _coa(company_id, CODE_REBATE_INCOME)
-        or _ensure_core_posting_account(company_id, CODE_OTHER_REV)
-    )
+    income = _income_account_for_mill_credit(company_id, credit.credit_kind)
     if not ap or not income:
         return None
     entry_number = f"AUTO-VCRED-{credit.id}"
@@ -980,6 +1141,16 @@ def create_vendor_credit(company_id: int, vendor: Vendor, body: dict) -> tuple[O
         percent_applied=_q(body.get("percent_applied"), _Q4),
         memo=(body.get("memo") or "")[:500],
     )
+    raw_bill = body.get("bill_id")
+    if raw_bill not in (None, ""):
+        try:
+            bid = int(raw_bill)
+        except (TypeError, ValueError):
+            return None, JsonResponse({"detail": "bill_id must be an integer"}, status=400)
+        bill = Bill.objects.filter(pk=bid, company_id=company_id, vendor_id=vendor.id).first()
+        if not bill:
+            return None, JsonResponse({"detail": "bill_id is not a bill for this mill"}, status=400)
+        credit.bill = bill
     # The credit row, its journal and the A/P decrement are one operation. Previously the row
     # was saved and A/P was reduced even when _post_vendor_credit_journal returned None (a
     # missing 2000 or rebate-income account), so the vendor balance fell with nothing behind it
@@ -1007,6 +1178,8 @@ def create_vendor_credit(company_id: int, vendor: Vendor, body: dict) -> tuple[O
         return None, JsonResponse({"detail": e.detail}, status=400)
     refresh_vendor_balance(company_id, vendor.id)
     credit.refresh_from_db()
+    if credit.bill_id:
+        refresh_bill_from_allocations(credit.bill, company_id)
     return credit, None
 
 
@@ -1026,9 +1199,203 @@ def delete_vendor_credit(company_id: int, credit: VendorCredit) -> None:
                 company_id=company_id, entry_number=f"AUTO-VCRED-{row.id}"
             ).delete()
         vid = row.vendor_id
+        bill_id = row.bill_id
         row.delete()
     if vid:
         refresh_vendor_balance(company_id, vid)
+    if bill_id:
+        bill = Bill.objects.filter(pk=bill_id, company_id=company_id).first()
+        if bill:
+            refresh_bill_from_allocations(bill, company_id)
+
+
+def _credit_credit_bills(company_id: int, vendor: Vendor):
+    return (
+        Bill.objects.filter(
+            company_id=company_id,
+            vendor_id=vendor.id,
+            mill_settlement=MILL_SETTLEMENT_CREDIT,
+        )
+        .exclude(status__in=("draft", "void"))
+        .prefetch_related("lines")
+        .order_by("bill_date", "id")
+    )
+
+
+def pending_mill_term_credits(company_id: int, vendor: Vendor) -> dict[str, Any]:
+    posted = {
+        (c.bill_id, c.credit_kind)
+        for c in VendorCredit.objects.filter(
+            company_id=company_id,
+            vendor_id=vendor.id,
+            credit_kind__in=(VendorCredit.KIND_DISCOUNT, VendorCredit.KIND_TRANSPORT),
+            bill_id__isnull=False,
+        )
+    }
+    discount = Decimal("0.00")
+    lorry = Decimal("0.00")
+    discount_bills: list[int] = []
+    lorry_bills: list[int] = []
+    for bill in _credit_credit_bills(company_id, vendor):
+        d = bill_instant_discount_total(bill)
+        t = bill_transport_total(bill)
+        if d > 0 and (bill.id, VendorCredit.KIND_DISCOUNT) not in posted:
+            discount += d
+            discount_bills.append(bill.id)
+        if t > 0 and (bill.id, VendorCredit.KIND_TRANSPORT) not in posted:
+            lorry += t
+            lorry_bills.append(bill.id)
+    scheme = scheme_progress(company_id, vendor)
+    return {
+        "discount": str(discount),
+        "transport": str(lorry),
+        "can_post_discount": discount > 0,
+        "can_post_transport": lorry > 0,
+        "discount_bill_ids": discount_bills,
+        "transport_bill_ids": lorry_bills,
+        "can_post_monthly": bool(scheme.get("can_post_monthly")),
+        "can_post_yearly": bool(scheme.get("can_post_yearly")),
+        "estimated_monthly": str(_q(scheme.get("estimated_monthly_credit") or scheme.get("monthly_reserved"))),
+        "estimated_yearly": str(_q(scheme.get("estimated_yearly_credit"))),
+    }
+
+
+def apply_pending_discount_or_lorry(
+    company_id: int,
+    vendor: Vendor,
+    kind: str,
+    body: Optional[dict] = None,
+) -> tuple[list[VendorCredit], Optional[JsonResponse]]:
+    """Post mill credit notes for discount or lorry on credit-lane bills not yet credited."""
+    body = body or {}
+    if kind not in (VendorCredit.KIND_DISCOUNT, VendorCredit.KIND_TRANSPORT):
+        return [], JsonResponse({"detail": "kind must be discount or transport"}, status=400)
+    if not uses_purchase_terms(vendor):
+        return [], JsonResponse({"detail": "Mill credit notes apply to feed/medicine vendors."}, status=400)
+    created: list[VendorCredit] = []
+    for bill in _credit_credit_bills(company_id, vendor):
+        if VendorCredit.objects.filter(
+            company_id=company_id,
+            vendor_id=vendor.id,
+            bill_id=bill.id,
+            credit_kind=kind,
+        ).exists():
+            continue
+        amount = bill_instant_discount_total(bill) if kind == VendorCredit.KIND_DISCOUNT else bill_transport_total(bill)
+        if amount <= 0:
+            continue
+        label = "Discount" if kind == VendorCredit.KIND_DISCOUNT else "Lorry / transport"
+        credit, resp = create_vendor_credit(
+            company_id,
+            vendor,
+            {
+                "amount": str(amount),
+                "credit_kind": kind,
+                "bill_id": bill.id,
+                "period_label": f"BILL-{bill.id}-{kind}"[:32],
+                "credit_date": (_parse_date(body.get("credit_date")) or bill.bill_date or date.today()).isoformat(),
+                "mrp_base_amount": str(bill_gross_mrp(bill)),
+                "memo": (body.get("memo") or f"{label} mill credit note — {bill.bill_number}")[:500],
+            },
+        )
+        if resp:
+            return created, resp
+        if credit:
+            created.append(credit)
+    if not created:
+        return [], JsonResponse(
+            {"detail": f"No pending {kind} mill credit notes to apply."},
+            status=400,
+        )
+    return created, None
+
+
+def apply_mill_flags(
+    company_id: int,
+    vendor: Vendor,
+    mill_apply: Optional[dict],
+) -> Optional[JsonResponse]:
+    """Apply ticked mill credit notes (discount, lorry, monthly, yearly) in one payment save."""
+    if not mill_apply or not isinstance(mill_apply, dict):
+        return None
+    if mill_apply.get("discount"):
+        _created, resp = apply_pending_discount_or_lorry(
+            company_id, vendor, VendorCredit.KIND_DISCOUNT, mill_apply
+        )
+        if resp:
+            return resp
+    if mill_apply.get("transport") or mill_apply.get("lorry"):
+        _created, resp = apply_pending_discount_or_lorry(
+            company_id, vendor, VendorCredit.KIND_TRANSPORT, mill_apply
+        )
+        if resp:
+            return resp
+    if mill_apply.get("monthly"):
+        _credit, resp = apply_monthly_scheme_credit(company_id, vendor, mill_apply)
+        if resp:
+            return resp
+    if mill_apply.get("yearly"):
+        _credit, resp = apply_yearly_scheme_credit(company_id, vendor, mill_apply)
+        if resp:
+            return resp
+    return None
+
+
+def parse_actual_lorry_fare(body: Optional[dict]) -> Decimal:
+    body = body or {}
+    if "actual_lorry_fare" in body and body.get("actual_lorry_fare") not in (None, ""):
+        return _q(body.get("actual_lorry_fare"))
+    raw = body.get("lorry_payment")
+    if isinstance(raw, dict):
+        return _q(raw.get("amount"))
+    return Decimal("0.00")
+
+
+def apply_bill_lorry_fare_expense(company_id: int, bill: Bill, body: dict) -> Optional[str]:
+    """Pay the driver the actual fare (not the mill). Extra over mill share is our transport cost."""
+    fare = parse_actual_lorry_fare(body)
+    if fare <= 0:
+        fare = _q(getattr(bill, "actual_lorry_fare", 0))
+    if fare <= 0:
+        return None
+    entry_number = f"AUTO-LORRY-{bill.id}"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return None
+    freight = _ensure_core_posting_account(company_id, CODE_FREIGHT_EXPENSE) or _ensure_core_posting_account(
+        company_id, "6900"
+    )
+    raw = body.get("lorry_payment") if isinstance(body.get("lorry_payment"), dict) else {}
+    bank_id = raw.get("bank_account_id") if raw else body.get("lorry_bank_account_id")
+    try:
+        bank_id = int(bank_id) if bank_id not in (None, "") else None
+    except (TypeError, ValueError):
+        bank_id = None
+    method = (raw.get("payment_method") if raw else None) or "cash"
+    cash_bank = _debit_account_for_paid_sale(company_id, method, bank_id)
+    if not freight or not cash_bank:
+        return (
+            "Could not post lorry fare: need a freight/expense account (7100) and cash/bank. "
+            "The mill bill was saved; record the driver payment as an expense if this persists."
+        )
+    mill_share = bill_transport_total(bill)
+    extra = _q(fare - mill_share) if mill_share > 0 else fare
+    memo = (
+        f"Lorry fare {fare} for bill {bill.bill_number}"
+        + (f" (mill share {mill_share}, our extra {extra})" if mill_share > 0 else "")
+    )[:300]
+    je = _create_posted_entry(
+        company_id,
+        bill.bill_date or date.today(),
+        entry_number,
+        f"Lorry fare bill {bill.bill_number}",
+        [
+            (freight, fare, Decimal("0"), memo),
+            (cash_bank, Decimal("0"), fare, memo),
+        ],
+    )
+    if not je:
+        return "Could not post the lorry fare journal (unbalanced or missing accounts)."
+    return None
 
 
 def parse_cash_payment_amount(body: dict) -> Decimal:

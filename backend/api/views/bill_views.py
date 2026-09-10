@@ -55,14 +55,18 @@ from api.services.gl_posting import (
 )
 from api.services.vendor_purchase_terms import (
     apply_bill_cash_payment,
-    apply_bill_truck_transport,
+    apply_bill_lorry_fare_expense,
+    apply_mill_bill_settlement,
     bill_line_purchase_term_kwargs,
     credit_limit_error_response,
     evaluate_bill_credit_limit,
+    mill_cash_required_error,
+    parse_actual_lorry_fare,
     parse_cash_payment_amount,
     price_parsed_bill_line,
     sync_monthly_scheme_reserve,
     uses_purchase_terms,
+    MILL_SETTLEMENT_CASH,
 )
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
@@ -154,14 +158,9 @@ def _serialize_date(d):
 
 
 def _amount_paid(bill: Bill) -> Decimal:
-    cache = getattr(bill, "_prefetched_objects_cache", None)
-    if cache and "payment_allocations" in cache:
-        return sum(
-            (a.amount for a in bill.payment_allocations.all()),
-            start=Decimal("0"),
-        )
-    agg = PaymentBillAllocation.objects.filter(bill_id=bill.id).aggregate(t=Sum("amount"))
-    return agg["t"] or Decimal("0")
+    from api.services.payment_allocation import total_allocated_to_bill
+
+    return total_allocated_to_bill(bill.company_id, bill.id)
 
 
 def _balance_due(bill: Bill) -> Decimal:
@@ -749,6 +748,8 @@ def _bill_to_json(
         "instant_discount_total": str(_bill_instant_total(b)),
         "transport_total": str(_bill_transport_total(b)),
         "truck_transport_amount": str(getattr(b, "truck_transport_amount", 0) or 0),
+        "actual_lorry_fare": str(getattr(b, "actual_lorry_fare", 0) or 0),
+        "mill_settlement": getattr(b, "mill_settlement", "") or "",
     }
     if not include_lines:
         receipt_pond_id, receipt_pond_display_name = _bill_receipt_pond_summary(b)
@@ -1069,7 +1070,9 @@ def bills_create(request):
     )
     if parse_err:
         return parse_err
-    truck_amount, truck_err = apply_bill_truck_transport(parsed_lines, vendor, bill_date, body)
+    truck_amount, mill_lane, truck_err = apply_mill_bill_settlement(
+        parsed_lines, vendor, bill_date, body, request.company_id
+    )
     if truck_err:
         return truck_err
     item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
@@ -1091,13 +1094,17 @@ def bills_create(request):
     line_net = sum((pl.get("amount") or Decimal("0")) for pl in parsed_lines)
     posted_net = line_net + tax_total
     if status in ("open", "paid", "partial", "overdue") and posted_net > 0:
-        lim_err = evaluate_bill_credit_limit(
-            request.company_id,
-            vendor,
-            posted_net,
-            bill_date=bill_date,
-            cash_applied=parse_cash_payment_amount(body),
-        )
+        cash_applied = parse_cash_payment_amount(body)
+        if mill_lane == MILL_SETTLEMENT_CASH and uses_purchase_terms(vendor) and vendor.credit_facility_enabled:
+            lim_err = mill_cash_required_error(vendor, posted_net, cash_applied)
+        else:
+            lim_err = evaluate_bill_credit_limit(
+                request.company_id,
+                vendor,
+                posted_net,
+                bill_date=bill_date,
+                cash_applied=cash_applied,
+            )
         if lim_err:
             return credit_limit_error_response(lim_err)
 
@@ -1117,6 +1124,8 @@ def bills_create(request):
                 tax_total=tax_total,
                 total=_decimal(body.get("total_amount", body.get("total"))),
                 truck_transport_amount=truck_amount,
+                actual_lorry_fare=parse_actual_lorry_fare(body),
+                mill_settlement=mill_lane or "",
             )
             b.save()
             assign_auto_production_cycles_for_parsed_bill_lines(request.company_id, b, parsed_lines)
@@ -1149,6 +1158,9 @@ def bills_create(request):
                 cash_err = apply_bill_cash_payment(request.company_id, b, body)
                 if cash_err:
                     raise GlPostingError(cash_err)
+                lorry_err = apply_bill_lorry_fare_expense(request.company_id, b, body)
+                if lorry_err:
+                    raise GlPostingError(lorry_err)
             repair_stale_aquaculture_bill_line_cycles(
                 request.company_id,
                 bill_ids=[b.id],
@@ -1257,6 +1269,7 @@ def bill_detail(request, bill_id: int):
                     )
                 b.receipt_station_id = rid
         parsed_lines = None
+        mill_lane = getattr(b, "mill_settlement", "") or ""
         item_catalog_updates: dict[int, dict] = {}
         if body.get("vendor_id"):
             vid = body.get("vendor_id")
@@ -1272,6 +1285,8 @@ def bill_detail(request, bill_id: int):
             b.vendor_reference = (body.get("vendor_reference") or "")[:200]
         if "memo" in body:
             b.memo = (body.get("memo") or "")[:5000]
+        if "actual_lorry_fare" in body or "lorry_payment" in body:
+            b.actual_lorry_fare = parse_actual_lorry_fare(body)
         b.tax_total = _decimal(body.get("tax_amount", body.get("tax_total")), b.tax_total)
         old_bill_status = b.status
         if "status" in body:
@@ -1312,12 +1327,18 @@ def bill_detail(request, bill_id: int):
             )
             if parse_err:
                 return parse_err
-            truck_amount, truck_err = apply_bill_truck_transport(
-                parsed_lines, vendor_for_lines, b.bill_date, body
+            truck_amount, mill_lane, truck_err = apply_mill_bill_settlement(
+                parsed_lines,
+                vendor_for_lines,
+                b.bill_date,
+                body,
+                request.company_id,
+                exclude_bill_id=b.id,
             )
             if truck_err:
                 return truck_err
             b.truck_transport_amount = truck_amount
+            b.mill_settlement = mill_lane or ""
             item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
                 request.company_id, body.get("lines")
             )
@@ -1362,19 +1383,28 @@ def bill_detail(request, bill_id: int):
         vendor_for_limit = Vendor.objects.filter(
             pk=b.vendor_id, company_id=request.company_id
         ).first()
+        mill_lane_for_limit = mill_lane
         if (
             vendor_for_limit
             and (b.status or "").strip().lower() in ("open", "paid", "partial", "overdue")
             and posted_net > 0
         ):
-            lim_err = evaluate_bill_credit_limit(
-                request.company_id,
-                vendor_for_limit,
-                posted_net,
-                bill_date=b.bill_date,
-                exclude_bill_id=b.id,
-                cash_applied=parse_cash_payment_amount(body),
-            )
+            cash_applied = parse_cash_payment_amount(body)
+            if (
+                mill_lane_for_limit == MILL_SETTLEMENT_CASH
+                and uses_purchase_terms(vendor_for_limit)
+                and vendor_for_limit.credit_facility_enabled
+            ):
+                lim_err = mill_cash_required_error(vendor_for_limit, posted_net, cash_applied)
+            else:
+                lim_err = evaluate_bill_credit_limit(
+                    request.company_id,
+                    vendor_for_limit,
+                    posted_net,
+                    bill_date=b.bill_date,
+                    exclude_bill_id=b.id,
+                    cash_applied=cash_applied,
+                )
             if lim_err:
                 return credit_limit_error_response(lim_err)
         try:
@@ -1429,6 +1459,9 @@ def bill_detail(request, bill_id: int):
                     cash_err = apply_bill_cash_payment(request.company_id, b, body)
                     if cash_err:
                         raise GlPostingError(cash_err)
+                    lorry_err = apply_bill_lorry_fare_expense(request.company_id, b, body)
+                    if lorry_err:
+                        raise GlPostingError(lorry_err)
                 repair_stale_aquaculture_bill_line_cycles(
                     request.company_id,
                     bill_ids=[b.id],

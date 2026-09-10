@@ -525,3 +525,86 @@ def test_post_monthly_scheme_credits_payable(api_client, company_tenant, auth_ad
         **h,
     )
     assert again.status_code == 400
+
+
+@pytest.mark.django_db
+def test_credit_lane_bill_stays_at_mrp(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Credit room mill",
+        supplier_category="feed",
+        credit_facility_enabled=True,
+        credit_limit="5000000",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+            "monthly_rebate_percent": "3",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="open")
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    assert bill["mill_settlement"] == "credit"
+    assert Decimal(bill["total"]) == Decimal("380000.00")
+    assert Decimal(bill["instant_discount_total"]) == Decimal("20900.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("950.00")
+    terms = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
+    assert Decimal(terms["used"]) == Decimal("380000.00")
+    assert terms["pending_terms"]["can_post_discount"] is True
+    assert terms["pending_terms"]["can_post_transport"] is True
+    note = api_client.post(
+        f"/api/vendors/{v['id']}/mill-credit-notes/",
+        data=json.dumps({"credit_kind": "discount"}),
+        content_type="application/json",
+        **h,
+    )
+    assert note.status_code == 201, note.content.decode()
+    terms2 = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
+    assert Decimal(terms2["used"]) == Decimal("359100.00")
+
+
+@pytest.mark.django_db
+def test_cash_lane_when_limit_full_requires_net_payment(
+    api_client, company_tenant, auth_admin_headers
+):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Full limit mill",
+        supplier_category="feed",
+        credit_facility_enabled=True,
+        credit_limit="1000",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    blocked = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="open")
+    assert blocked.status_code == 400, blocked.content.decode()
+    body = json.loads(blocked.content)
+    assert body["code"] == "vendor_credit_limit"
+    paid = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="open",
+        extra={
+            "cash_payment": {"amount": "358150", "payment_method": "bank"},
+            "actual_lorry_fare": "1500",
+        },
+    )
+    assert paid.status_code == 201, paid.content.decode()
+    bill = json.loads(paid.content)
+    assert bill["mill_settlement"] == "cash"
+    assert Decimal(bill["total"]) == Decimal("358150.00")
+    assert Decimal(bill["actual_lorry_fare"]) == Decimal("1500.00")
+    assert Decimal(bill["balance_due"]) == Decimal("0.00")
+

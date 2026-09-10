@@ -5,6 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.models import Vendor, VendorCredit, VendorRateCard
 from api.services.vendor_purchase_terms import (
     apply_monthly_scheme_credit,
+    apply_pending_discount_or_lorry,
     apply_yearly_scheme_credit,
     create_vendor_credit,
     delete_vendor_credit,
@@ -166,3 +167,28 @@ def vendor_apply_yearly_scheme(request, vendor_id: int):
     if resp:
         return resp
     return JsonResponse(vendor_credit_to_json(credit), status=201)
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+def vendor_apply_mill_term(request, vendor_id: int):
+    """Post pending discount or lorry mill credit notes (credit-lane bills)."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    v = _vendor(request, vendor_id)
+    if not v:
+        return JsonResponse({"detail": "Vendor not found"}, status=404)
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    kind = (body or {}).get("credit_kind") or (body or {}).get("kind") or ""
+    created, resp = apply_pending_discount_or_lorry(
+        request.company_id, v, str(kind).strip().lower(), body or {}
+    )
+    if resp:
+        return resp
+    return JsonResponse(
+        {"credits": [vendor_credit_to_json(c) for c in created], "count": len(created)},
+        status=201,
+    )

@@ -342,15 +342,78 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
             )
         )
 
+    from api.services.vendor_purchase_terms import (
+        MILL_SETTLEMENT_CASH,
+        bill_gross_mrp,
+        bill_instant_discount_total,
+        bill_transport_total,
+        uses_purchase_terms,
+    )
+
+    mill_vendor = uses_purchase_terms(vendor)
+
     for bill in (
         Bill.objects.filter(company_id=company_id, vendor_id=vendor.id)
         .exclude(status__in=("draft", "void"))
+        .prefetch_related("lines")
         .order_by("bill_date", "id")
     ):
         t = _d(bill.total)
         if t <= 0:
             continue
         memo = (bill.memo or "").strip()[:200]
+        mrp = bill_gross_mrp(bill) if mill_vendor else Decimal("0")
+        disc = bill_instant_discount_total(bill) if mill_vendor else Decimal("0")
+        lorry = bill_transport_total(bill) if mill_vendor else Decimal("0")
+        cash_settled = mill_vendor and (bill.mill_settlement or "") == MILL_SETTLEMENT_CASH
+        if mill_vendor and mrp > 0 and cash_settled and (disc > 0 or lorry > 0):
+            rows.append(
+                _Row(
+                    sort_date=bill.bill_date,
+                    seq=1,
+                    sort_id=bill.id,
+                    kind="bill",
+                    reference=bill.bill_number or f"BILL-{bill.id}",
+                    description=f"Bill {bill.bill_number or bill.id} MRP{f' — {memo}' if memo else ''}",
+                    debit=mrp,
+                    credit=Decimal("0"),
+                    related_id=bill.id,
+                )
+            )
+            if disc > 0:
+                rows.append(
+                    _Row(
+                        sort_date=bill.bill_date,
+                        seq=11,
+                        sort_id=bill.id,
+                        kind="mill_discount",
+                        reference=bill.bill_number or f"BILL-{bill.id}",
+                        description="Discount (same day — cash purchase)",
+                        debit=Decimal("0"),
+                        credit=disc,
+                        related_id=bill.id,
+                    )
+                )
+            if lorry > 0:
+                rows.append(
+                    _Row(
+                        sort_date=bill.bill_date,
+                        seq=12,
+                        sort_id=bill.id,
+                        kind="mill_transport",
+                        reference=bill.bill_number or f"BILL-{bill.id}",
+                        description="Lorry / transport (same day — cash purchase)",
+                        debit=Decimal("0"),
+                        credit=lorry,
+                        related_id=bill.id,
+                    )
+                )
+            continue
+        desc = f"Bill {bill.bill_number or bill.id} ({bill.status})"
+        if mill_vendor and mrp > 0:
+            desc = f"Bill {bill.bill_number or bill.id} MRP"
+        if memo:
+            desc = f"{desc} — {memo}"
         rows.append(
             _Row(
                 sort_date=bill.bill_date,
@@ -358,7 +421,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                 sort_id=bill.id,
                 kind="bill",
                 reference=bill.bill_number or f"BILL-{bill.id}",
-                description=f"Bill {bill.bill_number or bill.id} ({bill.status}){f' — {memo}' if memo else ''}",
+                description=desc,
                 debit=t,
                 credit=Decimal("0"),
                 related_id=bill.id,
@@ -411,7 +474,14 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
         amt = _d(cred.amount)
         if amt <= 0:
             continue
-        memo = (cred.memo or cred.period_label or cred.credit_kind or "").strip()
+        kind_label = {
+            "monthly": "Monthly commission",
+            "yearly": "Yearly commission",
+            "discount": "Discount",
+            "transport": "Lorry / transport",
+            "manual": "Mill account credit",
+        }.get(cred.credit_kind, cred.credit_kind)
+        memo = (cred.memo or cred.period_label or "").strip()
         rows.append(
             _Row(
                 sort_date=cred.credit_date,
@@ -419,7 +489,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                 sort_id=cred.id,
                 kind="supplier_credit",
                 reference=cred.period_label or f"VCRED-{cred.id}",
-                description=f"Mill account credit ({cred.credit_kind}){f' — {memo}' if memo else ''}",
+                description=f"{kind_label}{f' — {memo}' if memo else ''}",
                 debit=Decimal("0"),
                 credit=amt,
                 related_id=cred.id,

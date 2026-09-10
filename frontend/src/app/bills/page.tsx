@@ -11,7 +11,7 @@ import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
-import { BillMillTermsDialog, type BillMillTermsValues } from '@/components/bills/BillMillTermsDialog'
+import { type BillMillTermsValues } from '@/components/bills/BillMillTermsDialog'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useT } from '@/lib/i18n'
 import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
@@ -80,6 +80,7 @@ import { scopeDisplayLabel } from '@/app/reporting-categories/reportingCategorie
 import { useCompany } from '@/contexts/CompanyContext'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
 import {
+  emptyRateCardForm,
   vendorUsesPurchaseTerms,
   type VendorPurchaseTerms,
 } from '@/lib/vendorSupplierCategory'
@@ -498,122 +499,292 @@ function millTermsBanner(
     millPayNow: number
     millMrpTotal: number
     millDiscountTotal: number
-    onOpenMillTerms: () => void
+    onTermsChange: (values: BillMillTermsValues) => void
+    onFacilityChange: (patch: {
+      credit_facility_enabled?: boolean
+      credit_limit?: string
+    }) => void
     fieldClass: string
   }
 ) {
+  const card = vendorPurchaseTerms.rate_card
+  const empty = emptyRateCardForm()
+  const termsForm: BillMillTermsValues = {
+    instant_discount_percent: String(card?.instant_discount_percent ?? empty.instant_discount_percent),
+    instant_discount_per_unit: String(card?.instant_discount_per_unit ?? empty.instant_discount_per_unit),
+    transport_percent: String(card?.transport_percent ?? empty.transport_percent),
+    transport_per_truck: opts.truckTransportAmount || String(card?.transport_per_truck ?? empty.transport_per_truck),
+    transport_per_unit: String(card?.transport_per_unit ?? empty.transport_per_unit),
+    transport_per_kg: String(card?.transport_per_kg ?? empty.transport_per_kg),
+    monthly_rebate_percent: String(card?.monthly_rebate_percent ?? empty.monthly_rebate_percent),
+    yearly_rebate_percent: String(card?.yearly_rebate_percent ?? empty.yearly_rebate_percent),
+    yearly_target_tons: String(
+      card?.yearly_target_tons ??
+        (Number(card?.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : empty.yearly_target_tons)
+    ),
+  }
+  const patchTerms = (patch: Partial<BillMillTermsValues>) => {
+    const next = { ...termsForm, ...patch }
+    if (patch.transport_per_truck != null) {
+      opts.setTruckTransportAmount(patch.transport_per_truck)
+    }
+    opts.onTermsChange(next)
+  }
   const millShare = parseFloat(opts.truckTransportAmount) || 0
   const actual = parseFloat(opts.actualLorryFare) || 0
   const extra = actual > 0 && millShare > 0 ? Math.max(0, roundBillMoney(actual - millShare)) : 0
-  const discPct = Number(vendorPurchaseTerms.rate_card?.instant_discount_percent) || 0
-  const discPerUnit = Number(vendorPurchaseTerms.rate_card?.instant_discount_per_unit) || 0
+  const discPct = Number(termsForm.instant_discount_percent) || 0
+  const discPerUnit = Number(termsForm.instant_discount_per_unit) || 0
   const creditOn = Boolean(vendorPurchaseTerms.credit_facility_enabled)
-  const creditLimit = Number(vendorPurchaseTerms.credit_limit) || 0
   return (
-    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
-      <p>
-        {vendorPurchaseTerms.supplier_category_label}
-        {creditOn
-          ? ` · Credit limit ${formatNumber(creditLimit)} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
-          : ' · Credit facility off — set limit on Vendors for this mill'}
-        {opts.limitFull
-          ? ' · Credit full — pay net now (MRP − discount − mill lorry)'
-          : ' · Discount + mill lorry apply when they send feed'}
-      </p>
+    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-foreground space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-foreground">
+          {vendorPurchaseTerms.supplier_category_label} mill terms
+        </p>
+        <p className="text-muted-foreground mt-0.5">
+          {opts.limitFull
+            ? 'Credit full — pay net now (MRP − discount − mill lorry). '
+            : 'Discount + mill lorry apply on this bill. '}
+          Monthly/yearly commissions wait until the mill approves.
+        </p>
+      </div>
+
+      <div className="rounded-md border border-amber-200/80 bg-white/80 p-2.5 space-y-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Credit facility
+        </p>
+        <label className="flex items-center gap-2 text-xs font-medium">
+          <input
+            type="checkbox"
+            checked={creditOn}
+            onChange={(e) =>
+              opts.onFacilityChange({ credit_facility_enabled: e.target.checked })
+            }
+          />
+          Buy on account up to the credit limit
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <label className="block text-xs font-medium">
+            Credit limit
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={String(vendorPurchaseTerms.credit_limit ?? '0')}
+              onChange={(e) => opts.onFacilityChange({ credit_limit: e.target.value })}
+              className={`${opts.fieldClass} mt-1`}
+              placeholder="e.g. 5000000"
+              disabled={!creditOn}
+            />
+          </label>
+          <div className="text-xs text-muted-foreground flex flex-col justify-end pb-1">
+            {creditOn ? (
+              <>
+                <span>
+                  Used {formatNumber(Number(vendorPurchaseTerms.used))} · Available{' '}
+                  {formatNumber(Number(vendorPurchaseTerms.available || 0))}
+                </span>
+                {opts.limitFull ? (
+                  <span className="text-amber-800 font-medium">Limit full for this load — cash/bank required</span>
+                ) : null}
+              </>
+            ) : (
+              <span>Turn on credit facility to buy feed on account.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 rounded border border-amber-200/80 bg-white/70 px-2 py-1.5">
+        <span>
+          MRP this bill:{' '}
+          <span className="font-semibold tabular-nums">{formatNumber(opts.millMrpTotal)}</span>
+        </span>
+        <span>
+          Instant discount
+          {discPct > 0 ? ` (${discPct}%)` : ''}
+          {discPerUnit > 0 ? ` + ${formatNumber(discPerUnit)}/unit` : ''}
+          :{' '}
+          <span className="font-semibold tabular-nums text-emerald-800">
+            −{formatNumber(opts.millDiscountTotal)}
+          </span>
+          {opts.millMrpTotal <= 0 && (discPct > 0 || discPerUnit > 0)
+            ? ' (enter Rate / set item MRP so discount can calculate)'
+            : null}
+        </span>
+        <span>
+          Mill lorry:{' '}
+          <span className="font-semibold tabular-nums">−{formatNumber(millShare)}</span>
+        </span>
+      </div>
+
       {vendorPurchaseTerms.uses_purchase_terms ? (
         <>
-          <p className="text-muted-foreground">
-            {opts.limitFull
-              ? 'Bank transfer = MRP − discount − mill lorry (from this mill’s rate card). Then they send the feed. Monthly/yearly wait until the mill approves.'
-              : 'When they send feed, discount and mill lorry reduce what you owe immediately. Pay the driver the real fare below (extra over mill share is your transport cost). Monthly/yearly wait until approved.'}
-          </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 rounded border border-amber-200/80 bg-white/70 px-2 py-1.5">
-            <span>
-              MRP this bill:{' '}
-              <span className="font-semibold tabular-nums">{formatNumber(opts.millMrpTotal)}</span>
-            </span>
-            <span>
-              Instant discount
-              {discPct > 0 ? ` (${discPct}%)` : ''}
-              {discPerUnit > 0 ? ` + ${formatNumber(discPerUnit)}/unit` : ''}
-              :{' '}
-              <span className="font-semibold tabular-nums text-emerald-800">
-                −{formatNumber(opts.millDiscountTotal)}
-              </span>
-              {opts.millMrpTotal > 0 && opts.millDiscountTotal <= 0 && discPct <= 0 && discPerUnit <= 0
-                ? ' (set % on Vendors → rate card)'
-                : null}
-              {opts.millMrpTotal <= 0 && (discPct > 0 || discPerUnit > 0)
-                ? ' (enter Rate / set item MRP so discount can calculate)'
-                : null}
-            </span>
-            <span>
-              Mill lorry:{' '}
-              <span className="font-semibold tabular-nums">−{formatNumber(millShare)}</span>
-            </span>
-          </div>
-          <div className="flex flex-wrap items-end gap-2 pt-1">
-            <button
-              type="button"
-              className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
-              onClick={opts.onOpenMillTerms}
-            >
-              Mill terms…
-            </button>
-            <label className="block text-xs font-medium flex-1 min-w-[10rem]">
-              Mill lorry share (fixed ৳)
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={opts.truckTransportAmount}
-                onChange={(e) => opts.setTruckTransportAmount(e.target.value)}
-                className={`${opts.fieldClass} mt-1`}
-                placeholder="e.g. 950"
-              />
-            </label>
-            <label className="block text-xs font-medium flex-1 min-w-[10rem]">
-              Fare paid to driver
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={opts.actualLorryFare}
-                onChange={(e) => opts.setActualLorryFare(e.target.value)}
-                className={`${opts.fieldClass} mt-1`}
-                placeholder="e.g. 1500"
-              />
-            </label>
-          </div>
-          {extra > 0 ? (
-            <p className="text-muted-foreground">
-              Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill{' '}
-              {formatNumber(millShare)})
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+              Instant discount (this bill)
             </p>
-          ) : null}
-          {vendorPurchaseTerms.rate_card &&
-          (Number(vendorPurchaseTerms.rate_card.monthly_rebate_percent) > 0 ||
-            Number(vendorPurchaseTerms.rate_card.yearly_rebate_percent) > 0) ? (
-            <p className="text-muted-foreground pt-0.5">
-              Scheme counting:
-              {Number(vendorPurchaseTerms.rate_card.monthly_rebate_percent) > 0
-                ? ` monthly ${vendorPurchaseTerms.rate_card.monthly_rebate_percent}% of MRP`
-                : ''}
-              {Number(vendorPurchaseTerms.rate_card.yearly_rebate_percent) > 0
-                ? ` · yearly ${vendorPurchaseTerms.rate_card.yearly_rebate_percent}%${
-                    Number(vendorPurchaseTerms.rate_card.yearly_target_tons) > 0
-                      ? ` @ ${vendorPurchaseTerms.rate_card.yearly_target_tons} tons`
-                      : ''
-                  }`
-                : ''}
-              {' '}
-              — applied when the mill approves (not on the feed bill).
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="block text-xs font-medium">
+                Discount % of MRP
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={termsForm.instant_discount_percent}
+                  onChange={(e) => patchTerms({ instant_discount_percent: e.target.value })}
+                  className={`${opts.fieldClass} mt-1`}
+                  placeholder="e.g. 5.5"
+                />
+              </label>
+              <label className="block text-xs font-medium">
+                Discount ৳ / unit (optional)
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={termsForm.instant_discount_per_unit}
+                  onChange={(e) => patchTerms({ instant_discount_per_unit: e.target.value })}
+                  className={`${opts.fieldClass} mt-1`}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+              Lorry / transport (this bill)
             </p>
-          ) : null}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="block text-xs font-medium">
+                Mill lorry share (fixed ৳)
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={opts.truckTransportAmount}
+                  onChange={(e) => {
+                    opts.setTruckTransportAmount(e.target.value)
+                    patchTerms({ transport_per_truck: e.target.value })
+                  }}
+                  className={`${opts.fieldClass} mt-1`}
+                  placeholder="e.g. 950"
+                />
+              </label>
+              <label className="block text-xs font-medium">
+                Fare paid to driver
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={opts.actualLorryFare}
+                  onChange={(e) => opts.setActualLorryFare(e.target.value)}
+                  className={`${opts.fieldClass} mt-1`}
+                  placeholder="e.g. 1500"
+                />
+              </label>
+            </div>
+            {extra > 0 ? (
+              <p className="text-muted-foreground mt-1">
+                Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill{' '}
+                {formatNumber(millShare)})
+              </p>
+            ) : null}
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+                Optional transport extras (% / unit / kg)
+              </summary>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className="block text-xs font-medium">
+                  Transport % of MRP
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={termsForm.transport_percent}
+                    onChange={(e) => patchTerms({ transport_percent: e.target.value })}
+                    className={`${opts.fieldClass} mt-1`}
+                  />
+                </label>
+                <label className="block text-xs font-medium">
+                  Transport ৳ / unit
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={termsForm.transport_per_unit}
+                    onChange={(e) => patchTerms({ transport_per_unit: e.target.value })}
+                    className={`${opts.fieldClass} mt-1`}
+                  />
+                </label>
+                <label className="block text-xs font-medium">
+                  Transport ৳ / kg
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={termsForm.transport_per_kg}
+                    onChange={(e) => patchTerms({ transport_per_kg: e.target.value })}
+                    className={`${opts.fieldClass} mt-1`}
+                  />
+                </label>
+              </div>
+            </details>
+          </div>
+
+          <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-2.5 space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900/80">
+              Monthly & yearly commission (saved on mill — not on this bill total)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="block text-xs font-medium">
+                Monthly % of MRP
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={termsForm.monthly_rebate_percent}
+                  onChange={(e) => patchTerms({ monthly_rebate_percent: e.target.value })}
+                  className={`${opts.fieldClass} mt-1`}
+                  placeholder="e.g. 3"
+                />
+              </label>
+              <label className="block text-xs font-medium">
+                Yearly % of MRP
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={termsForm.yearly_rebate_percent}
+                  onChange={(e) => patchTerms({ yearly_rebate_percent: e.target.value })}
+                  className={`${opts.fieldClass} mt-1`}
+                  placeholder="e.g. 2.5"
+                />
+              </label>
+              <label className="block text-xs font-medium">
+                Yearly target (tons)
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={termsForm.yearly_target_tons}
+                  onChange={(e) => patchTerms({ yearly_target_tons: e.target.value })}
+                  className={`${opts.fieldClass} mt-1`}
+                  placeholder="e.g. 500"
+                />
+              </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Counts automatically; apply when the mill approves (Payments / vendor mill credits). 0 tons = no
+              tonnage gate.
+            </p>
+          </div>
         </>
       ) : null}
+
       {opts.limitFull ? (
-        <label className="block text-xs font-medium pt-1">
+        <label className="block text-xs font-medium">
           Pay mill now (MRP − discount − lorry)
           <input
             type="number"
@@ -1527,7 +1698,6 @@ export default function BillsPage() {
   const [vendorPurchaseTerms, setVendorPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
   const [truckTransportAmount, setTruckTransportAmount] = useState('')
   const [actualLorryFare, setActualLorryFare] = useState('')
-  const [showMillTermsDialog, setShowMillTermsDialog] = useState(false)
   const [cashWithBill, setCashWithBill] = useState('')
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
@@ -1739,7 +1909,7 @@ export default function BillsPage() {
     }
   }
 
-  const applyBillMillTermsValues = async (values: BillMillTermsValues) => {
+  const applyBillMillTermsValues = async (values: BillMillTermsValues, quiet = true) => {
     const nextCard = {
       ...(vendorPurchaseTerms?.rate_card || {}),
       instant_discount_percent: values.instant_discount_percent,
@@ -1800,12 +1970,61 @@ export default function BillsPage() {
           yearly_rebate_percent: parseFloat(values.yearly_rebate_percent) || 0,
           yearly_target_kg: (parseFloat(values.yearly_target_tons) || 0) * 1000,
         })
-        toast.success('Bill pricing applied. Monthly/yearly scheme rates saved on the mill.')
+        if (!quiet) {
+          toast.success('Mill rates saved on the vendor.')
+        }
       } catch {
-        toast.success('Bill pricing applied. Scheme rates kept for this bill only (vendor save failed).')
+        if (!quiet) {
+          toast.error('Could not save mill rates on the vendor.')
+        }
       }
-    } else {
-      toast.success('Mill terms applied to MRP lines on this bill.')
+    }
+  }
+
+  const applyBillMillFacility = async (patch: {
+    credit_facility_enabled?: boolean
+    credit_limit?: string
+  }) => {
+    if (!vendorPurchaseTerms) return
+    const enabled =
+      patch.credit_facility_enabled != null
+        ? patch.credit_facility_enabled
+        : Boolean(vendorPurchaseTerms.credit_facility_enabled)
+    const limitRaw =
+      patch.credit_limit != null ? patch.credit_limit : String(vendorPurchaseTerms.credit_limit ?? '0')
+    const limitNum = parseFloat(limitRaw) || 0
+    const used = Number(vendorPurchaseTerms.used) || 0
+    const available = enabled ? Math.max(0, roundBillMoney(limitNum - used)) : null
+    const nextTerms: VendorPurchaseTerms = {
+      ...vendorPurchaseTerms,
+      credit_facility_enabled: enabled,
+      credit_limit: limitNum.toFixed(2),
+      available: available == null ? null : String(available),
+      cash_only: enabled ? Boolean(vendorPurchaseTerms.cash_only) : false,
+    }
+    setVendorPurchaseTerms(nextTerms)
+
+    const vendorId = Number(formData.vendor_id) || 0
+    if (!(vendorId > 0)) return
+    try {
+      await api.put(`/vendors/${vendorId}/`, {
+        credit_facility_enabled: enabled,
+        credit_limit: limitNum,
+      })
+      const refreshed = await api.get(`/vendors/${vendorId}/purchase-terms/`)
+      if (refreshed.data) {
+        setVendorPurchaseTerms((prev) =>
+          prev
+            ? {
+                ...prev,
+                ...(refreshed.data as VendorPurchaseTerms),
+                rate_card: prev.rate_card || (refreshed.data as VendorPurchaseTerms).rate_card,
+              }
+            : (refreshed.data as VendorPurchaseTerms)
+        )
+      }
+    } catch {
+      toast.error('Could not save credit facility on the mill.')
     }
   }
 
@@ -2283,7 +2502,12 @@ export default function BillsPage() {
     millPayNow,
     millMrpTotal,
     millDiscountTotal,
-    onOpenMillTerms: () => setShowMillTermsDialog(true),
+    onTermsChange: (values: BillMillTermsValues) => {
+      void applyBillMillTermsValues(values, true)
+    },
+    onFacilityChange: (patch: { credit_facility_enabled?: boolean; credit_limit?: string }) => {
+      void applyBillMillFacility(patch)
+    },
     fieldClass: BILL_LINE_CTL,
   }
 
@@ -4899,13 +5123,6 @@ export default function BillsPage() {
             currencySymbol={currencySymbol}
           />
         ) : null}
-        <BillMillTermsDialog
-          open={showMillTermsDialog}
-          currencySymbol={currencySymbol}
-          initial={vendorPurchaseTerms?.rate_card}
-          onClose={() => setShowMillTermsDialog(false)}
-          onApply={applyBillMillTermsValues}
-        />
       </ErpPageShell>
     </PageLayout>
   )

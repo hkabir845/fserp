@@ -537,7 +537,7 @@ function millTermsBanner(
   const discPerUnit = Number(termsForm.instant_discount_per_unit) || 0
   const creditOn = Boolean(vendorPurchaseTerms.credit_facility_enabled)
   return (
-    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-foreground space-y-3">
+    <div className="mt-0 w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-foreground space-y-3">
       <div>
         <p className="text-sm font-semibold text-foreground">
           {vendorPurchaseTerms.supplier_category_label} mill terms
@@ -564,33 +564,50 @@ function millTermsBanner(
           />
           Buy on account up to the credit limit
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
           <label className="block text-xs font-medium">
             Credit limit
             <input
               type="number"
               min={0}
               step="0.01"
-              value={String(vendorPurchaseTerms.credit_limit ?? '0')}
-              onChange={(e) => opts.onFacilityChange({ credit_limit: e.target.value })}
+              value={String(vendorPurchaseTerms.credit_limit ?? '')}
+              onChange={(e) => {
+                const v = e.target.value
+                const n = parseFloat(v) || 0
+                opts.onFacilityChange({
+                  credit_limit: v,
+                  credit_facility_enabled: n > 0 ? true : creditOn,
+                })
+              }}
               className={`${opts.fieldClass} mt-1`}
               placeholder="e.g. 5000000"
-              disabled={!creditOn}
             />
           </label>
-          <div className="text-xs text-muted-foreground flex flex-col justify-end pb-1">
-            {creditOn ? (
+          <div className="text-xs text-muted-foreground pb-1">
+            {creditOn || Number(vendorPurchaseTerms.credit_limit) > 0 ? (
               <>
                 <span>
                   Used {formatNumber(Number(vendorPurchaseTerms.used))} · Available{' '}
-                  {formatNumber(Number(vendorPurchaseTerms.available || 0))}
+                  {formatNumber(
+                    Number(
+                      vendorPurchaseTerms.available ??
+                        Math.max(
+                          0,
+                          (Number(vendorPurchaseTerms.credit_limit) || 0) -
+                            (Number(vendorPurchaseTerms.used) || 0)
+                        )
+                    )
+                  )}
                 </span>
                 {opts.limitFull ? (
-                  <span className="text-amber-800 font-medium">Limit full for this load — cash/bank required</span>
+                  <span className="block text-amber-800 font-medium">
+                    Limit full for this load — cash/bank required
+                  </span>
                 ) : null}
               </>
             ) : (
-              <span>Turn on credit facility to buy feed on account.</span>
+              <span>Enter a credit limit (and tick the box) to buy feed on account.</span>
             )}
           </div>
         </div>
@@ -1986,19 +2003,26 @@ export default function BillsPage() {
     credit_limit?: string
   }) => {
     if (!vendorPurchaseTerms) return
-    const enabled =
-      patch.credit_facility_enabled != null
-        ? patch.credit_facility_enabled
-        : Boolean(vendorPurchaseTerms.credit_facility_enabled)
     const limitRaw =
       patch.credit_limit != null ? patch.credit_limit : String(vendorPurchaseTerms.credit_limit ?? '0')
     const limitNum = parseFloat(limitRaw) || 0
+    let enabled =
+      patch.credit_facility_enabled != null
+        ? patch.credit_facility_enabled
+        : Boolean(vendorPurchaseTerms.credit_facility_enabled)
+    // Typing a positive limit turns credit on so the field is always usable.
+    if (patch.credit_limit != null && limitNum > 0) {
+      enabled = true
+    }
+    if (patch.credit_limit != null && limitNum <= 0 && patch.credit_facility_enabled == null) {
+      enabled = false
+    }
     const used = Number(vendorPurchaseTerms.used) || 0
     const available = enabled ? Math.max(0, roundBillMoney(limitNum - used)) : null
     const nextTerms: VendorPurchaseTerms = {
       ...vendorPurchaseTerms,
       credit_facility_enabled: enabled,
-      credit_limit: limitNum.toFixed(2),
+      credit_limit: patch.credit_limit != null ? limitRaw : limitNum.toFixed(2),
       available: available == null ? null : String(available),
       cash_only: enabled ? Boolean(vendorPurchaseTerms.cash_only) : false,
     }
@@ -4203,7 +4227,7 @@ export default function BillsPage() {
 
               <form onSubmit={handleUpdate}>
                 {/* Edit Bill Form Content - reuse same form structure as Create Modal */}
-                <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Vendor *
@@ -4217,7 +4241,6 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
-                    {vendorPurchaseTerms ? millTermsBanner(vendorPurchaseTerms, millBannerOpts) : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -4243,7 +4266,7 @@ export default function BillsPage() {
                       className="erp-field"
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Memo/Notes
                     </label>
@@ -4251,11 +4274,14 @@ export default function BillsPage() {
                       value={formData.memo}
                       onChange={(e) => setFormData({ ...formData, memo: e.target.value })}
                       placeholder="Additional notes"
-                      rows={3}
+                      rows={2}
                       className="erp-field"
                     />
                   </div>
                 </div>
+                {vendorPurchaseTerms ? (
+                  <div className="mb-6">{millTermsBanner(vendorPurchaseTerms, millBannerOpts)}</div>
+                ) : null}
 
                 {/* Line Items */}
                 <div className="mb-6">
@@ -4702,7 +4728,7 @@ export default function BillsPage() {
               </div>
 
               <form onSubmit={handleCreate} className={referenceLoading ? 'pointer-events-none opacity-60' : undefined}>
-                <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Vendor *
@@ -4721,7 +4747,6 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
-                    {vendorPurchaseTerms ? millTermsBanner(vendorPurchaseTerms, millBannerOpts) : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -4747,7 +4772,7 @@ export default function BillsPage() {
                       className="erp-field"
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="mb-2 block text-sm font-medium text-foreground">
                       Memo/Notes
                     </label>
@@ -4759,6 +4784,9 @@ export default function BillsPage() {
                     />
                   </div>
                 </div>
+                {vendorPurchaseTerms ? (
+                  <div className="mb-6">{millTermsBanner(vendorPurchaseTerms, millBannerOpts)}</div>
+                ) : null}
 
                 {/* Line Items */}
                 <div className="mb-6">

@@ -101,7 +101,6 @@ function appendPondRegisterCsvIfScoped(
       : typeof data.filter_pond_id === 'string' && /^\d+$/.test(String(data.filter_pond_id))
         ? Number(data.filter_pond_id)
         : null
-  if (pondId == null) return ''
   const figures = getAquaculturePlExportFigures(
     data,
     pondId,
@@ -109,6 +108,10 @@ function appendPondRegisterCsvIfScoped(
     typeof data.filter_pond_name === 'string' ? String(data.filter_pond_name) : null,
   )
   if (!figures) return ''
+  const hasActivity =
+    figures.expenseCategories.some((c) => Number(c.amount ?? 0) !== 0) ||
+    figures.incomeCategories.some((c) => Number(c.amount ?? 0) !== 0)
+  if (!hasActivity) return ''
   return buildAquaculturePlRegisterCsv(figures)
 }
 
@@ -187,6 +190,9 @@ export function buildExtraFinancialReportCsv(
       out += `${escapeCsvValue(a.account_code)},${escapeCsvValue(a.account_name)},${a.balance ?? 0}\n`
     })
     out += `Total,,${expenses?.total ?? 0}\n`
+    if (figures) {
+      out += '\n' + buildAquaculturePlRegisterCsv(figures, { showIncome: false })
+    }
     return out
   }
 
@@ -213,6 +219,9 @@ export function buildExtraFinancialReportCsv(
       out += `${escapeCsvValue(a.account_code)},${escapeCsvValue(a.account_name)},${a.balance ?? 0}\n`
     })
     out += `Total,,${income?.total ?? 0}\n`
+    if (figures) {
+      out += '\n' + buildAquaculturePlRegisterCsv(figures, { showExpenses: false })
+    }
     return out
   }
 
@@ -1252,11 +1261,15 @@ export function buildExtraFinancialPrintHtml(
     }
     const accounts =
       ((data.expenses as { accounts?: Record<string, unknown>[] })?.accounts as Record<string, unknown>[]) ?? []
-    return htmlTable(
+    let html = htmlTable(
       'Operating expenses',
       ['Code', 'Account', 'Balance (right)'],
       accounts.map((a) => [String(a.account_code ?? ''), String(a.account_name ?? ''), fmtMoney(a.balance)]),
     )
+    if (figures) {
+      html += buildAquaculturePlRegisterPrintHtml(figures, { showIncome: false })
+    }
+    return html
   }
 
   if (reportId === 'income-detail') {
@@ -1277,11 +1290,15 @@ export function buildExtraFinancialPrintHtml(
     }
     const accounts =
       ((data.income as { accounts?: Record<string, unknown>[] })?.accounts as Record<string, unknown>[]) ?? []
-    return htmlTable(
+    let html = htmlTable(
       'Income',
       ['Code', 'Account', 'Balance (right)'],
       accounts.map((a) => [String(a.account_code ?? ''), String(a.account_name ?? ''), fmtMoney(a.balance)]),
     )
+    if (figures) {
+      html += buildAquaculturePlRegisterPrintHtml(figures, { showExpenses: false })
+    }
+    return html
   }
 
   if (reportId === 'stations-financial-summary' || reportId === 'ponds-pl-summary') {
@@ -1342,6 +1359,10 @@ export function buildExtraFinancialPrintHtml(
     if (needsPl) {
       appendPl('P&L — stations', sections.byStation)
       if (sections.byPond.length) appendPl('P&L — ponds', sections.byPond)
+    }
+    if (needsPl) {
+      const aq = getAquaculturePlExportFigures(data)
+      if (aq) html += buildAquaculturePlRegisterPrintHtml(aq)
     }
     if (needsBs) {
       const appendBs = (title: string, rows: Record<string, unknown>[]) =>

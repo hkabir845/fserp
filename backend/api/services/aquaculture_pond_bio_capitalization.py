@@ -26,7 +26,12 @@ logger = logging.getLogger(__name__)
 CODE_INV_BIO = "1581"
 
 # Pond cost buckets that stay on operating expense (not capitalized to 1581).
-_NO_BIO_CAPITALIZE_BUCKETS = frozenset({"lease", "shop_supplies", "biological_writeoff"})
+# Fisherman bills are raised at harvest (crew is paid for catching the fish). That is a
+# period cost on 6719 when the bill is posted — not a grow-out input sitting in 1581
+# until later harvest COGS, which hid the category on All Entities P&L.
+_NO_BIO_CAPITALIZE_BUCKETS = frozenset(
+    {"lease", "shop_supplies", "biological_writeoff", "fisherman"}
+)
 
 # Production expense accounts that may be reclassified Dr expense → Cr 1581 before transfers.
 _PRODUCTION_EXPENSE_ACCOUNT_CODES = frozenset(

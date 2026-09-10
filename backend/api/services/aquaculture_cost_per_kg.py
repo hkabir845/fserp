@@ -158,9 +158,12 @@ def vendor_bill_pond_expense_lines_qs(
         journal_entry__entry_date__gte=start,
         journal_entry__entry_date__lte=end,
         debit__gt=0,
-        account__account_type__in=_VENDOR_BILL_POND_PL_ACCOUNT_TYPES,
         aquaculture_pond_id__isnull=False,
-    ).filter(_POND_PL_JOURNAL_Q)
+    ).filter(_POND_PL_JOURNAL_Q).filter(
+        Q(account__account_type__in=_VENDOR_BILL_POND_PL_ACCOUNT_TYPES)
+        # Legacy fisherman bills posted to 1581 before harvest labor was kept on 6719.
+        | Q(account__account_code="1581", aquaculture_cost_bucket="fisherman")
+    )
     if pond_id is not None:
         q = q.filter(aquaculture_pond_id=pond_id)
     if uncycled_bill_lines_only:
@@ -470,6 +473,42 @@ def vendor_bill_only_pond_bucket_additions(
             continue
         b = (row["aquaculture_cost_bucket"] or "").strip() or "ancillary"
         out[b] += _money_q(Decimal(str(row["s"] or 0)))
+    return dict(out)
+
+
+def posted_unallocated_vendor_bill_bucket_additions(
+    *,
+    company_id: int,
+    start: date,
+    end: date,
+) -> dict[str, Decimal]:
+    """Posted vendor bill lines with an aquaculture cost bucket but no pond (company-wide)."""
+    out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    posted_ids = _posted_vendor_bill_ids(company_id)
+    if not posted_ids:
+        return {}
+    qs = (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            bill_id__in=posted_ids,
+            aquaculture_pond_id__isnull=True,
+            bill__bill_date__gte=start,
+            bill__bill_date__lte=end,
+        )
+        .exclude(bill__status__iexact="void")
+        .exclude(bill__status__iexact="draft")
+        .select_related("item", "bill")
+    )
+    for line in qs:
+        bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
+        if not bucket:
+            continue
+        if not _bill_eligible_for_pl(line.bill):
+            continue
+        amt = line.amount if line.amount is not None else Decimal("0")
+        if amt <= 0:
+            continue
+        out[bucket] += _money_q(amt)
     return dict(out)
 
 

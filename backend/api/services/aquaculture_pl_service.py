@@ -16,6 +16,7 @@ from api.models import (
     AquacultureFishStockLedger,
     AquaculturePond,
     AquacultureProductionCycle,
+    BillLine,
     PayrollRunPondAllocation,
 )
 from api.services.aquaculture_constants import (
@@ -34,6 +35,7 @@ from api.services.aquaculture_cost_per_kg import (
     landlord_lease_payment_pond_operating_total,
     pond_fry_stocking_capitalized_journal_total,
     pond_warehouse_consumption_cogs_journal_total,
+    posted_unallocated_vendor_bill_bucket_additions,
     vendor_bill_only_pond_bucket_additions,
     vendor_bill_pond_operating_total,
 )
@@ -382,6 +384,16 @@ def compute_aquaculture_pl_summary_dict(
                 payroll_run__payment_date__gte=start,
                 payroll_run__payment_date__lte=end,
             ).values("pond_id")
+        ) | Q(
+            id__in=BillLine.objects.filter(
+                bill__company_id=cid,
+                aquaculture_pond_id__isnull=False,
+                bill__bill_date__gte=start,
+                bill__bill_date__lte=end,
+            )
+            .exclude(bill__status__iexact="void")
+            .exclude(bill__status__iexact="draft")
+            .values("aquaculture_pond_id")
         )
         ponds_qs = ponds_qs.filter(active_or_busy)
 
@@ -754,6 +766,12 @@ def compute_aquaculture_pl_summary_dict(
             if not code:
                 continue
             unallocated_exp[code] += _money_q(row["s"] or Decimal("0"))
+        for bkey, bamt in posted_unallocated_vendor_bill_bucket_additions(
+            company_id=cid, start=start, end=end
+        ).items():
+            if bkey == "fry_stocking" or bamt == 0:
+                continue
+            unallocated_exp[cost_bucket_to_pl_expense_category(bkey)] += _money_q(bamt)
         unalloc_total = _money_q(sum(unallocated_exp.values(), Decimal("0")))
         if unalloc_total:
             for code, amt in unallocated_exp.items():

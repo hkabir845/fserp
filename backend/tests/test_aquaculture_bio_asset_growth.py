@@ -9,9 +9,7 @@ import pytest
 from api.models import (
     AquacultureBiomassSample,
     AquacultureExpense,
-    AquacultureFishSale,
     AquaculturePond,
-    AquacultureProductionCycle,
     Company,
 )
 from api.services.aquaculture_bio_asset_cost_service import (

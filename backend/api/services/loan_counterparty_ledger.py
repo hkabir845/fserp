@@ -1,6 +1,7 @@
 """Merge opening balance and all loans for one counterparty into a single subledger view."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.utils import timezone
@@ -217,14 +218,6 @@ def _emit_loan_lines(lo: Loan, merged, stmt_islamic: bool) -> list[dict]:
             )
     return out
 
-
-def _parse_row_date(s: str | None) -> date:
-    if not s:
-        return date.min
-    try:
-        return date.fromisoformat(str(s).split("T")[0])
-    except Exception:
-        return date.min
 
 
 def build_counterparty_ledger(cp: LoanCounterparty) -> dict:

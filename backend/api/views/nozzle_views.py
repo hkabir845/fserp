@@ -6,7 +6,6 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Nozzle, Meter, Tank, User
-from api.services.permission_service import normalize_role_key
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 
@@ -283,7 +282,9 @@ def nozzle_detail(request, nozzle_id: int):
         return JsonResponse(_nozzle_to_json(n))
 
     if request.method == "DELETE":
-        n.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        n.is_active = False
+        n.is_operational = False
+        n.save(update_fields=["is_active", "is_operational", "updated_at"])
+        return JsonResponse({"detail": "Deactivated", "is_active": False}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)

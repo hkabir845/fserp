@@ -144,4 +144,5 @@ def test_update_setting_qty_without_cost_is_rejected(
         content_type="application/json",
         **h,
     )
-    assert ok.status_code == 200, ok.content
+    assert ok.status_code == 400, ok.content
+    assert b"ledger" in ok.content.lower() or b"adjustment" in ok.content.lower()

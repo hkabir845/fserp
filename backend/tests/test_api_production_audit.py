@@ -73,6 +73,9 @@ def test_login_success_super(api_client: Client, user_super):
     data = json.loads(r.content)
     assert "access_token" in data and "refresh_token" in data
     assert data["user"]["role"] == "super_admin"
+    cookie = r.cookies.get("fserp_refresh")
+    assert cookie is not None
+    assert cookie["httponly"] is True
 
 
 def test_refresh_token(api_client: Client, user_super):
@@ -91,12 +94,58 @@ def test_refresh_token(api_client: Client, user_super):
     assert "access_token" in json.loads(r.content)
 
 
+def test_refresh_uses_httponly_cookie_and_logout_clears_it(api_client: Client, user_super):
+    login = api_client.post(
+        "/api/auth/login/",
+        data=json.dumps({"username": user_super.username, "password": "AuditTest#99"}),
+        content_type="application/json",
+    )
+    assert login.status_code == 200
+
+    refreshed = api_client.post(
+        "/api/auth/refresh/", data=json.dumps({}), content_type="application/json"
+    )
+    assert refreshed.status_code == 200
+    assert "access_token" in json.loads(refreshed.content)
+    assert refreshed.cookies.get("fserp_refresh") is not None
+
+    logged_out = api_client.post("/api/auth/logout/")
+    assert logged_out.status_code == 200
+    assert logged_out.cookies["fserp_refresh"]["max-age"] == 0
+
+
 # --- Super admin vs company admin ---
 
 
 def test_admin_companies_forbidden_for_company_admin(api_client: Client, auth_admin_headers):
     r = api_client.get("/api/admin/companies/", **auth_admin_headers)
     assert r.status_code == 403
+
+
+def test_company_detail_cannot_cross_tenant(
+    api_client: Client, auth_admin_headers, company_master, company_tenant
+):
+    own = api_client.get(f"/api/companies/{company_tenant.id}/", **auth_admin_headers)
+    assert own.status_code == 200
+    foreign = api_client.get(f"/api/companies/{company_master.id}/", **auth_admin_headers)
+    assert foreign.status_code == 403
+
+
+def test_tenant_admin_cannot_change_platform_or_book_lock_fields(
+    api_client: Client, auth_admin_headers, company_tenant
+):
+    for field, value in (
+        ("is_active", False),
+        ("billing_plan_code", "free"),
+        ("books_locked_through", None),
+    ):
+        response = api_client.put(
+            f"/api/companies/{company_tenant.id}/",
+            data=json.dumps({field: value}),
+            content_type="application/json",
+            **auth_admin_headers,
+        )
+        assert response.status_code == 403
 
 
 def test_admin_companies_ok_for_super(api_client: Client, auth_super_headers, company_master, company_tenant):
@@ -1462,7 +1511,7 @@ def test_vendor_bill_receipt_defaults_tank_by_product_name_order(
     api_client: Client, auth_super_headers, company_master
 ):
     """Without line.tank_id, receipt picks tank whose name matches product (e.g. Petrol → Petrol Tank-1)."""
-    from api.models import Item, Tank, Vendor
+    from api.models import Item, Tank
 
     _audit_seed_min_gl_accounts(company_master)
     h = _audit_master_headers(auth_super_headers, company_master)
@@ -2284,6 +2333,11 @@ def test_income_statement_includes_cogs_and_gross_profit(company_master):
         unit="L",
         category="fuel",
     )
+    # A costed inventory item has to be in stock to be sold: the sale relieves the inventory
+    # asset, so the goods have to be there to relieve.
+    from api.services.station_stock import set_station_stock
+
+    set_station_stock(company_master.id, st.id, item.id, Decimal("10"))
     inv = Invoice.objects.create(
         company_id=company_master.id,
         customer=cust,

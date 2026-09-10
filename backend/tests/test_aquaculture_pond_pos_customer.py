@@ -1,15 +1,13 @@
 """Pond POS customer auto-provision and shop-station default."""
 from __future__ import annotations
 
-import json
 
 import pytest
 
-from api.models import AquaculturePond, Company, Customer, Station
+from api.models import AquaculturePond, Customer, Station
 from api.services.aquaculture_pond_pos_customer import (
     auto_pos_customer_display_name,
     maybe_provision_auto_pos_customer,
-    provision_missing_pond_pos_customers,
     resolve_shop_station_for_pond,
 )
 

@@ -10,10 +10,11 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import TankDip, Tank
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.gl_posting import (
+    refresh_item_quantity_on_hand_from_tanks,
     bulk_sync_tank_dip_variance_journals,
     delete_tank_dip_variance_journal,
     sync_tank_dip_variance_journal,
@@ -26,8 +27,10 @@ _GL_SKIP_HINTS = {
         "or record a new dip so variance can post."
     ),
     "no_variance": "No variance vs book at dip — measured equaled system stock.",
-    "item_cost_and_price_zero": (
-        "Set cost or unit price on the tank’s product so the variance can be valued in BDT."
+    "item_cost_zero": (
+        "Set a purchase cost on the tank’s product so the variance can be valued in BDT. "
+        "The selling price is deliberately not used: valuing a wet-stock gain at retail would "
+        "capitalise unearned margin into the inventory asset."
     ),
     "rounded_zero": "Variance value rounds to zero at current cost.",
     "missing_inventory_or_cogs_account": (
@@ -135,11 +138,18 @@ def _maybe_reconcile_tank_from_dip(dip: TankDip) -> None:
     )
     if latest and latest.id == dip.id:
         _reconcile_tank_book_stock(dip.tank_id, dip.company_id, dip.volume)
+        # Item.quantity_on_hand mirrors tank stock; a dip that moves the tank must move it too.
+        product_id = (
+            Tank.objects.filter(pk=dip.tank_id).values_list("product_id", flat=True).first()
+        )
+        if product_id:
+            refresh_item_quantity_on_hand_from_tanks(dip.company_id, int(product_id))
 
 
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tank_dips")
 def tank_dips_reconcile_all_from_latest(request):
     """POST: set every tank's book stock to its chronologically latest dip reading (company scope)."""
     if request.method != "POST":
@@ -159,6 +169,7 @@ def tank_dips_reconcile_all_from_latest(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tank_dips")
 def tank_dips_sync_variance_gl_all(request):
     """
     POST: re-post (or remove) variance journal for every tank dip using current Item cost/unit_price.
@@ -174,6 +185,7 @@ def tank_dips_sync_variance_gl_all(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tank_dips", methods=("POST",))
 def tank_dips_list_or_create(request):
     if request.method == "GET":
         qs = TankDip.objects.filter(company_id=request.company_id).select_related("tank").order_by("-dip_date", "-id")
@@ -201,13 +213,16 @@ def tank_dips_list_or_create(request):
             notes=body.get("notes") or "",
         )
         skip_gl = bool(body.get("skip_variance_gl") or body.get("skip_gl"))
+        if skip_gl:
+            return JsonResponse(
+                {"detail": "Tank-dip variance accounting cannot be bypassed."}, status=403
+            )
         with transaction.atomic():
             d.save()
             _maybe_reconcile_tank_from_dip(d)
-            gl_info = None if skip_gl else sync_tank_dip_variance_journal(request.company_id, d.id)
+            gl_info = sync_tank_dip_variance_journal(request.company_id, d.id)
         out = _dip_to_json(d, request.company_id)
-        if not skip_gl:
-            out["gl_variance"] = gl_info
+        out["gl_variance"] = gl_info
         return JsonResponse(out, status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -215,6 +230,7 @@ def tank_dips_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tank_dips", methods=("PUT", "PATCH", "DELETE"))
 def tank_dip_detail(request, dip_id: int):
     d = TankDip.objects.filter(id=dip_id, company_id=request.company_id).select_related("tank").first()
     if not d:
@@ -234,13 +250,16 @@ def tank_dip_detail(request, dip_id: int):
         if "notes" in body:
             d.notes = body.get("notes") or ""
         skip_gl = bool(body.get("skip_variance_gl") or body.get("skip_gl"))
+        if skip_gl:
+            return JsonResponse(
+                {"detail": "Tank-dip variance accounting cannot be bypassed."}, status=403
+            )
         with transaction.atomic():
             d.save()
             _maybe_reconcile_tank_from_dip(d)
-            gl_info = None if skip_gl else sync_tank_dip_variance_journal(request.company_id, d.id)
+            gl_info = sync_tank_dip_variance_journal(request.company_id, d.id)
         out = _dip_to_json(d, request.company_id)
-        if not skip_gl:
-            out["gl_variance"] = gl_info
+        out["gl_variance"] = gl_info
         return JsonResponse(out)
     if request.method == "DELETE":
         delete_tank_dip_variance_journal(request.company_id, dip_id)

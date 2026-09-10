@@ -156,7 +156,7 @@ def set_station_stock(
 ) -> None:
     """Set absolute quantity at a station bin; refreshes item QOH."""
     if quantity < 0:
-        quantity = Decimal("0")
+        raise ValueError("quantity cannot be negative")
     get_or_create_default_station(company_id)  # ensure at least one station exists
     row, _ = ItemStationStock.objects.get_or_create(
         company_id=company_id,
@@ -175,7 +175,7 @@ def move_shop_stock_to_station(
 ) -> None:
     """Clear other shop bins, then set quantity at the target station (relocate, not duplicate)."""
     if quantity < 0:
-        quantity = Decimal("0")
+        raise ValueError("quantity cannot be negative")
     ItemStationStock.objects.filter(company_id=company_id, item_id=item_id).exclude(
         station_id=station_id
     ).update(quantity=Decimal("0"))
@@ -243,7 +243,7 @@ def per_pond_quantities(company_id: int, item_id: int) -> list[dict]:
 def set_pond_stock(company_id: int, pond_id: int, item_id: int, quantity: Decimal) -> None:
     """Set absolute fish-SKU quantity at a pond; refreshes Item.quantity_on_hand when pond rows exist."""
     if quantity < 0:
-        quantity = Decimal("0")
+        raise ValueError("quantity cannot be negative")
     if not AquaculturePond.objects.filter(
         pk=pond_id, company_id=company_id, is_active=True
     ).exists():

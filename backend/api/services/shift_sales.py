@@ -6,6 +6,7 @@ from decimal import Decimal
 from django.db.models import F
 
 from api.models import ShiftSession
+from api.exceptions import StockBusinessError
 
 
 def unrecord_invoice_from_shift(
@@ -68,11 +69,15 @@ def record_invoice_on_shift(
         )
         if cash_part and cash_part > 0:
             updates["expected_cash_total"] = F("expected_cash_total") + cash_part
-    ShiftSession.objects.filter(
+    updated = ShiftSession.objects.filter(
         id=shift_session_id,
         company_id=company_id,
         closed_at__isnull=True,
     ).update(**updates)
+    if updated != 1:
+        raise StockBusinessError(
+            "The shift closed while this sale was being recorded. The sale was cancelled; reopen the register and retry."
+        )
 
 
 def record_cash_payout_on_shift(

@@ -22,7 +22,12 @@ from api.models import (
     LoanDisbursement,
     LoanRepayment,
 )
-from api.services.reference_code import next_available_code
+from api.services.accounting_period_lock import assert_period_open
+from api.services.reference_code import (
+    next_available_code,
+    next_sequential_code,
+    save_with_sequential_code,
+)
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.loan_posting import post_loan_repayment
 
@@ -296,14 +301,21 @@ def _create_profit_transfer(
     je = JournalEntry(
         company_id=company_id,
         # Not a row count: that reuses a number after any delete and collides with a live entry.
-        entry_number=next_available_code(company_id, JournalEntry, "entry_number", "JE"),
         entry_date=transfer_date,
         description=desc[:500],
         station_id=None,
         is_posted=False,
         posted_at=None,
     )
-    je.save()
+    # Retry on the numbering race: max(suffix)+1 then insert is not atomic, and the
+    # unique constraint on (company, entry_number) correctly refuses a duplicate.
+    save_with_sequential_code(
+        je,
+        company_id=company_id,
+        model=JournalEntry,
+        field="entry_number",
+        prefix="JE",
+    )
     JournalEntryLine.objects.create(
         journal_entry=je,
         account_id=debit_account_id,
@@ -335,6 +347,8 @@ def _create_profit_transfer(
     )
     xfer.save()
     if post:
+        # Same rule as every other posting path: a closed period cannot be restated.
+        assert_period_open(company_id, transfer_date, action="post")
         je.is_posted = True
         je.posted_at = django_timezone.now()
         je.save(update_fields=["is_posted", "posted_at"])

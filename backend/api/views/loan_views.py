@@ -11,7 +11,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import uuid
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.http import JsonResponse
 from django.utils import timezone
@@ -33,6 +33,7 @@ from api.services.loan_posting import (
     post_loan_repayment,
     reverse_loan_interest_accrual,
     reverse_loan_repayment,
+    unsettled_accrued_interest,
 )
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
 from api.services.loan_interest_basis import (
@@ -1329,7 +1330,14 @@ def loan_repay(request, loan_id: int):
             status=400,
         )
     if lo.status != "active":
-        return JsonResponse({"detail": "Loan must be active"}, status=400)
+        leftover = unsettled_accrued_interest(lo)
+        interest_only_on_closed = (
+            lo.status == "closed"
+            and (lo.outstanding_principal or Decimal("0")) <= Decimal("0.005")
+            and leftover > Decimal("0.005")
+        )
+        if not interest_only_on_closed:
+            return JsonResponse({"detail": "Loan must be active"}, status=400)
     body, err = parse_json_body(request)
     if err:
         return err
@@ -1359,7 +1367,14 @@ def loan_repay(request, loan_id: int):
                 raise ValidationError("GL posting failed; check accounts and amounts")
             new_out = lo.outstanding_principal - p
             new_rp = lo.total_repaid_principal + p
-            st = "closed" if new_out <= Decimal("0.005") else "active"
+            leftover_interest = unsettled_accrued_interest(lo)
+            if i > 0:
+                leftover_interest = max(leftover_interest - i, Decimal("0"))
+            st = (
+                "closed"
+                if new_out <= Decimal("0.005") and leftover_interest <= Decimal("0.005")
+                else "active"
+            )
             Loan.objects.filter(pk=lo.pk).update(
                 outstanding_principal=max(new_out, Decimal("0")),
                 total_repaid_principal=new_rp,
@@ -1445,6 +1460,29 @@ def loan_accrue_interest(request, loan_id: int):
     if amt <= Decimal("0.005"):
         return JsonResponse({"detail": "Accrual amount must be positive"}, status=400)
     memo = (body.get("memo") or "")[:500]
+    period_year = accrual_date.year
+    period_month = accrual_date.month
+    if LoanInterestAccrual.objects.filter(
+        loan_id=lo.id,
+        period_year=period_year,
+        period_month=period_month,
+        reversed_at__isnull=True,
+    ).exists() or LoanInterestAccrual.objects.filter(
+        loan_id=lo.id,
+        period_year__isnull=True,
+        accrual_date__year=period_year,
+        accrual_date__month=period_month,
+        reversed_at__isnull=True,
+    ).exists():
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Interest for {period_year}-{period_month:02d} is already accrued on this loan. "
+                    "Reverse the existing accrual before posting the month again."
+                )
+            },
+            status=400,
+        )
     try:
         with transaction.atomic():
             accrual = LoanInterestAccrual.objects.create(
@@ -1453,10 +1491,21 @@ def loan_accrue_interest(request, loan_id: int):
                 amount=amt,
                 days_basis=days_basis,
                 memo=memo,
+                period_year=period_year,
+                period_month=period_month,
             )
             if post_gl and not post_loan_interest_accrual(cid, accrual):
                 raise ValidationError("GL posting failed; check interest and accrual GL accounts")
         accrual.refresh_from_db()
+    except IntegrityError:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Interest for {period_year}-{period_month:02d} is already accrued on this loan."
+                )
+            },
+            status=400,
+        )
     except ValidationError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except GlPostingError as e:

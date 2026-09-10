@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 
 
 def parse_optional_date_param(val) -> Optional[date]:

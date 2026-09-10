@@ -5,7 +5,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from django.db.models import Sum
 from django.utils import timezone
 
 from api.models import (
@@ -21,7 +20,6 @@ from api.models import (
     ChartOfAccount,
     Customer,
     Dispenser,
-    Employee,
     FixedAsset,
     FundTransfer,
     InventoryTransfer,

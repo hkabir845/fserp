@@ -71,6 +71,8 @@ from api.models import (
     BankDeposit,
     Bill,
     BillLine,
+    BrainCompanyDocument,
+    BrainCompanySettings,
     Broadcast,
     BroadcastRead,
     ChartOfAccount,
@@ -81,6 +83,7 @@ from api.models import (
     Customer,
     Dispenser,
     Employee,
+    EmployeeHandoverProfile,
     EmployeeLedgerEntry,
     FundTransfer,
     FixedAsset,
@@ -125,8 +128,10 @@ from api.models import (
     TenantReportingCategory,
     User,
     Vendor,
+    VendorCredit,
+    VendorSchemeReserve,
+    VendorRateCard,
 )
-from api.models import BrainCompanyDocument, EmployeeHandoverProfile
 
 BACKUP_SCHEMA_VERSION = 2
 SUPPORTED_BACKUP_SCHEMA_VERSIONS = frozenset({1, 2})
@@ -162,6 +167,9 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.item",
     "api.customer",
     "api.vendor",
+    "api.vendorratecard",
+    "api.vendorcredit",
+    "api.vendorschemereserve",
     "api.employee",
     "api.tax",
     "api.shifttemplate",
@@ -229,6 +237,7 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.taxrate",
     "api.employeeledgerentry",
     "api.braincompanydocument",
+    "api.braincompanysettings",
     "api.employeehandoverprofile",
 )
 
@@ -237,7 +246,7 @@ _DEFERRED_JOURNAL_ENTRY_FKS: dict[str, tuple[str, ...]] = {
     "api.customer": ("opening_balance_journal",),
     "api.vendor": ("opening_balance_journal",),
     "api.employee": ("opening_balance_journal",),
-    "api.payrollrun": ("salary_journal",),
+    "api.payrollrun": ("salary_journal", "net_pay_journal", "deduction_remittance_journal"),
     "api.loancounterparty": ("opening_balance_journal",),
     "api.aquaculturepond": ("pl_opening_journal",),
     "api.aquaculturelandlord": ("opening_balance_journal",),
@@ -248,6 +257,7 @@ _DEFERRED_JOURNAL_ENTRY_FKS: dict[str, tuple[str, ...]] = {
     "api.fixedassetdepreciationrun": ("journal_entry", "reversal_journal_entry"),
     "api.aquaculturefishstockledger": ("journal_entry",),
     "api.aquaculturelandlordledgerentry": ("journal_entry",),
+    "api.employeeledgerentry": ("journal_entry",),
     "api.aquaculturepondprofittransfer": ("journal_entry",),
 }
 
@@ -315,6 +325,9 @@ def _init_backup_row_exists_overrides() -> None:
                 employee__company_id=cid
             ).exists(),
             "api.taxrate": lambda cid: TaxRate.objects.filter(tax__company_id=cid).exists(),
+            "api.vendorratecard": lambda cid: VendorRateCard.objects.filter(
+                vendor__company_id=cid
+            ).exists(),
             "api.loandisbursement": lambda cid: LoanDisbursement.objects.filter(loan__company_id=cid).exists(),
             "api.loanrepayment": lambda cid: LoanRepayment.objects.filter(loan__company_id=cid).exists(),
             "api.loaninterestaccrual": lambda cid: LoanInterestAccrual.objects.filter(
@@ -374,6 +387,42 @@ def _validate_restore_record_models(records: list[dict[str, Any]], schema: int) 
         for required in ("api.company", "api.organization"):
             if required not in labels:
                 raise ValueError(f"Backup is missing required records for {required}.")
+
+
+def _validate_restore_tenant_boundary(records: list[dict[str, Any]], company_id: int) -> None:
+    """Reject privilege escalation, foreign tenant ids, and cross-tenant PK overwrite."""
+    from django.apps import apps
+    from api.services.tenant_job_types import TENANT_USER_ROLES
+
+    target = Company.objects.filter(pk=company_id).only("id", "organization_id").first()
+    if not target:
+        raise ValueError("Target company not found.")
+
+    current_records: list[dict[str, Any]] = []
+    _append_tenant_records(current_records, company_id)
+    owned_keys = {(r["model"], int(r["pk"])) for r in current_records}
+
+    for rec in records:
+        label = rec["model"]
+        pk = int(rec["pk"])
+        fields = rec.get("fields") or {}
+        if label == "api.company" and pk != int(company_id):
+            raise ValueError("Backup contains a different company primary key.")
+        if label == "api.organization" and pk != int(target.organization_id):
+            raise ValueError("Backup contains a different tenant organization.")
+        if "company" in fields and int(fields["company"]) != int(company_id):
+            raise ValueError(f"Backup record {label} pk={pk} belongs to another company.")
+        if "company_id" in fields and fields["company_id"] is not None:
+            if int(fields["company_id"]) != int(company_id):
+                raise ValueError(f"Backup record {label} pk={pk} belongs to another company.")
+        if label == "api.user":
+            role = str(fields.get("role") or "").strip().lower()
+            if role not in TENANT_USER_ROLES:
+                raise ValueError(f"Backup contains a forbidden tenant user role: {role or 'blank'}.")
+
+        model = apps.get_model(*label.split(".", 1))
+        if (label, pk) not in owned_keys and model.objects.filter(pk=pk).exists():
+            raise ValueError(f"Backup record {label} pk={pk} would overwrite another tenant.")
 
 
 def _prepare_restore_records(
@@ -476,6 +525,9 @@ def delete_tenant_company_data(company_id: int) -> None:
 
     # --- Deepest children (lines, allocations, rates) ---
     TaxRate.objects.filter(tax__company_id=cid).delete()
+    VendorRateCard.objects.filter(vendor__company_id=cid).delete()
+    VendorCredit.objects.filter(company_id=cid).delete()
+    VendorSchemeReserve.objects.filter(company_id=cid).delete()
     EmployeeLedgerEntry.objects.filter(employee__company_id=cid).delete()
     PaymentInvoiceAllocation.objects.filter(payment__company_id=cid).delete()
     PaymentBillAllocation.objects.filter(payment__company_id=cid).delete()
@@ -551,6 +603,7 @@ def delete_tenant_company_data(company_id: int) -> None:
     PayrollRun.objects.filter(company_id=cid).delete()
     ShiftTemplate.objects.filter(company_id=cid).delete()
     Tax.objects.filter(company_id=cid).delete()
+    EmployeeHandoverProfile.objects.filter(company_id=cid).delete()
     Employee.objects.filter(company_id=cid).delete()
     ItemStationStock.objects.filter(company_id=cid).delete()
     ItemPondStock.objects.filter(company_id=cid).delete()
@@ -580,6 +633,8 @@ def delete_tenant_company_data(company_id: int) -> None:
     CompanyRole.objects.filter(company_id=cid).delete()
     TenantReportingCategory.objects.filter(company_id=cid).delete()
     TenantPlatformReleaseEvent.objects.filter(company_id=cid).delete()
+    BrainCompanyDocument.objects.filter(company_id=cid).delete()
+    BrainCompanySettings.objects.filter(company_id=cid).delete()
     Company.objects.filter(pk=cid).delete()
 
 
@@ -694,6 +749,13 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, Item.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, Customer.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, Vendor.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, VendorRateCard.objects.filter(vendor__company_id=cid).order_by("id")
+    )
+    _serialize_many(records, VendorCredit.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(
+        records, VendorSchemeReserve.objects.filter(company_id=cid).order_by("id")
+    )
     _serialize_many(records, Employee.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, Tax.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, ShiftTemplate.objects.filter(company_id=cid).order_by("id"))
@@ -798,6 +860,7 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
     _serialize_many(records, TaxRate.objects.filter(tax__company_id=cid).order_by("id"))
     # Authored Brain/HR knowledge content (not telemetry) - see BACKUP_EXCLUDED_MODELS above.
     _serialize_many(records, BrainCompanyDocument.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, BrainCompanySettings.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, EmployeeHandoverProfile.objects.filter(company_id=cid).order_by("id"))
 
 
@@ -948,6 +1011,7 @@ def restore_bundle(
     schema = int(data.get("schema_version") or 0)
     records = data["records"]
     _validate_restore_record_models(records, schema)
+    _validate_restore_tenant_boundary(records, target_company_id)
     restore_records, journal_fk_patches = _prepare_restore_records(records)
     # Safety snapshot of the soon-to-be-replaced data (best-effort, outside the txn).
     safety_snapshot_path = write_pre_restore_safety_snapshot(target_company_id)

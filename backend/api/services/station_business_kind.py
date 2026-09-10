@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from api.models import Station
+    pass
 
 KIND_FUEL_STATION = "fuel_station"
 KIND_SHOP_HUB = "shop_hub"

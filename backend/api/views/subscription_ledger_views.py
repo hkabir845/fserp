@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
 from api.views.common import parse_json_body
 from api.models import SubscriptionLedgerInvoice, Company
-from api.services.reference_code import next_available_code
+from api.services.reference_code import next_sequential_code
 from api.saas_billing import SAAS_BILLING_PLANS, plan_name_for_code
 
 
@@ -102,7 +102,10 @@ def _subscription_invoice_number_taken(
 
 def _next_auto_subscription_invoice_number(company_id: int) -> str:
     prefix = f"SUB-{company_id}-"
-    return next_available_code(company_id, SubscriptionLedgerInvoice, "invoice_number", prefix, width=4)
+    # An invoice series, so monotonic: never reissue a deleted number.
+    return next_sequential_code(
+        company_id, SubscriptionLedgerInvoice, "invoice_number", prefix, width=4
+    )
 
 
 def _append_discount_notes(existing: str, body: dict) -> str:

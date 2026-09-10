@@ -355,9 +355,6 @@ def build_aquaculture_report(
         payload = _report_feed_medicine_consumption(company_id, start, end, request, kind="feed")
     elif report_id == "aquaculture-medicine-consumption":
         payload = _report_feed_medicine_consumption(company_id, start, end, request, kind="medicine")
-    elif report_id == "aquaculture-feed-medicine-consumption":
-        # Legacy combined report (kept for bookmarks / API clients)
-        payload = _report_feed_medicine_consumption(company_id, start, end, request, kind=None)
     elif report_id == "aquaculture-sampling":
         payload = _report_sampling(company_id, start, end, request)
     elif report_id == "aquaculture-production-cycles":
@@ -410,7 +407,6 @@ def build_aquaculture_report(
             "aquaculture-expenses",
             "aquaculture-feed-consumption",
             "aquaculture-medicine-consumption",
-            "aquaculture-feed-medicine-consumption",
             "aquaculture-sampling",
             "aquaculture-production-cycles",
             "aquaculture-profit-transfers",

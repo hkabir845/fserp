@@ -11,7 +11,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from api.models import AquaculturePond, ChartOfAccount, FixedAsset, FixedAssetDepreciationRun, Station
+from api.models import AquaculturePond, ChartOfAccount, FixedAsset, FixedAssetDepreciationRun
 from api.services.fixed_asset_posting import (
     post_fixed_asset_acquisition,
     post_fixed_asset_depreciation,
@@ -559,6 +559,21 @@ def fixed_asset_depreciate(request, asset_id: int):
         return JsonResponse({"detail": "Depreciation already posted for this calendar month"}, status=400)
     if body.get("amount") not in (None, ""):
         amt = _dec(body.get("amount"))
+        # An asset may never be depreciated past its salvage value. amount_for_next_run()
+        # already caps the automatic figure; a client-supplied amount bypassed that and could
+        # drive accumulated depreciation above cost and book value negative.
+        remaining = depreciable_remaining(asset)
+        if amt > remaining:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Depreciation of %s exceeds the %s of depreciable value left on this "
+                        "asset (cost less salvage value less depreciation already taken). "
+                        "Enter %s or less." % (amt, remaining, remaining)
+                    )
+                },
+                status=400,
+            )
     else:
         amt = amount_for_next_run(asset)
     if amt <= Decimal("0.005"):
@@ -684,6 +699,16 @@ def fixed_asset_depreciation_reverse(request, asset_id: int, run_id: int):
         return JsonResponse({"detail": "Depreciation run not found"}, status=404)
     if run.reversed_at:
         return JsonResponse({"detail": "Already reversed"}, status=400)
+    if asset.status == FixedAsset.STATUS_DISPOSED:
+        return JsonResponse(
+            {
+                "detail": (
+                    "Cannot reverse depreciation on a disposed asset. "
+                    "The disposal journal already closed the register."
+                )
+            },
+            status=400,
+        )
     body, err = parse_json_body(request)
     if err:
         return err

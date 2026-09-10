@@ -27,6 +27,7 @@ def _meter_to_json(m):
         "station_id": m.dispenser.island.station_id if m.dispenser_id and m.dispenser.island_id else None,
         "station_name": m.dispenser.island.station.station_name if m.dispenser_id and m.dispenser.island_id else "",
         "current_reading": str(m.current_reading),
+        "max_reading": str(m.max_reading) if getattr(m, "max_reading", None) is not None else None,
         "last_reset_date": _serialize_datetime(m.last_reset_date),
         "reset_count": getattr(m, "reset_count", 0),
         "nozzle_count": m.nozzles.count() if hasattr(m, "nozzles") else 0,
@@ -76,6 +77,11 @@ def meters_list_or_create(request):
             meter_code=body.get("meter_code") or "",
             meter_number=body.get("meter_number") or "",
             current_reading=_decimal(body.get("current_reading")),
+            max_reading=(
+                _decimal(body.get("max_reading"), None)
+                if body.get("max_reading") not in (None, "")
+                else None
+            ),
             is_active=body.get("is_active", True),
         )
         m.save()
@@ -119,14 +125,18 @@ def meter_detail(request, meter_id: int):
             m.dispenser_id = new_did
         if "current_reading" in body:
             m.current_reading = _decimal(body.get("current_reading"), m.current_reading)
+        if "max_reading" in body:
+            raw = body.get("max_reading")
+            m.max_reading = None if raw in (None, "") else _decimal(raw, m.max_reading)
         if "is_active" in body:
             m.is_active = bool(body["is_active"])
         m.save()
         return JsonResponse(_meter_to_json(m))
 
     if request.method == "DELETE":
-        m.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        m.is_active = False
+        m.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse({"detail": "Deactivated", "is_active": False}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 

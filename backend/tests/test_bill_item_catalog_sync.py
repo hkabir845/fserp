@@ -83,15 +83,15 @@ def test_bill_line_item_catalog_panel_updates_the_item(
     assert item.unit == "bag"
     assert item.category == "Aquaculture Feed"
     assert item.unit_price == Decimal("1350.50")
-    # Line Rate becomes the item's purchase cost.
-    assert item.cost == Decimal("1100.00")
+    # Catalog fields still update; purchase cost stays AVCO / existing Item.cost.
+    assert item.cost == Decimal("1000.00")
 
 
 @pytest.mark.django_db
-def test_bill_line_rate_becomes_item_cost_without_panel_edits(
+def test_bill_line_rate_does_not_overwrite_item_cost_without_panel_edits(
     api_client, company_tenant, auth_admin_headers
 ):
-    """No item_catalog on the row: catalog text is untouched, only cost follows the rate."""
+    """No item_catalog on the row: catalog text is untouched, and Item.cost is not last-rate."""
     h = auth_admin_headers
     vendor_id = _vendor(api_client, h, "Rate Only Supplier")
     item = Item.objects.create(
@@ -120,7 +120,7 @@ def test_bill_line_rate_becomes_item_cost_without_panel_edits(
     assert r.status_code == 201, r.content.decode()
 
     item.refresh_from_db()
-    assert item.cost == Decimal("455.75")
+    assert item.cost == Decimal("400.00")
     assert item.name == "Lime 50kg"
     assert item.description == "keep me"
     assert item.unit == "sack"
@@ -128,10 +128,10 @@ def test_bill_line_rate_becomes_item_cost_without_panel_edits(
 
 
 @pytest.mark.django_db
-def test_posted_bill_edit_keeps_the_typed_rate_as_item_cost(
+def test_posted_bill_edit_keeps_avco_not_the_typed_rate_as_item_cost(
     api_client, company_tenant, auth_admin_headers
 ):
-    """The rate wins over the AVCO recompute that runs when a posted bill is re-saved."""
+    """AVCO from the receipt history survives a posted-bill save; selling price still updates."""
     h = auth_admin_headers
     vendor_id = _vendor(api_client, h, "Posted Rate Supplier")
     item = Item.objects.create(
@@ -192,6 +192,44 @@ def test_posted_bill_edit_keeps_the_typed_rate_as_item_cost(
     item.refresh_from_db()
     assert item.cost == Decimal("250.00")
     assert item.unit_price == Decimal("375.00")
+
+
+@pytest.mark.django_db
+def test_posted_bill_keeps_blended_avco_not_last_bill_rate(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Opening stock at 200 plus a 300 receipt must leave Item.cost at 250, not 300."""
+    h = auth_admin_headers
+    vendor_id = _vendor(api_client, h, "AVCO Blend Supplier")
+    item = Item.objects.create(
+        company_id=company_tenant.id,
+        name="Shop Blend Widget",
+        item_type="inventory",
+        unit="piece",
+        category="General",
+        unit_price=Decimal("400.00"),
+        cost=Decimal("200.00"),
+        quantity_on_hand=Decimal("10"),
+        opening_stock_quantity=Decimal("10"),
+        opening_stock_unit_cost=Decimal("200.00"),
+    )
+
+    r = _post_bill(
+        api_client,
+        h,
+        vendor_id,
+        {
+            "description": "second lot",
+            "item_id": item.id,
+            "quantity": "10",
+            "unit_cost": "300.00",
+            "amount": "3000.00",
+        },
+        status="open",
+    )
+    assert r.status_code == 201, r.content.decode()
+    item.refresh_from_db()
+    assert item.cost == Decimal("250.0000")
 
 
 @pytest.mark.django_db

@@ -53,7 +53,7 @@ import type { BillReceiptLocationPond, BillReceiptLocationStation } from '@/lib/
 import type { FuelStationInvoiceIncomeCategory } from '@/lib/fuelStationInvoiceLine'
 import { invoiceFuelCategoriesFromApi } from '@/lib/fuelStationInvoiceLine'
 import { clearEntityScopedReportingCategoryCache } from '@/lib/entityScopedReportingCategories'
-import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT, unwrapReferenceList } from '@/lib/pagination'
+import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT, referenceSearchParams, unwrapReferenceList } from '@/lib/pagination'
 import {
   hasActiveTransactionFilters,
   hasTransactionTextSearch,
@@ -431,7 +431,7 @@ export default function InvoicesPage() {
     }
     void loadPrintBranding(api).then(setPrintBranding).catch(() => setPrintBranding(null))
     void api
-      .get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } })
+      .get('/customers/', { params: referenceSearchParams({ pageSize: REFERENCE_FETCH_LIMIT }) })
       .then((res) => {
         const raw = unwrapReferenceList<Customer>(res.data)
         setCustomers(raw.filter((c) => c.is_active !== false))
@@ -449,8 +449,8 @@ export default function InvoicesPage() {
     setLoadingItems(true)
     try {
       const [customersRes, itemsRes] = await Promise.allSettled([
-        api.get('/customers/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
-        api.get('/items/', { params: { skip: 0, limit: REFERENCE_FETCH_LIMIT } }),
+        api.get('/customers/', { params: referenceSearchParams({ pageSize: REFERENCE_FETCH_LIMIT }) }),
+        api.get('/items/', { params: referenceSearchParams({ pageSize: REFERENCE_FETCH_LIMIT }) }),
       ])
 
       if (customersRes.status === 'fulfilled') {

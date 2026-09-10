@@ -1,7 +1,6 @@
 """Unit tests for gap-aware reference code helpers."""
 from datetime import date
 
-import pytest
 
 from api.services import reference_code as rc
 

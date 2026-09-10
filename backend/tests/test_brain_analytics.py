@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from api.services.brain.analytics import pond_deep_analytics, workforce_retention_analysis
+from api.services.brain.analytics import workforce_retention_analysis
 from api.services.brain.direct_answer import compose_direct_answer
 from api.services.brain.intents import detect_intents
 from api.services.brain.tools import gather_context

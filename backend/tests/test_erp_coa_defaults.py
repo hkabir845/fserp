@@ -8,7 +8,6 @@ from api.services.erp_coa_defaults import (
     ErpCoaCode,
     chart_account_id_for_purpose,
     coa_code_for_purpose,
-    erp_coa_defaults_payload,
 )
 
 

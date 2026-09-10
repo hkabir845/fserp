@@ -1,9 +1,7 @@
 """Brain subscription tiers and daily usage limits."""
 from __future__ import annotations
 
-from datetime import date
 
-from django.db.models import Count
 from django.utils import timezone
 
 from api.models import BrainMessage, Company

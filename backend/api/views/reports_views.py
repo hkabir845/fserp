@@ -53,6 +53,7 @@ from api.services.reporting import (
     report_tank_dip_variance,
     report_tank_inventory,
     report_trial_balance,
+    report_vat_return,
     report_vendor_balances,
 )
 from api.utils.auth import auth_required
@@ -61,6 +62,7 @@ from api.services.station_scope import effective_report_station_id
 
 _REPORT_HANDLERS = {
     "trial-balance": report_trial_balance,
+    "vat-return": report_vat_return,
     "balance-sheet": report_balance_sheet,
     "income-statement": report_income_statement,
     "liabilities-detail": report_liabilities_detail,
@@ -283,7 +285,6 @@ AQUACULTURE_REPORT_IDS = frozenset(
         "aquaculture-expenses",
         "aquaculture-feed-consumption",
         "aquaculture-medicine-consumption",
-        "aquaculture-feed-medicine-consumption",
         "aquaculture-sampling",
         "aquaculture-production-cycles",
         "aquaculture-profit-transfers",

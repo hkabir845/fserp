@@ -136,6 +136,7 @@ def test_credit_invoice_and_vendor_bill_leave_a_balanced_ledger(
     api_client, auth_super_headers, company_master
 ):
     from api.models import Item, Vendor
+    from api.services.station_stock import get_or_create_default_station, set_station_stock
     from tests.test_api_production_audit import _audit_master_headers, _audit_seed_min_gl_accounts
 
     cid = company_master.id
@@ -145,6 +146,9 @@ def test_credit_invoice_and_vendor_bill_leave_a_balanced_ledger(
     item = Item.objects.create(
         company_id=cid, name="Invariant Widget", unit_price=Decimal("33.33"), cost=Decimal("10")
     )
+    # A costed inventory item now has to be in stock before it can be sold, exactly as at the
+    # POS: the sale relieves the inventory asset, so the goods have to be there to relieve.
+    set_station_stock(cid, get_or_create_default_station(cid).id, item.id, Decimal("10"))
     api_client.post("/api/customers/add-dummy/", **h)
     cust = json.loads(api_client.get("/api/customers/", **h).content)[0]
 

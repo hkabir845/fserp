@@ -47,6 +47,7 @@ from api.services.payment_allocation import (
     refresh_invoice_from_allocations,
     refresh_invoices_touched_by_payment,
 )
+from api.services.document_status import walkin_ar_payment_error
 from api.services.gl_posting import _is_walkin_customer
 from api.services.shift_sales import record_ar_collection_on_shift
 
@@ -115,7 +116,6 @@ def _payment_to_json(p):
         out["deposit_id"] = bid
     if p.payment_type in ("received", "made"):
         out.update(_payment_mutation_flags(p))
-    st = getattr(p, "station", None)
     out["station_id"] = int(p.station_id) if getattr(p, "station_id", None) else None
     from api.services.payment_station import payment_site_display_label
 
@@ -174,6 +174,27 @@ def _decimal(val, default=0):
         return Decimal(str(val))
     except Exception:
         return default
+
+
+class _PaymentReversalRejected(Exception):
+    """Reversal refused inside a transaction.
+
+    A plain ``return`` inside ``transaction.atomic()`` commits. The reverse_payment_* helpers
+    delete the journal and adjust the party balance before they can report failure, so
+    returning would persist exactly the half-unwound state being reported as failed.
+    """
+
+    def __init__(self, detail: str):
+        super().__init__(detail)
+        self.detail = detail
+
+
+class _PaymentAllocationRejected(Exception):
+    """Abort the enclosing transaction when a locked balance changed."""
+
+    def __init__(self, detail: str):
+        super().__init__(detail)
+        self.detail = detail
 
 
 def _normalize_payment_method(body: dict) -> str:
@@ -447,6 +468,7 @@ def _validate_invoice_allocations(
     rows: list,
     *,
     exclude_payment_id: int | None = None,
+    lock_invoices: bool = False,
 ) -> tuple[bool, str, list[tuple[int, Decimal]], Decimal]:
     """Returns (ok, err, invoice_alloc_pairs, on_account_total). on_account has no PaymentInvoice row."""
     coerced_from_empty = bool((not rows) and amount and amount > 0)
@@ -463,6 +485,7 @@ def _validate_invoice_allocations(
     on_account_total = Decimal("0")
     total_alloc = Decimal("0")
     cleaned: list[tuple[int, Decimal]] = []
+    per_invoice: dict[int, Decimal] = {}
     for row in rows:
         if not isinstance(row, dict):
             return False, "invalid allocation", [], Decimal("0")
@@ -491,9 +514,20 @@ def _validate_invoice_allocations(
             return False, "invalid allocation", [], Decimal("0")
         if d_amt <= 0:
             continue
-        inv = Invoice.objects.filter(
+        # Accumulate per invoice; the balance check happens once per invoice below. Validating
+        # each row on its own against the same open balance let two rows for invoice 7, each
+        # within the balance, both pass — and then the second PaymentInvoiceAllocation.create
+        # hit unique_together(payment, invoice) as an uncaught IntegrityError: a 500.
+        per_invoice[iid] = per_invoice.get(iid, Decimal("0")) + d_amt
+        total_alloc += d_amt
+
+    for iid, d_amt in per_invoice.items():
+        inv_qs = Invoice.objects.filter(
             id=iid, company_id=company_id, customer_id=customer_id
-        ).prefetch_related("payment_allocations").first()
+        ).prefetch_related("payment_allocations")
+        if lock_invoices:
+            inv_qs = inv_qs.select_for_update()
+        inv = inv_qs.first()
         if not inv:
             return False, f"invoice {iid} invalid for customer", [], Decimal("0")
         if inv.status == "draft":
@@ -507,7 +541,6 @@ def _validate_invoice_allocations(
         if d_amt > open_amt + Decimal("0.01"):
             return False, f"allocation exceeds balance for invoice {iid}", [], Decimal("0")
         cleaned.append((inv.id, d_amt))
-        total_alloc += d_amt
     if len(cleaned) >= 2:
         inv_sites: set[int] = set()
         for iid, _ in cleaned:
@@ -565,8 +598,12 @@ def payments_received_create(request):
     amount = _decimal(body.get("amount"))
     if not customer_id or not amount or amount <= 0:
         return JsonResponse({"detail": "customer_id and positive amount required"}, status=400)
-    if not Customer.objects.filter(id=customer_id, company_id=request.company_id).exists():
+    cust = Customer.objects.filter(id=customer_id, company_id=request.company_id).first()
+    if not cust:
         return JsonResponse({"detail": "Customer not found"}, status=400)
+    walk_err = walkin_ar_payment_error(cust)
+    if walk_err:
+        return JsonResponse({"detail": walk_err}, status=400)
     bank_id = body.get("bank_account_id")
     if bank_id and not BankAccount.objects.filter(id=bank_id, company_id=request.company_id).exists():
         bank_id = None
@@ -605,6 +642,17 @@ def payments_received_create(request):
 
     try:
         with transaction.atomic():
+            # The earlier pass gives fast validation feedback. This locked pass is
+            # authoritative: two receipts cannot both validate the same open balance.
+            ok, msg, cleaned, on_acct = _validate_invoice_allocations(
+                request.company_id,
+                int(customer_id),
+                amount,
+                alloc_rows,
+                lock_invoices=True,
+            )
+            if not ok:
+                raise _PaymentAllocationRejected(msg)
             if on_acct and on_acct > 0:
                 _align_stored_receivable_before_receipt(
                     request.company_id, int(customer_id)
@@ -634,6 +682,8 @@ def payments_received_create(request):
                 record_ar_collection_on_shift(
                     request.company_id, shift_session_id_for_roll, amount, pm_norm
                 )
+    except _PaymentAllocationRejected as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     except GlPostingError as e:
         return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
     except IntegrityError:
@@ -736,6 +786,7 @@ def _validate_bill_allocations(
     rows: list,
     *,
     exclude_payment_id: int | None = None,
+    lock_bills: bool = False,
 ) -> tuple[bool, str, list[tuple[int, Decimal]], Decimal]:
     from api.services.payment_allocation import (
         total_allocated_to_bill,
@@ -762,6 +813,7 @@ def _validate_bill_allocations(
     on_account_total = Decimal("0")
     total_alloc = Decimal("0")
     cleaned: list[tuple[int, Decimal]] = []
+    per_bill: dict[int, Decimal] = {}
     for row in rows:
         if not isinstance(row, dict):
             return False, "invalid allocation", [], Decimal("0")
@@ -787,7 +839,16 @@ def _validate_bill_allocations(
         d_amt = _bill_allocation_row_amount(row)
         if d_amt <= 0:
             continue
-        bill = Bill.objects.filter(id=bid, company_id=company_id, vendor_id=vendor_id).first()
+        # Accumulate per bill; the balance check happens once per bill below. See the invoice
+        # side for why per-row checking let duplicate rows through into an IntegrityError.
+        per_bill[bid] = per_bill.get(bid, Decimal("0")) + d_amt
+        total_alloc += d_amt
+
+    for bid, d_amt in per_bill.items():
+        bill_qs = Bill.objects.filter(id=bid, company_id=company_id, vendor_id=vendor_id)
+        if lock_bills:
+            bill_qs = bill_qs.select_for_update()
+        bill = bill_qs.first()
         if not bill:
             return False, f"bill {bid} invalid for vendor", [], Decimal("0")
         if bill.status == "draft":
@@ -802,7 +863,6 @@ def _validate_bill_allocations(
         if d_amt > open_amt + Decimal("0.01"):
             return False, f"allocation exceeds balance for bill {bid}", [], Decimal("0")
         cleaned.append((bill.id, d_amt))
-        total_alloc += d_amt
     if len(cleaned) >= 2:
         bids = [b[0] for b in cleaned]
         bills_map = {
@@ -1037,8 +1097,35 @@ def payments_made_create(request):
     if not ok:
         return JsonResponse({"detail": msg}, status=400)
 
+    # Money going out needs the same retry protection money coming in already had. A client
+    # timeout on a slow-but-successful disbursement used to produce a second payment, a second
+    # AUTO-PAY-*-MADE journal and a second A/P decrement, with nothing to detect it.
+    idempotency_key = _read_idempotency_key(request, body)
+    if idempotency_key:
+        existing = (
+            Payment.objects.filter(
+                company_id=request.company_id,
+                payment_type="made",
+                idempotency_key=idempotency_key,
+            )
+            .select_related("station")
+            .prefetch_related("bill_allocations")
+            .first()
+        )
+        if existing is not None:
+            return JsonResponse(_payment_to_json(existing), status=200)
+
     try:
         with transaction.atomic():
+            ok, msg, cleaned, on_acct = _validate_bill_allocations(
+                request.company_id,
+                int(vendor_id),
+                amount,
+                alloc_rows,
+                lock_bills=True,
+            )
+            if not ok:
+                raise _PaymentAllocationRejected(msg)
             if on_acct and on_acct > 0:
                 _align_stored_ap_before_made_payment(
                     request.company_id, int(vendor_id)
@@ -1053,6 +1140,7 @@ def payments_made_create(request):
                 payment_method=_normalize_payment_method(body),
                 reference=(body.get("reference_number") or body.get("reference") or ""),
                 memo=body.get("memo") or "",
+                idempotency_key=idempotency_key,
             )
             p.save()
             PaymentBillAllocation.objects.filter(payment_id=p.id).delete()
@@ -1063,8 +1151,35 @@ def payments_made_create(request):
             sync_payment_made_gl(request.company_id, p)
             refresh_bills_touched_by_payment(request.company_id, p.id)
             p.refresh_from_db()
+    except _PaymentAllocationRejected as e:
+        return JsonResponse({"detail": e.detail}, status=400)
     except GlPostingError as e:
         return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
+    except IntegrityError:
+        # The unique key is (company, idempotency_key) and is NOT scoped by payment type, so
+        # look the winner up the same way before deciding what happened.
+        winner = (
+            Payment.objects.filter(
+                company_id=request.company_id, idempotency_key=idempotency_key
+            )
+            .select_related("station")
+            .prefetch_related("bill_allocations")
+            .first()
+        )
+        if winner is not None and winner.payment_type == "made":
+            # Concurrent duplicate of this same disbursement: return the winner.
+            return JsonResponse(_payment_to_json(winner), status=200)
+        if winner is not None:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "This Idempotency-Key has already been used for a customer receipt. "
+                        "Use a new key for a vendor payment."
+                    )
+                },
+                status=409,
+            )
+        raise
 
     p = (
         Payment.objects.filter(id=p.id)
@@ -1306,11 +1421,16 @@ def payment_detail_update_delete(request, payment_id: int):
             )
             journal_ref = f"AUTO-PAY-{p.id}-RCV"
             amt = str(p.amount)
-            with transaction.atomic():
-                ok, msg = reverse_payment_received_posting(cid, p)
-                if not ok:
-                    return JsonResponse({"detail": msg}, status=400)
-                p.delete()
+            try:
+                with transaction.atomic():
+                    ok, msg = reverse_payment_received_posting(cid, p)
+                    if not ok:
+                        raise _PaymentReversalRejected(msg)
+                    p.delete()
+            except _PaymentReversalRejected as e:
+                return JsonResponse({"detail": e.detail}, status=400)
+            except GlPostingError as e:
+                return JsonResponse({"detail": e.detail}, status=409)
             for iid in inv_ids:
                 inv = Invoice.objects.filter(id=iid, company_id=cid).first()
                 if inv:
@@ -1335,11 +1455,16 @@ def payment_detail_update_delete(request, payment_id: int):
             )
             journal_ref = f"AUTO-PAY-{p.id}-MADE"
             amt = str(p.amount)
-            with transaction.atomic():
-                ok, msg = reverse_payment_made_posting(cid, p)
-                if not ok:
-                    return JsonResponse({"detail": msg}, status=400)
-                p.delete()
+            try:
+                with transaction.atomic():
+                    ok, msg = reverse_payment_made_posting(cid, p)
+                    if not ok:
+                        raise _PaymentReversalRejected(msg)
+                    p.delete()
+            except _PaymentReversalRejected as e:
+                return JsonResponse({"detail": e.detail}, status=400)
+            except GlPostingError as e:
+                return JsonResponse({"detail": e.detail}, status=409)
             for bid in bill_ids:
                 bill = Bill.objects.filter(id=bid, company_id=cid).first()
                 if bill:
@@ -1378,6 +1503,10 @@ def payment_detail_update_delete(request, payment_id: int):
                 return JsonResponse(
                     {"detail": "customer_id and positive amount required"}, status=400
                 )
+            cust = Customer.objects.filter(id=customer_id, company_id=cid).first()
+            walk_err = walkin_ar_payment_error(cust)
+            if walk_err:
+                return JsonResponse({"detail": walk_err}, status=400)
             if "bank_account_id" in body:
                 raw_b = body.get("bank_account_id")
                 if raw_b is None or raw_b == "":
@@ -1417,9 +1546,19 @@ def payment_detail_update_delete(request, payment_id: int):
             journal_ref = f"AUTO-PAY-{p.id}-RCV"
             try:
                 with transaction.atomic():
+                    ok, msg, cleaned, on_acct = _validate_invoice_allocations(
+                        cid,
+                        int(customer_id),
+                        amount,
+                        alloc_rows,
+                        exclude_payment_id=p.id,
+                        lock_invoices=True,
+                    )
+                    if not ok:
+                        raise _PaymentAllocationRejected(msg)
                     ok, msg = reverse_payment_received_posting(cid, p)
                     if not ok:
-                        return JsonResponse({"detail": msg}, status=400)
+                        raise _PaymentReversalRejected(msg)
                     p.refresh_from_db()
                     if on_acct and on_acct > 0:
                         _align_stored_receivable_before_receipt(cid, int(customer_id))
@@ -1440,6 +1579,10 @@ def payment_detail_update_delete(request, payment_id: int):
                     sync_payment_received_gl(cid, p)
                     refresh_invoices_touched_by_payment(cid, p.id)
                     p.refresh_from_db()
+            except _PaymentAllocationRejected as e:
+                return JsonResponse({"detail": e.detail}, status=400)
+            except _PaymentReversalRejected as e:
+                return JsonResponse({"detail": e.detail}, status=400)
             except GlPostingError as e:
                 return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 
@@ -1508,9 +1651,19 @@ def payment_detail_update_delete(request, payment_id: int):
             journal_ref = f"AUTO-PAY-{p.id}-MADE"
             try:
                 with transaction.atomic():
+                    ok, msg, cleaned, on_acct = _validate_bill_allocations(
+                        cid,
+                        int(vendor_id),
+                        amount,
+                        alloc_rows,
+                        exclude_payment_id=p.id,
+                        lock_bills=True,
+                    )
+                    if not ok:
+                        raise _PaymentAllocationRejected(msg)
                     ok, msg = reverse_payment_made_posting(cid, p)
                     if not ok:
-                        return JsonResponse({"detail": msg}, status=400)
+                        raise _PaymentReversalRejected(msg)
                     p.refresh_from_db()
                     if on_acct and on_acct > 0:
                         _align_stored_ap_before_made_payment(cid, int(vendor_id))
@@ -1531,6 +1684,10 @@ def payment_detail_update_delete(request, payment_id: int):
                     sync_payment_made_gl(cid, p)
                     refresh_bills_touched_by_payment(cid, p.id)
                     p.refresh_from_db()
+            except _PaymentAllocationRejected as e:
+                return JsonResponse({"detail": e.detail}, status=400)
+            except _PaymentReversalRejected as e:
+                return JsonResponse({"detail": e.detail}, status=400)
             except GlPostingError as e:
                 return JsonResponse({"detail": e.detail, "code": "gl_posting"}, status=400)
 

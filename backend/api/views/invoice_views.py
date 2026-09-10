@@ -2,12 +2,13 @@
 from datetime import date
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
-from api.exceptions import GlPostingError
+from api.exceptions import GlPostingError, StockBusinessError
 from api.utils.auth import auth_required
 from api.utils.customer_display import customer_display_name
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
@@ -18,9 +19,9 @@ from api.utils.transaction_filters import (
 from api.views.common import (
     parse_json_body,
     require_company_id,
-    _serialize_datetime,
-    _serialize_quantity,,
     require_permission,
+    _serialize_datetime,
+    _serialize_quantity,
 )
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.services.document_status import (
@@ -28,21 +29,38 @@ from api.services.document_status import (
     normalize_document_status,
     walkin_ar_invoice_error,
 )
-from api.models import Invoice, InvoiceLine, Customer, ShiftSession
+from api.models import Invoice, InvoiceLine, Customer, ShiftSession, PaymentInvoiceAllocation
 from api.services.document_posting_lifecycle import (
+    assert_invoice_change_allowed,
     assert_invoice_edit_allowed,
     body_has_material_invoice_change,
     reconcile_invoice_after_material_edit,
 )
-from api.services.gl_posting import cleanup_invoice_posting_effects, sync_invoice_gl
+from api.services.gl_posting import (
+    cleanup_invoice_posting_effects,
+    rollback_invoice_posting_effects,
+    sync_invoice_gl,
+)
 from api.services.invoice_line_parsing import parse_invoice_line_row
 from api.services.invoice_station import (
     default_station_id_for_document,
     parse_valid_station_id,
     resolve_station_id_for_new_invoice,
 )
-from api.services.payment_allocation import invoice_balance_due
-from api.services.reference_code import next_available_code
+from api.services.payment_allocation import invoice_balance_due, refresh_invoice_from_allocations
+from api.services.reference_code import next_sequential_code
+
+
+class _InvoiceEditRejected(Exception):
+    """Business rejection raised inside a transaction so the block rolls back before the 409.
+
+    A plain ``return`` inside ``transaction.atomic()`` commits, which would persist the
+    half-undone posting state the caller is being told about.
+    """
+
+    def __init__(self, detail: str):
+        super().__init__(detail)
+        self.detail = detail
 
 
 def _serialize_date(d):
@@ -137,6 +155,33 @@ def _decimal(val, default=0):
         return Decimal(str(val))
     except Exception:
         return default
+
+
+INVOICE_POSTED_STATUSES = ("sent", "paid", "partial", "overdue")
+
+
+def _invoice_status_was_posted(status) -> bool:
+    """True when this status recognised revenue (so posting side effects exist)."""
+    return (status or "").strip().lower() in INVOICE_POSTED_STATUSES
+
+
+def _unpost_invoice_if_leaving_posted_state(company_id: int, inv, old_status) -> tuple[bool, str]:
+    """Unwind AUTO-INV-* when an invoice drops out of a posted status.
+
+    ``sync_invoice_gl`` returns early for draft and void, so moving a posted invoice to either
+    used to leave the sale journal, the COGS journal and the customer A/R bump exactly where
+    they were, while the invoice vanished from the A/R subledger and the aging report. GL 1100
+    then disagreed with the customer list by the invoice total, permanently.
+    """
+    new_status = (inv.status or "").strip().lower()
+    if new_status not in ("draft", "void"):
+        return True, ""
+    if not _invoice_status_was_posted(old_status):
+        return True, ""
+    ok, err = assert_invoice_change_allowed(company_id, int(inv.id))
+    if not ok:
+        return False, err
+    return rollback_invoice_posting_effects(company_id, inv, purge_linked_payments=False)
 
 
 def _resolve_shift(company_id: int, shift_session_id) -> ShiftSession | None:
@@ -289,7 +334,7 @@ def invoices_list_or_create(request):
             customer_id=customer_id,
             shift_session=shift,
             station_id=station_id,
-            invoice_number=next_available_code(cid, Invoice, "invoice_number", "INV"),
+            invoice_number=next_sequential_code(cid, Invoice, "invoice_number", "INV"),
             invoice_date=_parse_date(body.get("invoice_date")) or timezone.localdate(),
             due_date=_parse_date(body.get("due_date")),
             status=inv_status or "draft",
@@ -298,40 +343,48 @@ def invoices_list_or_create(request):
             total=_decimal(body.get("total")),
             payment_method=pm,
         )
-        inv.save()
-        for pl, rid in parsed_lines:
-            amount = _decimal(pl.get("amount"), _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0))
-            InvoiceLine.objects.create(
-                invoice=inv,
-                item_id=pl.get("item_id") or None,
-                description=pl.get("description") or "",
-                quantity=_decimal(pl.get("quantity"), 1),
-                unit_price=_decimal(pl.get("unit_price"), 0),
-                amount=amount,
-                revenue_account_id=rid,
-                receipt_station_id=pl.get("receipt_station_id"),
-                aquaculture_pond_id=pl.get("aquaculture_pond_id"),
-                fuel_station_income_category=pl.get("fuel_station_income_category") or "",
-                aquaculture_income_category=pl.get("aquaculture_income_category") or "",
-                tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
-            )
-        if parsed_lines:
-            _refresh_invoice_totals_from_lines(inv)
-        inv.refresh_from_db()
-        inv = (
-            Invoice.objects.filter(id=inv.id)
-            .select_related("customer", "shift_session", "station")
-            .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
-            .first()
-        )
+        # One transaction for the document, its lines and its journals. Without it a
+        # GlPostingError left the invoice committed as "sent" with no journal behind it:
+        # A/R and revenue on the document, nothing in the ledger.
         try:
-            sync_invoice_gl(
-                cid,
-                inv,
-                payment_method=(body.get("payment_method") or "cash"),
-                bank_account_id=body.get("bank_account_id"),
-            )
+            with transaction.atomic():
+                inv.save()
+                for pl, rid in parsed_lines:
+                    amount = _decimal(pl.get("amount"), _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0))
+                    InvoiceLine.objects.create(
+                        invoice=inv,
+                        item_id=pl.get("item_id") or None,
+                        description=pl.get("description") or "",
+                        quantity=_decimal(pl.get("quantity"), 1),
+                        unit_price=_decimal(pl.get("unit_price"), 0),
+                        amount=amount,
+                        revenue_account_id=rid,
+                        receipt_station_id=pl.get("receipt_station_id"),
+                        aquaculture_pond_id=pl.get("aquaculture_pond_id"),
+                        fuel_station_income_category=pl.get("fuel_station_income_category") or "",
+                        aquaculture_income_category=pl.get("aquaculture_income_category") or "",
+                        tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
+                    )
+                if parsed_lines:
+                    _refresh_invoice_totals_from_lines(inv)
+                inv.refresh_from_db()
+                inv = (
+                    Invoice.objects.filter(id=inv.id)
+                    .select_related("customer", "shift_session", "station")
+                    .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
+                    .first()
+                )
+                sync_invoice_gl(
+                    cid,
+                    inv,
+                    payment_method=(body.get("payment_method") or "cash"),
+                    bank_account_id=body.get("bank_account_id"),
+                )
         except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
+        except StockBusinessError as e:
+            # Selling more than is on hand. GlPostingError subclasses this, so it must be
+            # caught after it.
             return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_invoice_to_json(inv, cid), status=201)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -376,6 +429,24 @@ def invoice_detail(request, invoice_id: int):
             walk_err = walkin_ar_invoice_error(new_status or inv.status, inv.customer)
             if walk_err:
                 return JsonResponse({"detail": walk_err}, status=400)
+            target = (new_status or inv.status or "").strip().lower()
+            if target == "void" and (old_status or "").strip().lower() != "void":
+                from api.services.financial_audit import require_mutation_reason, record_financial_audit
+
+                reason, rerr = require_mutation_reason(body)
+                if rerr:
+                    return JsonResponse({"detail": rerr}, status=400)
+                record_financial_audit(
+                    company_id=cid,
+                    action="void",
+                    entity_type="invoice",
+                    entity_id=int(inv.id),
+                    entity_ref=inv.invoice_number or "",
+                    reason=reason or "",
+                    before={"status": old_status, "total": str(inv.total)},
+                    after={"status": "void"},
+                    actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+                )
             inv.status = new_status or inv.status
         if "payment_method" in body:
             inv.payment_method = (body.get("payment_method") or "").strip()[:32]
@@ -393,18 +464,20 @@ def invoice_detail(request, invoice_id: int):
                         status=400,
                     )
                 inv.station_id = sid
-        inv.save()
         line_payload = body.get("lines")
         if line_payload is None and "line_items" in body:
             line_payload = body.get("line_items")
+        # Parse and validate every replacement row BEFORE touching the stored lines. The old
+        # order deleted all lines first and validated inside the create loop, so a bad row in
+        # the middle of the payload returned 400 with the original lines already destroyed and
+        # the posted journal left describing an invoice that no longer had any lines.
+        parsed_rows: list[tuple[dict, int | None]] = []
         if line_payload is not None:
-            inv.lines.all().delete()
             for row in line_payload or []:
                 pl, parse_err = parse_invoice_line_row(cid, row)
                 if parse_err:
                     return parse_err
                 assert pl is not None
-                amount = _decimal(pl.get("amount"), _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0))
                 rid, rerr = parse_optional_chart_account_id(
                     cid,
                     pl.get("revenue_account_id"),
@@ -413,55 +486,94 @@ def invoice_detail(request, invoice_id: int):
                 )
                 if rerr:
                     return JsonResponse({"detail": rerr}, status=400)
-                InvoiceLine.objects.create(
-                    invoice=inv,
-                    item_id=pl.get("item_id") or None,
-                    description=pl.get("description") or "",
-                    quantity=_decimal(pl.get("quantity"), 1),
-                    unit_price=_decimal(pl.get("unit_price"), 0),
-                    amount=amount,
-                    revenue_account_id=rid,
-                    receipt_station_id=pl.get("receipt_station_id"),
-                    aquaculture_pond_id=pl.get("aquaculture_pond_id"),
-                    fuel_station_income_category=pl.get("fuel_station_income_category") or "",
-                    aquaculture_income_category=pl.get("aquaculture_income_category") or "",
-                    tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
-                )
-            _refresh_invoice_totals_from_lines(inv)
-        inv.refresh_from_db()
-        inv = (
-            Invoice.objects.filter(id=inv.id)
-            .select_related("customer", "shift_session", "station")
-            .prefetch_related("lines", "lines__item", "lines__revenue_account", "payment_allocations")
-            .first()
-        )
+                parsed_rows.append((pl, rid))
+
         try:
-            if not material:
-                sync_invoice_gl(
-                    cid,
-                    inv,
-                    old_status=old_status,
-                    payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-                    bank_account_id=body.get("bank_account_id"),
+            with transaction.atomic():
+                if material:
+                    # Reverse the persisted original while its header and lines still
+                    # describe what was posted. Reversing after replacement corrupts AR
+                    # and restores the replacement quantity instead of the original one.
+                    ok_rb, err_rb = rollback_invoice_posting_effects(
+                        cid, inv, purge_linked_payments=False
+                    )
+                    if not ok_rb:
+                        raise _InvoiceEditRejected(err_rb)
+                    inv.stock_relieved = False
+                inv.save()
+                if line_payload is not None:
+                    inv.lines.all().delete()
+                    for pl, rid in parsed_rows:
+                        amount = _decimal(
+                            pl.get("amount"),
+                            _decimal(pl.get("quantity"), 1) * _decimal(pl.get("unit_price"), 0),
+                        )
+                        InvoiceLine.objects.create(
+                            invoice=inv,
+                            item_id=pl.get("item_id") or None,
+                            description=pl.get("description") or "",
+                            quantity=_decimal(pl.get("quantity"), 1),
+                            unit_price=_decimal(pl.get("unit_price"), 0),
+                            amount=amount,
+                            revenue_account_id=rid,
+                            receipt_station_id=pl.get("receipt_station_id"),
+                            aquaculture_pond_id=pl.get("aquaculture_pond_id"),
+                            fuel_station_income_category=pl.get("fuel_station_income_category") or "",
+                            aquaculture_income_category=pl.get("aquaculture_income_category") or "",
+                            tenant_reporting_category_id=pl.get("tenant_reporting_category_id"),
+                        )
+                    _refresh_invoice_totals_from_lines(inv)
+                inv.refresh_from_db()
+                inv = (
+                    Invoice.objects.filter(id=inv.id)
+                    .select_related("customer", "shift_session", "station")
+                    .prefetch_related(
+                        "lines", "lines__item", "lines__revenue_account", "payment_allocations"
+                    )
+                    .first()
                 )
-            else:
-                ok_post, err_post = reconcile_invoice_after_material_edit(
-                    cid,
-                    inv,
-                    old_status=old_status,
-                    payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-                    bank_account_id=body.get("bank_account_id"),
-                )
-                if not ok_post:
-                    return JsonResponse({"detail": err_post}, status=409)
+                if not material:
+                    ok_unpost, err_unpost = _unpost_invoice_if_leaving_posted_state(
+                        cid, inv, old_status
+                    )
+                    if not ok_unpost:
+                        raise _InvoiceEditRejected(err_unpost)
+                    sync_invoice_gl(
+                        cid,
+                        inv,
+                        old_status=old_status,
+                        payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                        bank_account_id=body.get("bank_account_id"),
+                    )
+                else:
+                    sync_invoice_gl(
+                        cid, inv,
+                        old_status=old_status,
+                        payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                        bank_account_id=body.get("bank_account_id"),
+                    )
+                    if PaymentInvoiceAllocation.objects.filter(
+                        invoice_id=inv.id, payment__company_id=cid
+                    ).exists():
+                        refresh_invoice_from_allocations(inv, cid)
+        except _InvoiceEditRejected as e:
+            return JsonResponse({"detail": e.detail}, status=409)
         except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
+        except StockBusinessError as e:
+            # Selling more than is on hand. GlPostingError subclasses this, so it must be
+            # caught after it.
             return JsonResponse({"detail": e.detail}, status=400)
         return JsonResponse(_invoice_to_json(inv, cid))
     if request.method == "DELETE":
-        ok, err = cleanup_invoice_posting_effects(cid, inv)
-        if not ok:
-            return JsonResponse({"detail": err}, status=409)
-        inv.delete()
+        try:
+            with transaction.atomic():
+                ok, err = cleanup_invoice_posting_effects(cid, inv)
+                if not ok:
+                    raise _InvoiceEditRejected(err)
+                inv.delete()
+        except _InvoiceEditRejected as e:
+            return JsonResponse({"detail": e.detail}, status=409)
         return HttpResponse(status=204)
     return JsonResponse({"detail": "Method not allowed"}, status=405)
 
@@ -493,17 +605,31 @@ def invoice_status(request, invoice_id: int):
             return JsonResponse({"detail": walk_err}, status=400)
         old_status = inv.status
         inv.status = new_status or inv.status
-        inv.save()
-        inv.refresh_from_db()
         try:
-            sync_invoice_gl(
-                cid,
-                inv,
-                old_status=old_status,
-                payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
-                bank_account_id=body.get("bank_account_id"),
-            )
+            # Status and journal move together. Committing the status first meant a failed
+            # posting left an invoice reading "sent" with nothing in the ledger behind it.
+            with transaction.atomic():
+                inv.save()
+                inv.refresh_from_db()
+                ok_unpost, err_unpost = _unpost_invoice_if_leaving_posted_state(
+                    cid, inv, old_status
+                )
+                if not ok_unpost:
+                    raise _InvoiceEditRejected(err_unpost)
+                sync_invoice_gl(
+                    cid,
+                    inv,
+                    old_status=old_status,
+                    payment_method=(body.get("payment_method") or inv.payment_method or "cash"),
+                    bank_account_id=body.get("bank_account_id"),
+                )
+        except _InvoiceEditRejected as e:
+            return JsonResponse({"detail": e.detail}, status=409)
         except GlPostingError as e:
+            return JsonResponse({"detail": e.detail}, status=400)
+        except StockBusinessError as e:
+            # Selling more than is on hand. GlPostingError subclasses this, so it must be
+            # caught after it.
             return JsonResponse({"detail": e.detail}, status=400)
     inv = (
         Invoice.objects.filter(id=invoice_id, company_id=cid)

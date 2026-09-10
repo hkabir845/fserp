@@ -12,7 +12,6 @@ from api.models import (
     AquacultureFishPondTransferLine,
     AquacultureFishStockLedger,
     AquaculturePond,
-    AquacultureProductionCycle,
     Company,
 )
 from api.services.aquaculture_biological_asset_service import (

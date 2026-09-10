@@ -38,10 +38,18 @@ def _actor_audit_fields(request):
 
 
 def _user_can_backup(user) -> bool:
-    """Tenant backup/restore requires ``app.backup`` (Admin, Manager, or custom role)."""
+    """Tenant backup download requires ``app.backup`` (Admin, Manager, or custom role)."""
     if user_is_super_admin(user):
         return True
     return has_permission(resolve_user_permissions(user), "app.backup")
+
+
+def _user_can_restore(user) -> bool:
+    """Destructive restore is Admin (or super admin) only — not Manager."""
+    if user_is_super_admin(user):
+        return True
+    role = (getattr(user, "role", None) or "").strip().lower()
+    return role == "admin"
 
 
 def _ensure_tenant_admin_company_access(request, company_id: int) -> bool:
@@ -115,8 +123,10 @@ def company_restore_upload(request):
     Restores into current tenant company id (must match backup).
     """
     user = request.api_user
-    if not _user_can_backup(user):
-        return JsonResponse({"detail": "Only company administrators can restore backups."}, status=403)
+    if not _user_can_restore(user):
+        return JsonResponse(
+            {"detail": "Only company administrators can restore backups."}, status=403
+        )
 
     cid = get_company_id(request)
     err = company_context_error_response(request)

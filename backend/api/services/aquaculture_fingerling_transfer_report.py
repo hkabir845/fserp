@@ -388,8 +388,6 @@ def compute_fingerling_transfer_report(
 
     for tid, lines in sorted(by_transfer.items(), key=lambda x: (x[1][0]["transfer_date"], x[0])):
         first = lines[0]
-        xfer_purchase = _money_q(sum(Decimal(l["purchase_cost"]) for l in lines))
-        xfer_other = _money_q(sum(Decimal(l["other_expenses_cost"]) for l in lines))
         xfer_total = _money_q(sum(Decimal(l["total_cost"]) for l in lines))
         growout_in = xfer_total
         nursing_out = xfer_total

@@ -197,16 +197,8 @@ def station_detail(request, station_id: int):
     if request.method == "DELETE":
         if delete_would_leave_zero_active(request.company_id, s):
             return JsonResponse({"detail": MIN_ONE_ACTIVE_STATION_DETAIL}, status=400)
-        try:
-            s.delete()
-        except ProtectedError:
-            return JsonResponse(
-                {
-                    "detail": "This station cannot be deleted while historical records (for example, inventory transfers) still reference it. "
-                    "Deactivate the station to stop using it, or resolve dependent records in the database if your workflow allows."
-                },
-                status=409,
-            )
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        s.is_active = False
+        s.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse({"detail": "Deactivated", "is_active": False}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)

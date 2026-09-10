@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from django.test import Client
 
-from api.models import AquaculturePond, Customer, Invoice, Item, JournalEntry, JournalEntryLine
+from api.models import AquaculturePond, Invoice, JournalEntry, JournalEntryLine
 from api.services.aquaculture_cost_per_kg import (
     build_pond_cost_per_kg_block,
     vendor_bill_pond_operating_total,
@@ -168,7 +168,7 @@ def test_cashier_pond_feed_sale_uses_shop_hub_not_fuel_station(
 def test_pond_pl_includes_pos_cogs_journal_debits(company_tenant_with_gl):
     from datetime import date
 
-    from api.models import ChartOfAccount, Company
+    from api.models import ChartOfAccount
 
     p = AquaculturePond.objects.create(
         company_id=company_tenant_with_gl.id,

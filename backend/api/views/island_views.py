@@ -100,7 +100,8 @@ def island_detail(request, island_id: int):
         return JsonResponse(_island_to_json(i))
 
     if request.method == "DELETE":
-        i.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        i.is_active = False
+        i.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse({"detail": "Deactivated", "is_active": False}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)

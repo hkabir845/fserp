@@ -23,7 +23,7 @@ class Command(BaseCommand):
             "--email",
             type=str,
             default="",
-            help=f"Profile email for password recovery (default: FSERP_PLATFORM_OWNER_EMAIL or admin@localhost)",
+            help="Profile email for password recovery (default: FSERP_PLATFORM_OWNER_EMAIL or admin@localhost)",
         )
         parser.add_argument("--no-input", action="store_true", help="Use defaults and fail if user exists")
 

@@ -17,7 +17,13 @@ from api.services.auth_refresh_sessions import (
 from api.services.permission_service import user_client_dict
 from api.utils.auth import create_tokens, tenant_company_allows_access
 from api.utils.auth_origin import cookie_refresh_origin_error
-from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
+from api.utils.rate_limit import (
+    account_login_failure_key,
+    auth_rate_limits_enabled,
+    client_ip,
+    rate_limit_count,
+    rate_limit_exceeded,
+)
 
 
 def _set_refresh_cookie(response, token: str):
@@ -108,6 +114,12 @@ def login(request):
     username, password = _parse_login_body(request)
     if not username or not password:
         return JsonResponse({"detail": "username and password required"}, status=400)
+    acct_key = account_login_failure_key(username)
+    if auth_rate_limits_enabled() and rate_limit_count(acct_key) >= 12:
+        return JsonResponse(
+            {"detail": "Too many login attempts for this account. Please try again later."},
+            status=429,
+        )
     user = User.objects.filter(username__iexact=username, is_active=True).select_related(
         "custom_role", "home_station"
     ).first()
@@ -119,6 +131,8 @@ def login(request):
                 {"detail": "Too many login attempts. Please try again later."},
                 status=429,
             )
+        if auth_rate_limits_enabled():
+            rate_limit_exceeded(key=acct_key, limit=12, period_seconds=900)
         return JsonResponse({"detail": "Invalid credentials"}, status=401)
     if not tenant_company_allows_access(user):
         return JsonResponse(

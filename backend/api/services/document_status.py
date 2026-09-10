@@ -53,3 +53,15 @@ def walkin_ar_invoice_error(status, customer) -> str | None:
         "Accounts receivable invoices cannot use the Walk-in customer. "
         "Select a credit / house-account customer, or mark the invoice paid."
     )
+
+
+def walkin_ar_payment_error(customer) -> str | None:
+    """Refuse a receipt against Walk-in: it credits GL 1100 with no customer subledger."""
+    from api.services.gl_posting import _is_walkin_customer
+
+    if customer is None or not _is_walkin_customer(customer):
+        return None
+    return (
+        "Customer receipts cannot use the Walk-in customer. "
+        "Walk-in has no A/R subledger — record a cash sale, or select a house-account customer."
+    )

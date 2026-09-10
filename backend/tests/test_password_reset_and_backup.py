@@ -280,3 +280,37 @@ def test_company_restore_rejects_wrong_confirm(api_client, auth_admin_headers, c
         **auth_admin_headers,
     )
     assert r.status_code == 400
+
+
+def test_manager_cannot_restore_even_with_backup_permission(api_client, company_tenant):
+    from api.services.tenant_backup import backup_bundle_json_bytes
+
+    mgr = User(
+        username="mgr_restore@test.com",
+        email="mgr_restore@test.com",
+        full_name="Mgr Restore",
+        role="manager",
+        is_active=True,
+        company_id=company_tenant.id,
+    )
+    mgr.set_password("AuditTest#99")
+    mgr.save()
+    login = api_client.post(
+        "/api/auth/login/",
+        data=json.dumps({"username": mgr.username, "password": "AuditTest#99"}),
+        content_type="application/json",
+    )
+    assert login.status_code == 200, login.content.decode()
+    token = json.loads(login.content)["access_token"]
+    h = {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+    raw = backup_bundle_json_bytes(company_tenant.id)
+    r = api_client.post(
+        "/api/company/restore/",
+        data={
+            "confirm_replace": RESTORE_CONFIRM_PHRASE,
+            "file": SimpleUploadedFile("backup.json", raw, content_type="application/json"),
+        },
+        **h,
+    )
+    assert r.status_code == 403, r.content.decode()
+    assert "administrator" in r.content.decode().lower()

@@ -1,4 +1,9 @@
-"""Build account-style activity lists from posted journal lines (chart account)."""
+"""Build account-style activity lists from posted journal lines (chart account).
+Only ``is_posted=True`` entries are counted, everywhere in this module. Manual journals
+start life unposted with an explicit post/unpost workflow, and every statement in
+``api.services.reporting`` filters on it; a drill-down that included drafts could not be
+reconciled to the trial balance or balance sheet it was opened from.
+"""
 from __future__ import annotations
 
 import re
@@ -41,6 +46,7 @@ def _net_movement_before_date(
 ) -> Decimal:
     """Sum(debit - credit) for posted lines on this account strictly before ``before_date``."""
     qs = JournalEntryLine.objects.filter(
+        journal_entry__is_posted=True,
         account_id=account_id,
         journal_entry__entry_date__lt=before_date,
     )
@@ -53,7 +59,9 @@ def _net_movement_before_date(
 
 def journal_net_movement(account_id: int) -> Decimal:
     """Sum(debit - credit) for all journal lines on this chart account (lifetime)."""
-    r = JournalEntryLine.objects.filter(account_id=account_id).aggregate(net=Sum(_DIFF))
+    r = JournalEntryLine.objects.filter(
+        account_id=account_id, journal_entry__is_posted=True
+    ).aggregate(net=Sum(_DIFF))
     v = r.get("net")
     return v if v is not None else Decimal("0")
 
@@ -64,7 +72,9 @@ def journal_net_movement_map(account_ids: Iterable[int]) -> Dict[int, Decimal]:
     if not ids:
         return {}
     rows = (
-        JournalEntryLine.objects.filter(account_id__in=ids)
+        JournalEntryLine.objects.filter(
+            account_id__in=ids, journal_entry__is_posted=True
+        )
         .values("account_id")
         .annotate(net=Sum(_DIFF))
     )
@@ -115,7 +125,9 @@ def build_statement_transactions(
         else:
             opening_for_range = ob
 
-    lines_qs = JournalEntryLine.objects.filter(account_id=account_id).select_related(
+    lines_qs = JournalEntryLine.objects.filter(
+        account_id=account_id, journal_entry__is_posted=True
+    ).select_related(
         "journal_entry", "station", "aquaculture_pond"
     )
     if station_id is not None:

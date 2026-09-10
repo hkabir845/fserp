@@ -15,7 +15,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from api.models import Company, ItemPondStock
+from api.models import ItemPondStock
 from api.services.station_stock import refresh_item_quantity_on_hand
 
 

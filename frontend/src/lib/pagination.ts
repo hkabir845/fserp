@@ -30,8 +30,26 @@ export function unwrapReferenceList<T>(data: unknown): T[] {
 
 export const OFFSET_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const
 
-/** Max rows for dropdown/reference fetches (vendors, customers, items). */
-export const REFERENCE_FETCH_LIMIT = 500
+/** Max rows for one-shot reference fetches when the UI has no typeahead yet. */
+export const REFERENCE_FETCH_LIMIT = 200
+
+/**
+ * Prefer this for customer/vendor/item pickers: server-side `q` search + paged results
+ * instead of loading the first N rows only.
+ */
+export function referenceSearchParams(opts: {
+  q?: string
+  pageSize?: number
+  page?: number
+  extra?: Record<string, string | number | boolean | undefined | null>
+}): Record<string, string> {
+  return offsetListParams({
+    page: opts.page ?? 1,
+    pageSize: opts.pageSize ?? 50,
+    q: opts.q,
+    extra: opts.extra,
+  })
+}
 
 export function offsetListParams(opts: {
   page: number

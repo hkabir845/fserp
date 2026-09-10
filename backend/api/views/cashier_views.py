@@ -613,9 +613,9 @@ def _cashier_pos_unified(
                     amount=line_amount,
                 )
                 if meter:
-                    Meter.objects.filter(pk=meter.pk).update(
-                        current_reading=F("current_reading") + qty
-                    )
+                    from api.services.meter_reading import advance_meter_by_quantity
+
+                    advance_meter_by_quantity(int(meter.pk), qty)
                 if tank:
                     Tank.objects.filter(pk=tank.pk).update(
                         current_stock=F("current_stock") - qty

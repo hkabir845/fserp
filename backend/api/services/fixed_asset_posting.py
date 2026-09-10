@@ -176,6 +176,8 @@ def reverse_fixed_asset_depreciation(company_id: int, run: FixedAssetDepreciatio
     asset = run.fixed_asset
     if asset.company_id != company_id or run.reversed_at:
         return False
+    if asset.status == FixedAsset.STATUS_DISPOSED:
+        return False
     if not run.journal_entry_id:
         return False
     amt = run.amount or Decimal("0")
@@ -210,9 +212,26 @@ def reverse_fixed_asset_depreciation(company_id: int, run: FixedAssetDepreciatio
             reversal_journal_entry_id=je.id,
         )
         new_accum = max((asset.accumulated_depreciation or Decimal("0")) - amt, Decimal("0"))
+        latest = (
+            FixedAssetDepreciationRun.objects.filter(
+                fixed_asset_id=asset.pk, reversed_at__isnull=True
+            )
+            .exclude(pk=run.pk)
+            .order_by("-run_date", "-id")
+            .first()
+        )
+        last_date = latest.run_date if latest else None
+        salvage = asset.salvage_value or Decimal("0")
+        cost = asset.acquisition_cost or Decimal("0")
+        book = cost - new_accum
+        if book <= salvage + Decimal("0.005"):
+            status = FixedAsset.STATUS_FULLY_DEPRECIATED
+        else:
+            status = FixedAsset.STATUS_ACTIVE
         FixedAsset.objects.filter(pk=asset.pk).update(
             accumulated_depreciation=new_accum,
-            status=FixedAsset.STATUS_ACTIVE,
+            last_depreciation_date=last_date,
+            status=status,
         )
     return True
 
@@ -230,11 +249,13 @@ def post_fixed_asset_disposal(
     """
     Dr accumulated depreciation (+ proceeds + loss) / Cr asset (+ gain).
     """
+    from api.services.fixed_asset_schedule import book_value as register_book_value
+
     if asset.company_id != company_id or asset.disposal_journal_entry_id:
         return False
     cost = asset.acquisition_cost or Decimal("0")
     accum_amt = asset.accumulated_depreciation or Decimal("0")
-    book = cost - accum_amt
+    book = register_book_value(asset)
     proceeds = proceeds or Decimal("0")
     gain_loss = proceeds - book
 
@@ -290,5 +311,7 @@ def post_fixed_asset_disposal(
             status=FixedAsset.STATUS_DISPOSED,
             disposal_date=disposal_date,
             disposal_journal_entry_id=je.id,
+            acquisition_cost=Decimal("0"),
+            accumulated_depreciation=Decimal("0"),
         )
     return True

@@ -86,7 +86,9 @@ def compute_biomass_sample_valuation_dict(
         Decimal(str(bio_ref.get("biological_production_cost_total") or bio_ref.get("biological_cost_total") or "0"))
     )
 
-    start, end = pl_window_for_transfer_date(sample_date, production_cycle)
+    start, end = pl_window_for_transfer_date(
+        sample_date, production_cycle, company_id=company_id, pond_id=pond_id
+    )
     cycle_filter_id = production_cycle.id if production_cycle is not None else None
     pl = compute_aquaculture_pl_summary_dict(
         company_id,

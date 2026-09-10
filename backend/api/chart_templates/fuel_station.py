@@ -100,6 +100,10 @@ ERP_AUTOMATION_ACCOUNT_GUIDE: List[Dict[str, str]] = [
         "purpose": "Card / acquirer clearing: debit side for card POS sales when payment_method is card.",
     },
     {
+        "account_code": "1170",
+        "purpose": "Input VAT on vendor bills (VAT receivable). Nets against 2100 on the VAT return.",
+    },
+    {
         "account_code": "1200",
         "purpose": "Fuel (wet-stock) inventory: credited when COGS posts for fuel lines with item cost.",
     },
@@ -113,7 +117,7 @@ ERP_AUTOMATION_ACCOUNT_GUIDE: List[Dict[str, str]] = [
     },
     {
         "account_code": "2100",
-        "purpose": "Collected VAT / sales tax on invoices and bills (output and simplified input side on bills).",
+        "purpose": "Collected VAT / sales tax on invoices (output). Input VAT on bills posts to 1170.",
     },
     {
         "account_code": "4100",
@@ -235,6 +239,7 @@ FUEL_STATION_COA_ROWS: List[Dict[str, Any]] = [
         ("full",),
     ),
     _row("1150", "Employee Advances & Loans", "asset", "other_current_asset", "Staff advances recoverable via payroll."),
+    _row("1170", "VAT Input / VAT Receivable", "asset", "other_current_asset", "Input VAT on vendor bills, recoverable against 2100 on the VAT return."),
     # —— Assets: inventory ——
     _row("1200", "Inventory — Fuel (Wet Stock at Cost)", "asset", "inventory", "Tank inventory valued at cost (FIFO/weighted average per policy)."),
     _row("1210", "Inventory — Lubricants & Fluids", "asset", "inventory", "Oils, DEF, additives on hand.", ("full",)),

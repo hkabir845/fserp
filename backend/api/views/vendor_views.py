@@ -8,11 +8,12 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
+from api.services.party_opening_gl import apply_vendor_opening_gl
 from api.views.common import (
     parse_json_body,
     query_include_inactive,
     query_include_internal,
-    require_company_id,,
+    require_company_id,
     require_permission,
 )
 from api.models import Vendor
@@ -237,6 +238,13 @@ def vendors_list_or_create(request):
         if ferr:
             return JsonResponse({"detail": ferr}, status=400)
         v.save()
+        # An opening balance seeds the A/P subledger, so it needs its journal or GL 2000 will
+        # never match the vendor list. apply_vendor_opening_gl existed but was only wired into
+        # the aquaculture go-live screen; ordinary vendor entry posted nothing.
+        gl_err = apply_vendor_opening_gl(request.company_id, v)
+        if gl_err:
+            v.delete()
+            return JsonResponse({"detail": gl_err}, status=400)
         _, rerr = upsert_rate_card_from_body(v, body)
         if rerr:
             return JsonResponse({"detail": rerr}, status=400)
@@ -335,6 +343,10 @@ def vendor_detail(request, vendor_id: int):
         _, rerr = upsert_rate_card_from_body(v, body)
         if rerr:
             return JsonResponse({"detail": rerr}, status=400)
+        if "opening_balance" in body or "opening_balance_date" in body:
+            gl_err = apply_vendor_opening_gl(request.company_id, v)
+            if gl_err:
+                return JsonResponse({"detail": gl_err}, status=400)
         if "opening_balance" in body and "current_balance" not in body:
             from api.services.party_balance_sync import refresh_vendor_balance
 

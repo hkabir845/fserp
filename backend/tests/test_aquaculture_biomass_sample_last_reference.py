@@ -9,7 +9,6 @@ import pytest
 
 from api.models import (
     AquacultureBiomassSample,
-    AquacultureDataBankPondClose,
     AquaculturePond,
     AquacultureProductionCycle,
     Company,

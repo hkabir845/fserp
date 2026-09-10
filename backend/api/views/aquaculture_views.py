@@ -132,7 +132,12 @@ from api.services.aquaculture_production_cycle_service import (
     next_automatic_cycle_code,
     refresh_pond_batch_integrity,
 )
-from api.services.reference_code import assign_string_code_if_empty, next_available_code
+from api.services.accounting_period_lock import assert_period_open, period_lock_error
+from api.services.reference_code import (
+    assign_string_code_if_empty,
+    next_available_code,
+    save_with_sequential_code,
+)
 from api.services.aquaculture_cutover import (
     get_stored_cutover_date,
     is_go_live_fish_opening,
@@ -4982,6 +4987,15 @@ def aquaculture_pond_profit_transfers(request):
     else:
         do_post = bool(do_post)
 
+    # Check the closed-period lock before anything is written, so the refusal is a clean 400
+    # rather than an exception escaping the transaction below as a 500. This path builds and
+    # posts its journal by hand, so it does not inherit the guard in
+    # gl_posting._create_posted_entry.
+    if do_post:
+        lock_err = period_lock_error(cid, td, action="post")
+        if lock_err:
+            return JsonResponse({"detail": lock_err, "code": "period_locked"}, status=400)
+
     pond_label = (pond.name or "").strip() or f"Pond #{pond.id}"
     cycle_bit = f" ({cycle_obj.name})" if cycle_obj else ""
     desc = (body.get("description") or "").strip()
@@ -4995,14 +5009,21 @@ def aquaculture_pond_profit_transfers(request):
             # Numbering off a row count reuses a number as soon as any journal is deleted, which
             # collides with an existing entry and breaks the entry_number-keyed idempotency
             # checks in gl_posting. Use the same free-suffix allocator the journals API uses.
-            entry_number=next_available_code(cid, JournalEntry, "entry_number", "JE"),
             entry_date=td,
             description=desc,
             station_id=None,
             is_posted=False,
             posted_at=None,
         )
-        je.save()
+        # Retry on the numbering race: max(suffix)+1 then insert is not atomic, and the unique
+        # constraint on (company, entry_number) correctly refuses a duplicate.
+        save_with_sequential_code(
+            je,
+            company_id=cid,
+            model=JournalEntry,
+            field="entry_number",
+            prefix="JE",
+        )
         line_desc = (memo or desc)[:300]
         JournalEntryLine.objects.create(
             journal_entry=je,
@@ -5033,6 +5054,10 @@ def aquaculture_pond_profit_transfers(request):
         )
         xfer.save()
         if do_post:
+            # The period lock lives in gl_posting._create_posted_entry, and this path builds
+            # and posts its journal by hand — so a backdated profit transfer used to restate
+            # closed books with nothing to stop it. Enforce the same rule here.
+            assert_period_open(cid, td, action="post")
             je.is_posted = True
             je.posted_at = django_timezone.now()
             je.save()

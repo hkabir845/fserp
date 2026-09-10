@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 
 import pytest
 
-from api.models import AquaculturePond, Bill, ChartOfAccount, Company, JournalEntry, Vendor
+from api.models import AquaculturePond, Bill, Company, JournalEntry, Vendor
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 
 

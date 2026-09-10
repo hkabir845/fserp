@@ -127,6 +127,8 @@ urlpatterns = [
     path("auth/login/json/", auth_views.login),
     path("auth/refresh/", auth_views.refresh),
     path("auth/refresh", auth_views.refresh),
+    path("auth/logout/", auth_views.logout),
+    path("auth/logout", auth_views.logout),
     path("auth/forgot-password/", password_views.forgot_password),
     path("auth/reset-password/", password_views.reset_password),
     path("auth/change-password/", password_views.change_password),
@@ -548,6 +550,8 @@ urlpatterns = [
     ),
     path("payroll/<int:payroll_id>/from-one-employee/", hr_views.payroll_from_one_employee),
     path("payroll/<int:payroll_id>/post-to-books/", hr_views.payroll_post_to_books),
+    path("payroll/<int:payroll_id>/settle-net-pay/", hr_views.payroll_settle_net_pay),
+    path("payroll/<int:payroll_id>/remit-deductions/", hr_views.payroll_remit_deductions),
     path("payroll/<int:payroll_id>/", hr_views.payroll_detail),
     # Aquaculture (ponds, expenses, sales, sampling, P&L — requires company.aquaculture_enabled)
     path("aquaculture/expense-categories/", aquaculture_views.aquaculture_expense_categories),

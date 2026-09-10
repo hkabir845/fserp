@@ -6,13 +6,13 @@ from django.dispatch import receiver
 
 @receiver(pre_delete, sender="api.JournalEntry")
 def release_payroll_when_salary_journal_deleted(sender, instance, **kwargs):
-    """Revert linked payroll run to draft when AUTO-PAYROLL journal is deleted."""
+    """Revert linked payroll run when AUTO-PAYROLL journals are deleted."""
     en = (getattr(instance, "entry_number", None) or "").strip()
     if not en.startswith("AUTO-PAYROLL-"):
         return
-    from api.services.gl_posting import release_payroll_salary_journal
+    from api.services.gl_posting import on_payroll_auto_journal_deleted
 
-    release_payroll_salary_journal(
+    on_payroll_auto_journal_deleted(
         int(instance.company_id),
         journal_entry_id=int(instance.id),
         entry_number=en,

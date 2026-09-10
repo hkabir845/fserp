@@ -310,6 +310,13 @@ def test_cash_flow_movement_reconciles_opening_to_closing(books):
     cs = report_cash_flow(books["cid"], PERIOD_START, PERIOD_END)["cash_summary"]
     assert abs((cs["beginning_cash"] + cs["net_change_in_cash"]) - cs["ending_cash"]) <= CENT
     assert abs((cs["total_deposits"] - cs["total_withdrawals"]) - cs["net_change_in_cash"]) <= CENT
+    sections = (
+        cs["cash_from_operating"]
+        + cs["cash_from_investing"]
+        + cs["cash_from_financing"]
+        + cs["cash_transfers"]
+    )
+    assert abs((cs["beginning_cash"] + sections) - cs["ending_cash"]) <= CENT
 
 
 @pytest.mark.django_db

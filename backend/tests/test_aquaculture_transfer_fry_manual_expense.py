@@ -17,10 +17,8 @@ from api.models import (
     JournalEntry,
     JournalEntryLine,
 )
-from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
 from api.services.gl_posting import post_aquaculture_manual_expense_journal
-from tests.conftest import seed_min_gl_accounts
 from tests.test_aquaculture_fish_bioasset_gl import _enable_aquaculture_with_coa
 
 

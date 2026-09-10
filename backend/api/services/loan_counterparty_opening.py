@@ -25,6 +25,13 @@ def _coa(company_id: int, code: str) -> ChartOfAccount | None:
 
 
 def resolve_opening_balance_equity(company_id: int) -> ChartOfAccount | None:
+    """The 3200 offset for every opening balance, provisioned if the tenant has no chart yet.
+
+    Openings are entered during setup, which is exactly when the chart of accounts may still be
+    empty. Requiring 3200 to pre-exist meant an opening balance either failed to save or (worse,
+    before this posted at all) moved the subledger with nothing behind it in the ledger.
+    Provisioning matches how A/P, A/R, cash and revenue are already handled in gl_posting.
+    """
     a = (
         ChartOfAccount.objects.filter(
             company_id=company_id, is_active=True, account_sub_type="opening_balance_equity"
@@ -34,7 +41,18 @@ def resolve_opening_balance_equity(company_id: int) -> ChartOfAccount | None:
     )
     if a:
         return a
-    return _coa(company_id, CODE_OPENING_BALANCE_EQUITY)
+    existing = _coa(company_id, CODE_OPENING_BALANCE_EQUITY)
+    if existing:
+        return existing
+    from api.services.gl_posting import _provision_chart_account
+
+    return _provision_chart_account(
+        company_id,
+        CODE_OPENING_BALANCE_EQUITY,
+        "Opening Balance Equity",
+        "equity",
+        "opening_balance_equity",
+    )
 
 
 def resolve_default_loan_principal(company_id: int, receivable: bool) -> ChartOfAccount | None:

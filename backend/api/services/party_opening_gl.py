@@ -7,7 +7,14 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 
 from api.models import Customer, Employee, JournalEntry, Vendor
-from api.services.gl_posting import CODE_AP, CODE_AR, CODE_SALARY_PAYABLE, _coa, _create_posted_entry
+from api.services.gl_posting import (
+    CODE_AP,
+    CODE_AR,
+    CODE_SALARY_PAYABLE,
+    _coa,
+    _create_posted_entry,
+    _ensure_core_posting_account,
+)
 from api.services.loan_counterparty_opening import resolve_opening_balance_equity
 
 logger = logging.getLogger(__name__)
@@ -49,6 +56,35 @@ def _remove_opening_gl(company_id: int, model, pk: int, entry_number: str) -> No
     model.objects.filter(pk=pk).update(opening_balance_journal_id=None)
 
 
+def _opening_journal_is_current(company_id: int, entity, entry_number: str) -> bool:
+    """True when the posted opening journal still matches the entity's opening amount and date.
+
+    Returning early on "a journal exists" meant that correcting an opening balance changed the
+    subledger while the journal kept the old figure forever, so the control account silently
+    stopped matching the party list. When it no longer matches, the caller re-posts.
+    """
+    je = (
+        JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number)
+        .prefetch_related("lines")
+        .first()
+    )
+    if not je:
+        return False
+    if je.entry_date != entity.opening_balance_date:
+        return False
+    want = abs(entity.opening_balance or Decimal("0")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    posted = max(
+        (
+            (ln.debit or Decimal("0")) + (ln.credit or Decimal("0"))
+            for ln in je.lines.all()
+        ),
+        default=Decimal("0"),
+    )
+    return posted == want
+
+
 def post_customer_opening_gl(company_id: int, cust: Customer, *, post_to_gl: bool = True) -> bool:
     """Positive A/R: Dr 1100, Cr opening equity. Negative: Dr equity, Cr 1100."""
     entry_number = f"AUTO-CUST-OB-{cust.id}"
@@ -62,10 +98,12 @@ def post_customer_opening_gl(company_id: int, cust: Customer, *, post_to_gl: boo
         return False
     if not post_to_gl:
         return True
-    if cust.opening_balance_journal_id:
+    if cust.opening_balance_journal_id and _opening_journal_is_current(
+        company_id, cust, entry_number
+    ):
         return True
 
-    ar = _coa(company_id, CODE_AR)
+    ar = _ensure_core_posting_account(company_id, CODE_AR)
     equity = resolve_opening_balance_equity(company_id)
     if not ar or not equity:
         logger.warning(
@@ -108,10 +146,12 @@ def post_vendor_opening_gl(company_id: int, vend: Vendor, *, post_to_gl: bool = 
         return False
     if not post_to_gl:
         return True
-    if vend.opening_balance_journal_id:
+    if vend.opening_balance_journal_id and _opening_journal_is_current(
+        company_id, vend, entry_number
+    ):
         return True
 
-    ap = _coa(company_id, CODE_AP)
+    ap = _ensure_core_posting_account(company_id, CODE_AP)
     equity = resolve_opening_balance_equity(company_id)
     if not ap or not equity:
         logger.warning(
@@ -184,7 +224,9 @@ def post_employee_opening_gl(company_id: int, emp: Employee, *, post_to_gl: bool
         return False
     if not post_to_gl:
         return True
-    if emp.opening_balance_journal_id:
+    if emp.opening_balance_journal_id and _opening_journal_is_current(
+        company_id, emp, entry_number
+    ):
         return True
 
     payable = _coa(company_id, CODE_SALARY_PAYABLE)

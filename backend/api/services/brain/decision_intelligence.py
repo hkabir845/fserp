@@ -154,7 +154,6 @@ def build_decision_brief(
     income = _d(fin.get("income"))
     expenses = _d(fin.get("expenses"))
     net = _d(fin.get("net_income"))
-    cogs = _d(fin.get("cost_of_goods_sold"))
     revenue = income  # P&L income as revenue proxy
 
     sales_mtd = snapshot.get("sales_mtd") or {}

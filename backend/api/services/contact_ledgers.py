@@ -140,7 +140,7 @@ def _build_customer_ledger_rows(company_id: int, customer: Customer) -> list[_Ro
 
     invoices = list(
         Invoice.objects.filter(company_id=company_id, customer_id=customer.id)
-        .exclude(status="draft")
+        .exclude(status__in=("draft", "void"))
         .order_by("invoice_date", "id")
     )
     ar_invoice_ids: list[int] = []
@@ -344,7 +344,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
 
     for bill in (
         Bill.objects.filter(company_id=company_id, vendor_id=vendor.id)
-        .exclude(status="draft")
+        .exclude(status__in=("draft", "void"))
         .order_by("bill_date", "id")
     ):
         t = _d(bill.total)

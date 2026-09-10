@@ -601,6 +601,11 @@ def company_detail(request, company_id: int):
         return JsonResponse({"detail": "Company not found"}, status=404)
 
     if request.method == "GET":
+        user = getattr(request, "api_user", None) or get_user_from_request(request)
+        if not user:
+            return JsonResponse({"detail": "Authentication required"}, status=401)
+        if not user_is_super_admin(user) and getattr(user, "company_id", None) != company_id:
+            return JsonResponse({"detail": "Permission denied"}, status=403)
         payload = {**_company_to_json(company), **_company_station_api_context(request, company)}
         _enrich_company_group_context(payload, company, getattr(request, "api_user", None))
         return JsonResponse(payload)
@@ -618,6 +623,24 @@ def company_detail(request, company_id: int):
             return JsonResponse({"detail": "Invalid JSON"}, status=400)
         if not isinstance(body, dict):
             body = {}
+        platform_only_fields = {
+            "is_active",
+            "billing_plan_code",
+            "payment_type",
+            "payment_start_date",
+            "payment_end_date",
+            "payment_amount",
+            "books_locked_through",
+        }
+        forbidden = sorted(platform_only_fields.intersection(body))
+        if forbidden and not is_super:
+            return JsonResponse(
+                {
+                    "detail": "Only a platform administrator may change: "
+                    + ", ".join(forbidden)
+                },
+                status=403,
+            )
         if "company_code" in body:
             return JsonResponse(
                 {"detail": "company_code is assigned automatically when the company is created and cannot be changed."},

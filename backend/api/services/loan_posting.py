@@ -11,7 +11,6 @@ from django.utils import timezone
 from api.models import ChartOfAccount, Loan, LoanDisbursement, LoanInterestAccrual, LoanRepayment, Station
 from api.services.loan_islamic import loan_uses_islamic_terminology
 from api.services.entity_gl_scoping import validate_loan_interest_entity_tags_for_gl
-from api.exceptions import GlPostingError
 from api.services.gl_posting import _create_posted_entry
 
 logger = logging.getLogger(__name__)
@@ -30,6 +29,33 @@ def _coa_label(acc: ChartOfAccount | None) -> str:
     if code and name:
         return f"{code} — {name}"[:200]
     return (code or name)[:200]
+
+
+def unsettled_accrued_interest(loan: Loan, *, exclude_repayment_id: int | None = None) -> Decimal:
+    """Accrued interest posted to the accrual account that no repayment has cleared yet.
+
+    Accruing interest posts Dr interest expense / Cr accrued interest payable. When the
+    payment then arrives, the expense has already been recognised: the payment settles the
+    *liability*, it is not a second expense. Debiting the interest account again would
+    recognise the same interest twice and leave the accrual balance growing forever.
+
+    Derived rather than stored, so no migration and no state to fall out of step: total
+    unreversed accruals for this loan, less interest already paid on it.
+    """
+    accrued = Decimal("0")
+    for a in LoanInterestAccrual.objects.filter(loan_id=loan.id, reversed_at__isnull=True).only(
+        "amount"
+    ):
+        accrued += a.amount or Decimal("0")
+    if accrued <= 0:
+        return Decimal("0")
+    paid_qs = LoanRepayment.objects.filter(loan_id=loan.id, journal_entry__isnull=False)
+    if exclude_repayment_id is not None:
+        paid_qs = paid_qs.exclude(pk=exclude_repayment_id)
+    paid = Decimal("0")
+    for r in paid_qs.only("interest_amount"):
+        paid += r.interest_amount or Decimal("0")
+    return max(Decimal("0"), accrued - paid)
 
 
 def _loan_gl_station_id(loan: Loan) -> Optional[int]:
@@ -130,8 +156,14 @@ def post_loan_repayment(company_id: int, r: LoanRepayment) -> bool:
     interest_acc = loan.interest_account
     if not _coa_ok(company_id, settlement) or not _coa_ok(company_id, principal):
         return False
-    if i > 0 and not _coa_ok(company_id, interest_acc):
-        logger.warning("loan repayment %s: interest > 0 but no interest_account", r.id)
+    if (
+        i > 0
+        and not _coa_ok(company_id, interest_acc)
+        and not _coa_ok(company_id, loan.interest_accrual_account)
+    ):
+        logger.warning(
+            "loan repayment %s: interest > 0 but no interest_account or accrual account", r.id
+        )
         return False
     entry_number = f"AUTO-LOAN-PMT-{r.id}"
     base = (r.reference or r.memo or loan.loan_no or "").strip()
@@ -165,19 +197,38 @@ def post_loan_repayment(company_id: int, r: LoanRepayment) -> bool:
     )[:280]
     if i > 0 and interest_acc:
         validate_loan_interest_entity_tags_for_gl(loan, company_id)
+    # Interest already accrued was expensed when it was accrued, so paying it settles the
+    # accrued-interest account, not the P&L account. Only interest beyond the accrued balance
+    # is a fresh expense (the ordinary case for a loan that never used the accrual feature).
+    accrual_acc = loan.interest_accrual_account
+    i_settle = Decimal("0")
+    i_expense = i
+    if i > 0 and _coa_ok(company_id, accrual_acc):
+        i_settle = min(i, unsettled_accrued_interest(loan, exclude_repayment_id=r.id))
+        i_expense = i - i_settle
+    memo_settle_accr = (
+        (f"Accrued profit settled · {base}" if base else "Accrued profit settled")
+        if isl
+        else (f"Accrued interest settled · {base}" if base else "Accrued interest settled")
+    )[:280]
+
     lines: list = []
     if loan.direction == Loan.DIRECTION_BORROWED:
         if p > 0:
             lines.append((principal, p, Decimal("0"), memo_prin))
-        if i > 0 and interest_acc:
-            lines.append((interest_acc, i, Decimal("0"), memo_int))
+        if i_settle > 0:
+            lines.append((accrual_acc, i_settle, Decimal("0"), memo_settle_accr))
+        if i_expense > 0 and interest_acc:
+            lines.append((interest_acc, i_expense, Decimal("0"), memo_int))
         lines.append((settlement, Decimal("0"), total, memo_settle))
     else:
         lines.append((settlement, total, Decimal("0"), memo_settle))
         if p > 0:
             lines.append((principal, Decimal("0"), p, memo_prin))
-        if i > 0 and interest_acc:
-            lines.append((interest_acc, Decimal("0"), i, memo_int))
+        if i_settle > 0:
+            lines.append((accrual_acc, Decimal("0"), i_settle, memo_settle_accr))
+        if i_expense > 0 and interest_acc:
+            lines.append((interest_acc, Decimal("0"), i_expense, memo_int))
     gst = _loan_gl_station_id(loan)
     je = _create_posted_entry(
         company_id,

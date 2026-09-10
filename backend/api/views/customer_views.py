@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from api.services.permission_service import normalize_role_key
 from api.utils.auth import auth_required, user_is_super_admin
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
+from api.services.party_opening_gl import apply_customer_opening_gl
 from api.views.common import (
     parse_json_body,
     query_include_inactive,
@@ -222,6 +223,13 @@ def customers_list(request):
             customer_number=cnum or "",
         )
         c.save()
+        # An opening balance seeds the A/R subledger, so it needs its journal or GL 1100 will
+        # never match the customer list. apply_customer_opening_gl existed but was only wired
+        # into the aquaculture go-live screen; ordinary customer entry posted nothing.
+        gl_err = apply_customer_opening_gl(request.company_id, c)
+        if gl_err:
+            c.delete()
+            return JsonResponse({"detail": gl_err}, status=400)
         if not c.customer_number:
             assigned, aerr = assign_string_code_if_empty(
                 request.company_id, Customer, "customer_number", "CUST", c.pk, None, None
@@ -334,6 +342,10 @@ def customer_detail(request, customer_id: int):
                 return JsonResponse({"detail": derr}, status=400)
             c.default_station_id = dst_id
         c.save()
+        if "opening_balance" in body or "opening_balance_date" in body:
+            gl_err = apply_customer_opening_gl(request.company_id, c)
+            if gl_err:
+                return JsonResponse({"detail": gl_err}, status=400)
         if "opening_balance" in body and "current_balance" not in body:
             from api.services.party_balance_sync import refresh_customer_balance
 

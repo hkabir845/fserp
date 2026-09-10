@@ -1,7 +1,6 @@
 """Per-entity line amounts on vendor bills — for list scoped totals and drill-down."""
 from __future__ import annotations
 
-from collections import defaultdict
 from decimal import Decimal
 from typing import Any
 

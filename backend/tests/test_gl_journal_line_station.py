@@ -66,6 +66,11 @@ def test_invoice_sale_and_cogs_journals_tag_station(company_tenant):
         unit_price=Decimal("100"),
         amount=Decimal("100"),
     )
+    # A costed inventory item has to be in stock to be sold: the sale relieves the inventory
+    # asset, so the goods have to be there to relieve.
+    from api.services.station_stock import set_station_stock
+
+    set_station_stock(company_tenant.id, st.id, item.id, Decimal("10"))
     sync_invoice_gl(company_tenant.id, inv)
 
     sale = JournalEntry.objects.filter(

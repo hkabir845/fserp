@@ -306,6 +306,23 @@ def _stocked_item_requires_cost(item: Item, qty, cost) -> bool:
     return True
 
 
+def _item_stock_already_capitalized(company_id: int, item: Item) -> bool:
+    """True when this item's on-hand was already debited to inventory by a posted document.
+
+    ``opening_balance_journal_id`` alone is not a sufficient guard. An item created with zero
+    stock never gets an opening-balance journal, so once vendor bills stock it (Dr inventory /
+    Cr A/P) the next unrelated edit — a rename, a selling-price change — would treat the whole
+    received quantity as *opening* stock and post Dr inventory / Cr Opening Balance Equity for
+    it a second time, overstating both the inventory asset and equity by the full stock value.
+    Received stock is already in the ledger, so there is nothing left to capitalize.
+    """
+    return BillLine.objects.filter(
+        item_id=item.id,
+        bill__company_id=company_id,
+        bill__stock_receipt_applied=True,
+    ).exists()
+
+
 def _capitalize_opening_stock_on_update(company_id: int, item: Item) -> None:
     """Post opening-stock G/L for an inventory item that was never capitalized at create time.
 
@@ -320,6 +337,8 @@ def _capitalize_opening_stock_on_update(company_id: int, item: Item) -> None:
     if not item_tracks_physical_stock(item):
         return
     if (getattr(item, "pos_category", None) or "").strip().lower() == "fish":
+        return
+    if _item_stock_already_capitalized(company_id, item):
         return
     qty = item.quantity_on_hand or Decimal("0")
     cost = item.cost or Decimal("0")
@@ -903,6 +922,18 @@ def item_detail(request, item_id: int):
                 return JsonResponse({"detail": "Invalid quantity_on_hand"}, status=400)
             if q < 0:
                 return JsonResponse({"detail": "quantity_on_hand cannot be negative"}, status=400)
+            prior_qoh = _effective_quantity_on_hand(i) or Decimal("0")
+            if abs(q - prior_qoh) > Decimal("0.0001"):
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "On-hand quantity cannot be changed from the item card. "
+                            "Use Inventory Adjustments (shop stock) or Tank Dips (fuel) so the "
+                            "change posts to the ledger."
+                        )
+                    },
+                    status=400,
+                )
             tank_qs = Tank.objects.filter(
                 product_id=i.pk, company_id=i.company_id, is_active=True
             ).order_by("id")
@@ -943,9 +974,15 @@ def item_detail(request, item_id: int):
                                 {"detail": "Unknown station_id for this company"}, status=404
                             )
                 if _body_flag(body, "move_all_shop_stock"):
-                    move_shop_stock_to_station(i.company_id, target_sid, i.pk, q)
+                    try:
+                        move_shop_stock_to_station(i.company_id, target_sid, i.pk, q)
+                    except ValueError as e:
+                        return JsonResponse({"detail": str(e)}, status=400)
                 else:
-                    set_station_stock(i.company_id, target_sid, i.pk, q)
+                    try:
+                        set_station_stock(i.company_id, target_sid, i.pk, q)
+                    except ValueError as e:
+                        return JsonResponse({"detail": str(e)}, status=400)
                 i.refresh_from_db()
             elif not tanks:
                 pos_fish = (i.pos_category or "").strip().lower() == "fish" and item_tracks_physical_stock(i)

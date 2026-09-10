@@ -13,6 +13,8 @@ def _q2(x: Decimal) -> Decimal:
 
 
 def book_value(asset: FixedAsset) -> Decimal:
+    if getattr(asset, "status", None) == FixedAsset.STATUS_DISPOSED:
+        return Decimal("0.00")
     cost = asset.acquisition_cost or Decimal("0")
     accum = asset.accumulated_depreciation or Decimal("0")
     return _q2(max(cost - accum, Decimal("0")))
@@ -97,9 +99,10 @@ def depreciation_schedule(asset: FixedAsset, max_rows: int = 120) -> list[dict[s
 
 
 def run_exists_for_period(asset: FixedAsset, period_end: date) -> bool:
-    """True if a depreciation run already exists for the same calendar month."""
+    """True if an unreversed depreciation run already exists for the same calendar month."""
     return FixedAssetDepreciationRun.objects.filter(
         fixed_asset_id=asset.id,
         run_date__year=period_end.year,
         run_date__month=period_end.month,
+        reversed_at__isnull=True,
     ).exists()

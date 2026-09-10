@@ -17,7 +17,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
@@ -76,6 +76,7 @@ from api.services.aquaculture_cost_per_kg import (
 )
 from api.services.item_catalog import (
     TYPE_NON_INVENTORY,
+    TYPE_SERVICE,
     item_tracks_physical_stock,
     normalize_item_type,
 )
@@ -84,6 +85,7 @@ from api.services.station_stock import add_station_stock, item_uses_station_bins
 from api.utils.customer_display import customer_display_name
 from api.services.coa_constants import is_pl_credit_normal_type, normalize_chart_account_type
 from api.services.erp_coa_defaults import ErpCoaCode
+from api.services.audit_actor import current_audit_user_id
 from api.services.employee_payroll_subledger import (
     refresh_employee_balance,
     sync_payroll_run_to_employee_ledgers,
@@ -316,6 +318,7 @@ CODE_AR = "1100"
 CODE_CARD_CLEARING = "1120"
 CODE_AP = "2000"
 CODE_VAT = "2100"
+CODE_VAT_INPUT = "1170"
 CODE_FUEL_REV = "4100"
 CODE_SHOP_REV = "4200"
 CODE_OTHER_REV = "4230"
@@ -336,6 +339,7 @@ CODE_SALARY_EXP = "6400"
 CODE_AQUACULTURE_LABOR_EXP = "6712"
 CODE_SALARY_PAYABLE = "2200"
 CODE_STAT_DED = "2210"
+CODE_EMP_ADVANCE = "1150"
 
 
 def _coa(company_id: int, code: str) -> Optional[ChartOfAccount]:
@@ -385,6 +389,35 @@ _CORE_POSTING_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
     # with "no revenue accounts" and the document was stuck out of the ledger.
     CODE_FUEL_REV: ("Fuel Sales", "income", "sales_of_product_income"),
     CODE_SHOP_REV: ("Shop & Merchandise Sales", "income", "sales_of_product_income"),
+    # Supplier rebates and other miscellaneous income land here. Without it a mill credit
+    # could not post its journal, and the vendor A/P decrement had nothing behind it.
+    CODE_OTHER_REV: ("Other Operating Revenue", "income", "other_income"),
+    # Output VAT must auto-provision too. Without 2100 the sale journal used to drop the tax
+    # line and the balancing pass folded the whole tax amount into a revenue account, so tax
+    # collected on behalf of the authority was recognised as income and never showed as a
+    # liability to remit.
+    CODE_VAT: ("Sales / VAT Payable", "liability", "sales_tax_payable"),
+    CODE_VAT_INPUT: ("VAT Input / VAT Receivable", "asset", "other_current_asset"),
+    CODE_SALARY_PAYABLE: (
+        "Payroll — Salaries & Wages Payable",
+        "liability",
+        "payroll_tax_payable",
+    ),
+    CODE_STAT_DED: (
+        "Payroll — Statutory Deductions Payable",
+        "liability",
+        "payroll_tax_payable",
+    ),
+    CODE_SALARY_EXP: (
+        "Salaries & Wages",
+        "expense",
+        "payroll_expenses",
+    ),
+    CODE_EMP_ADVANCE: (
+        "Employee Advances & Loans",
+        "asset",
+        "other_current_asset",
+    ),
 }
 
 
@@ -608,12 +641,9 @@ def item_inventory_unit_cost(item: Optional[Item]) -> Decimal:
     Per-unit cost for inventory / wet-stock GL (liters, pieces, etc.).
     Prefer Item.cost; if unset, fall back to unit_price so reports and dip GL are not all zero.
 
-    ``Item.cost`` is the LATEST PURCHASE RATE, not a weighted average: every bill save mirrors
-    the line rate onto the item (api.services.bill_item_catalog_sync), deliberately overwriting
-    the AVCO figure that ``recompute_item_average_cost`` computed a moment earlier. That is the
-    owner's chosen basis — stock is valued at what it costs to buy today. It also means priced
-    stock will not equal the GL inventory balance once purchase prices move; the inventory
-    valuation report reconciles the two explicitly.
+    ``Item.cost`` is the moving weighted-average (AVCO) from opening stock plus posted bill
+    receipts. Bill-line catalog write-back must not replace it with the last purchase rate,
+    or future COGS would leave the inventory control account.
 
     NOTE: Do NOT use this for COGS-relief journals (Dr COGS / Cr inventory) — use
     item_cogs_unit_cost, which guarantees a COGS amount via the best-available cost.
@@ -644,8 +674,7 @@ def item_cogs_unit_cost(company_id: int, item: Optional[Item]) -> Decimal:
     posts a COGS amount (Dr COGS / Cr inventory) — never silently zero.
 
     Standard perpetual-inventory fallback, most → least reliable:
-      1. Item.cost                              — the carried cost (latest purchase rate; see
-                                                  item_inventory_unit_cost for why it is not AVCO)
+      1. Item.cost                              — the carried AVCO cost (see item_inventory_unit_cost)
       2. Most recent posted purchase unit price — last actual buy price
       3. Opening stock unit cost                — initial valuation
       4. Selling price (unit_price)             — last-resort guarantee (zero-margin sale)
@@ -709,6 +738,8 @@ def item_should_relieve_cogs(company_id: int, item: Optional[Item]) -> bool:
     matching Cost of Goods Sold. Services (item_type="service") carry no COGS.
     """
     if not item:
+        return False
+    if normalize_item_type(getattr(item, "item_type", None)) == TYPE_SERVICE:
         return False
     if item_tracks_physical_stock(item) or item_has_cost_basis(company_id, item):
         return True
@@ -791,13 +822,21 @@ def recompute_item_average_cost(company_id: int, item_id: int) -> Optional[Decim
     base_qty = opening_qty if opening_qty > 0 and opening_cost > 0 else Decimal("0")
     base_value = (opening_qty * opening_cost) if base_qty > 0 else Decimal("0")
 
-    agg = BillLine.objects.filter(
-        bill__company_id=company_id,
-        bill__stock_receipt_applied=True,
-        item_id=item.id,
-    ).aggregate(q=Sum("quantity"), v=Sum("amount"))
-    recv_qty = agg["q"] or Decimal("0")
-    recv_value = agg["v"] or Decimal("0")
+    lines = list(
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            bill__stock_receipt_applied=True,
+            item_id=item.id,
+        ).select_related("bill")
+    )
+    recv_qty = Decimal("0")
+    recv_value = Decimal("0")
+    for ln in lines:
+        qty = ln.quantity if ln.quantity is not None else Decimal("0")
+        if qty <= 0:
+            continue
+        recv_qty += qty
+        recv_value += _bill_line_receipt_value(ln.bill, ln)
 
     denom = base_qty + recv_qty
     total_value = base_value + recv_value
@@ -848,9 +887,13 @@ def _tank_dip_variance_journal_skip_reason(company_id: int, dip: TankDip) -> Opt
     if var_liters == 0:
         return "no_variance"
     prod = dip.tank.product if dip.tank_id else None
-    rate = item_inventory_unit_cost(prod)
+    # Cost basis only, never the selling price. item_inventory_unit_cost falls back to
+    # unit_price when Item.cost is unset, which valued a wet-stock GAIN at retail and so
+    # capitalised unrealised margin straight into the inventory asset (and expensed a loss
+    # at retail). No cost means no reliable value: skip and say so.
+    rate = item_inventory_cost_strict(prod)
     if rate <= 0:
-        return "item_cost_and_price_zero"
+        return "item_cost_zero"
     amount = (abs(var_liters) * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if amount <= 0:
         return "rounded_zero"
@@ -902,7 +945,10 @@ def sync_tank_dip_variance_journal(company_id: int, dip_id: int) -> dict:
     measured = dip.volume or Decimal("0")
     var_liters = measured - book
     prod = dip.tank.product if dip.tank_id else None
-    rate = item_inventory_unit_cost(prod)
+    # Cost basis only — see _tank_dip_variance_journal_skip_reason.
+    rate = item_inventory_cost_strict(prod)
+    if rate <= 0:
+        return {"status": "skipped", "reason": "item_cost_zero"}
     amount = (abs(var_liters) * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     inv_acc, cogs_acc, shrink_acc = _wet_stock_variance_accounts(company_id)
@@ -998,12 +1044,64 @@ def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]
     )
 
 
+def invoice_customer_is_internal(company_id: int, inv: Invoice) -> bool:
+    """True when the buyer is another profit centre of this company (a pond's POS customer).
+
+    Such a sale is real for the selling pond and not a sale at all for the company, so it has
+    to reach the internal trade pair (4245/5245) that ``internal_trade_elimination`` nets out.
+    Routing it to ordinary harvest revenue (4240) left the trade invisible to consolidation:
+    the income statement printed "No inter-pond trade in this period" while the whole internal
+    margin sat inside group profit.
+    """
+    cid = getattr(inv, "customer_id", None)
+    if not cid:
+        return False
+    # Two ways a customer stands for a pond: the explicit is_internal flag (used by the vendor
+    # side), and being a pond's pos_customer (how the buying pond is actually identified today
+    # — see _invoice_aquaculture_pond_cycle).
+    if Customer.objects.filter(
+        pk=cid, company_id=company_id, is_internal=True, internal_pond__isnull=False
+    ).exists():
+        return True
+    return AquaculturePond.objects.filter(
+        company_id=company_id, pos_customer_id=cid
+    ).exists()
+
+
+def _ensure_internal_trade_account(company_id: int, code: str) -> Optional[ChartOfAccount]:
+    """4245 / 5245, provisioned when the tenant's aquaculture chart predates them."""
+    acc = _coa(company_id, code)
+    if acc:
+        return acc
+    if code == CODE_INTERNAL_TRADE_REVENUE:
+        return _provision_chart_account(
+            company_id,
+            code,
+            "Aquaculture — Inter-Pond Fish Sales (eliminated on consolidation)",
+            "income",
+            "other_income",
+        )
+    return _provision_chart_account(
+        company_id,
+        code,
+        "Aquaculture — Inter-Pond Cost of Fish Sold (eliminated on consolidation)",
+        "cost_of_goods_sold",
+        "supplies_materials_cogs",
+    )
+
+
 def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
     amounts: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     aq_sale = AquacultureFishSale.objects.filter(invoice_id=inv.id).only("income_type").first()
     if aq_sale is not None:
-        code = coa_account_code_for_aquaculture_income_type(aq_sale.income_type, company_id=company_id)
-        acc = _coa(company_id, code)
+        if invoice_customer_is_internal(company_id, inv):
+            code = CODE_INTERNAL_TRADE_REVENUE
+            acc = _ensure_internal_trade_account(company_id, code)
+        else:
+            code = coa_account_code_for_aquaculture_income_type(
+                aq_sale.income_type, company_id=company_id
+            )
+            acc = _coa(company_id, code)
         sub = inv.subtotal or Decimal("0")
         if acc and sub > 0:
             return {acc.id: sub}
@@ -1090,8 +1188,22 @@ def _create_posted_entry(
             station_id=_gl_station_id(company_id, gl_station_id),
             is_posted=True,
             posted_at=timezone.now(),
+            created_by_id=current_audit_user_id(),
+            posted_by_id=current_audit_user_id(),
         )
-        je.save()
+        try:
+            with transaction.atomic():
+                je.save()
+        except IntegrityError:
+            # journal_entry_company_number_uniq fired: a concurrent request posted this exact
+            # document between the exists() check above and this insert. That entry is the
+            # same journal, so return it rather than posting the document twice.
+            existing = JournalEntry.objects.filter(
+                company_id=company_id, entry_number=entry_number
+            ).first()
+            if existing is not None:
+                return existing
+            raise
         hdr = _gl_station_id(company_id, gl_station_id)
         meta_list = aquaculture_line_costing or []
         for i, raw in enumerate(lines):
@@ -1121,7 +1233,9 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     Skips service and non-inventory lines (no inventory asset to relieve). Idempotent:
     AUTO-INV-{id}-COGS.
     """
-    if inv.status == "draft" or inv.total <= 0:
+    # "void" must be excluded as well as "draft": a voided sale was reversed, so relieving
+    # inventory for it would charge COGS against revenue that no longer exists.
+    if inv.status in ("draft", "void") or inv.total <= 0:
         return False
     entry_number = f"AUTO-INV-{inv.id}-COGS"
     if JournalEntry.objects.filter(
@@ -1247,7 +1361,7 @@ def backfill_invoice_cogs_journals(
             invoice_date__gte=start,
             invoice_date__lte=end,
         )
-        .exclude(status="draft")
+        .exclude(status__in=("draft", "void"))
         .exclude(total__lte=0)
         .order_by("id")
     )
@@ -1680,6 +1794,9 @@ def post_aquaculture_fish_stock_ledger_journal(
 
 
 CODE_AQ_COGS_HARVEST = "5240"
+# The inter-pond trade pair netted out by api.services.internal_trade_elimination.
+CODE_INTERNAL_TRADE_REVENUE = "4245"
+CODE_INTERNAL_TRADE_COGS = "5245"
 
 
 def _ensure_aquaculture_harvest_cogs_account(company_id: int) -> Optional[ChartOfAccount]:
@@ -1733,7 +1850,20 @@ def post_aquaculture_fish_sale_bio_relief_journal(
         return None
 
     bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
-    exp = _ensure_aquaculture_harvest_cogs_account(company_id)
+    # A sale to another pond is an internal trade: its cost must land on 5245 so consolidation
+    # can net it against the 4245 revenue. Booking it to ordinary harvest COGS (5240) left the
+    # two legs of the same internal trade in different places and the elimination saw neither.
+    _sale = (
+        AquacultureFishSale.objects.filter(pk=sale_id, company_id=company_id)
+        .select_related("invoice")
+        .first()
+    )
+    if _sale is not None and _sale.invoice_id and invoice_customer_is_internal(
+        company_id, _sale.invoice
+    ):
+        exp = _ensure_internal_trade_account(company_id, CODE_INTERNAL_TRADE_COGS)
+    else:
+        exp = _ensure_aquaculture_harvest_cogs_account(company_id)
     if not bio or not exp:
         logger.warning(
             "skip aquaculture fish sale bio relief %s: missing COA (1581, %s)",
@@ -1964,7 +2094,7 @@ def post_invoice_sale_journal(
     Post revenue recognition for invoice (cash sale or AR).
     Idempotent via entry_number AUTO-INV-{id}-SALE.
     """
-    if inv.status == "draft" or inv.total <= 0:
+    if inv.status in ("draft", "void") or inv.total <= 0:
         return False
     entry_number = f"AUTO-INV-{inv.id}-SALE"
     if JournalEntry.objects.filter(
@@ -1975,8 +2105,10 @@ def post_invoice_sale_journal(
 
     validate_invoice_entity_tags_for_gl(company_id, inv)
 
-    vat_acc = _coa(company_id, CODE_VAT)
     tax = inv.tax_total or Decimal("0")
+    vat_acc = (
+        _ensure_core_posting_account(company_id, CODE_VAT) if tax > 0 else _coa(company_id, CODE_VAT)
+    )
     total = inv.total
 
     debit_acc: Optional[ChartOfAccount] = None
@@ -2085,7 +2217,16 @@ def post_invoice_sale_journal(
                 je_lines.append((acc, Decimal("0"), amt, memo, line_st))
                 aq_line_meta.append(meta)
 
-    if tax > 0 and vat_acc:
+    if tax > 0:
+        if not vat_acc:
+            # Never let the balancing pass below absorb tax into revenue: it would overstate
+            # income and understate the liability owed to the tax authority.
+            raise GlPostingError(
+                "G/L: This invoice carries tax but the VAT / sales tax payable account (%s) "
+                "is missing or inactive, so the tax cannot be recorded as a liability. "
+                "Add or reactivate account %s in the Chart of Accounts and post again."
+                % (CODE_VAT, CODE_VAT)
+            )
         je_lines.append((vat_acc, Decimal("0"), tax, _gl_invoice_line_memo(inv, "VAT")))
         aq_line_meta.append(None)
 
@@ -2093,6 +2234,24 @@ def post_invoice_sale_journal(
     debit_sum = je_lines[0][1]
     if credit_sum != debit_sum:
         diff = debit_sum - credit_sum
+        # Only absorb a rounding residue. _build_bill_journal_lines already works this way.
+        # Without a cap, an invoice header total that disagreed with its lines (or a line whose
+        # revenue account could not be resolved) had the entire difference silently added to
+        # the first revenue line, inventing or destroying revenue to force a balance.
+        if abs(diff) > Decimal("0.02"):
+            logger.warning(
+                "post_invoice_sale_journal: inv %s header total %s does not match its lines "
+                "(credit sum %s); refusing to plug %s into revenue",
+                inv.id,
+                debit_sum,
+                credit_sum,
+                diff,
+            )
+            raise GlPostingError(
+                "G/L: This invoice does not balance — the header total (%s) does not match the "
+                "sum of its lines plus tax (%s), a difference of %s. Correct the line amounts "
+                "or the total and post again." % (debit_sum, credit_sum, diff)
+            )
         if len(je_lines) > 1:
             for i in range(1, len(je_lines)):
                 raw = je_lines[i]
@@ -2272,6 +2431,10 @@ def reverse_payment_received_posting(company_id: int, p: Payment) -> tuple[bool,
     """
     if p.payment_type != Payment.PAYMENT_TYPE_RECEIVED:
         return False, "not a received payment"
+    # A closed period is closed for reversals too. cleanup_vendor_bill_posting_effects and
+    # cleanup_invoice_posting_effects both check this; the payment paths did not, so a receipt
+    # dated inside books_locked_through could be deleted and silently restate closed books.
+    assert_period_open(company_id, p.payment_date, action="reverse a payment dated in")
     entry_number = f"AUTO-PAY-{p.id}-RCV"
     je = JournalEntry.objects.filter(
         company_id=company_id, entry_number=entry_number
@@ -2294,6 +2457,8 @@ def reverse_payment_made_posting(company_id: int, p: Payment) -> tuple[bool, str
     """
     if p.payment_type != Payment.PAYMENT_TYPE_MADE:
         return False, "not a made payment"
+    # Same rule as the received side: a closed period cannot be restated.
+    assert_period_open(company_id, p.payment_date, action="reverse a payment dated in")
     entry_number = f"AUTO-PAY-{p.id}-MADE"
     je = JournalEntry.objects.filter(
         company_id=company_id, entry_number=entry_number
@@ -2479,8 +2644,15 @@ def _tanks_for_stock_receipt(company_id: int, item: Item):
     return Tank.objects.none()
 
 
-def _sync_item_qoh_from_tanks(company_id: int, item_id: int) -> None:
-    """Align Item.quantity_on_hand with tank totals (active tanks if any; else all tanks)."""
+def refresh_item_quantity_on_hand_from_tanks(company_id: int, item_id: int) -> None:
+    """Align Item.quantity_on_hand with tank totals (active tanks if any; else all tanks).
+
+    Wet stock lives on ``Tank.current_stock``; ``Item.quantity_on_hand`` is a derived mirror of
+    it that the valuation reports and the POS availability check both read. Only the bill
+    receipt path used to call this, so for fuel SKUs the mirror only ever went **up**: every
+    litre sold or re-dipped left it overstated by the whole life-to-date sales volume. Call
+    this after any write to a tank.
+    """
     active = Tank.objects.filter(
         company_id=company_id, product_id=item_id, is_active=True
     )
@@ -2492,6 +2664,28 @@ def _sync_item_qoh_from_tanks(company_id: int, item_id: int) -> None:
         )["s"]
     total = agg if agg is not None else Decimal("0")
     Item.objects.filter(pk=item_id, company_id=company_id).update(quantity_on_hand=total)
+
+
+def _bill_line_receipt_value(bill: Bill, line: BillLine) -> Decimal:
+    """Inventory receipt value that matches the GL debit after header tax/discount.
+
+    Tax is pulled into 1170 and does not scale line costs. A header discount that makes
+    ``total < sum(lines)`` does scale every line, so AVCO uses the same factor as the journal.
+    """
+    amt = line.amount if line.amount is not None else Decimal("0")
+    if amt <= 0:
+        return Decimal("0")
+    line_sum = Decimal("0")
+    for ln in BillLine.objects.filter(bill_id=bill.id).only("amount"):
+        a = ln.amount if ln.amount is not None else Decimal("0")
+        if a > 0:
+            line_sum += a
+    total = bill.total if bill.total is not None else Decimal("0")
+    if line_sum <= 0:
+        return amt
+    if line_sum > total:
+        return (amt * (total / line_sum)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return amt
 
 
 def receipt_inventory_from_posted_bill(
@@ -2510,7 +2704,14 @@ def receipt_inventory_from_posted_bill(
     )
     applied_lines = 0
     company_id = bill.company_id
-    for line in BillLine.objects.filter(bill_id=bill.id).select_related("item", "tank"):
+    lines = list(BillLine.objects.filter(bill_id=bill.id).select_related("item", "tank"))
+    line_sum = sum(
+        (ln.amount or Decimal("0") for ln in lines if (ln.amount or Decimal("0")) > 0),
+        Decimal("0"),
+    )
+    total = bill.total if bill.total is not None else Decimal("0")
+    value_factor = (total / line_sum) if line_sum > total and line_sum > 0 else None
+    for line in lines:
         item = line.item
         if not item:
             continue
@@ -2520,16 +2721,19 @@ def receipt_inventory_from_posted_bill(
         if not _item_receives_physical_stock(item):
             continue
         applied_lines += 1
-        # Moving weighted-average cost (AVCO): update unit cost BEFORE on-hand is incremented.
-        apply_weighted_average_cost_on_receipt(
-            company_id, item.id, qty, line.amount if line.amount is not None else Decimal("0")
+        face = line.amount if line.amount is not None else Decimal("0")
+        received_value = (
+            (face * value_factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if value_factor is not None
+            else face
         )
+        apply_weighted_average_cost_on_receipt(company_id, item.id, qty, received_value)
         tanks_qs = _tanks_for_stock_receipt(company_id, item)
         if tanks_qs.exists():
             tank = _pick_tank_for_bill_line(line, item, tanks_qs)
             if tank:
                 Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") + qty)
-                _sync_item_qoh_from_tanks(company_id, item.id)
+                refresh_item_quantity_on_hand_from_tanks(company_id, item.id)
         else:
             from api.services.station_stock import (
                 add_station_stock,
@@ -2579,7 +2783,7 @@ def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
             tank = _pick_tank_for_bill_line(line, item, tanks_qs)
             if tank:
                 Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") - qty)
-                _sync_item_qoh_from_tanks(company_id, item.id)
+                refresh_item_quantity_on_hand_from_tanks(company_id, item.id)
         else:
             if not item_uses_station_bins(company_id, item):
                 if _is_fish_item(item):
@@ -2791,8 +2995,9 @@ def _build_bill_journal_lines(
 ) -> Optional[tuple[list[tuple], list[Optional[dict]]]]:
     """
     Build balanced GL lines for a vendor bill (one debit row per bill line when possible).
-    Inventory lines debit inventory accounts; other lines debit office expense. Remainder (e.g. tax)
-    debits office expense. Optional aquaculture pond/cycle/bucket on each BillLine tags matching debit lines.
+    Inventory lines debit inventory accounts; other lines debit office expense. Bill header
+    tax (``tax_total``) debits VAT input (1170), not office expense. Any leftover remainder after
+    tax (freight encoded only in the header, etc.) still debits office expense.
 
     Returns (lines, aquaculture_line_costing) for _create_posted_entry.
     """
@@ -2871,9 +3076,18 @@ def _build_bill_journal_lines(
     sum_lines = sum(am for row in debit_rows if (am := row[1]) > 0)
     if sum_lines < total:
         rem_meta, rem_st = _bill_remainder_gl_tags(debit_rows, company_id, bill)
-        debit_rows.append(
-            (exp, (total - sum_lines).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), memo_ap, rem_meta, rem_st)
-        )
+        rem = (total - sum_lines).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        tax = (bill.tax_total or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        vat_amt = min(tax, rem) if tax > 0 else Decimal("0")
+        other = rem - vat_amt
+        if vat_amt > 0:
+            vat_acc = _ensure_core_posting_account(company_id, CODE_VAT_INPUT)
+            if not vat_acc:
+                logger.warning("bill %s: VAT input account %s missing", bill.id, CODE_VAT_INPUT)
+                return None
+            debit_rows.append((vat_acc, vat_amt, memo_ap, rem_meta, rem_st))
+        if other > 0:
+            debit_rows.append((exp, other, memo_ap, rem_meta, rem_st))
         sum_lines = total
     elif sum_lines > total:
         positive_rows = [row for row in debit_rows if row[1] > 0]
@@ -3110,6 +3324,7 @@ def rollback_invoice_posting_effects(
                     )
                 p.delete()
 
+        tank_product_ids: set[int] = set()
         for line in (
             InvoiceLine.objects.filter(invoice_id=inv_id)
             .select_related("nozzle", "nozzle__meter", "nozzle__tank", "item")
@@ -3129,21 +3344,20 @@ def rollback_invoice_posting_effects(
                     Tank.objects.filter(pk=t.pk).update(
                         current_stock=F("current_stock") + qty
                     )
+                    if t.product_id:
+                        tank_product_ids.add(int(t.product_id))
                 continue
-            it = line.item
-            st_id = locked.station_id
-            if it is None or st_id is None or not is_pos_invoice:
-                continue
-            if item_uses_station_bins(company_id, it):
-                add_station_stock(company_id, int(st_id), int(it.id), qty)
-            elif (
-                item_tracks_physical_stock(it)
-                and _item_receives_physical_stock(it)
-                and it.quantity_on_hand is not None
-            ):
-                Item.objects.filter(pk=it.pk, company_id=company_id).update(
-                    quantity_on_hand=F("quantity_on_hand") + qty
-                )
+
+        # Wet stock went back into the tank; keep the derived Item.quantity_on_hand in step.
+        for _pid in tank_product_ids:
+            refresh_item_quantity_on_hand_from_tanks(company_id, _pid)
+
+        # Shop / general stock goes back through the same helper that took it out, keyed on
+        # Invoice.stock_relieved rather than the INV-POS- number prefix, so an invoice raised
+        # anywhere is restored exactly once.
+        from api.services.invoice_stock_relief import undo_invoice_stock_relief
+
+        undo_invoice_stock_relief(company_id, inv_id)
 
         used_ar = invoice_sale_used_ar(company_id, inv_id)
         cust = locked.customer
@@ -3437,6 +3651,13 @@ def sync_invoice_gl(
             "1010 Cash or 1100 A/R is available for the invoice status."
         )
     post_invoice_cogs_journal(company_id, inv)
+    # The COGS journal has just credited the inventory asset, so the goods must actually leave
+    # stock. The POS path already did this; every other invoice relieved the ledger only.
+    # Idempotent via Invoice.stock_relieved, and raises StockBusinessError (rolling the caller's
+    # transaction back) rather than recording a sale of goods that are not on hand.
+    from api.services.invoice_stock_relief import apply_invoice_stock_relief
+
+    apply_invoice_stock_relief(company_id, inv)
     if (
         old_status
         and old_status != "paid"
@@ -3564,11 +3785,14 @@ def post_bank_deposit_journal(
 
 
 def _payroll_deduction_credit_account(company_id: int) -> Optional[ChartOfAccount]:
-    """Statutory or generic payroll liability for withheld amounts."""
-    a = _coa(company_id, CODE_STAT_DED)
-    if a:
-        return a
-    return _coa(company_id, CODE_SALARY_PAYABLE)
+    """Statutory (2210) or salaries-payable (2200) liability for withheld amounts."""
+    return _ensure_core_posting_account(company_id, CODE_STAT_DED) or _ensure_core_posting_account(
+        company_id, CODE_SALARY_PAYABLE
+    )
+
+
+def _payroll_salary_payable_account(company_id: int) -> Optional[ChartOfAccount]:
+    return _ensure_core_posting_account(company_id, CODE_SALARY_PAYABLE)
 
 
 def _payroll_net_pay_credit_account(
@@ -3625,19 +3849,23 @@ def post_payroll_salary(
     pr: PayrollRun,
     bank_account_id: Optional[int] = None,
     pay_from_chart_account_id: Optional[int] = None,
+    mode: str = "pay",
 ):
     """
-    Book net salary paid from a bank (or default cash/bank account).
+    Recognise gross wages on the payroll run date.
 
-    Dr 6400 (Salaries & Wages) = gross
-    Cr 2210/2200 = total_deductions (when > 0)
-    Cr selected bank register, chosen GL account, or default 1030/1010 = net pay to employees
+    mode=pay (default, cash basis):
+      Dr 6400 (Salaries & Wages) = gross
+      Cr 2210 = total_deductions (when > 0)
+      Cr bank/cash = net
 
-    If both bank_account_id and pay_from_chart_account_id are provided, the bank register is used.
+    mode=accrue:
+      Dr 6400 = gross
+      Cr 2210 = total_deductions (when > 0)
+      Cr 2200 Salaries Payable = net
+      Does not touch cash. Call settle_payroll_net_pay to pay staff later.
+
     Idempotent entry: AUTO-PAYROLL-{id}. Returns (JournalEntry|None, error message).
-
-    Also syncs per-employee HR subledger lines (linked to this payroll run) when totals
-    can be allocated across active employees with positive salary.
     """
     pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
     if not pr:
@@ -3656,6 +3884,9 @@ def post_payroll_salary(
             None,
             f"Gross ({gross}) must equal deductions ({ded}) + net pay ({net})",
         )
+    posting_mode = (mode or "pay").strip().lower()
+    if posting_mode not in ("pay", "accrue"):
+        return None, "mode must be pay or accrue."
 
     from api.services.employee_pond_labor import ensure_payroll_pond_allocations_before_post
     from api.services.station_defaults import default_payroll_station_id
@@ -3746,11 +3977,22 @@ def post_payroll_salary(
     if split_mixed_entities and not company_exp:
         return None, f"Add chart account {CODE_SALARY_EXP} for site / company payroll (non-pond wages)."
 
-    pay_account, pay_err = _payroll_net_pay_credit_account(
-        company_id, bank_account_id, pay_from_chart_account_id
-    )
-    if pay_err or not pay_account:
-        return None, pay_err or "Could not resolve account for net pay"
+    run_status = "paid"
+    pay_account: Optional[ChartOfAccount] = None
+    if posting_mode == "accrue":
+        run_status = "accrued"
+        if net > 0:
+            pay_account = _payroll_salary_payable_account(company_id)
+            if not pay_account:
+                return None, (
+                    f"Add chart account {CODE_SALARY_PAYABLE} (Salaries Payable) to accrue unpaid wages."
+                )
+    elif net > 0:
+        pay_account, pay_err = _payroll_net_pay_credit_account(
+            company_id, bank_account_id, pay_from_chart_account_id
+        )
+        if pay_err or not pay_account:
+            return None, pay_err or "Could not resolve account for net pay"
 
     if ded > 0 and not _payroll_deduction_credit_account(company_id):
         return None, f"For deductions, add {CODE_STAT_DED} or {CODE_SALARY_PAYABLE} in the chart of accounts."
@@ -3760,7 +4002,12 @@ def post_payroll_salary(
     if JournalEntry.objects.filter(company_id=company_id, entry_number=en).exists():
         je = JournalEntry.objects.filter(company_id=company_id, entry_number=en).first()
         if je and not pr.salary_journal_id:
-            PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
+            attach_status = run_status
+            if JournalEntryLine.objects.filter(
+                journal_entry=je, account__account_code=CODE_SALARY_PAYABLE, credit__gt=0
+            ).exists():
+                attach_status = "accrued"
+            PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status=attach_status)
         sync_payroll_run_to_employee_ledgers(company_id, pr)
         return je, ""
 
@@ -3802,18 +4049,25 @@ def post_payroll_salary(
         lines.append((dacc, Decimal("0"), ded, f"Deductions / withholdings — {ref}", ded_st))
         aq_costing.append(None)
 
-    if not split_by_pond or split_mixed_entities:
-        pay_line_st = pr_st
-    else:
-        pay_line_st = None
-    lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}", pay_line_st))
-    aq_costing.append(None)
+    if net > 0:
+        if not pay_account:
+            return None, "Could not resolve account for net pay"
+        if not split_by_pond or split_mixed_entities:
+            pay_line_st = pr_st
+        else:
+            pay_line_st = None
+        lines.append((pay_account, Decimal("0"), net, f"Net pay — {ref}", pay_line_st))
+        aq_costing.append(None)
 
     je = _create_posted_entry(
         company_id,
         pr.payment_date,
         en,
-        f"Salary pay {pr.payroll_number or en}",
+        (
+            f"Salary accrual {pr.payroll_number or en}"
+            if posting_mode == "accrue"
+            else f"Salary pay {pr.payroll_number or en}"
+        ),
         lines,
         gl_station_id=pr_st if (not split_by_pond or split_mixed_entities) else None,
         aquaculture_line_costing=aq_costing if split_by_pond and pond_exp else None,
@@ -3821,10 +4075,138 @@ def post_payroll_salary(
     if not je:
         return None, "Failed to post journal (unbalanced or invalid)"
     with transaction.atomic():
-        PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status="paid")
+        PayrollRun.objects.filter(pk=pr.pk).update(salary_journal=je, status=run_status)
     pr = PayrollRun.objects.filter(pk=pr.pk).first()
     if pr:
         sync_payroll_run_to_employee_ledgers(company_id, pr)
+    return je, ""
+
+
+def _payroll_station_id(company_id: int, pr: PayrollRun) -> Optional[int]:
+    return _gl_station_id(company_id, pr.station_id)
+
+
+def _salary_journal_credited_payable(company_id: int, pr: PayrollRun) -> bool:
+    if not pr.salary_journal_id:
+        return False
+    return JournalEntryLine.objects.filter(
+        journal_entry_id=pr.salary_journal_id,
+        journal_entry__company_id=company_id,
+        account__account_code=CODE_SALARY_PAYABLE,
+        credit__gt=0,
+    ).exists()
+
+
+def settle_payroll_net_pay(
+    company_id: int,
+    pr: PayrollRun,
+    bank_account_id: Optional[int] = None,
+    pay_from_chart_account_id: Optional[int] = None,
+    settlement_date=None,
+):
+    """
+    Pay accrued net wages: Dr 2200, Cr bank/cash.
+    Idempotent: AUTO-PAYROLL-{id}-SETTLE.
+    """
+    pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
+    if not pr:
+        return None, "Payroll run not found"
+    if not pr.salary_journal_id:
+        return None, "Accrue or post the payroll run first."
+    if pr.net_pay_journal_id:
+        return pr.net_pay_journal, ""
+
+    net = (pr.total_net or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if net <= 0:
+        PayrollRun.objects.filter(pk=pr.pk).update(status="paid")
+        return pr.salary_journal, ""
+
+    if not _salary_journal_credited_payable(company_id, pr):
+        return None, (
+            "This run already credited bank or cash for net pay. "
+            "There is no Salaries Payable balance to settle."
+        )
+
+    payable = _payroll_salary_payable_account(company_id)
+    if not payable:
+        return None, f"Add chart account {CODE_SALARY_PAYABLE} (Salaries Payable)."
+    bank, pay_err = _payroll_net_pay_credit_account(
+        company_id, bank_account_id, pay_from_chart_account_id
+    )
+    if pay_err or not bank:
+        return None, pay_err or "Could not resolve the bank or cash account for net pay."
+
+    pay_date = settlement_date or pr.payment_date
+    ref = f"{pr.payroll_number or f'PR-{pr.id}'}"[:300]
+    en = f"AUTO-PAYROLL-{pr.id}-SETTLE"
+    pr_st = _payroll_station_id(company_id, pr)
+    je = _create_posted_entry(
+        company_id,
+        pay_date,
+        en,
+        f"Salary net pay {pr.payroll_number or en}",
+        [
+            (payable, net, Decimal("0"), f"Settle net pay — {ref}", pr_st),
+            (bank, Decimal("0"), net, f"Net paid — {ref}", pr_st),
+        ],
+        gl_station_id=pr_st,
+    )
+    if not je:
+        return None, "Failed to post net-pay settlement (unbalanced or invalid)"
+    PayrollRun.objects.filter(pk=pr.pk).update(net_pay_journal=je, status="paid")
+    return je, ""
+
+
+def remit_payroll_deductions(
+    company_id: int,
+    pr: PayrollRun,
+    bank_account_id: Optional[int] = None,
+    pay_from_chart_account_id: Optional[int] = None,
+    remittance_date=None,
+):
+    """
+    Remit statutory withholdings: Dr 2210, Cr bank/cash.
+    Idempotent: AUTO-PAYROLL-{id}-REMIT.
+    """
+    pr = PayrollRun.objects.filter(id=pr.id, company_id=company_id).first()
+    if not pr:
+        return None, "Payroll run not found"
+    if not pr.salary_journal_id:
+        return None, "Post the payroll run first."
+    if pr.deduction_remittance_journal_id:
+        return pr.deduction_remittance_journal, ""
+
+    ded = (pr.total_deductions or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if ded <= 0:
+        return None, "This run has no statutory deductions to remit."
+
+    dacc = _payroll_deduction_credit_account(company_id)
+    if not dacc:
+        return None, f"Add chart account {CODE_STAT_DED} (Statutory Deductions Payable)."
+    bank, pay_err = _payroll_net_pay_credit_account(
+        company_id, bank_account_id, pay_from_chart_account_id
+    )
+    if pay_err or not bank:
+        return None, pay_err or "Could not resolve the bank or cash account for the remittance."
+
+    pay_date = remittance_date or pr.payment_date
+    ref = f"{pr.payroll_number or f'PR-{pr.id}'}"[:300]
+    en = f"AUTO-PAYROLL-{pr.id}-REMIT"
+    pr_st = _payroll_station_id(company_id, pr)
+    je = _create_posted_entry(
+        company_id,
+        pay_date,
+        en,
+        f"Payroll deductions remitted {pr.payroll_number or en}",
+        [
+            (dacc, ded, Decimal("0"), f"Remit deductions — {ref}", pr_st),
+            (bank, Decimal("0"), ded, f"Deductions paid — {ref}", pr_st),
+        ],
+        gl_station_id=pr_st,
+    )
+    if not je:
+        return None, "Failed to post deduction remittance (unbalanced or invalid)"
+    PayrollRun.objects.filter(pk=pr.pk).update(deduction_remittance_journal=je)
     return je, ""
 
 
@@ -3856,6 +4238,8 @@ def release_payroll_salary_journal(
         return None
 
     pr_id = int(pr.pk)
+    settle_id = pr.net_pay_journal_id
+    remit_id = pr.deduction_remittance_journal_id
     old_eids = set(
         EmployeeLedgerEntry.objects.filter(payroll_run_id=pr_id).values_list(
             "employee_id", flat=True
@@ -3865,11 +4249,44 @@ def release_payroll_salary_journal(
     for eid in old_eids:
         refresh_employee_balance(int(eid))
 
-    PayrollRun.objects.filter(pk=pr_id).update(salary_journal=None, status="draft")
+    PayrollRun.objects.filter(pk=pr_id).update(
+        salary_journal=None,
+        net_pay_journal=None,
+        deduction_remittance_journal=None,
+        status="draft",
+    )
+    for jid in (settle_id, remit_id):
+        if jid:
+            JournalEntry.objects.filter(pk=jid, company_id=company_id).delete()
     return PayrollRun.objects.filter(pk=pr_id).first()
 
 
-_POSTED_PAYROLL_STATUSES = frozenset({"paid", "processed"})
+def on_payroll_auto_journal_deleted(
+    company_id: int,
+    *,
+    journal_entry_id: int,
+    entry_number: str,
+) -> PayrollRun | None:
+    """Salary journal wipe vs clearing a settlement / remittance companion."""
+    import re
+
+    en = (entry_number or "").strip()
+    if re.match(r"^AUTO-PAYROLL-\d+-SETTLE$", en):
+        PayrollRun.objects.filter(
+            company_id=company_id, net_pay_journal_id=journal_entry_id
+        ).update(net_pay_journal=None, status="accrued")
+        return None
+    if re.match(r"^AUTO-PAYROLL-\d+-REMIT$", en):
+        PayrollRun.objects.filter(
+            company_id=company_id, deduction_remittance_journal_id=journal_entry_id
+        ).update(deduction_remittance_journal=None)
+        return None
+    return release_payroll_salary_journal(
+        company_id, journal_entry_id=journal_entry_id, entry_number=en
+    )
+
+
+_POSTED_PAYROLL_STATUSES = frozenset({"paid", "processed", "accrued"})
 
 
 def reconcile_payroll_run_gl_state(company_id: int, pr: PayrollRun) -> PayrollRun:
@@ -4034,7 +4451,8 @@ def post_inventory_adjustment_journal(company_id: int, adjustment_id: int) -> bo
         it = line.item
         if not it or not item_uses_station_bins(company_id, it):
             continue
-        cost = line.unit_cost if line.unit_cost is not None else item_inventory_unit_cost(it)
+        # Cost basis only: a stock-count gain must not debit inventory at the selling price.
+        cost = line.unit_cost if line.unit_cost is not None else item_inventory_cost_strict(it)
         cost = cost or Decimal("0")
         if cost <= 0:
             continue

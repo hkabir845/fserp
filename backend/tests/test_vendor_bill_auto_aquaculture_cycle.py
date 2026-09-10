@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from api.models import AquaculturePond, AquacultureProductionCycle, Bill, Company, Station, Vendor
+from api.models import AquaculturePond, AquacultureProductionCycle, Bill, Company, Station
 
 
 @pytest.mark.django_db

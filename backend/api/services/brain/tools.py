@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -10,7 +9,6 @@ from django.db.models import Count, Sum
 from django.utils import timezone
 
 from api.models import (
-    AquacultureBiomassSample,
     AquaculturePond,
     AquacultureProductionCycle,
     Bill,
@@ -19,13 +17,10 @@ from api.models import (
     Invoice,
     Station,
 )
-from api.services.aquaculture_fcr_service import compute_fcr_for_scope
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.brain import analytics
 from api.services.brain.intents import (
     detect_intents,
-    is_employee_list_request,
-    is_greeting_message,
     is_light_context,
     is_new_in_role_question,
     is_owner_concern_question,
@@ -37,7 +32,7 @@ from api.services.brain.intents import (
 from api.services.brain.decision_intelligence import build_decision_brief
 from api.services.brain.global_business_gaps import wants_global_gap_analysis, wants_solution_explanation
 from api.services.brain.worldfish_gap_audit import build_worldfish_gap_audit, wants_worldfish_gap_audit
-from api.services.brain.list_requests import detect_list_module
+from api.services.brain.list_requests import detect_list_module, is_employee_list_request
 from api.services.brain.module_lists import fetch_module_list
 from api.services.brain.plans import brain_plan_for_company
 from api.services.brain.question_resolver import boost_intents_from_modules, build_question_focus, is_help_or_howto_question
@@ -305,7 +300,6 @@ def gather_context(
         "period_end": period_end.isoformat(),
         "answer_mode": "conversational_chat" if intents == {"chat"} else "full_erp_snapshot_plus_focus",
         "business_snapshot": business_snapshot,
-        "user_question": message,
         "question_focus": build_question_focus(message, intents),
     }
     if not light_context and isinstance(business_snapshot, dict) and not business_snapshot.get("partial"):
@@ -334,7 +328,6 @@ def gather_context(
     station_id = context_entity_id if context_entity_type == "station" else _extract_station_id(message, company_id)
     employee_id = context_entity_id if context_entity_type == "employee" else None
 
-    need_pond = pond_id or {"fcr", "density", "biomass", "harvest", "feeding", "disease", "pond"} & intents
     need_all_ponds = not pond_id and {"fcr", "density", "biomass", "harvest"} & intents
 
     if pond_id:

@@ -13,7 +13,6 @@ from api.services.tenant_reporting_categories import (
     APP_FUEL_STATION,
     FUEL_STATION_EXPENSE_MAP_CODES,
     KIND_EXPENSE,
-    KIND_INCOME,
     resolve_aquaculture_expense_to_builtin,
 )
 
@@ -119,7 +118,7 @@ def _resync_manual_aquaculture_expense_journals(company_id: int, category_code: 
 
 
 def _refresh_bill_journals_for_category(category, bill_ids: set[int]) -> tuple[int, int]:
-    from api.models import Bill, JournalEntry, JournalEntryLine
+    from api.models import BillLine, JournalEntry, JournalEntryLine
     from api.services.gl_posting import resync_posted_bill_journal_from_lines
 
     bills_resynced = 0

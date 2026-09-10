@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.utils import timezone
 
 from api.models import BrainInsight
 from api.services.brain import analytics, forecasting
@@ -36,7 +35,6 @@ def _insight(
 def build_insights(company_id: int, *, lang: str = "bn") -> list[dict[str, Any]]:
     """Compute on-demand insights — no LLM required."""
     insights: list[dict[str, Any]] = []
-    today = timezone.localdate()
 
     try:
         snap = analytics.build_company_knowledge_snapshot(company_id, lang=lang)

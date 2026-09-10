@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from api.services.brain.list_requests import detect_list_module, is_employee_list_request
+from api.services.brain.list_requests import detect_list_module
 
 
 def is_greeting_message(message: str) -> bool:
@@ -72,10 +72,6 @@ def is_social_smalltalk(message: str) -> bool:
             return False
         return True
     return False
-
-
-def is_employee_list_request(message: str) -> bool:
-    return detect_list_module(message) == "employees"
 
 
 def wants_advisory_extras(message: str, intents: set[str] | None = None) -> bool:

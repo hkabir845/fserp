@@ -11,7 +11,7 @@ Usage (from backend/, venv active):
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from api.models import AquacultureFishPondTransfer, AquaculturePond, Company
+from api.models import AquacultureFishPondTransfer, Company
 from api.services.aquaculture_transfer_cost import (
     pond_uses_nursing_batch_costing,
     resync_nursing_pond_transfer_costs,

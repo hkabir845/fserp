@@ -262,7 +262,7 @@ def test_aquaculture_expenses_report_includes_vendor_bill_lines(
 def test_pl_vendor_bill_lines_used_when_journal_missing_pond_tags(company_tenant_with_gl):
     from datetime import date
 
-    from api.models import Bill, BillLine, JournalEntry, JournalEntryLine, Vendor
+    from api.models import Bill, BillLine, JournalEntryLine, Vendor
     from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
     from api.services.gl_posting import post_bill_journal
 

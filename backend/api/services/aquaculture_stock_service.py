@@ -856,7 +856,16 @@ def assert_outbound_fish_within_implied_stock(
         if exc is not None:
             avail_c += exc[0]
             avail_w += exc[1]
-    if fish_count <= avail_c and weight_kg <= avail_w:
+    # Available biomass is derived, not measured: effective_biomass_kg_from_position_row
+    # multiplies the head count by an average weight that has been rounded to 6 dp. That
+    # rounding is worth up to one micro-kg per fish, so harvesting a pond's entire recorded
+    # stock failed by a few grams (12,000 fish at 0.333333 kg gives 3,999.996 kg against the
+    # 4,000 kg actually stocked). Allow exactly that rounding envelope and no more: a genuine
+    # shortfall is at least one fish, which is orders of magnitude larger.
+    weight_tolerance = max(
+        Decimal("0.01"), (Decimal(max(avail_c, 0)) * Decimal("0.000001"))
+    )
+    if fish_count <= avail_c and weight_kg <= avail_w + weight_tolerance:
         return None
     scope = "this production cycle" if production_cycle_id else "this pond"
     if fish_count <= avail_c and weight_kg > avail_w:

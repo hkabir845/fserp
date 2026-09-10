@@ -10,7 +10,6 @@ import pytest
 
 from api.models import (
     ChartOfAccount,
-    InventoryAdjustment,
     Item,
     JournalEntry,
     JournalEntryLine,

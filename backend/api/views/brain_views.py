@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 
-from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -234,8 +233,9 @@ def brain_conversation_message(request, conversation_id: int):
             status=429,
         )
 
-    with transaction.atomic():
-        assistant = brain_chat.append_user_and_assistant_resilient(conv, text, company=company)
+    # LLM HTTP must not run inside transaction.atomic() — OpenRouter can take minutes and
+    # would hold a DB connection / row locks for the whole call.
+    assistant = brain_chat.append_user_and_assistant_resilient(conv, text, company=company)
 
     user_msg = (
         BrainMessage.objects.filter(conversation=conv, role=BrainMessage.ROLE_USER)

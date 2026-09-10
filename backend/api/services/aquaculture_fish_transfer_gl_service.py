@@ -15,7 +15,6 @@ from api.models import (
 )
 from api.services.gl_posting import (
     delete_aquaculture_fish_pond_transfer_journal,
-    post_aquaculture_fish_pond_transfer_journal,
 )
 
 

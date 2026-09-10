@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
-from api.models import BrainCompanySettings, BrainUsageLog, Company
+from api.models import BrainUsageLog, Company
 from api.services.brain import config as brain_config
 from api.services.brain import usage_logging as brain_usage
 from api.services.brain.audit import log_action

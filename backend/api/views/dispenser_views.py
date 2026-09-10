@@ -108,7 +108,8 @@ def dispenser_detail(request, dispenser_id: int):
         return JsonResponse(_dispenser_to_json(d))
 
     if request.method == "DELETE":
-        d.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        d.is_active = False
+        d.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse({"detail": "Deactivated", "is_active": False}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)

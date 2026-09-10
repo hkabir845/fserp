@@ -5,15 +5,12 @@ An Item line on a vendor bill can edit the catalog fields of the item it points 
 "Edit item" panel on the line). Saving the bill applies those edits to the Item, so the
 catalog and the next bill that uses the item agree with what was just typed.
 
-Two sources feed the write-back for one line:
+``item_catalog`` on the line row may write name / description / unit / category /
+unit_price. Only keys actually present are touched.
 
-- ``item_catalog`` on the line row: name / description / unit / category / unit_price, i.e.
-  the fields the inline panel exposes. Only keys actually present are touched.
-- the line Rate (``unit_cost``): the newest bill rate becomes ``Item.cost``.
-
-The Rate mirror is applied AFTER posting and the AVCO reconciliation
-(``recompute_item_average_cost``), so the rate the owner typed is what survives the save
-instead of being replaced by the weighted average of the receipt history.
+Item.cost is not written here. Posted receipts set it via moving weighted-average
+(``recompute_item_average_cost`` / ``apply_weighted_average_cost_on_receipt``). Overwriting
+that figure with the last bill-line rate made future COGS diverge from the inventory GL.
 
 Line pieces_per_kg is also written here (from the Line field / item_catalog) AFTER posting,
 so Update Bill keeps the number the owner typed instead of the old catalog value.
@@ -167,11 +164,6 @@ def parse_bill_line_item_catalog_updates(
         if not item:
             continue
         fields = updates.setdefault(item_id, {})
-
-        # Line Rate -> Item.cost (last bill rate is the purchase cost).
-        rate = _decimal_or_none(row.get("unit_cost", row.get("unit_price")))
-        if rate is not None and rate > 0:
-            fields["cost"] = _money(rate)
 
         # Line (pcs/kg): typed value, else heads÷kg on this bill. Stale catalog 3000
         # is ignored when this row's heads and kg already imply 8.67.

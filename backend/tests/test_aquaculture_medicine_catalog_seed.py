@@ -1,5 +1,4 @@
 """Built-in AQ-MED-* medicine catalog items for pond treatment forms."""
-from decimal import Decimal
 
 import pytest
 

@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from api.models import AquacultureBiomassSample, AquaculturePond
+from api.models import AquacultureBiomassSample
 from api.services.aquaculture_constants import fish_species_display_label
 from api.services.aquaculture_fcr_service import (
     compute_fcr_for_scope,

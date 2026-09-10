@@ -25,7 +25,7 @@ from api.models import (
     Station,
     User,
 )
-from api.exceptions import StockBusinessError
+from api.exceptions import GlPostingError, StockBusinessError
 from api.services.aquaculture_data_bank_service import pond_write_blocked_detail
 from api.services.aquaculture_pond_stock_service import (
     amend_pond_warehouse_stock_receipt,
@@ -35,6 +35,7 @@ from api.services.aquaculture_pond_stock_service import (
 from api.services.gl_posting import (
     delete_auto_inventory_adjustment_journal,
     delete_auto_inventory_transfer_journal,
+    item_inventory_cost_strict,
     item_inventory_unit_cost,
     post_inventory_adjustment_journal,
     post_inventory_transfer_journal,
@@ -689,53 +690,64 @@ def inventory_transfer_detail_or_post(request, transfer_id: int):
         return _inventory_transfer_put_draft(request, tr)
     if tr.status == InventoryTransfer.STATUS_POSTED:
         return JsonResponse({"detail": "Transfer is already posted"}, status=400)
-    with transaction.atomic():
-        locked = (
-            InventoryTransfer.objects.select_for_update()
-            .filter(pk=tr.id, company_id=cid)
-            .first()
-        )
-        if not locked or locked.status != InventoryTransfer.STATUS_DRAFT:
-            return JsonResponse({"detail": "Transfer is not a draft"}, status=400)
-        lines = list(
-            InventoryTransferLine.objects.filter(transfer_id=locked.id).select_related("item")
-        )
-        need_by_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
-        items_by_id: dict[int, Item] = {}
-        for ln in lines:
-            it = ln.item
-            qty = ln.quantity or Decimal("0")
-            if qty <= 0:
-                continue
-            need_by_item[it.id] += qty
-            items_by_id[it.id] = it
-        for iid, total_need in need_by_item.items():
-            it = items_by_id[iid]
-            have = get_station_stock(cid, locked.from_station_id, iid)
-            if total_need > have:
-                return JsonResponse(
-                    {
-                        "detail": (
-                            f'Not enough stock of "{it.name}" at source station: '
-                            f"need {_serialize_quantity(total_need)} in total across lines but only "
-                            f"{_serialize_quantity(have)} on hand."
-                        )
-                    },
-                    status=400,
+    try:
+        with transaction.atomic():
+            locked = (
+                InventoryTransfer.objects.select_for_update()
+                .filter(pk=tr.id, company_id=cid)
+                .first()
+            )
+            if not locked or locked.status != InventoryTransfer.STATUS_DRAFT:
+                return JsonResponse({"detail": "Transfer is not a draft"}, status=400)
+            lines = list(
+                InventoryTransferLine.objects.filter(transfer_id=locked.id).select_related("item")
+            )
+            need_by_item: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+            items_by_id: dict[int, Item] = {}
+            for ln in lines:
+                it = ln.item
+                qty = ln.quantity or Decimal("0")
+                if qty <= 0:
+                    continue
+                need_by_item[it.id] += qty
+                items_by_id[it.id] = it
+            for iid, total_need in need_by_item.items():
+                it = items_by_id[iid]
+                have = get_station_stock(cid, locked.from_station_id, iid)
+                if total_need > have:
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                f'Not enough stock of "{it.name}" at source station: '
+                                f"need {_serialize_quantity(total_need)} in total across lines but only "
+                                f"{_serialize_quantity(have)} on hand."
+                            )
+                        },
+                        status=400,
+                    )
+            for ln in lines:
+                it = ln.item
+                qty = ln.quantity or Decimal("0")
+                if qty <= 0:
+                    continue
+                add_station_stock(cid, locked.from_station_id, it.id, -qty)
+                add_station_stock(cid, locked.to_station_id, it.id, qty)
+            now = timezone.now()
+            InventoryTransfer.objects.filter(pk=locked.id).update(
+                status=InventoryTransfer.STATUS_POSTED,
+                posted_at=now,
+            )
+            # Inside the transaction: the journal is part of posting, not an afterthought. Called
+            # outside, a closed-period GlPostingError moved the stock and marked the document
+            # posted before it raised, leaving physical stock and the ledger permanently apart.
+            if not post_inventory_transfer_journal(cid, transfer_id):
+                raise GlPostingError(
+                    "G/L: The transfer could not be posted to the ledger, so the stock movement "
+                    "was not applied. Check that the inventory accounts for these items exist "
+                    "and are active."
                 )
-        for ln in lines:
-            it = ln.item
-            qty = ln.quantity or Decimal("0")
-            if qty <= 0:
-                continue
-            add_station_stock(cid, locked.from_station_id, it.id, -qty)
-            add_station_stock(cid, locked.to_station_id, it.id, qty)
-        now = timezone.now()
-        InventoryTransfer.objects.filter(pk=locked.id).update(
-            status=InventoryTransfer.STATUS_POSTED,
-            posted_at=now,
-        )
-    post_inventory_transfer_journal(cid, transfer_id)
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": ex.detail}, status=400)
     tr.refresh_from_db()
     return JsonResponse(_transfer_to_json(tr))
 
@@ -1042,33 +1054,44 @@ def inventory_adjustment_detail_or_post(request, adjustment_id: int):
         return _inventory_adjustment_put_draft(request, adj)
     if adj.status == InventoryAdjustment.STATUS_POSTED:
         return JsonResponse({"detail": "Adjustment is already posted"}, status=400)
-    with transaction.atomic():
-        locked = (
-            InventoryAdjustment.objects.select_for_update()
-            .filter(pk=adj.id, company_id=cid)
-            .first()
-        )
-        if not locked or locked.status != InventoryAdjustment.STATUS_DRAFT:
-            return JsonResponse({"detail": "Adjustment is not a draft"}, status=400)
-        lines = list(
-            InventoryAdjustmentLine.objects.filter(adjustment_id=locked.id).select_related("item")
-        )
-        if not lines:
-            return JsonResponse({"detail": "Add at least one item before posting"}, status=400)
-        for ln in lines:
-            it = ln.item
-            book = get_station_stock(cid, locked.station_id, it.id)
-            counted = ln.counted_quantity if ln.counted_quantity is not None else Decimal("0")
-            ln.book_quantity = book
-            ln.unit_cost = item_inventory_unit_cost(it)
-            ln.save(update_fields=["book_quantity", "unit_cost"])
-            set_station_stock(cid, locked.station_id, it.id, counted)
-        now = timezone.now()
-        InventoryAdjustment.objects.filter(pk=locked.id).update(
-            status=InventoryAdjustment.STATUS_POSTED,
-            posted_at=now,
-        )
-    post_inventory_adjustment_journal(cid, adjustment_id)
+    try:
+        with transaction.atomic():
+            locked = (
+                InventoryAdjustment.objects.select_for_update()
+                .filter(pk=adj.id, company_id=cid)
+                .first()
+            )
+            if not locked or locked.status != InventoryAdjustment.STATUS_DRAFT:
+                return JsonResponse({"detail": "Adjustment is not a draft"}, status=400)
+            lines = list(
+                InventoryAdjustmentLine.objects.filter(adjustment_id=locked.id).select_related("item")
+            )
+            if not lines:
+                return JsonResponse({"detail": "Add at least one item before posting"}, status=400)
+            for ln in lines:
+                it = ln.item
+                book = get_station_stock(cid, locked.station_id, it.id)
+                counted = ln.counted_quantity if ln.counted_quantity is not None else Decimal("0")
+                ln.book_quantity = book
+                # Cost basis only — this figure is what the variance journal posts, so the
+                # selling-price fallback would book a count gain at retail.
+                ln.unit_cost = item_inventory_cost_strict(it)
+                ln.save(update_fields=["book_quantity", "unit_cost"])
+                set_station_stock(cid, locked.station_id, it.id, counted)
+            now = timezone.now()
+            InventoryAdjustment.objects.filter(pk=locked.id).update(
+                status=InventoryAdjustment.STATUS_POSTED,
+                posted_at=now,
+            )
+            # See the transfer path above: the count and its journal stand or fall together.
+            if not post_inventory_adjustment_journal(cid, adjustment_id):
+                raise GlPostingError(
+                    "G/L: The stock count could not be posted to the ledger, so the counted "
+                    "quantities were not applied. Check that the inventory and shrinkage accounts "
+                    "exist and are active."
+                )
+    except StockBusinessError as ex:
+        return JsonResponse({"detail": ex.detail}, status=400)
     adj.refresh_from_db()
     return JsonResponse(_adjustment_to_json(adj))
 

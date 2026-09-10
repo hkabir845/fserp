@@ -178,6 +178,8 @@ def test_fixed_asset_dispose_and_reverse_depreciation(api_client, auth_super_hea
     fa.refresh_from_db()
     assert fa.status == FixedAsset.STATUS_DISPOSED
     assert fa.disposal_journal_entry_id
+    assert fa.acquisition_cost == Decimal("0")
+    assert fa.accumulated_depreciation == Decimal("0")
 
 
 @pytest.mark.django_db

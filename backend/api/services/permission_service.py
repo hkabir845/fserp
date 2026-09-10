@@ -66,6 +66,7 @@ def report_permission_key(report_id: str) -> str:
 REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     # Financial
     {"report_id": "trial-balance", "label": "Trial Balance", "group": "Reports — Financial"},
+    {"report_id": "vat-return", "label": "VAT Return (GL working paper)", "group": "Reports — Financial"},
     {"report_id": "balance-sheet", "label": "Balance Sheet", "group": "Reports — Financial"},
     {"report_id": "income-statement", "label": "Profit & Loss (P&L)", "group": "Reports — Financial"},
     {"report_id": "customer-balances", "label": "Customer Balances", "group": "Reports — Financial"},
@@ -77,7 +78,7 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
         "label": "All Party Balances (A/R, A/P, banks, loans)",
         "group": "Reports — Financial",
     },
-    {"report_id": "cash-flow", "label": "Cash Flow Summary", "group": "Reports — Financial"},
+    {"report_id": "cash-flow", "label": "Cash Flow Statement", "group": "Reports — Financial"},
     {"report_id": "expense-detail", "label": "Expense Detail (GL)", "group": "Reports — Financial"},
     {"report_id": "income-detail", "label": "Income Detail (GL)", "group": "Reports — Financial"},
     {"report_id": "entities-pl-summary", "label": "All Entities — P&L", "group": "Reports — Financial"},
@@ -221,11 +222,6 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {
         "report_id": "aquaculture-medicine-consumption",
         "label": "Aquaculture — Medicine consumption",
-        "group": "Reports — Aquaculture",
-    },
-    {
-        "report_id": "aquaculture-feed-medicine-consumption",
-        "label": "Aquaculture — Feed & medicine consumption (legacy)",
         "group": "Reports — Aquaculture",
     },
     {

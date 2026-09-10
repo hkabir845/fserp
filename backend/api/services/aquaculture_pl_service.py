@@ -541,7 +541,6 @@ def compute_aquaculture_pl_summary_dict(
                 ).aggregate(t=Sum("amount"))["t"]
                 or Decimal("0")
             )
-        profit = _money_q(rev - exp_total - pay)
 
         merged_rev: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
         rq = _rev_q(pond.id)

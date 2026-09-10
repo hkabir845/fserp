@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from api.exceptions import GlPostingError, StockBusinessError
 from api.models import (
     AquaculturePond,
     Company,
@@ -16,7 +17,6 @@ from api.models import (
     EmployeeLedgerEntry,
     JournalEntry,
     PayrollRun,
-    PayrollRunEmployeeAllocation,
     PayrollRunPondAllocation,
 )
 from api.services.permission_service import user_may_access_aquaculture_api
@@ -41,10 +41,14 @@ from api.services.employee_payroll_allocations import (
     sync_single_payroll_employee_allocation,
 )
 from api.services.coa_gl_defaults import ALLOWED_SALARY_EXPENSE, parse_optional_chart_account_id
-from api.services.gl_posting import post_payroll_salary
+from api.services.gl_posting import (
+    post_payroll_salary,
+    remit_payroll_deductions,
+    settle_payroll_net_pay,
+)
+from api.services.employee_ledger_gl import sync_manual_employee_ledger_journal
 from api.services.employee_payroll_station import employee_work_site_label, sync_payroll_station_from_employees
-from api.services.station_defaults import default_payroll_station_id, parse_optional_station_fk
-from api.services.station_stock import get_or_create_default_station
+from api.services.station_defaults import parse_optional_station_fk
 from api.services.employee_pond_labor import (
     LABOR_SCOPE_ALL_PONDS_EQUAL,
     LABOR_SCOPE_ASSIGNED_POND,
@@ -426,7 +430,26 @@ def employee_detail(request, employee_id: int):
         )
         return JsonResponse(_employee_to_json(e))
 
-    e.delete()
+    if EmployeeLedgerEntry.objects.filter(employee_id=e.id).exists():
+        return JsonResponse(
+            {
+                "detail": "This employee has ledger or payroll history and cannot be permanently deleted. "
+                "Deactivate the employee instead (set is_active=false)."
+            },
+            status=409,
+        )
+    from django.db.models.deletion import ProtectedError
+
+    try:
+        e.delete()
+    except ProtectedError:
+        return JsonResponse(
+            {
+                "detail": "This employee is protected by related financial records and cannot be deleted. "
+                "Deactivate the employee instead."
+            },
+            status=409,
+        )
     return JsonResponse({"detail": "Deleted"}, status=200)
 
 
@@ -481,17 +504,27 @@ def employee_ledger_entries(request, employee_id: int):
     et = (body.get("entry_type") or "adjustment").strip().lower()[:32]
     ref = (body.get("reference") or "")[:200]
     memo = (body.get("memo") or "")[:5000]
-    with transaction.atomic():
-        entry = EmployeeLedgerEntry.objects.create(
-            employee=e,
-            entry_date=ed,
-            entry_type=et,
-            reference=ref,
-            memo=memo,
-            debit=debit,
-            credit=credit,
+    if debit > 0 and credit > 0:
+        return JsonResponse(
+            {"detail": "Enter a debit or a credit, not both."}, status=400
         )
-        refresh_employee_balance(e.id)
+    try:
+        with transaction.atomic():
+            entry = EmployeeLedgerEntry.objects.create(
+                employee=e,
+                entry_date=ed,
+                entry_type=et,
+                reference=ref,
+                memo=memo,
+                debit=debit,
+                credit=credit,
+            )
+            je = sync_manual_employee_ledger_journal(request.company_id, entry)
+            refresh_employee_balance(e.id)
+    except GlPostingError as err:
+        return JsonResponse({"detail": err.detail}, status=400)
+    except StockBusinessError as err:
+        return JsonResponse({"detail": err.detail}, status=400)
     return JsonResponse(
         {
             "id": entry.id,
@@ -502,9 +535,41 @@ def employee_ledger_entries(request, employee_id: int):
             "memo": entry.memo,
             "debit": str(entry.debit),
             "credit": str(entry.credit),
+            "journal_entry_id": je.id if je else None,
+            "journal_entry_number": (je.entry_number if je else "") or "",
         },
         status=201,
     )
+
+
+def _payroll_je_number(p: PayrollRun, attr: str) -> str:
+    jid = getattr(p, f"{attr}_id", None)
+    if not jid:
+        return ""
+    je = getattr(p, attr, None)
+    if je is None:
+        je = JournalEntry.objects.filter(pk=jid).only("entry_number").first()
+    if je is None:
+        return ""
+    return (je.entry_number or "").strip()
+
+
+def _payroll_pay_from_ids(body: dict) -> tuple[int | None, int | None]:
+    bank_id = body.get("bank_account_id")
+    baid = None
+    if bank_id is not None and str(bank_id).strip() != "":
+        try:
+            baid = int(bank_id)
+        except (TypeError, ValueError):
+            baid = None
+    pcoa = body.get("pay_from_chart_account_id")
+    pcaid = None
+    if pcoa is not None and str(pcoa).strip() != "":
+        try:
+            pcaid = int(pcoa)
+        except (TypeError, ValueError):
+            pcaid = None
+    return baid, pcaid
 
 
 def _pond_allocations_for_payroll(payroll_id: int) -> list[dict]:
@@ -537,13 +602,9 @@ def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> 
     from api.services.gl_posting import reconcile_payroll_run_gl_state
 
     p = reconcile_payroll_run_gl_state(p.company_id, p)
-    jn = ""
-    if p.salary_journal_id:
-        sj = getattr(p, "salary_journal", None)
-        if sj is None:
-            sj = JournalEntry.objects.filter(pk=p.salary_journal_id).only("entry_number").first()
-        if sj is not None:
-            jn = (sj.entry_number or "").strip()
+    jn = _payroll_je_number(p, "salary_journal")
+    settle_n = _payroll_je_number(p, "net_pay_journal")
+    remit_n = _payroll_je_number(p, "deduction_remittance_journal")
     base = float(getattr(p, "base_salary_total", None) or Decimal("0"))
     ot = float(getattr(p, "overtime_amount", None) or Decimal("0"))
     bon = float(getattr(p, "bonus_amount", None) or Decimal("0"))
@@ -566,6 +627,17 @@ def _payroll_run_to_json(p: PayrollRun, *, include_allocations: bool = True) -> 
         "salary_journal_entry_id": p.salary_journal_id,
         "salary_journal_entry_number": jn,
         "is_salary_posted": bool(p.salary_journal_id),
+        "net_pay_journal_entry_id": p.net_pay_journal_id,
+        "net_pay_journal_entry_number": settle_n,
+        "is_net_settled": bool(p.net_pay_journal_id) or (
+            (p.status or "").strip().lower() == "paid" and not p.net_pay_journal_id
+        ),
+        "needs_net_settle": (p.status or "").strip().lower() == "accrued",
+        "deduction_remittance_journal_entry_id": p.deduction_remittance_journal_id,
+        "deduction_remittance_journal_entry_number": remit_n,
+        "needs_deduction_remit": (p.total_deductions or Decimal("0")) > 0
+        and not p.deduction_remittance_journal_id
+        and bool(p.salary_journal_id),
         "created_at": p.created_at.isoformat() if p.created_at else "",
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
         "station_id": p.station_id,
@@ -775,7 +847,11 @@ def payroll_list_or_create(request):
         try:
             reconcile_company_payroll_gl_states(cid)
             qs = PayrollRun.objects.filter(company_id=cid).select_related(
-                "salary_journal", "station", "salary_expense_account"
+                "salary_journal",
+                "net_pay_journal",
+                "deduction_remittance_journal",
+                "station",
+                "salary_expense_account",
             )
             return JsonResponse(
                 [_payroll_run_to_json(p, include_allocations=False) for p in qs],
@@ -878,7 +954,13 @@ def payroll_list_or_create(request):
         p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.pk, company_id=cid)
-        .select_related("salary_journal", "station", "salary_expense_account")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "station",
+            "salary_expense_account",
+        )
         .first()
     )
     return JsonResponse(_payroll_run_to_json(p), status=201)
@@ -893,7 +975,13 @@ def payroll_detail(request, payroll_id: int):
     cid = request.company_id
     p = (
         PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
-        .select_related("salary_journal", "station", "salary_expense_account")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "station",
+            "salary_expense_account",
+        )
         .first()
     )
     if not p:
@@ -1022,7 +1110,13 @@ def payroll_detail(request, payroll_id: int):
                 return sync_err
         p2 = (
             PayrollRun.objects.filter(pk=p.pk, company_id=cid)
-            .select_related("salary_journal", "station", "salary_expense_account")
+            .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "station",
+            "salary_expense_account",
+        )
             .first()
         )
         return JsonResponse(_payroll_run_to_json(p2))
@@ -1089,7 +1183,13 @@ def payroll_from_employees(request, payroll_id: int):
     p.refresh_from_db()
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account", "station")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "salary_expense_account",
+            "station",
+        )
         .first()
     )
     out = _payroll_run_to_json(p)
@@ -1172,7 +1272,13 @@ def payroll_from_one_employee(request, payroll_id: int):
     sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account", "station")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "salary_expense_account",
+            "station",
+        )
         .first()
     )
     out = _payroll_run_to_json(p)
@@ -1210,7 +1316,13 @@ def payroll_pond_allocations_from_employees(request, payroll_id: int):
     sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account", "station")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "salary_expense_account",
+            "station",
+        )
         .first()
     )
     out = _payroll_run_to_json(p)
@@ -1243,7 +1355,14 @@ def payroll_employee_allocations_from_hr(request, payroll_id: int):
     sync_payroll_station_from_employees(cid, p, company_site_gross=company_portion)
     p = (
         PayrollRun.objects.filter(pk=p.id, company_id=cid)
-        .select_related("salary_journal", "salary_expense_account", "subledger_employee", "station")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "salary_expense_account",
+            "subledger_employee",
+            "station",
+        )
         .first()
     )
     out = _payroll_run_to_json(p)
@@ -1259,9 +1378,13 @@ def payroll_employee_allocations_from_hr(request, payroll_id: int):
 @require_permission("app.page.payroll")
 def payroll_post_to_books(request, payroll_id: int):
     """
-    After you have paid staff from the bank, post one journal: Dr 6400, Cr 2210/2200? Cr bank.
-    Body: { "bank_account_id": <optional>, "pay_from_chart_account_id": <optional GL id for net pay> }
-    If a bank register is given, it takes priority over pay_from_chart_account_id.
+    Post the wage expense.
+
+    Body: {
+      "mode": "pay" | "accrue" (default pay),
+      "bank_account_id": <optional>,
+      "pay_from_chart_account_id": <optional GL id for net pay when mode=pay>
+    }
     """
     cid = request.company_id
     p = PayrollRun.objects.filter(pk=payroll_id, company_id=cid).first()
@@ -1270,20 +1393,8 @@ def payroll_post_to_books(request, payroll_id: int):
     body, err = parse_json_body(request)
     if err:
         return err
-    bank_id = body.get("bank_account_id")
-    baid = None
-    if bank_id is not None and str(bank_id).strip() != "":
-        try:
-            baid = int(bank_id)
-        except (TypeError, ValueError):
-            baid = None
-    pcoa = body.get("pay_from_chart_account_id")
-    pcaid = None
-    if pcoa is not None and str(pcoa).strip() != "":
-        try:
-            pcaid = int(pcoa)
-        except (TypeError, ValueError):
-            pcaid = None
+    baid, pcaid = _payroll_pay_from_ids(body)
+    mode = str(body.get("mode") or "pay").strip().lower() or "pay"
 
     with transaction.atomic():
         p = (
@@ -1293,17 +1404,111 @@ def payroll_post_to_books(request, payroll_id: int):
         )
         if not p:
             return JsonResponse({"detail": "Not found"}, status=404)
-        je, em = post_payroll_salary(cid, p, baid, pcaid)
+        je, em = post_payroll_salary(cid, p, baid, pcaid, mode=mode)
         if em:
             return JsonResponse({"detail": em}, status=400)
     p2 = (
         PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
-        .select_related("salary_journal")
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "station",
+            "salary_expense_account",
+        )
+        .first()
+    )
+    out = _payroll_run_to_json(p2)
+    if mode == "accrue":
+        out["message"] = (
+            f"Wage expense accrued ({out.get('salary_journal_entry_number') or ''}). "
+            "Net pay sits in 2200 Salaries Payable until you settle it from a bank."
+        )
+    else:
+        out["message"] = (
+            f"General ledger entry {out.get('salary_journal_entry_number') or ''} created. "
+            "Net pay is credited to the selected bank or cash account."
+        )
+    return JsonResponse(out, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+@require_permission("app.page.payroll")
+def payroll_settle_net_pay(request, payroll_id: int):
+    """Pay accrued net wages: Dr 2200, Cr bank. Body same bank fields as post-to-books."""
+    cid = request.company_id
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    baid, pcaid = _payroll_pay_from_ids(body)
+    with transaction.atomic():
+        p = (
+            PayrollRun.objects.select_for_update()
+            .filter(pk=payroll_id, company_id=cid)
+            .first()
+        )
+        if not p:
+            return JsonResponse({"detail": "Not found"}, status=404)
+        je, em = settle_payroll_net_pay(cid, p, baid, pcaid)
+        if em:
+            return JsonResponse({"detail": em}, status=400)
+    p2 = (
+        PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "station",
+            "salary_expense_account",
+        )
         .first()
     )
     out = _payroll_run_to_json(p2)
     out["message"] = (
-        f"General ledger entry {out.get('salary_journal_entry_number') or ''} created. "
-        f"Run date = payment date. Record actual bank payment outside the app; this updates your books only."
+        f"Net pay settled ({out.get('net_pay_journal_entry_number') or ''})."
+    )
+    return JsonResponse(out, status=200)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@auth_required
+@require_company_id
+@require_permission("app.page.payroll")
+def payroll_remit_deductions(request, payroll_id: int):
+    """Remit statutory deductions: Dr 2210, Cr bank."""
+    cid = request.company_id
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    baid, pcaid = _payroll_pay_from_ids(body)
+    with transaction.atomic():
+        p = (
+            PayrollRun.objects.select_for_update()
+            .filter(pk=payroll_id, company_id=cid)
+            .first()
+        )
+        if not p:
+            return JsonResponse({"detail": "Not found"}, status=404)
+        je, em = remit_payroll_deductions(cid, p, baid, pcaid)
+        if em:
+            return JsonResponse({"detail": em}, status=400)
+    p2 = (
+        PayrollRun.objects.filter(pk=payroll_id, company_id=cid)
+        .select_related(
+            "salary_journal",
+            "net_pay_journal",
+            "deduction_remittance_journal",
+            "station",
+            "salary_expense_account",
+        )
+        .first()
+    )
+    out = _payroll_run_to_json(p2)
+    out["message"] = (
+        f"Deductions remitted ({out.get('deduction_remittance_journal_entry_number') or ''})."
     )
     return JsonResponse(out, status=200)

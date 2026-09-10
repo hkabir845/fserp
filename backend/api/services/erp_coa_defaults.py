@@ -32,6 +32,7 @@ class ErpCoaCode:
     CARD_CLEARING_OTHER = "1130"
     EMPLOYEE_ADVANCES = "1150"
     LOAN_RECEIVABLE = "1160"
+    VAT_INPUT = "1170"
 
     # Inventory
     INV_FUEL = "1200"
@@ -234,7 +235,7 @@ ERP_COA_PURPOSES: tuple[ErpCoaPurpose, ...] = (
         "payable",
         "Sales / VAT payable",
         ErpCoaCode.VAT_PAYABLE,
-        "Collected tax on invoices and simplified input VAT on bills.",
+        "Collected tax on invoices (output VAT). Input VAT on bills posts to 1170.",
     ),
     ErpCoaPurpose(
         "payable.salary",
@@ -517,6 +518,13 @@ ERP_COA_PURPOSES: tuple[ErpCoaPurpose, ...] = (
         "Employee advances & loans",
         ErpCoaCode.EMPLOYEE_ADVANCES,
         "Staff advances recovered through payroll (party opening balances).",
+    ),
+    ErpCoaPurpose(
+        "asset.vat_input",
+        "asset",
+        "VAT input / VAT receivable",
+        ErpCoaCode.VAT_INPUT,
+        "Input VAT on vendor bills, recoverable against 2100 on the VAT return.",
     ),
     ErpCoaPurpose(
         "asset.card_clearing_other",

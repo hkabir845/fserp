@@ -1,7 +1,6 @@
 """Data Bank year close requires an empty pond (global harvest → renovate → restock practice)."""
 from __future__ import annotations
 
-import json
 from datetime import date
 from decimal import Decimal
 

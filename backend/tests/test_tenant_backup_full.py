@@ -22,6 +22,7 @@ from api.models import (
     JournalEntryLine,
     PondWarehouseStockReturn,
     Station,
+    User,
     Vendor,
 )
 from api.services.aquaculture_pond_go_live_service import set_company_cutover_date
@@ -440,4 +441,22 @@ def test_restore_rejects_unknown_model_in_bundle(company_tenant):
         {"model": "api.notarealmodel", "pk": 1, "fields": {}},
     )
     with pytest.raises(ValueError, match="unrecognized model"):
+        restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)
+
+
+def test_restore_rejects_super_admin_in_tenant_bundle(company_tenant):
+    User.objects.create(username="restore-tenant-user", company_id=company_tenant.id, role="admin")
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    user = next(r for r in bundle["records"] if r["model"] == "api.user")
+    user["fields"]["role"] = "super_admin"
+    with pytest.raises(ValueError, match="forbidden tenant user role"):
+        restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)
+
+
+def test_restore_rejects_foreign_company_field(company_tenant):
+    Station.objects.create(company=company_tenant, station_name="Restore boundary station")
+    bundle = json.loads(backup_bundle_json_bytes(company_tenant.id).decode("utf-8"))
+    row = next(r for r in bundle["records"] if "company" in r.get("fields", {}))
+    row["fields"]["company"] = company_tenant.id + 9999
+    with pytest.raises(ValueError, match="belongs to another company"):
         restore_bundle(bundle, company_tenant.id, confirm_replace=RESTORE_CONFIRM_PHRASE)

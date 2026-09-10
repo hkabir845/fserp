@@ -85,7 +85,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Platform owner recovery email is set. Forgot password will send to this mailbox when "
-                    f"username is not the delivery address, or for OTP/link delivery."
+                    "Platform owner recovery email is set. Forgot password will send to this mailbox when "
+                    "username is not the delivery address, or for OTP/link delivery."
                 )
             )

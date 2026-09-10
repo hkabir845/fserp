@@ -6,7 +6,12 @@ from decimal import Decimal
 
 import pytest
 
-from api.models import AquacultureBiomassSample, AquacultureExpense, AquacultureFishSale, AquaculturePond
+from api.models import (
+    AquacultureBiomassSample,
+    AquacultureExpense,
+    AquacultureFishSale,
+    AquaculturePond,
+)
 from api.services.aquaculture_fcr_service import (
     biomass_gain_from_samples_for_pond,
     compute_fcr_for_scope,
@@ -288,6 +293,46 @@ def test_fcr_from_feed_and_sampling(company_tenant):
     assert gain == Decimal("200.0000")
     fcr = compute_fcr_for_scope(cid, date(2026, 3, 1), date(2026, 3, 31), pond_id=pond.id)
     assert fcr["fcr_biomass"] == "1.25"
+
+
+@pytest.mark.django_db
+def test_fcr_counts_partial_harvest_as_biomass_output(company_tenant):
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Harvest FCR", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="feed_consumed",
+        expense_date=date(2026, 4, 10),
+        amount=Decimal("1000"),
+        feed_weight_kg=Decimal("120"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        sample_date=date(2026, 4, 1),
+        estimated_total_weight_kg=Decimal("200"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        sample_date=date(2026, 4, 30),
+        estimated_total_weight_kg=Decimal("220"),
+    )
+    AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        income_type="fish_harvest_sale",
+        sale_date=date(2026, 4, 20),
+        weight_kg=Decimal("80"),
+        total_amount=Decimal("16000"),
+    )
+
+    fcr = compute_fcr_for_scope(cid, date(2026, 4, 1), date(2026, 4, 30), pond_id=pond.id)
+
+    assert fcr["biomass_net_change_kg"] == "20.0000"
+    assert fcr["biomass_gain_kg"] == "100.0000"
+    assert fcr["fcr_biomass"] == "1.20"
 
 
 @pytest.mark.django_db

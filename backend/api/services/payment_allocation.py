@@ -69,9 +69,8 @@ def total_allocated_for_invoice(inv: Invoice, company_id: int) -> Decimal:
 
 def invoice_open_amount(inv: Invoice, company_id: int) -> Decimal:
     """Remaining invoice total not covered by payment allocations."""
-    if inv.status == "draft":
-        return Decimal("0")
-    if inv.status == "paid":
+    # Mirrors bill_open_amount: a voided invoice is not a receivable.
+    if inv.status in ("draft", "void", "paid"):
         return Decimal("0")
     total = inv.total or Decimal("0")
     paid = total_allocated_for_invoice(inv, company_id)

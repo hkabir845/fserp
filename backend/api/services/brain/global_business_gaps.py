@@ -136,7 +136,6 @@ def build_global_business_gap_analysis(context: dict[str, Any]) -> dict[str, Any
             )
         )
 
-    fin = summary.get("financials_mtd") or {}
     ar = summary.get("receivables") or {}
     inv = summary.get("inventory") or {}
 

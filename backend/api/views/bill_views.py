@@ -112,9 +112,12 @@ from api.services.tenant_reporting_categories import (
 
 def _next_bill_number(company_id: int) -> str:
     """Next BILL-n: lowest free suffix (reuses gaps when a bill number is deleted)."""
-    from api.services.reference_code import next_sequential_code
+    from api.services.reference_code import next_available_code
 
-    return next_sequential_code(company_id, Bill, "bill_number", "BILL")
+    # Gap-filling on purpose: a bill number is our internal handle for the vendor's document,
+    # not a series issued to anyone, so reusing a deleted one carries no audit risk.
+    # (Customer invoices and journals use next_sequential_code — see reference_code.)
+    return next_available_code(company_id, Bill, "bill_number", "BILL")
 
 
 def _bill_line_aquaculture_expense_category(line: BillLine) -> str | None:
@@ -1151,7 +1154,7 @@ def bills_create(request):
                 bill_ids=[b.id],
                 resync_gl=True,
             )
-            # After posting/AVCO, so the rate and catalog fields typed on the line are what stick.
+            # Catalog text/selling-price/pcs-per-kg after AVCO so Item.cost stays the average.
             apply_bill_line_item_catalog_updates(request.company_id, item_catalog_updates)
             # Fish/fry lines become sampling rows for the receiving pond once stock is received.
             sync_biomass_samples_from_bill(request.company_id, b)
@@ -1275,6 +1278,24 @@ def bill_detail(request, bill_id: int):
             new_bill_status, status_err = _validated_bill_status(body.get("status"), b.status)
             if status_err:
                 return JsonResponse({"detail": status_err}, status=400)
+            target = (new_bill_status or "").strip().lower()
+            if target == "void" and (old_bill_status or "").strip().lower() != "void":
+                from api.services.financial_audit import require_mutation_reason, record_financial_audit
+
+                reason, rerr = require_mutation_reason(body)
+                if rerr:
+                    return JsonResponse({"detail": rerr}, status=400)
+                record_financial_audit(
+                    company_id=request.company_id,
+                    action="void",
+                    entity_type="bill",
+                    entity_id=int(b.id),
+                    entity_ref=b.bill_number or "",
+                    reason=reason or "",
+                    before={"status": old_bill_status, "total": str(b.total)},
+                    after={"status": "void"},
+                    actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+                )
             b.status = new_bill_status
         ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
         lines_in_body = "lines" in body
@@ -1413,7 +1434,7 @@ def bill_detail(request, bill_id: int):
                     bill_ids=[b.id],
                     resync_gl=True,
                 )
-                # After posting/AVCO, so the rate and catalog fields typed on the line are what stick.
+                # Catalog text/selling-price/pcs-per-kg after AVCO so Item.cost stays the average.
                 apply_bill_line_item_catalog_updates(request.company_id, item_catalog_updates)
                 # Fish/fry lines become sampling rows for the receiving pond once stock is received.
                 sync_biomass_samples_from_bill(request.company_id, b)

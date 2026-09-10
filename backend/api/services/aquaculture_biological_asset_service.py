@@ -200,7 +200,9 @@ def compute_pond_biological_asset_summary(
     """
     as_of = as_of_date or date.today()
     cycle_id = production_cycle.id if production_cycle is not None else None
-    start, end = pl_window_for_transfer_date(as_of, production_cycle)
+    start, end = pl_window_for_transfer_date(
+        as_of, production_cycle, company_id=company_id, pond_id=pond_id
+    )
 
     shared = _shared_expenses_for_pl(company_id, start, end) if cycle_id is None else []
     t_in, t_out = _transfer_totals_for_scope(

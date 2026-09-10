@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from api.services.gl_posting import refresh_item_quantity_on_hand_from_tanks
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id
 from api.models import Tank, Station, Item
@@ -160,7 +161,17 @@ def tank_detail(request, tank_id: int):
         if "capacity" in body:
             t.capacity = _decimal(body.get("capacity"), t.capacity)
         if "current_stock" in body:
-            t.current_stock = _decimal(body.get("current_stock"), t.current_stock)
+            new_stock = _decimal(body.get("current_stock"), t.current_stock)
+            if abs((new_stock or Decimal("0")) - (t.current_stock or Decimal("0"))) > Decimal("0.0001"):
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "Tank stock cannot be edited directly. Record a tank dip so the "
+                            "variance posts to the ledger."
+                        )
+                    },
+                    status=400,
+                )
         if "min_stock_level" in body or "reorder_level" in body:
             t.reorder_level = _decimal(body.get("min_stock_level") or body.get("reorder_level"), t.reorder_level)
         if "is_active" in body:
@@ -170,6 +181,9 @@ def tank_detail(request, tank_id: int):
             return cap_err
         try:
             t.save()
+            if "current_stock" in body and t.product_id:
+                # Keep the derived Item.quantity_on_hand mirror in step with the tank.
+                refresh_item_quantity_on_hand_from_tanks(request.company_id, int(t.product_id))
         except ValidationError as e:
             return JsonResponse(
                 {"detail": "Validation failed", "errors": getattr(e, "message_dict", str(e))},
@@ -178,7 +192,8 @@ def tank_detail(request, tank_id: int):
         return JsonResponse(_tank_to_json(t))
 
     if request.method == "DELETE":
-        t.delete()
-        return JsonResponse({"detail": "Deleted"}, status=200)
+        t.is_active = False
+        t.save(update_fields=["is_active", "updated_at"])
+        return JsonResponse({"detail": "Deactivated", "is_active": False}, status=200)
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)

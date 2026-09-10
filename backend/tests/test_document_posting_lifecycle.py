@@ -9,8 +9,6 @@ import pytest
 
 from api.models import (
     AquacultureBiomassSample,
-    AquacultureExpense,
-    AquacultureExpenseInventoryLine,
     AquacultureFishSale,
     AquaculturePond,
     Bill,

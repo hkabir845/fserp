@@ -15,7 +15,6 @@ from api.services.aquaculture_data_bank_service import (
     pond_write_blocked_detail,
     preview_station_close,
     reopen_close_for_reference,
-    unlock_pond_close,
 )
 
 

@@ -43,7 +43,9 @@ def lookup_bio_cost_per_kg(
     Returns dict with found, cost_per_kg, basis_note, biological_cost_total, denominator_kg,
     on_hand_weight_kg, bio_asset_balance, book_cost_per_kg, method.
     """
-    start, end = pl_window_for_transfer_date(as_of_date, production_cycle)
+    start, end = pl_window_for_transfer_date(
+        as_of_date, production_cycle, company_id=company_id, pond_id=pond_id
+    )
     cycle_filter_id = production_cycle.id if production_cycle is not None else None
 
     payload = compute_aquaculture_pl_summary_dict(

@@ -1,8 +1,16 @@
 """
-Gap-aware reference codes (PREFIX-123) for master data.
+Reference codes (PREFIX-123).
 
-Autofill picks the lowest free integer suffix. Optional UI can list
-gaps through max(used) plus the next number (e.g. if 3 is used: 1, 2, 4).
+Two allocators, and the difference matters:
+
+* ``next_available_code`` — **gap-filling**, for master data (customers, vendors, items,
+  contracts). Reusing the code of a deleted customer is harmless and keeps codes tidy.
+* ``next_sequential_code`` — **monotonic, never reused**, for accounting documents (invoices,
+  bills, journal entries). A tax-invoice series must not reissue a number that was used and
+  deleted: the number is the audit trail, and two documents that ever shared one cannot be told
+  apart afterwards. This allocator also asks the database for ``max(suffix)`` instead of loading
+  every row into Python to find a gap, which the gap-filling one has to do — that scan ran on
+  every POS sale.
 """
 import re
 from typing import Any
@@ -16,6 +24,8 @@ __all__ = [
     "is_code_available",
     "suggest_payload",
     "next_available_code",
+    "next_sequential_code",
+    "save_with_sequential_code",
     "user_supplied_code_or_auto",
     "assign_string_code_if_empty",
 ]
@@ -40,15 +50,24 @@ def format_code(prefix: str, n: int, width: int | None = None) -> str:
 
 
 def collect_used_suffixes(company_id: int | None, model: type, field: str, prefix: str) -> set[int]:
-    used: set[int] = set()
+    """Every ``n`` already used as ``PREFIX-n``.
+
+    Finding the lowest free gap genuinely needs the whole set, but it does not need the whole
+    table: filter to codes that match the prefix and pull the single column as values, rather
+    than instantiating a model object per row in the company.
+    """
     qs = model.objects.all()
     if company_id is not None:
         qs = qs.filter(company_id=company_id)
-    for row in qs.only("id", field):
-        val = getattr(row, field) or ""
-        s = parse_suffix(str(val), prefix)
-        if s is not None:
-            used.add(s)
+    # iregex, not regex: parse_suffix matches case-insensitively, so a stored "bill-2"
+    # counts as suffix 2. A case-sensitive filter would miss it and hand out a code that
+    # is already taken.
+    qs = qs.filter(**{f"{field}__iregex": r"^" + re.escape(prefix) + r"-[0-9]+$"})
+    used: set[int] = set()
+    for val in qs.values_list(field, flat=True).iterator(chunk_size=5000):
+        n = parse_suffix(str(val or ""), prefix)
+        if n is not None:
+            used.add(n)
     return used
 
 
@@ -107,6 +126,82 @@ def next_available_code(
             return code
         n += 1
     raise ValueError("Could not assign a free reference code.")
+
+
+def highest_used_suffix(company_id: int | None, model: type, field: str, prefix: str) -> int:
+    """``max(n)`` over ``PREFIX-n`` codes, computed in the database.
+
+    ``collect_used_suffixes`` pulls every row of the table into Python to find gaps. On the
+    document tables that is the whole sales history, re-read on every new document.
+    """
+    from django.db.models import IntegerField, Max
+    from django.db.models.functions import Cast, Substr
+
+    qs = model.objects.all()
+    if company_id is not None:
+        qs = qs.filter(company_id=company_id)
+    # Only well-formed PREFIX-<digits> codes; anything else would break the cast.
+    qs = qs.filter(**{f"{field}__iregex": r"^" + re.escape(prefix) + r"-[0-9]+$"})
+    agg = qs.annotate(
+        _suffix=Cast(Substr(field, len(prefix) + 2), IntegerField())
+    ).aggregate(m=Max("_suffix"))
+    return int(agg["m"] or 0)
+
+
+def next_sequential_code(
+    company_id: int | None,
+    model: type,
+    field: str,
+    prefix: str,
+    width: int | None = None,
+) -> str:
+    """The next number in the series: ``max(used) + 1``, never a reused gap.
+
+    For accounting documents. See the module docstring for why gaps are not filled here.
+    """
+    n = highest_used_suffix(company_id, model, field, prefix) + 1
+    for _ in range(10000):
+        code = format_code(prefix, n, width)
+        if is_code_available(company_id, model, field, prefix, code, None):
+            return code
+        n += 1
+    raise ValueError("Could not assign a free reference code.")
+
+
+def save_with_sequential_code(
+    instance,
+    *,
+    company_id: int | None,
+    model: type,
+    field: str,
+    prefix: str,
+    width: int | None = None,
+    attempts: int = 5,
+):
+    """Assign the next code and save, retrying when a concurrent insert takes it first.
+
+    ``next_sequential_code`` is a read of ``max(suffix)`` followed by an insert, so two callers
+    in the same moment can pick the same number. The database now refuses that (the unique
+    constraint on the document number), which is the correct outcome — but an uncaught
+    ``IntegrityError`` reaches the user as a 500. Retrying re-reads the maximum and takes the
+    next free number, which is what the caller wanted.
+
+    Each attempt runs in its own savepoint so a failed insert does not poison an outer
+    transaction. Mirrors the recovery already built into ``gl_posting._create_posted_entry``.
+    """
+    from django.db import IntegrityError, transaction
+
+    last: Exception | None = None
+    for _ in range(max(1, attempts)):
+        setattr(instance, field, next_sequential_code(company_id, model, field, prefix, width))
+        try:
+            with transaction.atomic():
+                instance.save()
+            return instance
+        except IntegrityError as exc:
+            last = exc
+            instance.pk = None
+    raise last if last is not None else RuntimeError("could not assign a document number")
 
 
 def user_supplied_code_or_auto(

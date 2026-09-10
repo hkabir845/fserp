@@ -45,11 +45,84 @@ _TRANSFER_COST_BUCKETS = frozenset(
 )
 
 
+def pond_production_start_date(company_id: int, pond_id: int | None) -> date | None:
+    """The earliest date this pond incurred production cost, or None when it has none yet.
+
+    Used as the costing-window start when a pond is not running a production cycle. The old
+    fallback was 1 January of the year in question, which silently threw away every cost
+    incurred before New Year: a March harvest of fish fed since October was relieved at a
+    cost/kg built from January onwards only, and the pond's book value collapsed on 1 January
+    while GL 1581 kept the real balance.
+    """
+    if not company_id or not pond_id:
+        return None
+    from api.models import AquacultureExpense, BillLine
+
+    dates: list[date] = []
+    bl = (
+        BillLine.objects.filter(
+            bill__company_id=company_id, aquaculture_pond_id=pond_id
+        )
+        .order_by("bill__bill_date")
+        .values_list("bill__bill_date", flat=True)
+        .first()
+    )
+    if bl:
+        dates.append(bl)
+    ex = (
+        AquacultureExpense.objects.filter(company_id=company_id, pond_id=pond_id)
+        .order_by("expense_date")
+        .values_list("expense_date", flat=True)
+        .first()
+    )
+    if ex:
+        dates.append(ex)
+    return min(dates) if dates else None
+
+
+def production_denominator_kg(
+    sale_kg: Decimal,
+    on_hand_kg: Decimal,
+    movement_kg: Decimal | None,
+) -> tuple[Decimal, str]:
+    """Kg that a window's biological cost actually produced: sold out of the pond **plus** still in it.
+
+    The old rule took ``max()`` of the candidate bases — the largest single one — which
+    systematically mispriced relief. A pond that spent 100,000 producing 900 kg sold and 1,000 kg
+    still held divided by 1,000, relieved 90,000 against the 900 kg sold, and carried the
+    remaining 1,000 kg at 10/kg. The cost produced both lots, so the divisor is 1,900 kg and the
+    relief is 47,368.
+
+    Returns ``(0, "")`` when there is nothing to divide by, so the caller can fall back.
+    """
+    sale_kg = sale_kg if sale_kg and sale_kg > 0 else Decimal("0")
+    on_hand_kg = on_hand_kg if on_hand_kg and on_hand_kg > 0 else Decimal("0")
+    production_kg = sale_kg + on_hand_kg
+    if production_kg <= 0:
+        return Decimal("0"), ""
+    if movement_kg and movement_kg > production_kg:
+        # More is leaving than the pond is recorded as having produced. Dividing by the smaller
+        # number would inflate cost/kg, so trust the movement.
+        return _money_q(movement_kg), (
+            f"Uses kg on this movement ({_money_q(movement_kg)} kg) because it exceeds sold + "
+            f"on-hand kg ({_money_q(production_kg)} kg)."
+        )
+    return _money_q(production_kg), "sale kg in period + on-hand fish kg (cost produced both)"
+
+
 def pl_window_for_transfer_date(
     transfer_date: date,
     from_cycle: AquacultureProductionCycle | None,
+    *,
+    company_id: int | None = None,
+    pond_id: int | None = None,
 ) -> tuple[date, date]:
-    """Match frontend /aquaculture/transfers plWindowForTransferDate."""
+    """Costing window for a pond: its production cycle, else its whole production history.
+
+    Match frontend /aquaculture/transfers plWindowForTransferDate for the cycle case. Without a
+    cycle, pass ``company_id``/``pond_id`` so the window opens at the pond's first production
+    cost rather than at 1 January (see ``pond_production_start_date``).
+    """
     if from_cycle and from_cycle.start_date:
         start = from_cycle.start_date
         end = transfer_date
@@ -58,7 +131,10 @@ def pl_window_for_transfer_date(
         if start > end:
             start = end
         return start, end
-    return date(transfer_date.year, 1, 1), transfer_date
+    start = pond_production_start_date(company_id, pond_id) or date(transfer_date.year, 1, 1)
+    if start > transfer_date:
+        start = transfer_date
+    return start, transfer_date
 
 
 def _biological_production_cost_total(costing_lines: list[dict]) -> Decimal:
@@ -99,7 +175,9 @@ def transfer_cost_pools_for_scope(
         cycle_filter_id=cycle_filter_id,
         transfer_date=transfer_date,
     )
-    start, end = pl_window_for_transfer_date(cost_as_of, from_cycle)
+    start, end = pl_window_for_transfer_date(
+        cost_as_of, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
     payload = compute_aquaculture_pl_summary_dict(
         company_id,
         start,
@@ -296,13 +374,12 @@ def _transfer_denominator_kg(
     if not candidates:
         return Decimal("0"), ""
 
-    denom, note = max(candidates, key=lambda x: x[0])
-    if xfer_kg and sale_denom > 0 and xfer_kg > sale_denom:
-        return denom, (
-            f"Uses {note} ({denom} kg) because transfer kg ({xfer_kg} kg) is larger than "
-            f"fingerling/harvest sale kg ({sale_denom} kg) — avoids inflating cost/kg."
-        )
-    return denom, note
+    denom, note = production_denominator_kg(sale_denom, on_hand, xfer_kg)
+    if denom > 0:
+        return denom, note
+    if not candidates:
+        return Decimal("0"), ""
+    return max(candidates, key=lambda x: x[0])
 
 
 def lookup_transfer_cost_per_kg(
@@ -318,7 +395,9 @@ def lookup_transfer_cost_per_kg(
     Production cost per kg for inter-pond transfers.
     Uses fry/feed/medicine/preparation (+ transfer-in) over a kg basis that is at least transfer kg.
     """
-    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    start, end = pl_window_for_transfer_date(
+        transfer_date, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
     payload = compute_aquaculture_pl_summary_dict(
         company_id,
@@ -433,7 +512,9 @@ def _nursing_fry_pool_for_pond_batch(
         pond_fry_stocking_capitalized_journal_total,
     )
 
-    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    start, end = pl_window_for_transfer_date(
+        transfer_date, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
     capitalized_ids = fry_stocking_capitalized_manual_expense_ids(company_id)
     exp_total = (
         AquacultureExpense.objects.filter(
@@ -545,7 +626,9 @@ def _nursing_batch_cost_pool(
 ) -> Decimal:
     """Full nursing-period costs (fry + feed + lease + electricity + …) for fingerling transfer allocation."""
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
-    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    start, end = pl_window_for_transfer_date(
+        transfer_date, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
     payload = compute_aquaculture_pl_summary_dict(
         company_id,
         start,
@@ -1005,7 +1088,9 @@ def _production_cost_share_for_line(
         )
         if share > 0:
             return share
-        start, end = pl_window_for_transfer_date(transfer_date, cycle_obj)
+        start, end = pl_window_for_transfer_date(
+            transfer_date, cycle_obj, company_id=company_id, pond_id=from_pond_id
+        )
         cycle_filter_id = cycle_obj.id if cycle_obj is not None else None
         payload = compute_aquaculture_pl_summary_dict(
             company_id,
@@ -1140,7 +1225,9 @@ def _bio_total_for_transfer_scope(
     movable = _transferable_bio_asset_total(summary)
     if movable > 0:
         return movable
-    start, end = pl_window_for_transfer_date(transfer_date, from_cycle)
+    start, end = pl_window_for_transfer_date(
+        transfer_date, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
     cycle_filter_id = from_cycle.id if from_cycle is not None else None
     payload = compute_aquaculture_pl_summary_dict(
         company_id,

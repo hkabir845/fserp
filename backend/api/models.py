@@ -460,6 +460,13 @@ class Station(models.Model):
 
     class Meta:
         db_table = "station"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "station_number"],
+                condition=models.Q(station_number__gt=""),
+                name="station_company_number_uniq",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -588,6 +595,13 @@ class Item(models.Model):
 
     class Meta:
         db_table = "item"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "item_number"],
+                condition=models.Q(item_number__gt=""),
+                name="item_company_number_uniq",
+            ),
+        ]
 
 
 class ItemStationStock(models.Model):
@@ -772,7 +786,7 @@ class Tank(models.Model):
 
 class Island(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="islands")
-    station = models.ForeignKey(Station, on_delete=models.CASCADE, related_name="islands")
+    station = models.ForeignKey(Station, on_delete=models.PROTECT, related_name="islands")
     island_code = models.CharField(max_length=64, blank=True)
     island_name = models.CharField(max_length=200)
     location_description = models.CharField(max_length=300, blank=True)
@@ -786,7 +800,7 @@ class Island(models.Model):
 
 class Dispenser(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="dispensers")
-    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="dispensers")
+    island = models.ForeignKey(Island, on_delete=models.PROTECT, related_name="dispensers")
     dispenser_code = models.CharField(max_length=64, blank=True)
     dispenser_name = models.CharField(max_length=200)
     model = models.CharField(max_length=100, blank=True)
@@ -801,11 +815,21 @@ class Dispenser(models.Model):
 
 class Meter(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="meters")
-    dispenser = models.ForeignKey(Dispenser, on_delete=models.CASCADE, related_name="meters")
+    dispenser = models.ForeignKey(Dispenser, on_delete=models.PROTECT, related_name="meters")
     meter_code = models.CharField(max_length=64, blank=True)
     meter_number = models.CharField(max_length=64, blank=True)
     meter_name = models.CharField(max_length=200, blank=True)
     current_reading = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    max_reading = models.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text=(
+            "Highest display value before the register rolls to zero. "
+            "Null = no rollover (open-ended totalizer)."
+        ),
+    )
     last_reset_date = models.DateTimeField(null=True, blank=True)
     reset_count = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
@@ -818,9 +842,9 @@ class Meter(models.Model):
 
 class Nozzle(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="nozzles")
-    meter = models.ForeignKey(Meter, on_delete=models.CASCADE, related_name="nozzles")
-    tank = models.ForeignKey(Tank, on_delete=models.CASCADE, related_name="nozzles")
-    product = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="nozzles")
+    meter = models.ForeignKey(Meter, on_delete=models.PROTECT, related_name="nozzles")
+    tank = models.ForeignKey(Tank, on_delete=models.PROTECT, related_name="nozzles")
+    product = models.ForeignKey(Item, on_delete=models.PROTECT, related_name="nozzles")
     nozzle_number = models.CharField(max_length=64, blank=True)
     nozzle_code = models.CharField(max_length=64, blank=True)
     nozzle_name = models.CharField(max_length=200, blank=True)
@@ -894,6 +918,13 @@ class Customer(models.Model):
 
     class Meta:
         db_table = "customer"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "customer_number"],
+                condition=models.Q(customer_number__gt=""),
+                name="customer_company_number_uniq",
+            ),
+        ]
 
 
 class Vendor(models.Model):
@@ -1013,6 +1044,13 @@ class Vendor(models.Model):
 
     class Meta:
         db_table = "vendor"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "vendor_number"],
+                condition=models.Q(vendor_number__gt=""),
+                name="vendor_company_number_uniq",
+            ),
+        ]
 
 
 class VendorRateCard(models.Model):
@@ -1178,6 +1216,13 @@ class Employee(models.Model):
 
     class Meta:
         db_table = "employee"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "employee_code"],
+                condition=models.Q(employee_code__gt=""),
+                name="employee_company_code_uniq",
+            ),
+        ]
 
 
 class EmployeeLedgerEntry(models.Model):
@@ -1189,7 +1234,7 @@ class EmployeeLedgerEntry(models.Model):
     """
 
     employee = models.ForeignKey(
-        Employee, on_delete=models.CASCADE, related_name="ledger_entries"
+        Employee, on_delete=models.PROTECT, related_name="ledger_entries"
     )
     payroll_run = models.ForeignKey(
         "PayrollRun",
@@ -1561,6 +1606,12 @@ class JournalEntryLine(models.Model):
         indexes = [
             models.Index(fields=["account", "journal_entry"], name="jel_account_entry_idx"),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(debit__gte=0) & models.Q(credit__gte=0),
+                name="jel_nonneg_debit_credit",
+            ),
+        ]
 
 
 class FundTransfer(models.Model):
@@ -1763,6 +1814,15 @@ class Invoice(models.Model):
                 condition=models.Q(idempotency_key__gt=""),
                 name="invoice_company_idempotency_key_uniq",
             ),
+            models.CheckConstraint(
+                check=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
+                name="invoice_nonneg_amounts",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "invoice_date"], name="inv_company_date_idx"),
+            models.Index(fields=["company", "status", "invoice_date"], name="inv_company_status_date_idx"),
+            models.Index(fields=["company", "customer", "invoice_date"], name="inv_company_cust_date_idx"),
         ]
 
 
@@ -1900,6 +1960,17 @@ class Bill(models.Model):
         unique_together = [["company", "bill_number"]]
         # Related-object lookups and cascade deletes must see every row, internal included.
         base_manager_name = "all_objects"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
+                name="bill_nonneg_amounts",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "bill_date"], name="bill_company_date_idx"),
+            models.Index(fields=["company", "status", "bill_date"], name="bill_company_status_date_idx"),
+            models.Index(fields=["company", "vendor", "bill_date"], name="bill_company_vend_date_idx"),
+        ]
 
 
 class BillLine(models.Model):
@@ -2091,6 +2162,16 @@ class Payment(models.Model):
                 condition=models.Q(idempotency_key__gt=""),
                 name="payment_company_idempotency_key_uniq",
             ),
+            models.CheckConstraint(
+                check=models.Q(amount__gte=0),
+                name="payment_nonneg_amount",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "payment_date"], name="pay_company_date_idx"),
+            models.Index(fields=["company", "payment_type", "payment_date"], name="pay_company_type_date_idx"),
+            models.Index(fields=["company", "customer", "payment_date"], name="pay_company_cust_date_idx"),
+            models.Index(fields=["company", "vendor", "payment_date"], name="pay_company_vend_date_idx"),
         ]
 
 
@@ -4290,3 +4371,43 @@ class EmployeeHandoverProfile(models.Model):
             models.Index(fields=["company", "employee"]),
             models.Index(fields=["company", "job_title_snapshot"]),
         ]
+
+
+class FinancialAuditEvent(models.Model):
+    """
+    Append-only financial control log. Rows are never updated or deleted through the ORM API
+    used by the app; use this for void / reverse / period / price / restore attribution.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="financial_audit_events")
+    actor_user = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="financial_audit_events",
+    )
+    action = models.CharField(max_length=64, db_index=True)
+    entity_type = models.CharField(max_length=64, db_index=True)
+    entity_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    entity_ref = models.CharField(max_length=128, blank=True, default="")
+    reason = models.TextField(blank=True, default="")
+    before_json = models.JSONField(default=dict, blank=True)
+    after_json = models.JSONField(default=dict, blank=True)
+    request_meta = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "financial_audit_event"
+        indexes = [
+            models.Index(fields=["company", "created_at"], name="fae_company_created_idx"),
+            models.Index(fields=["company", "entity_type", "entity_id"], name="fae_company_entity_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise ValueError("FinancialAuditEvent rows are append-only and cannot be updated.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("FinancialAuditEvent rows are append-only and cannot be deleted.")

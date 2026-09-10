@@ -12,10 +12,9 @@ from django.views.decorators.csrf import csrf_exempt
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
 from api.utils.transaction_filters import (
-    apply_transaction_amount_range,
     apply_transaction_date_range,
 )
-from api.services.reference_code import next_available_code
+from api.services.reference_code import next_sequential_code, save_with_sequential_code
 from api.views.common import parse_json_body, require_company_id, require_permission
 from django.utils import timezone as django_timezone
 
@@ -149,6 +148,12 @@ def _entry_to_json(e):
         "total_credit": str(total_credit),
         "is_posted": e.is_posted,
         "posted_at": _serialize_datetime(e.posted_at),
+        "created_by_id": getattr(e, "created_by_id", None),
+        "posted_by_id": getattr(e, "posted_by_id", None),
+        "created_by_name": getattr(getattr(e, "created_by", None), "full_name", None)
+        or getattr(getattr(e, "created_by", None), "username", None),
+        "posted_by_name": getattr(getattr(e, "posted_by", None), "full_name", None)
+        or getattr(getattr(e, "posted_by", None), "username", None),
         "created_at": _serialize_datetime(e.created_at),
         "updated_at": _serialize_datetime(e.updated_at),
         "lines": line_list,
@@ -267,7 +272,7 @@ def journal_entries_list_or_create(request):
 def _journal_entries_base_qs(company_id: int):
     return (
         JournalEntry.objects.filter(company_id=company_id)
-        .select_related("station")
+        .select_related("station", "created_by", "posted_by")
         .prefetch_related(
             "lines",
             "lines__account",
@@ -393,17 +398,24 @@ def journal_entry_create(request):
     entry_date = _parse_date(body.get("entry_date")) or date.today()
     desc = (body.get("description") or "").strip()
     st_id = _coerce_optional_station_id(request.company_id, body.get("station_id"))
+    uid = getattr(getattr(request, "api_user", None), "id", None)
     e = JournalEntry(
         company_id=request.company_id,
-        entry_number=next_available_code(
-            request.company_id, JournalEntry, "entry_number", "JE"
-        ),
         entry_date=entry_date,
         description=desc,
         station_id=st_id,
         is_posted=False,
+        created_by_id=uid,
     )
-    e.save()
+    # Retry on the numbering race: max(suffix)+1 then insert is not atomic, and the unique
+    # constraint on (company, entry_number) now correctly refuses a duplicate.
+    save_with_sequential_code(
+        e,
+        company_id=request.company_id,
+        model=JournalEntry,
+        field="entry_number",
+        prefix="JE",
+    )
     lines = body.get("lines") or []
     for i, row in enumerate(lines):
         debit_acc = row.get("debit_account_id")
@@ -453,7 +465,7 @@ def journal_entry_create(request):
 def journal_entry_detail(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
-        .select_related("station")
+        .select_related("station", "created_by", "posted_by")
         .prefetch_related(
             "lines",
             "lines__account",
@@ -549,7 +561,7 @@ def journal_entry_post(request, entry_id: int):
     if e.is_posted:
         e_out = (
             JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
-            .select_related("station")
+            .select_related("station", "created_by", "posted_by")
             .prefetch_related(
             "lines",
             "lines__account",
@@ -585,10 +597,11 @@ def journal_entry_post(request, entry_id: int):
 
     e.is_posted = True
     e.posted_at = django_timezone.now()
+    e.posted_by_id = getattr(getattr(request, "api_user", None), "id", None)
     e.save()
     e_out = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
-        .select_related("station")
+        .select_related("station", "created_by", "posted_by")
         .prefetch_related(
             "lines",
             "lines__account",
@@ -621,6 +634,11 @@ def journal_entry_unpost(request, entry_id: int):
     if err:
         return err
     body = parsed or {}
+    from api.services.financial_audit import require_mutation_reason, record_financial_audit
+
+    reason, rerr = require_mutation_reason(body)
+    if rerr:
+        return JsonResponse({"detail": rerr}, status=400)
     lock_err = period_lock_error(
         request.company_id, e.entry_date, action="unpost a journal dated in"
     )
@@ -628,15 +646,39 @@ def journal_entry_unpost(request, entry_id: int):
         return JsonResponse({"detail": lock_err, "code": "period_locked"}, status=409)
     remove = bool(body.get("remove_system_entry") or body.get("purge_auto_entry"))
     en = (e.entry_number or "").strip()
+    before = {"is_posted": True, "entry_number": en, "entry_date": str(e.entry_date)}
     if remove and en.startswith("AUTO-"):
+        eid = int(e.id)
         e.delete()
+        record_financial_audit(
+            company_id=request.company_id,
+            action="delete",
+            entity_type="journal_entry",
+            entity_id=eid,
+            entity_ref=en,
+            reason=reason or "",
+            before=before,
+            after={"removed": True},
+            actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+        )
         return JsonResponse({"detail": "System journal entry removed", "removed": True})
     e.is_posted = False
     e.posted_at = None
     e.save()
+    record_financial_audit(
+        company_id=request.company_id,
+        action="unpost",
+        entity_type="journal_entry",
+        entity_id=int(e.id),
+        entity_ref=en,
+        reason=reason or "",
+        before=before,
+        after={"is_posted": False},
+        actor_user_id=getattr(getattr(request, "api_user", None), "id", None),
+    )
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
-        .select_related("station")
+        .select_related("station", "created_by", "posted_by")
         .prefetch_related(
             "lines",
             "lines__account",

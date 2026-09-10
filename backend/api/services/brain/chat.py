@@ -24,7 +24,6 @@ from api.services.brain.question_resolver import is_help_or_howto_question
 from api.services.brain.question_router import TYPE_ONBOARDING, route_question, route_to_dict
 from api.services.brain import prompts as brain_prompts
 from api.services.brain.prompts import get_risky_question_addon
-from api.services.brain import forecasting as brain_forecasting
 from api.services.brain.response_format import enrich_response_metadata
 from api.services.brain import usage_logging as brain_usage
 

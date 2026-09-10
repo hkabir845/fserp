@@ -109,7 +109,6 @@ def test_opening_balances_put_confirms_zero_prior_pl(api_client, auth_admin_head
 def test_opening_balances_put_posts_pl_to_gl_without_pl_patch(api_client, auth_admin_headers, company_tenant):
     import json
     from datetime import date
-    from decimal import Decimal
 
     from api.models import ChartOfAccount, Company
     from api.services.aquaculture_pond_pl_opening import sync_pond_pl_openings

@@ -95,13 +95,10 @@ def backfill_missing_payroll_subledger_lines_for_employee(
     to_sync = _posted_payroll_run_ids_for_employee(company_id, employee_id) - existing_run_ids
 
     if not existing_run_ids and not to_sync:
-        scanned = 0
-        for pr in posted.order_by("-id"):
-            if scanned >= _LEGACY_BACKFILL_SCAN_LIMIT:
-                break
-            scanned += 1
-            if _payroll_run_touches_employee(company_id, pr, employee_id):
-                to_sync.add(int(pr.pk))
+        # Do not infer payees by subset-sum on a ledger GET. That was an audit hole
+        # (wrong staff attributed) and a timeout at ~25 employees. Legacy runs without
+        # stored allocations stay unmatched until a one-shot backfill command is run.
+        return
 
     if not to_sync:
         return

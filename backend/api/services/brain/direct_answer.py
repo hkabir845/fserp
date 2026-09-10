@@ -1,7 +1,6 @@
 """Compose direct Bangla answers from ERP analytics (works with or without LLM)."""
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 from api.services.brain.list_requests import detect_list_module
@@ -42,6 +41,40 @@ def _market_value_basis_label(basis: str | None) -> str:
     if basis == "company_average_sale":
         return "কোম্পানির গড় বিক্রয় দর (গত ১২ মাস)"
     return "বিক্রয় দর"
+
+
+def _format_pond_market_value_line(
+    pname: str, pond: dict[str, Any], market: dict[str, Any]
+) -> str:
+    """Standing biomass valued at the pond's own sale price, plus where that price came from.
+
+    The biomass and harvest answers wrap this in an ``_md_section`` heading, so it returns the
+    section body only.
+    """
+    if not market:
+        return _md_bullets([f"**{pname}** — বিক্রয় দর জানা নেই, তাই বাজার মূল্য হিসাব করা যায়নি।"])
+    profile = pond.get("stock_profile") or {}
+    biomass = profile.get("biomass_kg") or pond.get("biomass_kg") or "0"
+    price = market.get("valuation_price_per_kg")
+    value = market.get("implied_market_value_bdt")
+    bullets: list[str] = []
+    if value and price:
+        bullets.append(
+            f"আনুমানিক মূল্য **৳{value}** = **{biomass}** কেজি × **৳{price}**/কেজি"
+        )
+    elif price:
+        bullets.append(f"বিক্রয় দর **৳{price}**/কেজি")
+    else:
+        bullets.append("কোনো বিক্রয় দর পাওয়া যায়নি — দর বসালে বাজার মূল্য হিসাব হবে।")
+    if price:
+        bullets.append(f"দরের ভিত্তি: {_market_value_basis_label(market.get('price_basis'))}")
+    if market.get("last_sale_price_per_kg"):
+        sale_date = market.get("last_sale_date")
+        bullets.append(
+            f"সর্বশেষ বিক্রয় **৳{market['last_sale_price_per_kg']}**/কেজি"
+            + (f" ({sale_date})" if sale_date else "")
+        )
+    return _md_bullets(bullets)
 
 
 def _format_all_ponds_portfolio_header(all_ponds: dict[str, Any]) -> str | None:
@@ -463,7 +496,6 @@ def compose_direct_answer(context: dict[str, Any], *, lang: str = "bn") -> dict[
         pname = pond.get("pond_name", "")
         fcr = pond.get("fcr") or {}
         density = pond.get("density") or {}
-        rec = pond.get("stocking_recommendation") or {}
         feed = pond.get("feeding_today") or {}
         market = pond.get("market_value") or {}
 

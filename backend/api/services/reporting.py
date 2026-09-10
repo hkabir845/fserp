@@ -1699,12 +1699,11 @@ def report_income_statement(
     elif station_id is not None:
         out_is["filter_station_id"] = station_id
     elif not unscoped_dims:
-        # All entities: GL P&L omits pond costs that sit in biological inventory
-        # until harvest. Attach the aquaculture register so Fisherman / lease /
-        # feed and every other pond category still list on this report.
+        # All entities / All sites: attach register and fold categories into Income/Expenses.
         out_is["aquaculture_management"] = _aquaculture_management_snapshot(
             company_id, start, end
         )
+        _fold_aquaculture_register_into_pl_sections(out_is, company_id, start, end)
     if unscoped_dims:
         out_is["filter_head_office"] = True
     return out_is
@@ -2555,6 +2554,9 @@ def report_expense_detail(
         out["aquaculture_management"] = _aquaculture_management_snapshot(
             company_id, start, end
         )
+        _fold_aquaculture_register_into_pl_sections(
+            out, company_id, start, end, include_income=False, include_expenses=True
+        )
     if unscoped_dims:
         out["filter_head_office"] = True
     return out
@@ -2654,6 +2656,9 @@ def report_income_detail(
         # Company-wide income detail: include aquaculture register income by type.
         out["aquaculture_management"] = _aquaculture_management_snapshot(
             company_id, start, end
+        )
+        _fold_aquaculture_register_into_pl_sections(
+            out, company_id, start, end, include_income=True, include_expenses=False
         )
     if unscoped_dims:
         out["filter_head_office"] = True
@@ -3987,6 +3992,31 @@ def report_entities_pl_summary(company_id: int, start: date, end: date) -> dict[
     payload["aquaculture_management"] = _aquaculture_management_snapshot(
         company_id, start, end
     )
+    # Company-wide Income / Expenses account lists (GL + aquaculture register fold-in).
+    company_pl = report_income_statement(company_id, start, end)
+    payload["company_income"] = company_pl.get("income") or {"accounts": [], "total": "0.00"}
+    payload["company_expenses"] = company_pl.get("expenses") or {"accounts": [], "total": "0.00"}
+    payload["company_cogs"] = company_pl.get("cost_of_goods_sold") or {
+        "accounts": [],
+        "total": "0.00",
+    }
+    payload["includes_aquaculture_register"] = bool(
+        company_pl.get("includes_aquaculture_register")
+    )
+    # Keep company_total KPIs aligned with the folded Income/Expenses lists.
+    co = payload.get("company_total")
+    if isinstance(co, dict) and payload["includes_aquaculture_register"]:
+        co = {
+            **co,
+            "income": company_pl.get("income", {}).get("total", co.get("income")),
+            "cost_of_goods_sold": company_pl.get("cost_of_goods_sold", {}).get(
+                "total", co.get("cost_of_goods_sold")
+            ),
+            "expenses": company_pl.get("expenses", {}).get("total", co.get("expenses")),
+            "gross_profit": company_pl.get("gross_profit", co.get("gross_profit")),
+            "net_income": company_pl.get("net_income", co.get("net_income")),
+        }
+        payload["company_total"] = co
     return payload
 
 
@@ -4215,6 +4245,135 @@ def _aquaculture_management_snapshot(
         "income_by_pond": mgmt.get("income_by_pond") or [],
         "income_by_category": mgmt.get("income_by_category") or [],
     }
+
+
+def _fold_aquaculture_register_into_pl_sections(
+    out: dict[str, Any],
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    include_income: bool = True,
+    include_expenses: bool = True,
+) -> None:
+    """
+    All sites / company-wide P&L: put aquaculture register income and expenses into the
+    main Income and Expenses account lists so they are visible even when pond inputs sit
+    in biological inventory (1581) until harvest COGS.
+    """
+    from api.services.aquaculture_constants import (
+        EXPENSE_CATEGORY_LABELS,
+        INCOME_TYPE_LABELS,
+    )
+    from api.services.aquaculture_cost_per_kg import aquaculture_expense_category_to_cost_bucket
+    from api.services.aquaculture_pond_bio_capitalization import (
+        company_capitalizes_pond_production,
+        pond_cost_bucket_capitalizes_to_bio,
+    )
+
+    mgmt = out.get("aquaculture_management")
+    if not isinstance(mgmt, dict) or not mgmt.get("totals"):
+        mgmt = _aquaculture_management_snapshot(company_id, start, end)
+        out["aquaculture_management"] = mgmt
+
+    capitalize = company_capitalizes_pond_production(company_id)
+    added_income = Decimal("0")
+    added_expense = Decimal("0")
+
+    if include_income:
+        income_block = out.setdefault("income", {"accounts": [], "total": "0.00"})
+        accounts = list(income_block.get("accounts") or [])
+        existing = {
+            str(a.get("account_code") or "").strip()
+            for a in accounts
+            if isinstance(a, dict)
+        }
+        for row in mgmt.get("income_by_category") or []:
+            if not isinstance(row, dict):
+                continue
+            cat = str(row.get("category") or "").strip()
+            amt = _d(row.get("amount"))
+            if not cat or amt <= 0:
+                continue
+            code = f"AQ-INC-{cat}"
+            if code in existing:
+                continue
+            label = INCOME_TYPE_LABELS.get(cat) or cat.replace("_", " ").title()
+            accounts.append(
+                {
+                    "account_id": None,
+                    "account_code": code,
+                    "account_name": f"{label} (aquaculture register)",
+                    "balance": _f(amt),
+                    "source": "aquaculture_register",
+                }
+            )
+            existing.add(code)
+            # Always fold register income into the All-sites total so pond sales
+            # appear in P&L Income even when not yet mirrored as GL invoices.
+            added_income += amt
+        income_block["accounts"] = accounts
+        if added_income > 0:
+            income_block["total"] = _f(_d(income_block.get("total")) + added_income)
+
+    if include_expenses:
+        expense_block = out.setdefault("expenses", {"accounts": [], "total": "0.00"})
+        accounts = list(expense_block.get("accounts") or [])
+        existing = {
+            str(a.get("account_code") or "").strip()
+            for a in accounts
+            if isinstance(a, dict)
+        }
+        for row in mgmt.get("expenses_by_category") or []:
+            if not isinstance(row, dict):
+                continue
+            cat = str(row.get("category") or "").strip()
+            amt = _d(row.get("amount"))
+            if not cat or amt <= 0:
+                continue
+            code = f"AQ-EXP-{cat}"
+            if code in existing:
+                continue
+            label = EXPENSE_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
+            accounts.append(
+                {
+                    "account_id": None,
+                    "account_code": code,
+                    "account_name": f"{label} (aquaculture register)",
+                    "balance": _f(amt),
+                    "source": "aquaculture_register",
+                }
+            )
+            existing.add(code)
+            # Capitalized grow-out inputs never hit GL Expenses — add them to the total.
+            # Non-capitalized (fisherman, lease, …) already post as GL expense when billed.
+            bucket = aquaculture_expense_category_to_cost_bucket(cat, company_id=company_id)
+            if capitalize and pond_cost_bucket_capitalizes_to_bio(bucket):
+                added_expense += amt
+            elif not capitalize and _d(expense_block.get("total")) <= 0:
+                added_expense += amt
+        expense_block["accounts"] = accounts
+        if added_expense > 0:
+            expense_block["total"] = _f(_d(expense_block.get("total")) + added_expense)
+
+    if added_income or added_expense:
+        ti = _d((out.get("income") or {}).get("total"))
+        tcogs = _d((out.get("cost_of_goods_sold") or {}).get("total"))
+        te = _d((out.get("expenses") or {}).get("total"))
+        if "gross_profit" in out:
+            out["gross_profit"] = _f(ti - tcogs)
+        if "net_income" in out:
+            out["net_income"] = _f(ti - tcogs - te)
+        out["includes_aquaculture_register"] = True
+        note = str(out.get("accounting_note") or "")
+        extra = (
+            " All sites: aquaculture register income/expense categories are listed in Income and "
+            "Expenses (codes AQ-INC-* / AQ-EXP-*). When pond inputs are capitalized to biological "
+            "inventory (1581), those register costs are also added into Expenses so the P&L is not blank "
+            "before harvest COGS."
+        )
+        if extra.strip() not in note:
+            out["accounting_note"] = (note + extra).strip()
 
 
 def _station_pl_summary_row(r: dict[str, Any]) -> dict[str, Any]:

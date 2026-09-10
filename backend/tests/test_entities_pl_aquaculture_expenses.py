@@ -119,6 +119,9 @@ def test_income_statement_all_entities_includes_aquaculture_register_categories(
     }
     assert exp_cats.get("fisherman", 0) == Decimal("4200.00")
     assert exp_cats.get("lease", 0) == Decimal("3000.00")
+    exp_codes = {a.get("account_code") for a in (pl.get("expenses") or {}).get("accounts") or []}
+    assert "AQ-EXP-fisherman" in exp_codes
+    assert "AQ-EXP-lease" in exp_codes
 
     entities = report_entities_pl_summary(cid, start, end)
     ent_cats = {
@@ -127,6 +130,56 @@ def test_income_statement_all_entities_includes_aquaculture_register_categories(
     }
     assert ent_cats.get("fisherman", 0) == Decimal("4200.00")
     assert ent_cats.get("lease", 0) == Decimal("3000.00")
+    co_exp_codes = {
+        a.get("account_code")
+        for a in (entities.get("company_expenses") or {}).get("accounts") or []
+    }
+    assert "AQ-EXP-fisherman" in co_exp_codes
+    assert "AQ-EXP-lease" in co_exp_codes
+
+
+@pytest.mark.django_db
+def test_all_sites_pl_folds_capitalized_feed_into_expenses(company_tenant):
+    """When bio capitalization is on, All-sites P&L Expenses include register feed."""
+    from api.models import Company
+    from api.services.reporting import report_income_statement
+
+    cid = company_tenant.id
+    Company.objects.filter(pk=cid).update(
+        aquaculture_capitalize_pond_consumption_to_bioasset=True
+    )
+    pond = AquaculturePond.objects.create(
+        company_id=cid,
+        name="P-Feed Cap",
+        is_active=True,
+        sort_order=1,
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_date=date(2026, 6, 4),
+        expense_category="feed",
+        amount=Decimal("9000.00"),
+        memo="sacks",
+    )
+    AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        sale_date=date(2026, 6, 10),
+        income_type="fish_harvest_sale",
+        fish_species="tilapia",
+        weight_kg=Decimal("50"),
+        total_amount=Decimal("7500.00"),
+    )
+    start, end = date(2026, 6, 1), date(2026, 6, 30)
+    pl = report_income_statement(cid, start, end)
+    assert pl.get("includes_aquaculture_register") is True
+    exp_codes = {a.get("account_code") for a in (pl.get("expenses") or {}).get("accounts") or []}
+    inc_codes = {a.get("account_code") for a in (pl.get("income") or {}).get("accounts") or []}
+    assert "AQ-EXP-feed" in exp_codes
+    assert "AQ-INC-fish_harvest_sale" in inc_codes
+    assert Decimal(str(pl["expenses"]["total"])) >= Decimal("9000.00")
+    assert Decimal(str(pl["income"]["total"])) >= Decimal("7500.00")
 
 
 @pytest.mark.django_db

@@ -1282,8 +1282,13 @@ export function renderExtraFinancialReport(
           )
         ) : null}
         {!pondScopeId && !stationScopeId && !headOfficeScope ? (
+        <div className="space-y-4">
         <div className="rounded-lg border-2 border-border bg-muted/40 p-4">
-          <h3 className="text-sm font-semibold text-foreground">Company total (all GL)</h3>
+          <h3 className="text-sm font-semibold text-foreground">
+            {data.includes_aquaculture_register
+              ? 'Company total (All sites — GL + aquaculture register)'
+              : 'Company total (all GL)'}
+          </h3>
           {kind === 'pl' || isCombined ? (
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
               <div>
@@ -1343,6 +1348,48 @@ export function renderExtraFinancialReport(
               </div>
             </div>
           ) : null}
+        </div>
+        {(kind === 'pl' || isCombined) &&
+        ((Array.isArray((data.company_income as { accounts?: unknown[] } | undefined)?.accounts) &&
+          ((data.company_income as { accounts: unknown[] }).accounts?.length ?? 0) > 0) ||
+          (Array.isArray((data.company_expenses as { accounts?: unknown[] } | undefined)?.accounts) &&
+            ((data.company_expenses as { accounts: unknown[] }).accounts?.length ?? 0) > 0)) ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[
+              { title: 'Income (All sites)', block: data.company_income as { accounts?: { account_code?: string; account_name?: string; balance?: string | number }[]; total?: string | number } },
+              { title: 'Expenses (All sites)', block: data.company_expenses as { accounts?: { account_code?: string; account_name?: string; balance?: string | number }[]; total?: string | number } },
+            ].map(({ title, block }) => {
+              const rows = Array.isArray(block?.accounts) ? block.accounts : []
+              if (rows.length === 0) return null
+              return (
+                <div key={title} className="rounded-lg border border-border bg-white shadow-sm">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+                    <span className="text-sm font-bold tabular-nums">
+                      <ReportAmountCell amount={Number(block?.total ?? 0)} row={{}} field="total" scope={ctx.drillScope ?? {}} />
+                    </span>
+                  </div>
+                  <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                    {rows.map((account, idx) => (
+                      <div
+                        key={`${title}-${account.account_code ?? idx}`}
+                        className="flex justify-between gap-3 px-4 py-2.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">{account.account_name}</p>
+                          <p className="text-xs text-muted-foreground">{account.account_code}</p>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">
+                          <ReportAmountCell amount={Number(account.balance ?? 0)} row={account} field="balance" scope={ctx.drillScope ?? {}} />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
         </div>
         ) : null}
       </div>

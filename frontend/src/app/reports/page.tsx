@@ -6103,6 +6103,19 @@ function renderReportTable(
           "P&L includes posted journal activity from start through end date (not opening balances on revenue/expense accounts)."
         )}
 
+        {data.includes_aquaculture_register ? (
+          <p className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950">
+            All sites: aquaculture register categories are included in the Income and Expenses lists below
+            (codes starting with AQ-). Capitalized pond inputs (feed, medicine, etc.) are added into Expenses
+            so they appear before harvest COGS.
+          </p>
+        ) : null}
+
+        <PondScopedAquaculturePlBlock
+          data={data as Record<string, unknown>}
+          pondId={null}
+        />
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
@@ -6207,11 +6220,6 @@ function renderReportTable(
             </div>
           ))}
         </div>
-
-        <PondScopedAquaculturePlBlock
-          data={data as Record<string, unknown>}
-          pondId={null}
-        />
 
         {/* Summary Totals */}
         {(() => {

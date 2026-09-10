@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import Tax, TaxRate
 
 
@@ -55,6 +55,7 @@ def _decimal(val, default=0):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tax", methods=("POST",))
 def taxes_list_or_create(request):
     if request.method == "GET":
         qs = Tax.objects.filter(company_id=request.company_id).prefetch_related("rates").order_by("id")
@@ -85,6 +86,7 @@ def taxes_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tax", methods=("PUT", "PATCH", "DELETE",))
 def tax_detail(request, tax_id: int):
     t = Tax.objects.filter(id=tax_id, company_id=request.company_id).prefetch_related("rates").first()
     if not t:
@@ -123,6 +125,7 @@ def tax_detail(request, tax_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tax")
 def tax_rates_create(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -145,6 +148,7 @@ def tax_rates_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tax")
 def tax_rate_delete(request, rate_id: int):
     if request.method != "DELETE":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -158,6 +162,7 @@ def tax_rate_delete(request, rate_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tax")
 def tax_init_bangladesh(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)

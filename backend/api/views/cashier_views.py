@@ -2,7 +2,7 @@
 import logging
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 from django.http import JsonResponse
@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 
 from api.utils.auth import auth_required, get_user_from_request
 from api.utils.pos_payment import is_on_account_payment, normalize_pos_payment_method
-from api.views.common import require_company_id, parse_json_body
+from api.views.common import require_company_id, parse_json_body, require_permission
 from api.models import (
     AquaculturePond,
     BankAccount,
@@ -31,6 +31,7 @@ from api.models import (
 from api.exceptions import GlPostingError, StockBusinessError
 from api.chart_templates.fuel_station import ensure_donation_social_support_account
 from api.services.gl_posting import (
+    refresh_item_quantity_on_hand_from_tanks,
     _is_walkin_customer,
     _item_receives_physical_stock,
     post_payment_received_journal,
@@ -65,6 +66,42 @@ def _cashier_pos_error(detail: str, status: int = 400) -> JsonResponse:
     else:
         logger.warning("cashier/pos HTTP %s: %s", status, detail)
     return JsonResponse({"detail": detail}, status=status)
+
+
+def _read_idempotency_key(request, body: dict) -> str:
+    """Client Idempotency-Key header or body; truncated to Invoice.idempotency_key max length."""
+    key = request.headers.get("Idempotency-Key") or (
+        body.get("idempotency_key") if isinstance(body, dict) else ""
+    )
+    return (str(key).strip() if key else "")[:64]
+
+
+def _pos_sale_payload_from_invoice(inv: Invoice) -> dict:
+    """Rebuild the POS success payload for an idempotent replay."""
+    on_account = is_on_account_payment(inv.payment_method)
+    split_tender = (inv.payment_method or "").strip().lower() == "mixed"
+    detail = (
+        "Sale recorded on account (open A/R). Record payment in Payments / Received when the customer pays."
+        if on_account
+        else (
+            "Part paid now; remainder is on Accounts Receivable. Collect the balance later in Payments → Received."
+            if split_tender
+            else "Sale recorded"
+        )
+    )
+    payload: dict = {
+        "detail": detail,
+        "invoice_id": inv.id,
+        "invoice_number": inv.invoice_number,
+        "idempotent_replay": True,
+    }
+    if on_account:
+        payload["invoice_status"] = "sent"
+        payload["billing"] = "accounts_receivable"
+    elif split_tender:
+        payload["invoice_status"] = getattr(inv, "status", None) or "partial"
+        payload["billing"] = "split_cash_ar"
+    return payload
 
 
 def _enforce_home_station_for_pond_shop_sale(
@@ -323,8 +360,26 @@ def _parse_optional_amount_paid_now(body: dict) -> tuple[Decimal | None, JsonRes
     return d, None
 
 
-def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResponse:
+def _cashier_pos_unified(
+    company_id: int,
+    body: dict,
+    api_user=None,
+    *,
+    idempotency_key: str = "",
+) -> JsonResponse:
     """Create one invoice from general item lines and/or fuel nozzle lines."""
+    if idempotency_key:
+        existing = (
+            Invoice.objects.filter(
+                company_id=company_id,
+                idempotency_key=idempotency_key,
+            )
+            .only("id", "invoice_number", "payment_method", "status")
+            .first()
+        )
+        if existing is not None:
+            return JsonResponse(_pos_sale_payload_from_invoice(existing), status=200)
+
     items_raw = body.get("items")
     fuel_raw = body.get("fuel_lines")
 
@@ -535,6 +590,7 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
                 tax_total=Decimal("0"),
                 total=total,
                 payment_method=inv_pm,
+                idempotency_key=idempotency_key or "",
             )
             inv.save()
             inv.invoice_number = f"INV-POS-{inv.id}"
@@ -565,8 +621,21 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
                         current_stock=F("current_stock") - qty
                     )
 
+            # Item.quantity_on_hand mirrors tank stock and is what the valuation report and the
+            # POS availability check read. Without this it only ever rose for fuel.
+            for _pid in {
+                int(fe["product"].id) for fe in fuel_entries if fe.get("tank") and fe.get("product")
+            }:
+                refresh_item_quantity_on_hand_from_tanks(company_id, _pid)
+
             if lines_data and sale_station_id is not None:
                 decrement_station_lines(company_id, sale_station_id, lines_data)
+            # POS takes the stock here, so record it on the invoice. The rollback path keys on
+            # this flag (it used to guess from the INV-POS- number prefix), and it stops
+            # apply_invoice_stock_relief taking the same units a second time when the sale
+            # journal posts below.
+            Invoice.objects.filter(pk=inv.pk).update(stock_relieved=True)
+            inv.stock_relieved = True
             for d in lines_data:
                 InvoiceLine.objects.create(
                     invoice=inv,
@@ -656,6 +725,19 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
         return _cashier_pos_error(e.detail)
     except StockBusinessError as e:
         return _cashier_pos_error(e.detail)
+    except IntegrityError:
+        if idempotency_key:
+            existing = (
+                Invoice.objects.filter(
+                    company_id=company_id,
+                    idempotency_key=idempotency_key,
+                )
+                .only("id", "invoice_number", "payment_method", "status")
+                .first()
+            )
+            if existing is not None:
+                return JsonResponse(_pos_sale_payload_from_invoice(existing), status=200)
+        raise
     except Exception as e:
         logger.exception("cashier_pos_unified failed")
         return JsonResponse(
@@ -668,6 +750,7 @@ def _cashier_pos_unified(company_id: int, body: dict, api_user=None) -> JsonResp
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.cashier")
 def cashier_sale(request):
     """POST /api/cashier/sale - record a fuel sale (nozzle, quantity, amount)."""
     body, err = parse_json_body(request)
@@ -700,26 +783,38 @@ def cashier_sale(request):
         ],
     }
     api_u = getattr(request, "api_user", None) or get_user_from_request(request)
-    return _cashier_pos_unified(company_id, unified_body, api_u)
+    return _cashier_pos_unified(
+        company_id,
+        unified_body,
+        api_u,
+        idempotency_key=_read_idempotency_key(request, body),
+    )
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.cashier")
 def cashier_pos(request):
     """POST /api/cashier/pos - record POS sale: general items, fuel lines, or both."""
     body, err = parse_json_body(request)
     if err:
         return err
     api_u = getattr(request, "api_user", None) or get_user_from_request(request)
-    return _cashier_pos_unified(request.company_id, body, api_u)
+    return _cashier_pos_unified(
+        request.company_id,
+        body,
+        api_u,
+        idempotency_key=_read_idempotency_key(request, body),
+    )
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.cashier")
 def cashier_cash_donation(request):
     """
     POST /api/cashier/cash-donation — Dr 6910 Donation & Social Support, Cr 1010 (or register GL).

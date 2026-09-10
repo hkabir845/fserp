@@ -16,7 +16,7 @@ from api.utils.transaction_filters import (
     apply_transaction_date_range,
 )
 from api.exceptions import GlPostingError
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import (
     BankAccount,
     BankDeposit,
@@ -235,6 +235,7 @@ def payments_all_list(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.payments", methods=("POST",))
 def payments_received_list(request):
     if request.method == "POST":
         return payments_received_create(request)
@@ -535,6 +536,7 @@ def _validate_invoice_allocations(
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.payments")
 def payments_received_create(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -691,6 +693,7 @@ def payments_received_idempotency_status(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.payments", methods=("POST",))
 def payments_made_list(request):
     if request.method == "POST":
         return payments_made_create(request)
@@ -1009,6 +1012,7 @@ def payments_made_outstanding(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.payments")
 def payments_made_create(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -1138,6 +1142,7 @@ def payments_undeposited_funds(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.payments", methods=("POST",))
 def payments_deposits_list_or_create(request):
     """List bank deposits (batch) or create one from undeposited customer payments."""
     cid = request.company_id
@@ -1258,6 +1263,7 @@ def payments_deposits_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.payments", methods=("PUT", "PATCH", "DELETE",))
 def payment_detail_update_delete(request, payment_id: int):
     """
     GET: full register row (same shape as /payments/ list).

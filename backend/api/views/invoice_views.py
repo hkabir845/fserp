@@ -19,7 +19,8 @@ from api.views.common import (
     parse_json_body,
     require_company_id,
     _serialize_datetime,
-    _serialize_quantity,
+    _serialize_quantity,,
+    require_permission,
 )
 from api.services.coa_gl_defaults import ALLOWED_INCOME, parse_optional_chart_account_id
 from api.services.document_status import (
@@ -233,6 +234,7 @@ def _invoices_list(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.invoices", methods=("POST",))
 def invoices_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -338,6 +340,7 @@ def invoices_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.invoices", methods=("PUT", "PATCH", "DELETE",))
 def invoice_detail(request, invoice_id: int):
     cid = request.company_id
     # all_objects: a link to inter-pond trade paperwork must open, even though those documents
@@ -466,6 +469,7 @@ def invoice_detail(request, invoice_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.invoices")
 def invoice_status(request, invoice_id: int):
     cid = request.company_id
     if request.method != "PUT":

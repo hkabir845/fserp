@@ -16,7 +16,7 @@ from django.views.decorators.http import require_GET
 
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
-from api.views.common import parse_json_body, query_include_inactive, require_company_id, _serialize_decimal, _serialize_quantity
+from api.views.common import parse_json_body, query_include_inactive, require_company_id, _serialize_decimal, _serialize_quantity, require_permission
 from api.models import (
     AquaculturePond,
     BillLine,
@@ -508,6 +508,7 @@ def _items_on_hand_value_totals(qs):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.items", methods=("POST",))
 def items_list_or_create(request):
     if request.method == "GET":
         qs = (
@@ -760,6 +761,7 @@ def items_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.items", methods=("PUT", "PATCH", "DELETE",))
 def item_detail(request, item_id: int):
     i = (
         _items_queryset_with_tank_annotations(
@@ -1125,6 +1127,7 @@ def item_reporting_category_suggestions(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.items")
 def upload_item_image(request):
     """POST /api/upload/items/image - multipart file or base64; returns image_url."""
     if request.method != "POST":

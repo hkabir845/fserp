@@ -70,7 +70,7 @@ from api.utils.transaction_filters import (
     apply_transaction_amount_range,
     apply_transaction_date_range,
 )
-from api.views.common import parse_json_body, require_company_id, _serialize_quantity
+from api.views.common import parse_json_body, require_company_id, _serialize_quantity, require_permission
 from api.services.aquaculture_bill_defaults import (
     apply_aquaculture_expense_category_to_bill_line_row,
     expense_category_from_cost_bucket,
@@ -922,6 +922,7 @@ def _coerce_line_tank_id(company_id: int, row: dict, item_id: Optional[int]):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.bills", methods=("POST",))
 def bills_list_or_create(request):
     if request.method == "GET":
         return _bills_list(request)
@@ -1019,6 +1020,7 @@ def _bills_list(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.bills")
 def bills_create(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -1189,6 +1191,7 @@ def bills_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.bills", methods=("PUT", "PATCH", "DELETE",))
 def bill_detail(request, bill_id: int):
     # all_objects: a link to inter-pond trade paperwork must open, even though those documents
     # are hidden from every list and total by default.

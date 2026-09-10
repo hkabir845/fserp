@@ -12,7 +12,8 @@ from api.views.common import (
     parse_json_body,
     query_include_inactive,
     query_include_internal,
-    require_company_id,
+    require_company_id,,
+    require_permission,
 )
 from api.models import Vendor
 from api.services.coa_gl_defaults import (
@@ -150,6 +151,7 @@ def _vendor_apply_sort(qs, request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors", methods=("POST",))
 def vendors_list_or_create(request):
     if request.method == "GET":
         qs = Vendor.objects.filter(company_id=request.company_id).select_related(
@@ -260,6 +262,7 @@ def vendors_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors", methods=("PUT", "PATCH", "DELETE",))
 def vendor_detail(request, vendor_id: int):
     v = (
         Vendor.objects.filter(id=vendor_id, company_id=request.company_id)

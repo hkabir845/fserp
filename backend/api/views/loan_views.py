@@ -51,7 +51,7 @@ from api.services.loan_counterparty_opening import (
 from api.services.loan_posting import resync_loan_gl_station_tags
 from api.services.loan_counterparty_ledger import build_counterparty_ledger
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.services.invoice_station import parse_valid_station_id
 
 
@@ -531,6 +531,7 @@ def _counterparty_opening_from_body(cid, body) -> tuple[dict, bool, JsonResponse
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans", methods=("POST",))
 def loan_counterparties_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -602,6 +603,7 @@ def loan_counterparties_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans", methods=("PUT", "PATCH", "DELETE",))
 def loan_counterparty_detail(request, counterparty_id: int):
     cid = request.company_id
     c = (
@@ -733,6 +735,7 @@ def loan_counterparty_ledger(request, counterparty_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans", methods=("POST",))
 def loans_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -905,6 +908,7 @@ def _apply_loan_station_from_body(lo: Loan, cid: int, body: dict) -> tuple[int, 
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans", methods=("PUT", "PATCH", "DELETE",))
 def loan_detail(request, loan_id: int):
     cid = request.company_id
     lo = (
@@ -1243,6 +1247,7 @@ def loan_detail(request, loan_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans")
 def loan_disburse(request, loan_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -1306,6 +1311,7 @@ def loan_disburse(request, loan_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans")
 def loan_repay(request, loan_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -1378,6 +1384,7 @@ def loan_repay(request, loan_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans")
 def loan_accrue_interest(request, loan_id: int):
     """POST accrual: body amount OR days (+ annual rate on loan); posts Dr exp / Cr accrued (borrowed)."""
     if request.method != "POST":
@@ -1472,6 +1479,7 @@ def loan_accrue_interest(request, loan_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans")
 def loan_accrual_reverse(request, loan_id: int, accrual_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -1509,6 +1517,7 @@ def loan_accrual_reverse(request, loan_id: int, accrual_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.loans")
 def loan_repayment_reverse(request, loan_id: int, repayment_id: int):
     """POST reversing journal + restore outstanding / total_repaid_principal."""
     if request.method != "POST":

@@ -48,7 +48,7 @@ from api.services.station_stock import (
     set_station_stock,
 )
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id, _serialize_decimal, _serialize_quantity
+from api.views.common import parse_json_body, require_company_id, _serialize_decimal, _serialize_quantity, require_permission
 
 
 def _user_home_station_id(request) -> int | None:
@@ -516,6 +516,7 @@ def pond_warehouse_receipts_list(request):
 @require_http_methods(["GET", "PUT"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory", methods=("PUT", "PATCH",))
 def pond_warehouse_receipt_detail_or_amend(request, receipt_id: int):
     """GET one receipt; PUT amends lines/route and updates shop + pond warehouse stock."""
     cid = request.company_id
@@ -625,6 +626,7 @@ def inventory_item_availability(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory", methods=("POST",))
 def inventory_transfers_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -667,6 +669,7 @@ def inventory_transfers_list_or_create(request):
 @require_http_methods(["GET", "POST", "PUT"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory", methods=("POST", "PUT", "PATCH",))
 def inventory_transfer_detail_or_post(request, transfer_id: int):
     cid = request.company_id
     tr = (
@@ -741,6 +744,7 @@ def inventory_transfer_detail_or_post(request, transfer_id: int):
 @require_http_methods(["DELETE"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory")
 def inventory_transfer_delete(request, transfer_id: int):
     cid = request.company_id
     tr = InventoryTransfer.objects.filter(pk=transfer_id, company_id=cid).first()
@@ -758,6 +762,7 @@ def inventory_transfer_delete(request, transfer_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory")
 def inventory_transfer_unpost(request, transfer_id: int):
     """
     Roll back a posted inter-station transfer: return stock to the source station, remove AUTO-ISTR journal,
@@ -945,6 +950,7 @@ def _parse_adjustment_draft_body(*, cid: int, body: dict, request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory", methods=("POST",))
 def inventory_adjustments_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -1018,6 +1024,7 @@ def _inventory_adjustment_put_draft(request, adj: InventoryAdjustment) -> JsonRe
 @require_http_methods(["GET", "POST", "PUT"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory", methods=("POST", "PUT", "PATCH",))
 def inventory_adjustment_detail_or_post(request, adjustment_id: int):
     cid = request.company_id
     adj = (
@@ -1070,6 +1077,7 @@ def inventory_adjustment_detail_or_post(request, adjustment_id: int):
 @require_http_methods(["DELETE"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory")
 def inventory_adjustment_delete(request, adjustment_id: int):
     cid = request.company_id
     adj = InventoryAdjustment.objects.filter(pk=adjustment_id, company_id=cid).first()
@@ -1087,6 +1095,7 @@ def inventory_adjustment_delete(request, adjustment_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory")
 def inventory_adjustment_unpost(request, adjustment_id: int):
     """Roll back a posted stock adjustment: restore each item's on-hand to the booked quantity,
     remove the AUTO-INVADJ journal, and set the adjustment back to draft (counted lines preserved)."""
@@ -1133,6 +1142,7 @@ def inventory_adjustment_unpost(request, adjustment_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory")
 def pond_warehouse_receipt_reverse_view(request, receipt_id: int):
     """Undo a shop → pond warehouse move if the pond still holds the quantities."""
     cid = request.company_id
@@ -1179,6 +1189,7 @@ def pond_warehouse_returns_list(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.inventory")
 def pond_warehouse_return_reverse_view(request, return_id: int):
     """Undo a pond → shop warehouse move if the shop still holds the quantities."""
     cid = request.company_id

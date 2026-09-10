@@ -16,6 +16,7 @@ from api.services.auth_refresh_sessions import (
 )
 from api.services.permission_service import user_client_dict
 from api.utils.auth import create_tokens, tenant_company_allows_access
+from api.utils.auth_origin import cookie_refresh_origin_error
 from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
 
 
@@ -169,9 +170,16 @@ def refresh(request):
         return JsonResponse({"detail": "JSON object required"}, status=400)
     from django.conf import settings
 
-    refresh_token = data.get("refresh_token") or request.COOKIES.get(
-        settings.AUTH_REFRESH_COOKIE_NAME
+    body_token = data.get("refresh_token")
+    cookie_token = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    used_cookie = not (isinstance(body_token, str) and body_token.strip()) and bool(
+        cookie_token
     )
+    origin_err = cookie_refresh_origin_error(request, used_cookie=used_cookie)
+    if origin_err:
+        return JsonResponse({"detail": origin_err}, status=403)
+
+    refresh_token = body_token or cookie_token
     if refresh_token is None:
         return JsonResponse({"detail": "refresh_token required"}, status=400)
     if not isinstance(refresh_token, str):

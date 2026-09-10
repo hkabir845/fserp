@@ -13,7 +13,7 @@ from api.services.coa_examples import (
     next_available_account_code,
 )
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
-from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id
+from api.views.common import parse_json_body, parse_optional_company_station_id, require_company_id, require_permission
 from api.models import BankAccount, ChartOfAccount, FundTransfer, JournalEntryLine, Payment
 from api.utils.transaction_filters import apply_json_transaction_filters, request_has_text_search
 from api.services.journal_statement import (
@@ -343,6 +343,7 @@ def _validated_parent_account_id(
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_accounts_list_or_create(request):
     if request.method == "GET":
         qs = _coa_usage_annotate(
@@ -421,6 +422,7 @@ def chart_of_accounts_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_account_detail(request, account_id: int):
     a = (
         _coa_usage_annotate(
@@ -541,6 +543,7 @@ def chart_of_account_detail(request, account_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_account_statement(request, account_id: int):
     a = ChartOfAccount.objects.filter(id=account_id, company_id=request.company_id).first()
     if not a:
@@ -582,6 +585,7 @@ def chart_of_account_statement(request, account_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_accounts_examples(request):
     """
     GET ?account_type=expense - example account names for the New Account form.
@@ -605,6 +609,7 @@ def chart_of_accounts_examples(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_accounts_template_fuel_station(request):
     """GET metadata for the built-in fuel retail COA template (no DB writes).
 
@@ -652,6 +657,7 @@ def chart_of_accounts_template_fuel_station(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_accounts_seed_template(request):
     """POST { template_id, profile?, replace? } — import built-in COA for current company."""
     if request.method != "POST":
@@ -675,6 +681,7 @@ def chart_of_accounts_seed_template(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_accounts_erp_defaults(request):
     """GET built-in ERP automation COA purposes with resolved account_id for this company."""
     if request.method != "GET":
@@ -689,6 +696,7 @@ def chart_of_accounts_erp_defaults(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.chart_of_accounts")
 def chart_of_accounts_backfill_descriptions(request):
     """POST { only_blank?: bool } — copy built-in template descriptions onto existing accounts (same codes).
 

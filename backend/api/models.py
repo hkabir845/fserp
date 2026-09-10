@@ -396,8 +396,8 @@ class AuthRefreshSession(models.Model):
     class Meta:
         db_table = "auth_refresh_session"
         indexes = [
-            models.Index(fields=["user", "family_id"]),
-            models.Index(fields=["expires_at"]),
+            models.Index(fields=["user", "family_id"], name="auth_ref_user_fam_idx"),
+            models.Index(fields=["expires_at"], name="auth_ref_expires_idx"),
         ]
 
 
@@ -1741,6 +1741,15 @@ class Invoice(models.Model):
             "once when the invoice is edited, voided or deleted."
         ),
     )
+    idempotency_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "Client-supplied key (Idempotency-Key header) for POS / invoice create retries: "
+            "a repeat with the same key returns the original invoice instead of duplicating it."
+        ),
+    )
     all_objects = models.Manager()
 
     class Meta:
@@ -1748,6 +1757,13 @@ class Invoice(models.Model):
         unique_together = [["company", "invoice_number"]]
         # Related-object lookups and cascade deletes must see every row, internal included.
         base_manager_name = "all_objects"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "idempotency_key"],
+                condition=models.Q(idempotency_key__gt=""),
+                name="invoice_company_idempotency_key_uniq",
+            ),
+        ]
 
 
 class InvoiceLine(models.Model):

@@ -29,7 +29,7 @@ from api.services.reference_code import (
 from api.utils.auth import auth_required
 
 logger = logging.getLogger(__name__)
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.services.contact_ledgers import build_employee_ledger, ledger_dates_and_search
 from api.utils.transaction_filters import filter_json_transactions
 from api.services.contact_ledgers import employee_payable_balance
@@ -228,6 +228,7 @@ def employee_next_code_suggested(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.employees", methods=("POST",))
 def employees_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -333,6 +334,7 @@ def employees_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_permission("app.page.employees", methods=("PUT", "PATCH", "DELETE",))
 def employee_detail(request, employee_id: int):
     cid = request.company_id
     e = (
@@ -461,6 +463,7 @@ def employee_ledger(request, employee_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.employees", methods=("POST",))
 def employee_ledger_entries(request, employee_id: int):
     e = Employee.objects.filter(pk=employee_id, company_id=request.company_id).first()
     if not e:
@@ -763,6 +766,7 @@ def _validate_payroll_amounts(gross: Decimal, ded: Decimal, net: Decimal) -> str
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll", methods=("POST",))
 def payroll_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -884,6 +888,7 @@ def payroll_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll", methods=("PUT", "PATCH", "DELETE",))
 def payroll_detail(request, payroll_id: int):
     cid = request.company_id
     p = (
@@ -1037,6 +1042,7 @@ def payroll_detail(request, payroll_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll")
 def payroll_from_employees(request, payroll_id: int):
     """
     Set total_gross = sum of active employees' salary; deductions=0; net=gross.
@@ -1096,6 +1102,7 @@ def payroll_from_employees(request, payroll_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll")
 def payroll_from_one_employee(request, payroll_id: int):
     """
     Set total_gross = one active employee's salary; deductions=0; net=gross.
@@ -1178,6 +1185,7 @@ def payroll_from_one_employee(request, payroll_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll")
 def payroll_pond_allocations_from_employees(request, payroll_id: int):
     """
     Rebuild pond wage splits from employee pond assignments (does not change payroll totals).
@@ -1217,6 +1225,7 @@ def payroll_pond_allocations_from_employees(request, payroll_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll")
 def payroll_employee_allocations_from_hr(request, payroll_id: int):
     """
     Rebuild per-employee wage rows from HR wage scope (does not change payroll totals).
@@ -1247,6 +1256,7 @@ def payroll_employee_allocations_from_hr(request, payroll_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_permission("app.page.payroll")
 def payroll_post_to_books(request, payroll_id: int):
     """
     After you have paid staff from the bank, post one journal: Dr 6400, Cr 2210/2200? Cr bank.

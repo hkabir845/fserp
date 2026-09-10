@@ -16,7 +16,7 @@ from api.utils.transaction_filters import (
     apply_transaction_date_range,
 )
 from api.services.reference_code import next_available_code
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from django.utils import timezone as django_timezone
 
 from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount, Station
@@ -232,6 +232,7 @@ def _entity_directory_pond_json(p: AquaculturePond) -> dict:
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.journal_entries")
 def journal_entries_entity_directory(request):
     """
     Stations + ponds for manual journal entity tagging (GL).
@@ -254,6 +255,7 @@ def journal_entries_entity_directory(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.journal_entries")
 def journal_entries_list_or_create(request):
     if request.method == "GET":
         return _journal_entries_list(request)
@@ -381,6 +383,7 @@ def _journal_entries_list(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.journal_entries")
 def journal_entry_create(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -446,6 +449,7 @@ def journal_entry_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.journal_entries")
 def journal_entry_detail(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
@@ -535,6 +539,7 @@ def journal_entry_detail(request, entry_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.journal_entries")
 def journal_entry_post(request, entry_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -605,6 +610,7 @@ def journal_entry_post(request, entry_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.journal_entries")
 def journal_entry_unpost(request, entry_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)

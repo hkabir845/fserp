@@ -29,7 +29,7 @@ from api.services.fixed_asset_schedule import (
     standard_monthly_amount,
 )
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.services.invoice_station import parse_valid_station_id
 
 
@@ -278,6 +278,7 @@ def _validate_coa_set(cid: int, body: dict, *, require_all: bool) -> JsonRespons
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets", methods=("POST",))
 def fixed_assets_list_or_create(request):
     cid = request.company_id
     if request.method == "GET":
@@ -387,6 +388,7 @@ def fixed_assets_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets", methods=("PUT", "PATCH", "DELETE",))
 def fixed_asset_detail(request, asset_id: int):
     cid = request.company_id
     asset = _load_asset(cid, asset_id, include_runs=True)
@@ -474,6 +476,7 @@ def fixed_asset_detail(request, asset_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets")
 def fixed_asset_place_in_service(request, asset_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -538,6 +541,7 @@ def fixed_asset_place_in_service(request, asset_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets")
 def fixed_asset_depreciate(request, asset_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -594,6 +598,7 @@ def fixed_asset_depreciate(request, asset_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets")
 def fixed_assets_depreciate_batch(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -666,6 +671,7 @@ def fixed_asset_schedule(request, asset_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets")
 def fixed_asset_depreciation_reverse(request, asset_id: int, run_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -696,6 +702,7 @@ def fixed_asset_depreciation_reverse(request, asset_id: int, run_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.fixed_assets")
 def fixed_asset_dispose(request, asset_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)

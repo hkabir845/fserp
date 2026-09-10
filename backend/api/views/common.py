@@ -91,3 +91,33 @@ def require_company_id(view_func):
         request.company_id = cid
         return view_func(request, *args, **kwargs)
     return wrapped
+
+
+def require_permission(*need: str, methods: tuple[str, ...] | None = None):
+    """
+    Require the authenticated user to hold at least one of ``need`` (permission catalog ids).
+
+    Stack after ``@auth_required`` (and usually ``@require_company_id``). Parent app keys
+    (e.g. ``app.sales``) already grant their ``app.page.*`` children via ``has_permission``.
+
+    When ``methods`` is set (e.g. ``("POST", "PUT", "DELETE")``), only those HTTP methods
+    are gated — useful for list_or_create endpoints that stay readable to any company user
+    while writes stay role-scoped. Prefer gating all methods on sensitive modules.
+    """
+
+    def decorator(view_func):
+        def wrapped(request, *args, **kwargs):
+            if methods is not None:
+                m = (getattr(request, "method", "") or "").upper()
+                if m not in {x.upper() for x in methods}:
+                    return view_func(request, *args, **kwargs)
+            from api.services.permission_service import has_permission, resolve_user_permissions
+
+            user = getattr(request, "api_user", None)
+            if not has_permission(resolve_user_permissions(user), *need):
+                return JsonResponse({"detail": "Permission denied"}, status=403)
+            return view_func(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator

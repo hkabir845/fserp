@@ -101,15 +101,46 @@ export type VendorPurchaseTerms = {
   }>
 }
 
+/**
+ * Clamp rate-card / money field strings to at most 2 decimal places.
+ * Leaves in-progress typing alone (e.g. "5.", "5.5"); only rewrites excess
+ * precision from the API (e.g. "5.5000" → "5.50"). Numbers always become "x.xx".
+ */
+export function asTwoDecimals(value: unknown, fallback = '0.00'): string {
+  if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return fallback
+    return (Math.round(value * 100) / 100).toFixed(2)
+  }
+  const s = String(value).trim().replace(/,/g, '')
+  if (s === '' || s === '.' || s === '-') return s === '' ? fallback : s
+  const n = parseFloat(s)
+  if (!Number.isFinite(n)) return fallback
+  const frac = s.includes('.') ? s.split('.')[1] : ''
+  if (frac.length > 2) {
+    return (Math.round(n * 100) / 100).toFixed(2)
+  }
+  return s
+}
+
+/** Always round to exactly two fraction digits (blur / persist). */
+export function toTwoDecimals(value: unknown, fallback = '0.00'): string {
+  if (value === null || value === undefined || value === '') return fallback
+  const n =
+    typeof value === 'number' ? value : parseFloat(String(value).trim().replace(/,/g, ''))
+  if (!Number.isFinite(n)) return fallback
+  return (Math.round(n * 100) / 100).toFixed(2)
+}
+
 export const emptyRateCardForm = () => ({
   effective_from: new Date().toISOString().split('T')[0],
-  instant_discount_percent: '0',
-  instant_discount_per_unit: '0',
-  transport_percent: '0',
-  transport_per_truck: '0',
-  transport_per_unit: '0',
-  transport_per_kg: '0',
-  monthly_rebate_percent: '0',
-  yearly_rebate_percent: '0',
-  yearly_target_tons: '0',
+  instant_discount_percent: '0.00',
+  instant_discount_per_unit: '0.00',
+  transport_percent: '0.00',
+  transport_per_truck: '0.00',
+  transport_per_unit: '0.00',
+  transport_per_kg: '0.00',
+  monthly_rebate_percent: '0.00',
+  yearly_rebate_percent: '0.00',
+  yearly_target_tons: '0.00',
 })

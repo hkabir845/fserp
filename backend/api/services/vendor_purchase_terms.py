@@ -231,20 +231,21 @@ def active_rate_card(vendor: Vendor, as_of: Optional[date] = None) -> Optional[V
 def rate_card_to_json(card: Optional[VendorRateCard]) -> Optional[dict[str, Any]]:
     if not card:
         return None
+    # UI / bills show money and % to 2 decimal places only.
     return {
         "id": card.id,
         "effective_from": card.effective_from.isoformat(),
         "effective_to": card.effective_to.isoformat() if card.effective_to else None,
-        "instant_discount_percent": str(_q(card.instant_discount_percent, _Q4)),
-        "instant_discount_per_unit": str(_q(card.instant_discount_per_unit, _Q4)),
-        "transport_percent": str(_q(card.transport_percent, _Q4)),
-        "transport_per_truck": str(_q(card.transport_per_truck, _Q4)),
-        "transport_per_unit": str(_q(card.transport_per_unit, _Q4)),
-        "transport_per_kg": str(_q(card.transport_per_kg, _Q4)),
-        "monthly_rebate_percent": str(_q(card.monthly_rebate_percent, _Q4)),
-        "yearly_rebate_percent": str(_q(card.yearly_rebate_percent, _Q4)),
-        "yearly_target_kg": str(_q(card.yearly_target_kg, _Q4)),
-        "yearly_target_tons": str(_q(_q(card.yearly_target_kg, _Q4) / Decimal("1000"), _Q4)),
+        "instant_discount_percent": str(_q(card.instant_discount_percent)),
+        "instant_discount_per_unit": str(_q(card.instant_discount_per_unit)),
+        "transport_percent": str(_q(card.transport_percent)),
+        "transport_per_truck": str(_q(card.transport_per_truck)),
+        "transport_per_unit": str(_q(card.transport_per_unit)),
+        "transport_per_kg": str(_q(card.transport_per_kg)),
+        "monthly_rebate_percent": str(_q(card.monthly_rebate_percent)),
+        "yearly_rebate_percent": str(_q(card.yearly_rebate_percent)),
+        "yearly_target_kg": str(_q(card.yearly_target_kg)),
+        "yearly_target_tons": str(_q(_q(card.yearly_target_kg) / Decimal("1000"))),
         "is_active": bool(card.is_active),
     }
 
@@ -658,7 +659,7 @@ def upsert_rate_card_from_body(vendor: Vendor, body: dict) -> tuple[Optional[Ven
     if "effective_to" in raw:
         card.effective_to = _parse_date(raw.get("effective_to"))
     if "yearly_target_tons" in raw and "yearly_target_kg" not in raw:
-        tons = _q(raw.get("yearly_target_tons"), _Q4)
+        tons = _q(raw.get("yearly_target_tons"))
         if tons < 0:
             return None, "yearly_target_tons cannot be negative"
         raw = {**raw, "yearly_target_kg": tons * Decimal("1000")}
@@ -674,7 +675,7 @@ def upsert_rate_card_from_body(vendor: Vendor, body: dict) -> tuple[Optional[Ven
         "yearly_target_kg",
     ):
         if fname in raw:
-            val = _q(raw.get(fname), _Q4)
+            val = _q(raw.get(fname))
             if val < 0:
                 return None, f"{fname} cannot be negative"
             setattr(card, fname, val)
@@ -836,12 +837,12 @@ def scheme_progress(
         "year_end": year_end.isoformat(),
         "month_mrp": str(_q(month_mrp)),
         "year_mrp": str(_q(year_mrp)),
-        "year_kg": str(_q(year_kg, _Q4)),
-        "year_tons": str(_q(year_kg / Decimal("1000"), _Q4)),
-        "yearly_target_kg": str(target),
-        "yearly_target_tons": str(_q(target / Decimal("1000"), _Q4)),
-        "monthly_rebate_percent": str(monthly_pct),
-        "yearly_rebate_percent": str(yearly_pct),
+        "year_kg": str(_q(year_kg)),
+        "year_tons": str(_q(year_kg / Decimal("1000"))),
+        "yearly_target_kg": str(_q(target)),
+        "yearly_target_tons": str(_q(target / Decimal("1000"))),
+        "monthly_rebate_percent": str(_q(monthly_pct)),
+        "yearly_rebate_percent": str(_q(yearly_pct)),
         "estimated_monthly_credit": str(monthly_est),
         "monthly_reserved": str(monthly_reserved),
         "monthly_is_reserve": True,

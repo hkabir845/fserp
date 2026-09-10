@@ -4,6 +4,7 @@ import { CompanyDateInput } from '@/components/CompanyDateInput'
 import {
   emptyRateCardForm,
   vendorUsesPurchaseTerms,
+  toTwoDecimals,
   type VendorRateCardPayload,
   type VendorSupplierCategory,
 } from '@/lib/vendorSupplierCategory'
@@ -37,17 +38,18 @@ export function rateCardFormFromPayload(card: VendorRateCardPayload | null | und
   if (!card) return empty
   return {
     effective_from: (card.effective_from || empty.effective_from).slice(0, 10),
-    instant_discount_percent: String(card.instant_discount_percent ?? '0'),
-    instant_discount_per_unit: String(card.instant_discount_per_unit ?? '0'),
-    transport_percent: String(card.transport_percent ?? '0'),
-    transport_per_truck: String(card.transport_per_truck ?? '0'),
-    transport_per_unit: String(card.transport_per_unit ?? '0'),
-    transport_per_kg: String(card.transport_per_kg ?? '0'),
-    monthly_rebate_percent: String(card.monthly_rebate_percent ?? '0'),
-    yearly_rebate_percent: String(card.yearly_rebate_percent ?? '0'),
-    yearly_target_tons: String(
+    instant_discount_percent: toTwoDecimals(card.instant_discount_percent, '0.00'),
+    instant_discount_per_unit: toTwoDecimals(card.instant_discount_per_unit, '0.00'),
+    transport_percent: toTwoDecimals(card.transport_percent, '0.00'),
+    transport_per_truck: toTwoDecimals(card.transport_per_truck, '0.00'),
+    transport_per_unit: toTwoDecimals(card.transport_per_unit, '0.00'),
+    transport_per_kg: toTwoDecimals(card.transport_per_kg, '0.00'),
+    monthly_rebate_percent: toTwoDecimals(card.monthly_rebate_percent, '0.00'),
+    yearly_rebate_percent: toTwoDecimals(card.yearly_rebate_percent, '0.00'),
+    yearly_target_tons: toTwoDecimals(
       card.yearly_target_tons ??
-        (Number(card.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : 0)
+        (Number(card.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : 0),
+      '0.00'
     ),
   }
 }

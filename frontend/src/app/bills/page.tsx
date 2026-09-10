@@ -81,6 +81,8 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
 import {
   emptyRateCardForm,
+  asTwoDecimals,
+  toTwoDecimals,
   vendorUsesPurchaseTerms,
   type VendorPurchaseTerms,
 } from '@/lib/vendorSupplierCategory'
@@ -510,17 +512,33 @@ function millTermsBanner(
   const card = vendorPurchaseTerms.rate_card
   const empty = emptyRateCardForm()
   const termsForm: BillMillTermsValues = {
-    instant_discount_percent: String(card?.instant_discount_percent ?? empty.instant_discount_percent),
-    instant_discount_per_unit: String(card?.instant_discount_per_unit ?? empty.instant_discount_per_unit),
-    transport_percent: String(card?.transport_percent ?? empty.transport_percent),
-    transport_per_truck: opts.truckTransportAmount || String(card?.transport_per_truck ?? empty.transport_per_truck),
-    transport_per_unit: String(card?.transport_per_unit ?? empty.transport_per_unit),
-    transport_per_kg: String(card?.transport_per_kg ?? empty.transport_per_kg),
-    monthly_rebate_percent: String(card?.monthly_rebate_percent ?? empty.monthly_rebate_percent),
-    yearly_rebate_percent: String(card?.yearly_rebate_percent ?? empty.yearly_rebate_percent),
-    yearly_target_tons: String(
+    instant_discount_percent: asTwoDecimals(
+      card?.instant_discount_percent,
+      empty.instant_discount_percent
+    ),
+    instant_discount_per_unit: asTwoDecimals(
+      card?.instant_discount_per_unit,
+      empty.instant_discount_per_unit
+    ),
+    transport_percent: asTwoDecimals(card?.transport_percent, empty.transport_percent),
+    transport_per_truck: asTwoDecimals(
+      opts.truckTransportAmount || card?.transport_per_truck,
+      empty.transport_per_truck
+    ),
+    transport_per_unit: asTwoDecimals(card?.transport_per_unit, empty.transport_per_unit),
+    transport_per_kg: asTwoDecimals(card?.transport_per_kg, empty.transport_per_kg),
+    monthly_rebate_percent: asTwoDecimals(
+      card?.monthly_rebate_percent,
+      empty.monthly_rebate_percent
+    ),
+    yearly_rebate_percent: asTwoDecimals(
+      card?.yearly_rebate_percent,
+      empty.yearly_rebate_percent
+    ),
+    yearly_target_tons: asTwoDecimals(
       card?.yearly_target_tons ??
-        (Number(card?.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : empty.yearly_target_tons)
+        (Number(card?.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : empty.yearly_target_tons),
+      empty.yearly_target_tons
     ),
   }
   const patchTerms = (patch: Partial<BillMillTermsValues>) => {
@@ -571,13 +589,22 @@ function millTermsBanner(
               type="number"
               min={0}
               step="0.01"
-              value={String(vendorPurchaseTerms.credit_limit ?? '')}
+              value={asTwoDecimals(vendorPurchaseTerms.credit_limit ?? '', '')}
               onChange={(e) => {
                 const v = e.target.value
                 const n = parseFloat(v) || 0
                 opts.onFacilityChange({
                   credit_limit: v,
                   credit_facility_enabled: n > 0 ? true : creditOn,
+                })
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim()
+                if (v === '') return
+                opts.onFacilityChange({
+                  credit_limit: toTwoDecimals(v),
+                  credit_facility_enabled:
+                    (parseFloat(v) || 0) > 0 ? true : creditOn,
                 })
               }}
               className={`${opts.fieldClass} mt-1`}
@@ -1914,7 +1941,7 @@ export default function BillsPage() {
           const data = res.data as VendorPurchaseTerms
           setVendorPurchaseTerms(data)
           const truck = Number(data.rate_card?.transport_per_truck) || 0
-          setTruckTransportAmount(truck > 0 ? String(truck) : '')
+          setTruckTransportAmount(truck > 0 ? asTwoDecimals(truck) : '')
         })
         .catch(() => {
           setVendorPurchaseTerms(null)
@@ -1938,7 +1965,7 @@ export default function BillsPage() {
       monthly_rebate_percent: values.monthly_rebate_percent,
       yearly_rebate_percent: values.yearly_rebate_percent,
       yearly_target_tons: values.yearly_target_tons,
-      yearly_target_kg: (parseFloat(values.yearly_target_tons) || 0) * 1000,
+      yearly_target_kg: (parseFloat(toTwoDecimals(values.yearly_target_tons)) || 0) * 1000,
     }
     const nextTerms: VendorPurchaseTerms = {
       ...(vendorPurchaseTerms || {
@@ -1962,7 +1989,7 @@ export default function BillsPage() {
     }
     setVendorPurchaseTerms(nextTerms)
     const truck = parseFloat(values.transport_per_truck) || 0
-    setTruckTransportAmount(truck > 0 ? String(truck) : '')
+    setTruckTransportAmount(truck > 0 ? toTwoDecimals(truck) : '')
     setFormData((prev) => ({
       ...prev,
       lines: prev.lines.map((line) => {
@@ -1977,15 +2004,15 @@ export default function BillsPage() {
         await api.post(`/vendors/${vendorId}/rate-cards/`, {
           effective_from:
             nextCard.effective_from || new Date().toISOString().slice(0, 10),
-          instant_discount_percent: parseFloat(values.instant_discount_percent) || 0,
-          instant_discount_per_unit: parseFloat(values.instant_discount_per_unit) || 0,
-          transport_percent: parseFloat(values.transport_percent) || 0,
-          transport_per_truck: parseFloat(values.transport_per_truck) || 0,
-          transport_per_unit: parseFloat(values.transport_per_unit) || 0,
-          transport_per_kg: parseFloat(values.transport_per_kg) || 0,
-          monthly_rebate_percent: parseFloat(values.monthly_rebate_percent) || 0,
-          yearly_rebate_percent: parseFloat(values.yearly_rebate_percent) || 0,
-          yearly_target_kg: (parseFloat(values.yearly_target_tons) || 0) * 1000,
+          instant_discount_percent: parseFloat(toTwoDecimals(values.instant_discount_percent)) || 0,
+          instant_discount_per_unit: parseFloat(toTwoDecimals(values.instant_discount_per_unit)) || 0,
+          transport_percent: parseFloat(toTwoDecimals(values.transport_percent)) || 0,
+          transport_per_truck: parseFloat(toTwoDecimals(values.transport_per_truck)) || 0,
+          transport_per_unit: parseFloat(toTwoDecimals(values.transport_per_unit)) || 0,
+          transport_per_kg: parseFloat(toTwoDecimals(values.transport_per_kg)) || 0,
+          monthly_rebate_percent: parseFloat(toTwoDecimals(values.monthly_rebate_percent)) || 0,
+          yearly_rebate_percent: parseFloat(toTwoDecimals(values.yearly_rebate_percent)) || 0,
+          yearly_target_kg: (parseFloat(toTwoDecimals(values.yearly_target_tons)) || 0) * 1000,
         })
         if (!quiet) {
           toast.success('Mill rates saved on the vendor.')
@@ -3107,7 +3134,7 @@ export default function BillsPage() {
           if (ln > 0 && exp > 0) billLineExpenseTouchedRef.current.add(ln)
         }
         const truckOnBill = Number(fullBill.truck_transport_amount) || 0
-        setTruckTransportAmount(truckOnBill > 0 ? String(truckOnBill) : '')
+        setTruckTransportAmount(truckOnBill > 0 ? toTwoDecimals(truckOnBill) : '')
         const fareOnBill = Number(fullBill.actual_lorry_fare) || 0
         setActualLorryFare(fareOnBill > 0 ? String(fareOnBill) : '')
         const mappedLines = (fullBill.lines || []).map((line: BillLineItem) => ({

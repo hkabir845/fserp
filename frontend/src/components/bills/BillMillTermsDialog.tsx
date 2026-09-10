@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { emptyRateCardForm, toTwoDecimals } from '@/lib/vendorSupplierCategory'
 import type { VendorRateCardPayload } from '@/lib/vendorSupplierCategory'
-import { emptyRateCardForm } from '@/lib/vendorSupplierCategory'
 
 export type BillMillTermsValues = {
   instant_discount_percent: string
@@ -27,17 +27,27 @@ type Props = {
 function fromCard(card: VendorRateCardPayload | null | undefined): BillMillTermsValues {
   const empty = emptyRateCardForm()
   return {
-    instant_discount_percent: String(card?.instant_discount_percent ?? empty.instant_discount_percent),
-    instant_discount_per_unit: String(card?.instant_discount_per_unit ?? empty.instant_discount_per_unit),
-    transport_percent: String(card?.transport_percent ?? empty.transport_percent),
-    transport_per_truck: String(card?.transport_per_truck ?? empty.transport_per_truck),
-    transport_per_unit: String(card?.transport_per_unit ?? empty.transport_per_unit),
-    transport_per_kg: String(card?.transport_per_kg ?? empty.transport_per_kg),
-    monthly_rebate_percent: String(card?.monthly_rebate_percent ?? empty.monthly_rebate_percent),
-    yearly_rebate_percent: String(card?.yearly_rebate_percent ?? empty.yearly_rebate_percent),
-    yearly_target_tons: String(
+    instant_discount_percent: toTwoDecimals(
+      card?.instant_discount_percent,
+      empty.instant_discount_percent
+    ),
+    instant_discount_per_unit: toTwoDecimals(
+      card?.instant_discount_per_unit,
+      empty.instant_discount_per_unit
+    ),
+    transport_percent: toTwoDecimals(card?.transport_percent, empty.transport_percent),
+    transport_per_truck: toTwoDecimals(card?.transport_per_truck, empty.transport_per_truck),
+    transport_per_unit: toTwoDecimals(card?.transport_per_unit, empty.transport_per_unit),
+    transport_per_kg: toTwoDecimals(card?.transport_per_kg, empty.transport_per_kg),
+    monthly_rebate_percent: toTwoDecimals(
+      card?.monthly_rebate_percent,
+      empty.monthly_rebate_percent
+    ),
+    yearly_rebate_percent: toTwoDecimals(card?.yearly_rebate_percent, empty.yearly_rebate_percent),
+    yearly_target_tons: toTwoDecimals(
       card?.yearly_target_tons ??
-        (Number(card?.yearly_target_kg) ? Number(card?.yearly_target_kg) / 1000 : empty.yearly_target_tons)
+        (Number(card?.yearly_target_kg) ? Number(card?.yearly_target_kg) / 1000 : empty.yearly_target_tons),
+      empty.yearly_target_tons
     ),
   }
 }

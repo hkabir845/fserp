@@ -630,12 +630,6 @@ def _cashier_pos_unified(
 
             if lines_data and sale_station_id is not None:
                 decrement_station_lines(company_id, sale_station_id, lines_data)
-            # POS takes the stock here, so record it on the invoice. The rollback path keys on
-            # this flag (it used to guess from the INV-POS- number prefix), and it stops
-            # apply_invoice_stock_relief taking the same units a second time when the sale
-            # journal posts below.
-            Invoice.objects.filter(pk=inv.pk).update(stock_relieved=True)
-            inv.stock_relieved = True
             for d in lines_data:
                 InvoiceLine.objects.create(
                     invoice=inv,
@@ -653,6 +647,13 @@ def _cashier_pos_unified(
                 Item.objects.filter(pk=it.pk).update(
                     quantity_on_hand=F("quantity_on_hand") - d["quantity"]
                 )
+
+            # POS already moved stock above; record line evidence + stock_relieved so
+            # void/delete restore through undo_invoice_stock_relief (and wet-stock rollback
+            # is gated on the same flag).
+            from api.services.invoice_stock_relief import mark_pos_stock_relieved
+
+            mark_pos_stock_relieved(company_id, inv)
 
             inv = Invoice.objects.filter(id=inv.id).select_related("customer").first()
             sync_invoice_gl(

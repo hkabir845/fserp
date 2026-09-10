@@ -3303,7 +3303,13 @@ def rollback_invoice_posting_effects(
                 )
 
         is_pos_invoice = (locked.invoice_number or "").strip().upper().startswith("INV-POS-")
-        if is_pos_invoice:
+        # Capture before stock undo clears the flag. Wet-stock restore and shift unrecord must
+        # run at most once across void-then-delete (and plain delete).
+        needs_stock_restore = bool(locked.stock_relieved)
+        sale_journal_still_present = JournalEntry.objects.filter(
+            company_id=company_id, entry_number=f"AUTO-INV-{inv_id}-SALE"
+        ).exists()
+        if is_pos_invoice and sale_journal_still_present:
             total, shift_pm, shift_cash_tender = _invoice_unrecord_shift_params(company_id, locked)
             unrecord_invoice_from_shift(
                 company_id,
@@ -3325,32 +3331,33 @@ def rollback_invoice_posting_effects(
                 p.delete()
 
         tank_product_ids: set[int] = set()
-        for line in (
-            InvoiceLine.objects.filter(invoice_id=inv_id)
-            .select_related("nozzle", "nozzle__meter", "nozzle__tank", "item")
-        ):
-            nz = line.nozzle
-            qty = line.quantity if line.quantity is not None else Decimal("0")
-            if qty <= 0:
-                continue
-            if nz is not None:
-                m = nz.meter
-                t = nz.tank
-                if m is not None:
-                    Meter.objects.filter(pk=m.pk).update(
-                        current_reading=F("current_reading") - qty
-                    )
-                if t is not None:
-                    Tank.objects.filter(pk=t.pk).update(
-                        current_stock=F("current_stock") + qty
-                    )
-                    if t.product_id:
-                        tank_product_ids.add(int(t.product_id))
-                continue
+        if needs_stock_restore:
+            for line in (
+                InvoiceLine.objects.filter(invoice_id=inv_id)
+                .select_related("nozzle", "nozzle__meter", "nozzle__tank", "item")
+            ):
+                nz = line.nozzle
+                qty = line.quantity if line.quantity is not None else Decimal("0")
+                if qty <= 0:
+                    continue
+                if nz is not None:
+                    m = nz.meter
+                    t = nz.tank
+                    if m is not None:
+                        Meter.objects.filter(pk=m.pk).update(
+                            current_reading=F("current_reading") - qty
+                        )
+                    if t is not None:
+                        Tank.objects.filter(pk=t.pk).update(
+                            current_stock=F("current_stock") + qty
+                        )
+                        if t.product_id:
+                            tank_product_ids.add(int(t.product_id))
+                    continue
 
-        # Wet stock went back into the tank; keep the derived Item.quantity_on_hand in step.
-        for _pid in tank_product_ids:
-            refresh_item_quantity_on_hand_from_tanks(company_id, _pid)
+            # Wet stock went back into the tank; keep the derived Item.quantity_on_hand in step.
+            for _pid in tank_product_ids:
+                refresh_item_quantity_on_hand_from_tanks(company_id, _pid)
 
         # Shop / general stock goes back through the same helper that took it out, keyed on
         # Invoice.stock_relieved rather than the INV-POS- number prefix, so an invoice raised

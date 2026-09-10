@@ -46,6 +46,7 @@ __all__ = [
     "invoice_stock_lines",
     "apply_invoice_stock_relief",
     "undo_invoice_stock_relief",
+    "mark_pos_stock_relieved",
 ]
 
 
@@ -139,6 +140,36 @@ def apply_invoice_stock_relief(company_id: int, inv: Invoice) -> bool:
         Invoice.all_objects.filter(pk=locked.id).update(stock_relieved=True)
         inv.stock_relieved = True
         return True
+
+
+def mark_pos_stock_relieved(company_id: int, inv: Invoice) -> None:
+    """
+    POS already decremented bins/tanks before creating lines. Write the same per-line
+    evidence ``apply_invoice_stock_relief`` stores so ``undo_invoice_stock_relief`` can
+    restore shop stock exactly once, and set ``stock_relieved`` so wet-stock rollback
+    is also idempotent.
+    """
+    if inv is None or inv.id is None:
+        return
+    station_id = inv.station_id
+    for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
+        if not _line_moves_stock(company_id, line):
+            continue
+        qty = line.quantity or Decimal("0")
+        station_evidence = (
+            int(station_id)
+            if qty > 0
+            and station_id is not None
+            and line.item is not None
+            and item_uses_station_bins(company_id, line.item)
+            else None
+        )
+        InvoiceLine.objects.filter(pk=line.pk).update(
+            stock_relieved_quantity=qty,
+            stock_relieved_station_id=station_evidence,
+        )
+    Invoice.objects.filter(pk=inv.pk).update(stock_relieved=True)
+    inv.stock_relieved = True
 
 
 def undo_invoice_stock_relief(company_id: int, invoice_id: int) -> bool:

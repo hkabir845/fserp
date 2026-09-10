@@ -438,7 +438,7 @@ function millBillMrp(lines: BillLineItem[], items: Item[]): number {
     lines.reduce((sum, line) => {
       const item = items.find((i) => i.id === line.item_id)
       const qty = Number(line.quantity) || 0
-      const mrp = Number(line.mrp || item?.mrp || 0)
+      const mrp = Number(line.mrp || item?.mrp || line.unit_cost || 0)
       if (mrp > 0 && qty > 0) return sum + qty * mrp
       return sum + (Number(line.amount) || 0)
     }, 0)
@@ -459,7 +459,8 @@ function applyMillTermsToLine(
 ): BillLineItem {
   if (!terms?.rate_card) return line
   const qty = Number(line.quantity) || 1
-  const mrp = Number(line.mrp || item?.mrp || 0)
+  // Mill rate card is % of MRP. Item master may lack MRP — use entered Rate as MRP once.
+  const mrp = Number(line.mrp || item?.mrp || line.unit_cost || 0)
   if (!(mrp > 0) || !(qty > 0)) return line
   const pct = Number(terms.rate_card.instant_discount_percent) || 0
   const perUnit = Number(terms.rate_card.instant_discount_per_unit) || 0
@@ -469,6 +470,7 @@ function applyMillTermsToLine(
   const sackKg = Number(item?.content_weight_kg) || 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
+  // Per-truck lorry is bill-level (truck_transport_amount), not per line.
   const transport = (gross * tPct) / 100 + qty * tUnit + qty * sackKg * tKg
   const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
@@ -494,6 +496,8 @@ function millTermsBanner(
     cashLane: boolean
     limitFull: boolean
     millPayNow: number
+    millMrpTotal: number
+    millDiscountTotal: number
     onOpenMillTerms: () => void
     fieldClass: string
   }
@@ -501,13 +505,17 @@ function millTermsBanner(
   const millShare = parseFloat(opts.truckTransportAmount) || 0
   const actual = parseFloat(opts.actualLorryFare) || 0
   const extra = actual > 0 && millShare > 0 ? Math.max(0, roundBillMoney(actual - millShare)) : 0
+  const discPct = Number(vendorPurchaseTerms.rate_card?.instant_discount_percent) || 0
+  const discPerUnit = Number(vendorPurchaseTerms.rate_card?.instant_discount_per_unit) || 0
+  const creditOn = Boolean(vendorPurchaseTerms.credit_facility_enabled)
+  const creditLimit = Number(vendorPurchaseTerms.credit_limit) || 0
   return (
     <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
       <p>
         {vendorPurchaseTerms.supplier_category_label}
-        {vendorPurchaseTerms.credit_facility_enabled
-          ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
-          : ''}
+        {creditOn
+          ? ` · Credit limit ${formatNumber(creditLimit)} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
+          : ' · Credit facility off — set limit on Vendors for this mill'}
         {opts.limitFull
           ? ' · Credit full — pay net now (MRP − discount − mill lorry)'
           : ' · Discount + mill lorry apply when they send feed'}
@@ -519,6 +527,31 @@ function millTermsBanner(
               ? 'Bank transfer = MRP − discount − mill lorry (from this mill’s rate card). Then they send the feed. Monthly/yearly wait until the mill approves.'
               : 'When they send feed, discount and mill lorry reduce what you owe immediately. Pay the driver the real fare below (extra over mill share is your transport cost). Monthly/yearly wait until approved.'}
           </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 rounded border border-amber-200/80 bg-white/70 px-2 py-1.5">
+            <span>
+              MRP this bill:{' '}
+              <span className="font-semibold tabular-nums">{formatNumber(opts.millMrpTotal)}</span>
+            </span>
+            <span>
+              Instant discount
+              {discPct > 0 ? ` (${discPct}%)` : ''}
+              {discPerUnit > 0 ? ` + ${formatNumber(discPerUnit)}/unit` : ''}
+              :{' '}
+              <span className="font-semibold tabular-nums text-emerald-800">
+                −{formatNumber(opts.millDiscountTotal)}
+              </span>
+              {opts.millMrpTotal > 0 && opts.millDiscountTotal <= 0 && discPct <= 0 && discPerUnit <= 0
+                ? ' (set % on Vendors → rate card)'
+                : null}
+              {opts.millMrpTotal <= 0 && (discPct > 0 || discPerUnit > 0)
+                ? ' (enter Rate / set item MRP so discount can calculate)'
+                : null}
+            </span>
+            <span>
+              Mill lorry:{' '}
+              <span className="font-semibold tabular-nums">−{formatNumber(millShare)}</span>
+            </span>
+          </div>
           <div className="flex flex-wrap items-end gap-2 pt-1">
             <button
               type="button"
@@ -554,7 +587,8 @@ function millTermsBanner(
           </div>
           {extra > 0 ? (
             <p className="text-muted-foreground">
-              Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill {formatNumber(millShare)})
+              Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill{' '}
+              {formatNumber(millShare)})
             </p>
           ) : null}
           {vendorPurchaseTerms.rate_card &&
@@ -572,7 +606,8 @@ function millTermsBanner(
                       : ''
                   }`
                 : ''}
-              {' '}— applied when the mill approves (not on the feed bill).
+              {' '}
+              — applied when the mill approves (not on the feed bill).
             </p>
           ) : null}
         </>
@@ -2246,6 +2281,8 @@ export default function BillsPage() {
     cashLane: millCashLane,
     limitFull: Boolean(vendorPurchaseTerms?.credit_facility_enabled && millCashLane),
     millPayNow,
+    millMrpTotal,
+    millDiscountTotal,
     onOpenMillTerms: () => setShowMillTermsDialog(true),
     fieldClass: BILL_LINE_CTL,
   }
@@ -2633,8 +2670,16 @@ export default function BillsPage() {
         } else {
           // Typing Qty or Rate hands Amount back to Qty × Rate.
           newLines[index].amount_manual = false
+          if (field === 'unit_cost' && vendorPurchaseTerms?.uses_purchase_terms) {
+            // Mill Rate column is MRP before discount.
+            const rate = Number(value) || 0
+            if (rate > 0) newLines[index].mrp = rate
+          }
+          if (field === 'mrp') {
+            newLines[index].mrp = Number(value) || 0
+          }
           newLines[index] = syncStandardBillLineAmount(newLines[index])
-          if (field === 'quantity' || field === 'mrp') {
+          if (vendorPurchaseTerms?.uses_purchase_terms) {
             newLines[index] = applyMillTermsToLine(
               newLines[index],
               lineItem,
@@ -2648,6 +2693,19 @@ export default function BillsPage() {
         !isFishBillLineAutoMode(newLines[index], items)
       ) {
         const picked = items.find((it) => it.id === Number(value))
+        if (picked && vendorPurchaseTerms?.uses_purchase_terms) {
+          const mrpGuess =
+            Number(picked.mrp) ||
+            Number(picked.unit_price) ||
+            Number(newLines[index].unit_cost) ||
+            0
+          if (mrpGuess > 0) {
+            newLines[index].mrp = mrpGuess
+            if (!(Number(newLines[index].unit_cost) > 0)) {
+              newLines[index].unit_cost = mrpGuess
+            }
+          }
+        }
         newLines[index] = applyMillTermsToLine(
           syncStandardBillLineAmount(newLines[index]),
           picked,

@@ -60,8 +60,8 @@ import {
   suggestVendorDefaultExpenseAccountId,
   templateVendorDefaultExpenseOptionLabel,
 } from '@/lib/vendorDefaults'
-import {
 import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
+import {
   mergeSuggestedStringField,
   syncBooleanFieldTouchedForAccountPick,
 } from '@/lib/coaSuggestForm'
@@ -402,7 +402,8 @@ export default function VendorsPage() {
     return Number.isFinite(n) && n > 0 ? n : null
   }
 
-  const purchasePayload = () => {
+  const purchasePayload = (opts?: { includeRateCard?: boolean }) => {
+    const includeRateCard = opts?.includeRateCard !== false
     const payload: Record<string, unknown> = {
       supplier_category: formData.supplier_category || 'general',
     }
@@ -412,16 +413,20 @@ export default function VendorsPage() {
       payload.credit_start_date = formData.credit_start_date || null
       payload.square_off_date = formData.square_off_date || null
       payload.require_zero_on_square_off = formData.require_zero_on_square_off
-      payload.rate_card = {
-        effective_from: rateCardForm.effective_from,
-        instant_discount_percent: parseFloat(rateCardForm.instant_discount_percent) || 0,
-        instant_discount_per_unit: parseFloat(rateCardForm.instant_discount_per_unit) || 0,
-        transport_per_truck: parseFloat(rateCardForm.transport_per_truck) || 0,
-        transport_per_unit: parseFloat(rateCardForm.transport_per_unit) || 0,
-        transport_per_kg: parseFloat(rateCardForm.transport_per_kg) || 0,
-        monthly_rebate_percent: parseFloat(rateCardForm.monthly_rebate_percent) || 0,
-        yearly_rebate_percent: parseFloat(rateCardForm.yearly_rebate_percent) || 0,
-        yearly_target_kg: (parseFloat(rateCardForm.yearly_target_tons) || 0) * 1000,
+      // Rate card defaults only on Edit. Create keeps the vendor form light; bills use
+      // "Apply mill terms" and Edit Vendor can save commercial defaults later.
+      if (includeRateCard) {
+        payload.rate_card = {
+          effective_from: rateCardForm.effective_from,
+          instant_discount_percent: parseFloat(rateCardForm.instant_discount_percent) || 0,
+          instant_discount_per_unit: parseFloat(rateCardForm.instant_discount_per_unit) || 0,
+          transport_per_truck: parseFloat(rateCardForm.transport_per_truck) || 0,
+          transport_per_unit: parseFloat(rateCardForm.transport_per_unit) || 0,
+          transport_per_kg: parseFloat(rateCardForm.transport_per_kg) || 0,
+          monthly_rebate_percent: parseFloat(rateCardForm.monthly_rebate_percent) || 0,
+          yearly_rebate_percent: parseFloat(rateCardForm.yearly_rebate_percent) || 0,
+          yearly_target_kg: (parseFloat(rateCardForm.yearly_target_tons) || 0) * 1000,
+        }
       }
     }
     return payload
@@ -459,10 +464,14 @@ export default function VendorsPage() {
         default_station_id,
         default_aquaculture_pond_id,
         default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
-        ...purchasePayload(),
+        ...purchasePayload({ includeRateCard: false }),
         ...(vendorRefCode.trim() ? { vendor_number: vendorRefCode.trim() } : {}),
       })
-      toast.success(tr('entityCreated', { entity: ct('Vendor') }))
+      toast.success(
+        vendorUsesPurchaseTerms(formData.supplier_category)
+          ? `${tr('entityCreated', { entity: ct('Vendor') })} Use Apply mill terms on bills; set commercial defaults from Edit when needed.`
+          : tr('entityCreated', { entity: ct('Vendor') })
+      )
       setShowModal(false)
       fetchVendors()
       resetForm()
@@ -542,7 +551,7 @@ export default function VendorsPage() {
         default_station_id,
         default_aquaculture_pond_id,
         default_expense_account_id: parseDefaultExpenseAccountIdPayload(),
-        ...purchasePayload(),
+        ...purchasePayload({ includeRateCard: true }),
       })
       toast.success(tr('entityUpdated', { entity: ct('Vendor') }))
       setShowModal(false)
@@ -1195,6 +1204,7 @@ export default function VendorsPage() {
                       creditStartDate={formData.credit_start_date}
                       squareOffDate={formData.square_off_date}
                       requireZeroOnSquareOff={formData.require_zero_on_square_off}
+                      showRateCard={Boolean(editingVendor)}
                       rateCard={rateCardForm}
                       onFacilityChange={(patch) => setFormData({ ...formData, ...patch })}
                       onRateCardChange={(patch) => setRateCardForm({ ...rateCardForm, ...patch })}
@@ -1202,6 +1212,13 @@ export default function VendorsPage() {
                   </div>
                   {editingVendor && vendorUsesPurchaseTerms(formData.supplier_category) && purchaseTerms ? (
                     <div className="col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Mill credit actions</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Use these when the mill credits your dealer account (commission / square-off).
+                          This reduces A/P — it is not a bank payment.
+                        </p>
+                      </div>
                       <p className="text-sm font-medium text-foreground">
                         Used {currencySymbol}
                         {Number(purchaseTerms.used).toLocaleString()}

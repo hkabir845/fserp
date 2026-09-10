@@ -11,6 +11,7 @@ import { AQ_HERO_BTN_PRIMARY } from '@/components/aquaculture/AquacultureUi'
 import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from 'lucide-react'
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
+import { BillMillTermsDialog, type BillMillTermsValues } from '@/components/bills/BillMillTermsDialog'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useT } from '@/lib/i18n'
 import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
@@ -460,6 +461,73 @@ function applyMillTermsToLine(
     unit_cost: roundBillMoney(amount / qty),
     amount_manual: true,
   }
+}
+
+function millTermsBanner(
+  vendorPurchaseTerms: VendorPurchaseTerms,
+  opts: {
+    truckTransportAmount: string
+    setTruckTransportAmount: (v: string) => void
+    cashWithBill: string
+    setCashWithBill: (v: string) => void
+    onOpenMillTerms: () => void
+    fieldClass: string
+  }
+) {
+  return (
+    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
+      <p>
+        {vendorPurchaseTerms.supplier_category_label}
+        {vendorPurchaseTerms.credit_facility_enabled
+          ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
+          : ''}
+        {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
+      </p>
+      {vendorPurchaseTerms.uses_purchase_terms ? (
+        <>
+          <p className="text-muted-foreground">
+            Feed/medicine mill policy: apply instant discount and transport on this bill. Scheme
+            commissions post later via Record mill credit on the vendor — not as a bank payment.
+          </p>
+          <div className="flex flex-wrap items-end gap-2 pt-1">
+            <button
+              type="button"
+              className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
+              onClick={opts.onOpenMillTerms}
+            >
+              Apply mill terms…
+            </button>
+            <label className="block text-xs font-medium flex-1 min-w-[10rem]">
+              Transport this truck / bill
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={opts.truckTransportAmount}
+                onChange={(e) => opts.setTruckTransportAmount(e.target.value)}
+                className={`${opts.fieldClass} mt-1`}
+                placeholder="0 = skip"
+              />
+            </label>
+          </div>
+        </>
+      ) : null}
+      {vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0 ? (
+        <label className="block text-xs font-medium pt-1">
+          Cash with this bill
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={opts.cashWithBill}
+            onChange={(e) => opts.setCashWithBill(e.target.value)}
+            className={`${opts.fieldClass} mt-1`}
+            placeholder="Required when credit is full"
+          />
+        </label>
+      ) : null}
+    </div>
+  )
 }
 
 /** Edit load: backend already allocated per-truck onto lines. Peel it off so totals can subtract once. */
@@ -1357,8 +1425,9 @@ export default function BillsPage() {
   const [allocationDrilldown, setAllocationDrilldown] = useState<Bill | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [vendorPurchaseTerms, setVendorPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
-  const [cashWithBill, setCashWithBill] = useState('')
   const [truckTransportAmount, setTruckTransportAmount] = useState('')
+  const [showMillTermsDialog, setShowMillTermsDialog] = useState(false)
+  const [cashWithBill, setCashWithBill] = useState('')
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -1567,6 +1636,48 @@ export default function BillsPage() {
       setVendorPurchaseTerms(null)
       setTruckTransportAmount('')
     }
+  }
+
+  const applyBillMillTermsValues = (values: BillMillTermsValues) => {
+    const nextCard = {
+      ...(vendorPurchaseTerms?.rate_card || {}),
+      instant_discount_percent: values.instant_discount_percent,
+      instant_discount_per_unit: values.instant_discount_per_unit,
+      transport_per_truck: values.transport_per_truck,
+      transport_per_unit: values.transport_per_unit,
+      transport_per_kg: values.transport_per_kg,
+    }
+    const nextTerms: VendorPurchaseTerms = {
+      ...(vendorPurchaseTerms || {
+        supplier_category: 'feed',
+        supplier_category_label: 'Feed',
+        uses_purchase_terms: true,
+        credit_facility_enabled: false,
+        credit_limit: '0',
+        credit_start_date: null,
+        square_off_date: null,
+        require_zero_on_square_off: true,
+        used: '0',
+        available: null,
+        cash_only: false,
+        square_off_hold: false,
+        cash_required: '0',
+        scheme: null,
+      }),
+      uses_purchase_terms: true,
+      rate_card: nextCard,
+    }
+    setVendorPurchaseTerms(nextTerms)
+    const truck = parseFloat(values.transport_per_truck) || 0
+    setTruckTransportAmount(truck > 0 ? String(truck) : '')
+    setFormData((prev) => ({
+      ...prev,
+      lines: prev.lines.map((line) => {
+        const item = items.find((i) => i.id === line.item_id)
+        return applyMillTermsToLine(line, item, nextTerms)
+      }),
+    }))
+    toast.success('Mill terms applied to MRP lines on this bill.')
   }
 
   const detectedBillPurpose = useMemo(
@@ -3696,50 +3807,16 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
-                    {vendorPurchaseTerms ? (
-                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
-                        <p>
-                          {vendorPurchaseTerms.supplier_category_label}
-                          {vendorPurchaseTerms.credit_facility_enabled
-                            ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
-                            : ''}
-                          {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
-                        </p>
-                        {vendorPurchaseTerms.uses_purchase_terms ? (
-                          <>
-                            <p className="text-muted-foreground">
-                              MRP lines: filled rate-card terms apply (instant %, per-unit transport). Blank terms are skipped. Per-truck is once on this bill.
-                            </p>
-                            <label className="block text-xs font-medium pt-1">
-                              Transport this truck / bill
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={truckTransportAmount}
-                                onChange={(e) => setTruckTransportAmount(e.target.value)}
-                                className={`${BILL_LINE_CTL} mt-1`}
-                                placeholder="0 = skip"
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                        {(vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0) ? (
-                          <label className="block text-xs font-medium pt-1">
-                            Cash with this bill
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={cashWithBill}
-                              onChange={(e) => setCashWithBill(e.target.value)}
-                              className={`${BILL_LINE_CTL} mt-1`}
-                              placeholder="Required when credit is full"
-                            />
-                          </label>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    {vendorPurchaseTerms
+                      ? millTermsBanner(vendorPurchaseTerms, {
+                          truckTransportAmount,
+                          setTruckTransportAmount,
+                          cashWithBill,
+                          setCashWithBill,
+                          onOpenMillTerms: () => setShowMillTermsDialog(true),
+                          fieldClass: BILL_LINE_CTL,
+                        })
+                      : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -4243,50 +4320,16 @@ export default function BillsPage() {
                     {selectedVendorReceivingHint ? (
                       <p className="mt-1 text-xs text-primary">{selectedVendorReceivingHint}</p>
                     ) : null}
-                    {vendorPurchaseTerms ? (
-                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-foreground space-y-1">
-                        <p>
-                          {vendorPurchaseTerms.supplier_category_label}
-                          {vendorPurchaseTerms.credit_facility_enabled
-                            ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
-                            : ''}
-                          {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
-                        </p>
-                        {vendorPurchaseTerms.uses_purchase_terms ? (
-                          <>
-                            <p className="text-muted-foreground">
-                              MRP lines: filled rate-card terms apply (instant %, per-unit transport). Blank terms are skipped. Per-truck is once on this bill.
-                            </p>
-                            <label className="block text-xs font-medium pt-1">
-                              Transport this truck / bill
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={truckTransportAmount}
-                                onChange={(e) => setTruckTransportAmount(e.target.value)}
-                                className={`${BILL_LINE_CTL} mt-1`}
-                                placeholder="0 = skip"
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                        {(vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0) ? (
-                          <label className="block text-xs font-medium pt-1">
-                            Cash with this bill
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              value={cashWithBill}
-                              onChange={(e) => setCashWithBill(e.target.value)}
-                              className={`${BILL_LINE_CTL} mt-1`}
-                              placeholder="Required when credit is full"
-                            />
-                          </label>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    {vendorPurchaseTerms
+                      ? millTermsBanner(vendorPurchaseTerms, {
+                          truckTransportAmount,
+                          setTruckTransportAmount,
+                          cashWithBill,
+                          setCashWithBill,
+                          onOpenMillTerms: () => setShowMillTermsDialog(true),
+                          fieldClass: BILL_LINE_CTL,
+                        })
+                      : null}
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-foreground">
@@ -4688,6 +4731,13 @@ export default function BillsPage() {
             currencySymbol={currencySymbol}
           />
         ) : null}
+        <BillMillTermsDialog
+          open={showMillTermsDialog}
+          currencySymbol={currencySymbol}
+          initial={vendorPurchaseTerms?.rate_card}
+          onClose={() => setShowMillTermsDialog(false)}
+          onApply={applyBillMillTermsValues}
+        />
       </ErpPageShell>
     </PageLayout>
   )

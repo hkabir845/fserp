@@ -11,7 +11,9 @@ import {
 } from '@/components/reports/ReportDrillContext'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 import {
+  AquaculturePlConsumptionSection,
   PondScopedAquaculturePlBlock,
+  resolvePlMgmtSnapshot,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import { agingBucketTotalRow } from '@/components/reports/reportDrillAggregate'
 
@@ -569,6 +571,7 @@ export function renderExtraFinancialReport(
       | { accounts?: { account_id?: number; account_code?: string; account_name?: string; balance?: number }[]; total?: number }
       | undefined
     const accounts = expenses?.accounts ?? []
+    const aquaMgmt = resolvePlMgmtSnapshot(data)
     return (
       <div className="space-y-6">
         {periodFilter(
@@ -633,6 +636,15 @@ export function renderExtraFinancialReport(
             )}
           </div>
         </div>
+        {aquaMgmt?.totals ? (
+          <AquaculturePlConsumptionSection
+            management={aquaMgmt}
+            title="Aquaculture — all pond expenses (register)"
+            showIncomeList={false}
+            showCategoryList
+            hideConsumptionBreakdown
+          />
+        ) : null}
       </div>
     )
   }
@@ -658,6 +670,7 @@ export function renderExtraFinancialReport(
       | { accounts?: { account_id?: number; account_code?: string; account_name?: string; balance?: number }[]; total?: number }
       | undefined
     const accounts = income?.accounts ?? []
+    const aquaMgmt = resolvePlMgmtSnapshot(data)
     return (
       <div className="space-y-6">
         {periodFilter(
@@ -722,6 +735,15 @@ export function renderExtraFinancialReport(
             )}
           </div>
         </div>
+        {aquaMgmt?.totals ? (
+          <AquaculturePlConsumptionSection
+            management={aquaMgmt}
+            title="Aquaculture — all pond income (register)"
+            showIncomeList
+            showCategoryList={false}
+            hideConsumptionBreakdown
+          />
+        ) : null}
       </div>
     )
   }

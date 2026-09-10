@@ -826,7 +826,7 @@ export function PlActiveExpenseCategoriesList({
       <p className="text-sm text-muted-foreground">{emptyMessage}</p>
     )
   }
-  const listedTotal = active.reduce((s, c) => s + Number(c.amount || 0), 0)
+  const listedTotal = sumPlExpenseCategories(active)
   const total =
     authoritativeTotal != null && authoritativeTotal !== ''
       ? Number(authoritativeTotal)
@@ -1377,16 +1377,19 @@ export function PondScopedAquaculturePlBlock({
   showIncomeList?: boolean
   showCategoryList?: boolean
 }) {
-  if (pondId == null || pondId <= 0) return null
-  const mgmt = resolvePlMgmtSnapshot(data, pondRows, pondId)
-  const name =
-    pondName?.trim() ||
-    mgmt?.ponds?.find((p) => Number(p.pond_id) === pondId)?.pond_name?.trim() ||
-    mgmt?.ponds?.[0]?.pond_name?.trim() ||
-    null
-  const scopedLabel = name || `Pond #${pondId}`
+  const scopedPondId = pondId != null && pondId > 0 ? pondId : null
+  const mgmt = resolvePlMgmtSnapshot(data, pondRows, scopedPondId)
+  const name = scopedPondId
+    ? pondName?.trim() ||
+      mgmt?.ponds?.find((p) => Number(p.pond_id) === scopedPondId)?.pond_name?.trim() ||
+      mgmt?.ponds?.[0]?.pond_name?.trim() ||
+      null
+    : null
+  const scopedLabel = scopedPondId ? name || `Pond #${scopedPondId}` : 'all aquaculture ponds'
 
   if (!mgmt?.totals) {
+    // Company-wide / multi-pond: omit empty placeholder (GL entity tables already render).
+    if (scopedPondId == null) return null
     return (
       <div className="rounded-lg border border-border bg-muted/30 px-4 py-8 text-center">
         <p className="text-sm font-medium text-foreground">No aquaculture register data for {scopedLabel}</p>
@@ -1408,12 +1411,12 @@ export function PondScopedAquaculturePlBlock({
       <AquaculturePlConsumptionSection
         management={mgmt}
         entityName={name}
-        primaryPl={primaryPl}
-        hideConsumptionBreakdown={primaryPl}
+        primaryPl={primaryPl && scopedPondId != null}
+        hideConsumptionBreakdown={primaryPl && scopedPondId != null}
         showIncomeList={showIncomeList ?? true}
         showCategoryList={showCategoryList ?? true}
       />
-      {primaryPl && glReferenceData ? (
+      {primaryPl && scopedPondId != null && glReferenceData ? (
         <GlPlReferencePanel data={glReferenceData as Parameters<typeof GlPlReferencePanel>[0]['data']} />
       ) : null}
     </>

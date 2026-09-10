@@ -2542,6 +2542,12 @@ def report_expense_detail(
         )
     elif station_id is not None:
         out["filter_station_id"] = station_id
+    elif not unscoped_dims:
+        # Company-wide expense detail: include aquaculture register so pond costs
+        # (often capitalized / COGS-tagged) still appear as all expense categories.
+        out["aquaculture_management"] = _aquaculture_management_snapshot(
+            company_id, start, end
+        )
     if unscoped_dims:
         out["filter_head_office"] = True
     return out
@@ -2637,6 +2643,11 @@ def report_income_detail(
         )
     elif station_id is not None:
         out["filter_station_id"] = station_id
+    elif not unscoped_dims:
+        # Company-wide income detail: include aquaculture register income by type.
+        out["aquaculture_management"] = _aquaculture_management_snapshot(
+            company_id, start, end
+        )
     if unscoped_dims:
         out["filter_head_office"] = True
     return out

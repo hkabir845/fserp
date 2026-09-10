@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from api.models import (
     AquacultureExpense,
@@ -345,7 +345,42 @@ def compute_aquaculture_pl_summary_dict(
     if pond_filter_id is not None:
         ponds_qs = ponds_qs.filter(pk=pond_filter_id)
     else:
-        ponds_qs = ponds_qs.filter(is_active=True)
+        # Include closed ponds that still have register activity in the period so
+        # All Entities / all-ponds expense & income lists stay complete (same idea as
+        # entity GL rows keeping closed sites with ledger history).
+        active_or_busy = Q(is_active=True) | Q(
+            id__in=AquacultureExpense.objects.filter(
+                company_id=cid,
+                pond_id__isnull=False,
+                expense_date__gte=start,
+                expense_date__lte=end,
+            ).values("pond_id")
+        ) | Q(
+            id__in=AquacultureFishSale.objects.filter(
+                company_id=cid,
+                sale_date__gte=start,
+                sale_date__lte=end,
+            ).values("pond_id")
+        ) | Q(
+            id__in=AquacultureFishPondTransferLine.objects.filter(
+                transfer__company_id=cid,
+                transfer__transfer_date__gte=start,
+                transfer__transfer_date__lte=end,
+            ).values("to_pond_id")
+        ) | Q(
+            id__in=AquacultureFishPondTransferLine.objects.filter(
+                transfer__company_id=cid,
+                transfer__transfer_date__gte=start,
+                transfer__transfer_date__lte=end,
+            ).values("transfer__from_pond_id")
+        ) | Q(
+            id__in=PayrollRunPondAllocation.objects.filter(
+                payroll_run__company_id=cid,
+                payroll_run__payment_date__gte=start,
+                payroll_run__payment_date__lte=end,
+            ).values("pond_id")
+        )
+        ponds_qs = ponds_qs.filter(active_or_busy)
 
     shared_expenses = list(
         AquacultureExpense.objects.filter(

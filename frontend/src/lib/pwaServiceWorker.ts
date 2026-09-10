@@ -1,5 +1,5 @@
 /** Bump ?v= when sw.js behavior changes so browsers pick up the new worker. */
-export const SERVICE_WORKER_URL = '/sw.js?v=6'
+export const SERVICE_WORKER_URL = '/sw.js?v=7'
 
 /** Brain PWA — scoped to /brain-app/ (separate install from full ERP). */
 export const BRAIN_SERVICE_WORKER_URL = '/brain-app/sw.js?v=3'

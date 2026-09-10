@@ -147,6 +147,21 @@ const nextConfig = {
       },
     ]
   },
+  async headers() {
+    // HTML/app documents must not be shared-cached for a year (stale Mill terms UI after deploy).
+    // Hashed /_next/static assets keep long immutable cache.
+    return [
+      {
+        source: '/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+          },
+        ],
+      },
+    ]
+  },
 }
 
 // Webpack dev compiles on this app can exceed the default chunk script timeout on Windows.

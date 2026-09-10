@@ -496,7 +496,7 @@ function millTermsBanner(
               className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
               onClick={opts.onOpenMillTerms}
             >
-              Mill terms…
+              Mill terms (v2)…
             </button>
             <label className="block text-xs font-medium flex-1 min-w-[10rem]">
               Transport this lorry (fixed ৳)

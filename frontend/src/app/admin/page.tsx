@@ -46,6 +46,7 @@ import { formatDate, formatDateOnly } from '@/utils/date'
 import { AMOUNT_ADMIN_TEXT_CLASS } from '@/utils/amountFieldStyles'
 import { RESTORE_CONFIRM_PHRASE } from '@/utils/tenantBackup'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   COMPANY_TIME_ZONE_OPTIONS,
   DEFAULT_COMPANY_TIME_ZONE,
   isKnownCompanyTimeZone,
@@ -295,7 +296,7 @@ function SuperAdminPageContent() {
   }, [showUserModal, userFormData.role, userFormData.company_id, adminStationOptions])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

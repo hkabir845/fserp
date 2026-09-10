@@ -47,6 +47,7 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { formatQuantity } from '@/utils/quantity'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 const inputClassName =
   'w-full min-h-10 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -532,7 +533,7 @@ function InventoryContent() {
   const [confirmBusy, setConfirmBusy] = useState(false)
 
   const loadCore = useCallback(async () => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

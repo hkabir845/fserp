@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -12,21 +13,37 @@ from api.models import Company, User
 logger = logging.getLogger(__name__)
 
 
-def create_tokens(user):
-    """Return access_token and refresh_token for user."""
+def _credential_version(user) -> str:
+    """One-way binding that invalidates JWTs whenever the stored password changes."""
+    value = str(getattr(user, "password_hash", "") or "").encode("utf-8")
+    return hashlib.sha256(value).hexdigest()[:24]
+
+
+def create_tokens(user, *, refresh_jti: str | None = None, refresh_family_id: str | None = None):
+    """Return access_token and refresh_token for user.
+
+    When ``refresh_jti`` / ``refresh_family_id`` are supplied (preferred), the refresh
+    JWT is bound to a server-side ``AuthRefreshSession`` for rotation + replay detection.
+    """
     secret = settings.SECRET_KEY
     now = datetime.now(timezone.utc)
     sub = str(user.username) if user.username is not None else ""
     payload_access = {
         "sub": sub,
         "type": "access",
+        "cv": _credential_version(user),
         "exp": now + timedelta(minutes=60),
     }
     payload_refresh = {
         "sub": sub,
         "type": "refresh",
+        "cv": _credential_version(user),
         "exp": now + timedelta(days=7),
     }
+    if refresh_jti:
+        payload_refresh["jti"] = refresh_jti
+    if refresh_family_id:
+        payload_refresh["fid"] = refresh_family_id
     access_token = jwt.encode(payload_access, secret, algorithm="HS256")
     refresh_token = jwt.encode(payload_refresh, secret, algorithm="HS256")
     if hasattr(access_token, "decode"):
@@ -58,7 +75,10 @@ def get_user_from_request(request):
             return None
         if not isinstance(username, str):
             username = str(username)
-        return User.objects.filter(username__iexact=username, is_active=True).first()
+        user = User.objects.filter(username__iexact=username, is_active=True).first()
+        if user is None or payload.get("cv") != _credential_version(user):
+            return None
+        return user
     except Exception:
         return None
 
@@ -78,7 +98,13 @@ def auth_required(view_func):
                     status=403,
                 )
             request.api_user = user
-            return view_func(request, *args, **kwargs)
+            from api.services.audit_actor import reset_audit_user_id, set_audit_user_id
+
+            token = set_audit_user_id(getattr(user, "id", None))
+            try:
+                return view_func(request, *args, **kwargs)
+            finally:
+                reset_audit_user_id(token)
         except Exception as e:
             logger.exception("auth_required view failed after authentication")
             if getattr(settings, "DEBUG", False):

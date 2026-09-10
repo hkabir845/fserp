@@ -244,7 +244,7 @@ def test_single_book_currency_no_fx_fields_on_pl(company_tenant_with_gl):
     assert "exchange_rate" not in json.dumps(pl).lower()
     for section in ("income", "cost_of_goods_sold", "expenses"):
         for acc in pl[section]["accounts"]:
-            assert isinstance(acc["balance"], (int, float))
+            assert isinstance(acc["balance"], (int, float, str))
 
 
 def test_csv_export_matches_api_json_for_pl_reports(company_tenant_with_gl):

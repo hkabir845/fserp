@@ -6,9 +6,43 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from api.models import User
+from api.services.auth_refresh_sessions import (
+    ReplayDetected,
+    issue_refresh_session,
+    revoke_family,
+    revoke_jti,
+    revoke_user_sessions,
+    rotate_refresh_session,
+)
 from api.services.permission_service import user_client_dict
 from api.utils.auth import create_tokens, tenant_company_allows_access
 from api.utils.rate_limit import auth_rate_limits_enabled, client_ip, rate_limit_exceeded
+
+
+def _set_refresh_cookie(response, token: str):
+    from django.conf import settings
+
+    response.set_cookie(
+        settings.AUTH_REFRESH_COOKIE_NAME,
+        token,
+        max_age=settings.AUTH_REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=settings.AUTH_REFRESH_COOKIE_SECURE,
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+        path="/api/auth/",
+    )
+    return response
+
+
+def _clear_refresh_cookie(response):
+    from django.conf import settings
+
+    response.delete_cookie(
+        settings.AUTH_REFRESH_COOKIE_NAME,
+        path="/api/auth/",
+        samesite=settings.AUTH_REFRESH_COOKIE_SAMESITE,
+    )
+    return response
 
 
 def _parse_login_body(request):
@@ -39,6 +73,23 @@ def _parse_login_body(request):
 
 def _user_to_json(user):
     return user_client_dict(user)
+
+
+def _auth_client(request) -> str:
+    """browser | native — native keeps refresh_token in the JSON body."""
+    raw = (request.META.get("HTTP_X_AUTH_CLIENT") or "").strip().lower()
+    if raw in ("browser", "native"):
+        return raw
+    # Capacitor / mobile shells often omit Sec-Fetch-*; treat missing as native-safe.
+    sec_mode = (request.META.get("HTTP_SEC_FETCH_MODE") or "").strip().lower()
+    if sec_mode in ("cors", "navigate", "same-origin"):
+        return "browser"
+    return "native"
+
+
+def _request_meta(request) -> tuple[str, str]:
+    ua = (request.META.get("HTTP_USER_AGENT") or "")[:255]
+    return ua, client_ip(request) or ""
 
 
 @csrf_exempt
@@ -73,13 +124,21 @@ def login(request):
             {"detail": "This company account is inactive. Contact your administrator."},
             status=403,
         )
-    access_token, refresh_token = create_tokens(user)
-    return JsonResponse({
+    ua, ip_addr = _request_meta(request)
+    jti, fid, _exp = issue_refresh_session(user, user_agent=ua, ip_address=ip_addr)
+    access_token, refresh_token = create_tokens(
+        user, refresh_jti=jti, refresh_family_id=fid
+    )
+    body = {
         "access_token": access_token,
-        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": _user_to_json(user),
-    })
+    }
+    # Browser clients use the HttpOnly cookie only — never put refresh in JS-readable JSON.
+    if _auth_client(request) != "browser":
+        body["refresh_token"] = refresh_token
+    response = JsonResponse(body)
+    return _set_refresh_cookie(response, refresh_token)
 
 
 @csrf_exempt
@@ -97,17 +156,22 @@ def refresh(request):
     try:
         body = request.body
         if not body or (hasattr(body, "strip") and not body.strip()):
-            return JsonResponse({"detail": "Request body required"}, status=400)
-        if isinstance(body, bytes):
-            body = body.decode("utf-8")
-        data = json.loads(body)
+            data = {}
+        else:
+            if isinstance(body, bytes):
+                body = body.decode("utf-8")
+            data = json.loads(body)
     except json.JSONDecodeError:
         return JsonResponse({"detail": "Invalid JSON"}, status=400)
     except Exception:
         return JsonResponse({"detail": "Bad request"}, status=400)
     if not isinstance(data, dict):
         return JsonResponse({"detail": "JSON object required"}, status=400)
-    refresh_token = data.get("refresh_token")
+    from django.conf import settings
+
+    refresh_token = data.get("refresh_token") or request.COOKIES.get(
+        settings.AUTH_REFRESH_COOKIE_NAME
+    )
     if refresh_token is None:
         return JsonResponse({"detail": "refresh_token required"}, status=400)
     if not isinstance(refresh_token, str):
@@ -146,15 +210,96 @@ def refresh(request):
         return JsonResponse({"detail": "Server error"}, status=500)
     if not user:
         return JsonResponse({"detail": "User not found"}, status=401)
+    from api.utils.auth import _credential_version
+    if payload.get("cv") != _credential_version(user):
+        return JsonResponse({"detail": "Session expired; sign in again"}, status=401)
     if not tenant_company_allows_access(user):
         return JsonResponse(
             {"detail": "This company account is inactive. Contact your administrator."},
             status=403,
         )
+
+    jti = (payload.get("jti") or "").strip()
+    fid = (payload.get("fid") or "").strip()
+    ua, ip_addr = _request_meta(request)
+    # Legacy refresh JWTs (pre-session ledger) still rotate, but mint a tracked session.
+    if not jti or not fid:
+        new_jti, new_fid, _exp = issue_refresh_session(
+            user, user_agent=ua, ip_address=ip_addr
+        )
+    else:
+        try:
+            rotated = rotate_refresh_session(
+                user=user,
+                jti=jti,
+                family_id=fid,
+                user_agent=ua,
+                ip_address=ip_addr,
+            )
+        except ReplayDetected as replay:
+            revoke_family(replay.family_id)
+            resp = JsonResponse(
+                {"detail": "Session revoked due to refresh-token reuse. Sign in again."},
+                status=401,
+            )
+            return _clear_refresh_cookie(resp)
+        if rotated is None:
+            resp = JsonResponse({"detail": "Session expired; sign in again"}, status=401)
+            return _clear_refresh_cookie(resp)
+        new_jti, new_fid, _exp = rotated
+
     try:
-        access_token, _ = create_tokens(user)
+        access_token, rotated_refresh_token = create_tokens(
+            user, refresh_jti=new_jti, refresh_family_id=new_fid
+        )
         if isinstance(access_token, bytes):
             access_token = access_token.decode("utf-8")
-        return JsonResponse({"access_token": access_token, "token_type": "bearer"})
+        body = {"access_token": access_token, "token_type": "bearer"}
+        if _auth_client(request) != "browser":
+            body["refresh_token"] = rotated_refresh_token
+        response = JsonResponse(body)
+        return _set_refresh_cookie(response, rotated_refresh_token)
     except Exception:
         return JsonResponse({"detail": "Server error"}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def logout(request):
+    """End the browser refresh session and revoke server-side refresh family/jti."""
+    from django.conf import settings
+    import jwt
+
+    raw = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
+    try:
+        body = json.loads(request.body) if request.body else {}
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    if not raw:
+        raw = body.get("refresh_token")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            payload = jwt.decode(
+                raw.strip(),
+                settings.SECRET_KEY,
+                algorithms=["HS256"],
+                options={"verify_exp": False},
+                leeway=60,
+            )
+            fid = (payload.get("fid") or "").strip()
+            jti = (payload.get("jti") or "").strip()
+            if fid:
+                revoke_family(fid)
+            elif jti:
+                revoke_jti(jti)
+            else:
+                username = payload.get("sub")
+                if username:
+                    user = User.objects.filter(username__iexact=str(username)).first()
+                    if user:
+                        revoke_user_sessions(user)
+        except Exception:
+            pass
+    return _clear_refresh_cookie(JsonResponse({"detail": "Signed out"}))

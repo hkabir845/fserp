@@ -29,6 +29,7 @@ import { usePageMeta } from '@/hooks/usePageMeta'
 import { useT } from '@/lib/i18n'
 import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
 import { useContactsT } from '@/lib/moduleI18n/contacts'
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 interface Customer {
   id: number
@@ -116,7 +117,7 @@ export default function CustomersPage() {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -233,7 +234,7 @@ export default function CustomersPage() {
         }
 
         if (ax.response?.status === 401 || ax.response?.status === 403) {
-          localStorage.removeItem('access_token')
+          clearStoredAccessToken()
           router.push('/login')
           return
         }
@@ -292,7 +293,7 @@ export default function CustomersPage() {
   ])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     void fetchCustomers()
   }, [fetchCustomers])

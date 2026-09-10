@@ -12,6 +12,7 @@ import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
 import { aquacultureT } from '@/lib/aquacultureI18n'
 import { useT } from '@/lib/i18n'
 import type { ErpAppSection } from '@/navigation/erpAppMenu'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 /**
  * App launcher — Aquaculture-style hero, stats, and section cards.
@@ -31,7 +32,7 @@ export default function AppsPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token?.trim()) {
       router.replace('/login')
     }

@@ -11,6 +11,7 @@ import api from '@/lib/api'
 import { formatCurrency } from '@/utils/currency'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { usePageMeta } from '@/hooks/usePageMeta'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface PlatformStats {
   total_companies: number
@@ -34,7 +35,7 @@ function OverviewPageContent() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

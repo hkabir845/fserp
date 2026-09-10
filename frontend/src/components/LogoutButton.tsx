@@ -1,9 +1,10 @@
 'use client'
 
 import { LogOut } from 'lucide-react'
+import { clearStoredAccessToken } from '@/lib/authSession'
 
 export function performLogout() {
-  localStorage.removeItem('access_token')
+  clearStoredAccessToken()
   localStorage.removeItem('refresh_token')
   localStorage.removeItem('user')
   window.location.href = '/login'

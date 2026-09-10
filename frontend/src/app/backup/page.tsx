@@ -16,6 +16,7 @@ import { Database } from 'lucide-react'
 import api, { isSuperAdminRole } from '@/lib/api'
 import { canAccessBackup } from '@/utils/rbac'
 import { safeLogError } from '@/utils/connectionError'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 function TenantBackupRestoreContent() {
   const router = useRouter()
@@ -25,7 +26,7 @@ function TenantBackupRestoreContent() {
   const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
     if (!token) {
       router.push('/login')
       return

@@ -56,6 +56,7 @@ import {
 } from '@/navigation/erpAppMenu'
 import { safeLogError } from '@/utils/connectionError'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   getRoleDashboardConfig,
   getLocalizedDashboardFocus,
   type DashboardStatKey,
@@ -152,7 +153,7 @@ export default function RoleDashboard() {
   const companyName = selectedCompany?.name
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token?.trim()) {
       router.replace('/login')
       return

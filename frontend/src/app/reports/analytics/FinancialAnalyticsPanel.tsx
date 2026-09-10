@@ -34,6 +34,7 @@ import { EntityAnalyticsBreakdown } from './EntityAnalyticsBreakdown'
 import type { AquacultureAnalyticsSummary, EntityAnalyticsRow } from './analyticsEntityTypes'
 import { parseReportSiteScopeKey } from '../reportSiteScope'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   ResponsiveContainer,
   ComposedChart,
   Line,
@@ -249,7 +250,7 @@ export function FinancialAnalyticsPanel({
   const [profitChartView, setProfitChartView] = useState<ChartView>('bar')
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

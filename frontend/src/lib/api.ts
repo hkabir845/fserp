@@ -4,7 +4,13 @@
  */
 import axios from 'axios'
 import { withEffectiveAquacultureFlags } from '@/lib/aquacultureCompanyFlags'
-import { isAccessTokenExpired, readStoredAccessToken } from '@/lib/authSession'
+import { isCapacitorNativeApp } from '@/lib/androidApp'
+import {
+  clearStoredAccessToken,
+  isAccessTokenExpired,
+  readStoredAccessToken,
+  writeStoredAccessToken,
+} from '@/lib/authSession'
 
 /**
  * Canonical API base (.../api). Set `NEXT_PUBLIC_API_BASE_URL` in `frontend/.env` (production) or
@@ -166,7 +172,7 @@ export function setAuthApiOriginStamp(): void {
 export function clearAuthStorage(): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.removeItem('access_token')
+    clearStoredAccessToken()
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
     localStorage.removeItem('superadmin_selected_company')
@@ -182,7 +188,7 @@ export function clearAuthStorage(): void {
 export function clearAuthIfApiOriginMismatch(): boolean {
   if (typeof window === 'undefined') return false
   try {
-    const token = localStorage.getItem('access_token')?.trim()
+    const token = readStoredAccessToken()
     if (!token) return false
     const stored = localStorage.getItem(FSERP_AUTH_API_ORIGIN_KEY)
     const cur = canonicalApiOriginForAuth(getBackendOrigin())
@@ -211,6 +217,7 @@ function apiTimeoutMs(): number {
 
 const api = axios.create({
   baseURL: getApiBaseUrl(),
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -371,25 +378,32 @@ export async function fetchCurrentCompany(options?: { force?: boolean }): Promis
 function fetchNewAccessToken(): Promise<string | null> {
   if (typeof window === 'undefined') return Promise.resolve(null)
   const rt = localStorage.getItem('refresh_token')?.trim()
-  if (!rt) return Promise.resolve(null)
   if (refreshInFlight) return refreshInFlight
 
   refreshInFlight = (async () => {
     try {
       const response = await axios.post(
         `${getApiBaseUrl().replace(/\/+$/, '')}/auth/refresh/`,
-        { refresh_token: rt },
-        { headers: { 'Content-Type': 'application/json', Accept: 'application/json' } }
+        rt ? { refresh_token: rt } : {},
+        {
+          withCredentials: true,
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-Auth-Client': isCapacitorNativeApp() ? 'native' : 'browser',
+          },
+        }
       )
       const access = response.data?.access_token
       if (!access) return null
       const trimmed = String(access).trim()
-      localStorage.setItem('access_token', trimmed)
+      writeStoredAccessToken(trimmed)
+      localStorage.removeItem('refresh_token')
       setAuthApiOriginStamp()
       return trimmed
     } catch {
       try {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         localStorage.removeItem('refresh_token')
         localStorage.removeItem('user')
       } catch {
@@ -564,7 +578,7 @@ api.interceptors.response.use(
   (response) => {
     if (typeof window !== 'undefined' && response.status >= 200 && response.status < 300) {
       try {
-        if (localStorage.getItem('access_token')?.trim()) {
+        if (readStoredAccessToken()) {
           setAuthApiOriginStamp()
         }
       } catch {

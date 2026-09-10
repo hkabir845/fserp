@@ -10,6 +10,7 @@ import { loginRedirectAfterAuth } from '@/utils/loginRedirect'
 import { AndroidAppDownload } from '@/components/AndroidAppDownload'
 import { BrainAppInstallPrompt } from '@/components/brain/BrainAppInstallPrompt'
 import { isCapacitorNativeApp } from '@/lib/androidApp'
+import { readStoredAccessToken, writeStoredAccessToken } from '@/lib/authSession'
 
 export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 'brain' }) {
   const router = useRouter()
@@ -43,7 +44,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
   useEffect(() => {
     if (!mounted || typeof window === 'undefined') return
     try {
-      const token = localStorage.getItem('access_token')?.trim()
+      const token = readStoredAccessToken()
       if (token && token !== 'undefined' && token !== 'null') {
         try {
           const userStr = localStorage.getItem('user')
@@ -224,7 +225,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
               method: endpoint.method,
               mode: 'cors',
               cache: 'no-cache',
-              credentials: 'omit',
+              credentials: 'include',
               headers: endpoint.headers,
               body: endpoint.body as BodyInit,
             },
@@ -298,11 +299,11 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
       }
 
       const data = await response.json()
-      const { access_token, refresh_token, user } = data
+      const { access_token, user } = data
       if (!access_token) throw new Error('No access token received from server')
 
-      localStorage.setItem('access_token', String(access_token).trim())
-      localStorage.setItem('refresh_token', String(refresh_token || '').trim())
+      writeStoredAccessToken(String(access_token).trim())
+      localStorage.removeItem('refresh_token')
       localStorage.setItem('user', JSON.stringify(user))
       setAuthApiOriginStamp()
       // Tenant sessions always use FSMS ERP nav (Aquaculture + ERP). SaaS tab is super-admin only.

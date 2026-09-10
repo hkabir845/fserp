@@ -13,7 +13,6 @@ from api.models import (
     AquaculturePond,
     Company,
     JournalEntryLine,
-    Vendor,
 )
 from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
 
@@ -141,8 +140,8 @@ def test_fish_purchase_pond_balance_sheet_carries_bioasset_and_liability(
     bs = report_balance_sheet(cid, date(2026, 5, 1), date(2026, 5, 31), pond_id=pond.id)
     assert bs.get("filter_pond_id") == pond.id
     # Pond carries the bio-asset (asset) and the matching payable (liability), so it balances.
-    assert bs["assets"]["total"] == 500.0
-    assert bs["liabilities"]["total"] == 500.0
+    assert bs["assets"]["total"] == "500.00"
+    assert bs["liabilities"]["total"] == "500.00"
     assert bs["is_balanced"] is True
 
 

@@ -12,6 +12,7 @@ import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 import { filterFuelForecourtStations } from '@/utils/stationCapabilities'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Nozzle {
   id: number
@@ -173,7 +174,7 @@ export default function NozzlesPage() {
   }, [selectedMeterId, selectedTank, meters, tanks])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -1130,8 +1131,3 @@ export default function NozzlesPage() {
     </PageLayout>
   )
 }
-
-
-
-
-

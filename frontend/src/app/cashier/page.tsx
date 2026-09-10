@@ -51,6 +51,7 @@ import {
 import { CashierDueCollection } from "./CashierDueCollection"
 import { CashierDonation } from "./CashierDonation"
 import { CashierPayBills } from "./CashierPayBills"
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 const inputClassName =
   "w-full min-h-11 touch-manipulation rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:min-h-10"
@@ -561,7 +562,7 @@ export default function CashierPOSPage() {
   }, [selectedCompany?.id])
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token")
+    const token = readStoredAccessToken()
     if (!token) {
       router.push("/login")
       return
@@ -702,7 +703,7 @@ export default function CashierPOSPage() {
     const silent = opts?.silent === true
     if (!silent) setLoading(true)
     try {
-      const token = localStorage.getItem("access_token")
+      const token = readStoredAccessToken()
       if (!token) {
         router.push("/login")
         return
@@ -866,7 +867,7 @@ export default function CashierPOSPage() {
       setPosItems(generalItems)
     } catch (error: any) {
       if (error.response?.status === 401) {
-        localStorage.removeItem("access_token")
+        clearStoredAccessToken()
         router.push("/login")
         toast.error("Session expired. Please login again.")
         return
@@ -1342,7 +1343,7 @@ export default function CashierPOSPage() {
   handleUnifiedSaleRef.current = handleUnifiedSale
 
   const handleLogout = () => {
-    localStorage.removeItem("access_token")
+    clearStoredAccessToken()
     localStorage.removeItem("refresh_token")
     localStorage.removeItem("user")
     router.push("/login")

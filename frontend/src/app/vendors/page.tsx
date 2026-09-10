@@ -61,6 +61,7 @@ import {
   templateVendorDefaultExpenseOptionLabel,
 } from '@/lib/vendorDefaults'
 import {
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
   mergeSuggestedStringField,
   syncBooleanFieldTouchedForAccountPick,
 } from '@/lib/coaSuggestForm'
@@ -181,7 +182,7 @@ export default function VendorsPage() {
   const [millCreditMemo, setMillCreditMemo] = useState('')
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -249,7 +250,7 @@ export default function VendorsPage() {
 
   const loadExpenseCoa = useCallback(async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) return
       const r = await api.get('/chart-of-accounts/', {
         headers: { Authorization: `Bearer ${token}` },
@@ -321,7 +322,7 @@ export default function VendorsPage() {
       })
       const response = await api.get('/vendors/', { params })
       if (response.status === 401 || response.status === 403) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         return
       }
@@ -367,7 +368,7 @@ export default function VendorsPage() {
   }, [debouncedSearch, includeInactive, listPage, pageSize, router, toast])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     void fetchVendors()
   }, [fetchVendors])

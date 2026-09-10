@@ -56,6 +56,7 @@ import {
 import { coaPickFromRows } from '@/lib/coaSuggestForm'
 import { isOffsetPagedPayload, offsetListParams, REFERENCE_FETCH_LIMIT } from '@/lib/pagination'
 import {
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
   hasTransactionTextSearch,
   transactionAmountParams,
   transactionDateParams,
@@ -337,7 +338,7 @@ export default function JournalEntriesPage() {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -380,7 +381,7 @@ export default function JournalEntriesPage() {
 
   const fetchReferenceData = async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) {
         router.push('/login')
         return
@@ -414,7 +415,7 @@ export default function JournalEntriesPage() {
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) {
         router.push('/login')
         return
@@ -443,7 +444,7 @@ export default function JournalEntriesPage() {
       console.error('Error fetching journal entries:', error)
       const err = error as { response?: { status?: number } }
       if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         return
       }
@@ -457,7 +458,7 @@ export default function JournalEntriesPage() {
   }, [journalListParams, listPage, pageSize, router, toast])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     void fetchEntries()
   }, [fetchEntries])

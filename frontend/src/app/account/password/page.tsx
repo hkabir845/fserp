@@ -11,6 +11,7 @@ import { useToast } from '@/components/Toast'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
 import { Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 export default function ChangePasswordPage() {
   const router = useRouter()
@@ -25,7 +26,7 @@ export default function ChangePasswordPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const t = localStorage.getItem('access_token')
+    const t = readStoredAccessToken()
     if (!t) router.replace('/login')
   }, [router])
 

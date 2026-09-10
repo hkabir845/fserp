@@ -9,7 +9,6 @@ import pytest
 from api.models import AquaculturePond, Bill, Customer, Invoice, Vendor
 from api.services.aquaculture_pond_internal_vendor import (
     mark_pond_pos_customer_internal,
-    maybe_provision_auto_internal_vendor,
     on_pond_deleted_internal_vendor,
     pond_internal_vendor_ids,
     provision_missing_pond_internal_vendors,
@@ -172,13 +171,13 @@ def test_internal_parties_are_split_out_of_headline_balances(company_tenant):
     )
 
     cb = report_customer_balances(cid, date(2026, 1, 1), date(2026, 1, 31))
-    assert cb["total_ar"] == 62000.0            # unchanged: still every customer
-    assert cb["total_ar_external"] == 12000.0   # only the real buyer
-    assert cb["total_ar_internal"] == 50000.0
+    assert cb["total_ar"] == "62000.00"            # unchanged: still every customer
+    assert cb["total_ar_external"] == "12000.00"   # only the real buyer
+    assert cb["total_ar_internal"] == "50000.00"
 
     vb = report_vendor_balances(cid, date(2026, 1, 1), date(2026, 1, 31))
-    assert vb["total_ap_internal"] == 50000.0
-    assert vb["total_ap_external"] == 0.0
+    assert vb["total_ap_internal"] == "50000.00"
+    assert vb["total_ap_external"] == "0.00"
 
     pb = report_party_balances(cid, date(2026, 1, 1), date(2026, 1, 31))
     keys = [s["key"] for s in pb["sections"]]
@@ -197,13 +196,13 @@ def test_internal_parties_are_split_out_of_headline_balances(company_tenant):
 
     summary = pb["summary"]
     # Headline totals see only real outside parties.
-    assert summary["customer_receivable"] == 12000.0
-    assert summary["vendor_payable"] == 0.0
-    assert summary["net_position"] == 12000.0
+    assert summary["customer_receivable"] == "12000.00"
+    assert summary["vendor_payable"] == "0.00"
+    assert summary["net_position"] == "12000.00"
     # Internal trade is reported apart, and nets to zero once both sides are booked.
-    assert summary["internal_receivable"] == 50000.0
-    assert summary["internal_payable"] == 50000.0
-    assert summary["internal_net_position"] == 0.0
+    assert summary["internal_receivable"] == "50000.00"
+    assert summary["internal_payable"] == "50000.00"
+    assert summary["internal_net_position"] == "0.00"
 
 
 @pytest.mark.django_db

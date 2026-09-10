@@ -1,3 +1,4 @@
+import { clearStoredAccessToken } from './authSession'
 /**
  * Session helpers for the signed-in user.
  *
@@ -19,10 +20,14 @@ export async function getCurrentUser(): Promise<User> {
 
 export function logout() {
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('access_token')
+    void fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/auth/logout/`, {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => undefined)
+    clearStoredAccessToken()
+    localStorage.removeItem('refresh_token')
     localStorage.removeItem('platform_token')
     localStorage.removeItem('is_platform_mode')
     window.location.href = '/login'
   }
 }
-

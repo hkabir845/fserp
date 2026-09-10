@@ -375,6 +375,32 @@ class PasswordResetToken(models.Model):
         ]
 
 
+class AuthRefreshSession(models.Model):
+    """
+    Server-side refresh-token rotation ledger.
+
+    Each refresh JWT carries ``jti`` + ``fid`` (family). Presenting a already-rotated
+    jti revokes the whole family (replay detection). Logout revokes the active family.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_refresh_sessions")
+    jti = models.CharField(max_length=64, unique=True, db_index=True)
+    family_id = models.CharField(max_length=64, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    rotated_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    ip_address = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        db_table = "auth_refresh_session"
+        indexes = [
+            models.Index(fields=["user", "family_id"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+
 # ---------------------------------------------------------------------------
 # Broadcasts (SaaS admin)
 # ---------------------------------------------------------------------------
@@ -1157,8 +1183,9 @@ class Employee(models.Model):
 class EmployeeLedgerEntry(models.Model):
     """
     HR subledger: debit increases net payable to employee (e.g. accrued wages);
-    credit decreases (payment to employee, advance recovery). Manual lines have no
-    payroll_run; posting payroll to the G/L creates lines linked to that run.
+    credit decreases (payment to employee, advance given). Manual lines have no
+    payroll_run and post a balanced AUTO-EMP-LE journal; payroll-run lines are
+    already represented by the salary / settle / remit journals.
     """
 
     employee = models.ForeignKey(
@@ -1177,6 +1204,14 @@ class EmployeeLedgerEntry(models.Model):
     memo = models.TextField(blank=True)
     debit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     credit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    journal_entry = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="employee_ledger_entries",
+        help_text="AUTO-EMP-LE-{this row id} when a manual line is posted to the G/L.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1226,13 +1261,29 @@ class PayrollRun(models.Model):
     )
     status = models.CharField(max_length=32, default="draft")
     notes = models.TextField(blank=True)
-    # Posted salary payment ( Dr salary expense, Cr bank / statutory; see gl_posting.post_payroll_salary )
+    # Posted salary expense (Dr 6400; Cr 2200 or bank for net; Cr 2210 deductions).
     salary_journal = models.ForeignKey(
         "JournalEntry",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="payroll_runs",
+    )
+    # When the salary journal accrued net to 2200, this is the later Dr 2200 / Cr bank payment.
+    net_pay_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs_net_pay",
+    )
+    # Dr 2210 / Cr bank when statutory deductions are remitted to the authority.
+    deduction_remittance_journal = models.ForeignKey(
+        "JournalEntry",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs_deduction_remit",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1419,16 +1470,44 @@ class JournalEntry(models.Model):
     )
     is_posted = models.BooleanField(default=False)
     posted_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_entries_created",
+    )
+    posted_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="journal_entries_posted",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "journal_entry"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "entry_number"],
+                condition=models.Q(entry_number__gt=""),
+                name="journal_entry_company_number_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "entry_date"], name="je_company_date_idx"),
+            models.Index(
+                fields=["company", "is_posted", "entry_date"],
+                name="je_company_posted_date_idx",
+            ),
+        ]
 
 
 class JournalEntryLine(models.Model):
     journal_entry = models.ForeignKey(JournalEntry, on_delete=models.CASCADE, related_name="lines")
-    account = models.ForeignKey(ChartOfAccount, on_delete=models.CASCADE, related_name="journal_lines")
+    account = models.ForeignKey(ChartOfAccount, on_delete=models.PROTECT, related_name="journal_lines")
     station = models.ForeignKey(
         "Station",
         null=True,
@@ -1479,6 +1558,9 @@ class JournalEntryLine(models.Model):
 
     class Meta:
         db_table = "journal_entry_line"
+        indexes = [
+            models.Index(fields=["account", "journal_entry"], name="jel_account_entry_idx"),
+        ]
 
 
 class FundTransfer(models.Model):
@@ -1651,6 +1733,14 @@ class Invoice(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     objects = ExternalTradeDocumentManager()
+    stock_relieved = models.BooleanField(
+        default=False,
+        help_text=(
+            "True once this invoice has decremented physical stock. Mirror of "
+            "Bill.stock_receipt_applied: relief happens exactly once and is unwound exactly "
+            "once when the invoice is edited, voided or deleted."
+        ),
+    )
     all_objects = models.Manager()
 
     class Meta:
@@ -1675,6 +1765,17 @@ class InvoiceLine(models.Model):
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    stock_relieved_quantity = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        default=0,
+        help_text="Exact physical quantity relieved when this line was posted; reversal evidence.",
+    )
+    stock_relieved_station_id = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Station bin used for the recorded stock relief, retained for exact reversal.",
+    )
     revenue_account = models.ForeignKey(
         "ChartOfAccount",
         null=True,
@@ -2451,11 +2552,23 @@ class LoanInterestAccrual(models.Model):
         on_delete=models.SET_NULL,
         related_name="loan_interest_accrual_reversals",
     )
+    period_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    period_month = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "loan_interest_accrual"
         ordering = ["-accrual_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["loan", "period_year", "period_month"],
+                condition=models.Q(
+                    ("period_year__isnull", False),
+                    ("reversed_at__isnull", True),
+                ),
+                name="loan_accrual_unreversed_period_uniq",
+            ),
+        ]
 
 
 class FixedAsset(models.Model):

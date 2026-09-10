@@ -10,6 +10,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { filterFuelForecourtStations } from '@/utils/stationCapabilities'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Island {
   id: number
@@ -59,7 +60,7 @@ export default function IslandsPage() {
   }, [selectedStation, fuelForecourtStations])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -450,8 +451,3 @@ export default function IslandsPage() {
     </PageLayout>
   )
 }
-
-
-
-
-

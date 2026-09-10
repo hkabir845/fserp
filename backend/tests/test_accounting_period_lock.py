@@ -210,13 +210,13 @@ def test_balance_sheet_reports_a_material_tie_out_instead_of_absorbing_it(compan
     cid = company_tenant_with_gl.id
     clean = report_balance_sheet(cid, date(2026, 1, 1), date(2026, 12, 31))
     assert clean["is_balanced"] is True
-    assert clean["auto_plug_amount"] == 0.0
+    assert clean["auto_plug_amount"] == "0.00"
 
     ChartOfAccount.objects.filter(company_id=cid, account_code="1030").update(
         opening_balance=Decimal("5000.00"), opening_balance_date=date(2026, 1, 1)
     )
     broken = report_balance_sheet(cid, date(2026, 1, 1), date(2026, 12, 31))
-    assert broken["auto_plug_amount"] == 5000.0
+    assert broken["auto_plug_amount"] == "5000.00"
     assert broken["auto_plug_is_material"] is True
     assert broken["is_balanced"] is False, "a 5,000 residual is not rounding"
     assert "does NOT balance" in broken["accounting_note"]
@@ -233,7 +233,7 @@ def test_a_rounding_residual_still_ties_out_quietly(company_tenant_with_gl):
         opening_balance=Decimal("0.05"), opening_balance_date=date(2026, 1, 1)
     )
     out = report_balance_sheet(cid, date(2026, 1, 1), date(2026, 12, 31))
-    assert out["auto_plug_amount"] == 0.05
+    assert out["auto_plug_amount"] == "0.05"
     assert out["auto_plug_is_material"] is False
     assert out["is_balanced"] is True
     assert "does NOT balance" not in out["accounting_note"]

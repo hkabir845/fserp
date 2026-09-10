@@ -42,6 +42,7 @@ import {
 } from '@/lib/itemGlDefaults'
 import { syncFieldTouchedForAccountPick } from '@/lib/coaSuggestForm'
 import { formatStockUnitLong, suggestMedicineStockUnit } from '@/lib/aquacultureMedicineUnits'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 /** API returns decimals as strings; tanks-backed quantity is merged server-side. */
 function parseInventoryQty(raw: unknown): number {
@@ -355,7 +356,7 @@ export default function ItemsPage() {
 
   const loadCoaForItemModal = useCallback(async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) return
       const r = await api.get('/chart-of-accounts/', {
         headers: { Authorization: `Bearer ${token}` },
@@ -471,7 +472,7 @@ export default function ItemsPage() {
 
   const loadCategoryOptions = useCallback(async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) return
       const r = await api.get('/items/categories/', { headers: { Authorization: `Bearer ${token}` } })
       if (Array.isArray(r.data?.presets)) setCategoryPresets(r.data.presets)
@@ -482,7 +483,7 @@ export default function ItemsPage() {
   }, [])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -588,7 +589,7 @@ export default function ItemsPage() {
     setShopStockLoading(true)
     ;(async () => {
       try {
-        const token = localStorage.getItem('access_token')
+        const token = readStoredAccessToken()
         if (!token) {
           if (!cancel) {
             setShopStationRows([])
@@ -736,7 +737,7 @@ export default function ItemsPage() {
     let cancel = false
     setFishPondLoading(true)
     ;(async () => {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) {
         if (!cancel) {
           setFishPondRows([])
@@ -858,7 +859,7 @@ export default function ItemsPage() {
         console.error('Error fetching company currency:', error)
       }
 
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const itemTypeExtra =
         filterType === 'ALL'
           ? {}
@@ -936,7 +937,7 @@ export default function ItemsPage() {
   }, [debouncedSearch, filterType, filterCategory, includeInactive, listPage, pageSize, toast])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     void fetchItems()
   }, [fetchItems])
@@ -1094,7 +1095,7 @@ export default function ItemsPage() {
         // Suspicion is shown inline only; do not block save (false positives blocked legitimate edits).
       }
 
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const url = editingId ? `/items/${editingId}/` : '/items/'
 
       const qtyPayload: Record<string, unknown> = {
@@ -1291,7 +1292,7 @@ export default function ItemsPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const response = await api.delete(`/items/${id}/`, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -1309,7 +1310,7 @@ export default function ItemsPage() {
 
   const handleRestore = async (id: number) => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       await api.put(
         `/items/${id}/`,
         { is_active: true },
@@ -1420,7 +1421,7 @@ export default function ItemsPage() {
 
     setUploadingImage(true)
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const uploadPayload = new FormData()
       uploadPayload.append('file', file)
 
@@ -1519,7 +1520,7 @@ export default function ItemsPage() {
         // Upload the captured image
         setUploadingImage(true)
         try {
-          const token = localStorage.getItem('access_token')
+          const token = readStoredAccessToken()
           const formData = new FormData()
           formData.append('file', file)
 
@@ -3325,15 +3326,3 @@ export default function ItemsPage() {
     </PageLayout>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-

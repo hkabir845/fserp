@@ -123,6 +123,7 @@ import {
 } from '@/utils/aquaculturePlExport'
 import { AquacultureFeedMedicineConsumptionPanel } from '@/app/reports/aquaculture/AquacultureFeedMedicineConsumptionPanel'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>(['sales-report', 'purchase-report'])
 const BUSINESS_LINE_REPORT_IDS = new Set<ReportType>([
@@ -177,6 +178,7 @@ type ReportScopeTableProps = {
 
 type ReportType = 
   | 'trial-balance'
+  | 'vat-return'
   | 'balance-sheet'
   | 'income-statement'
   | 'customer-balances'
@@ -228,7 +230,6 @@ type ReportType =
   | 'aquaculture-expenses'
   | 'aquaculture-feed-consumption'
   | 'aquaculture-medicine-consumption'
-  | 'aquaculture-feed-medicine-consumption'
   | 'aquaculture-sampling'
   | 'aquaculture-production-cycles'
   | 'aquaculture-profit-transfers'
@@ -266,7 +267,6 @@ const AQUACULTURE_BATCH_FILTER_REPORT_IDS = new Set<ReportType>([
   'aquaculture-pond-sales-comprehensive',
   'aquaculture-feed-consumption',
   'aquaculture-medicine-consumption',
-  'aquaculture-feed-medicine-consumption',
   'aquaculture-expenses',
 ])
 
@@ -294,6 +294,14 @@ const reports: ReportCard[] = [
     title: 'Trial Balance',
     description: 'Posted debits and credits by account — optional site filter for multi-station GL',
     icon: BarChart3,
+    category: 'financial'
+  },
+  {
+    id: 'vat-return',
+    title: 'VAT Return (GL)',
+    description:
+      'Output VAT (2100) minus input VAT (1170) for the period — the book figure a Bangladesh VAT return must tie to',
+    icon: Landmark,
     category: 'financial'
   },
   {
@@ -351,8 +359,8 @@ const reports: ReportCard[] = [
   },
   {
     id: 'cash-flow',
-    title: 'Cash Flow Summary',
-    description: 'Company bank accounts plus cash flow by every station, pond, and head office (clear site filter)',
+    title: 'Cash Flow Statement',
+    description: 'Direct-method cash flow: operating, investing and financing from posted cash/bank GL, tying opening cash to closing cash',
     icon: Banknote,
     category: 'financial'
   },
@@ -836,8 +844,6 @@ const reports: ReportCard[] = [
 
 function isApiBackedReportId(reportId: string): reportId is ReportType {
   if (CLIENT_ONLY_REPORT_IDS.has(reportId as ReportType)) return false
-  // Legacy combined consumption report (not listed in hub; still fetchable via deep link)
-  if (reportId === 'aquaculture-feed-medicine-consumption') return true
   return reports.some((r) => r.id === reportId)
 }
 
@@ -861,7 +867,6 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
   'aquaculture-expenses',
   'aquaculture-feed-consumption',
   'aquaculture-medicine-consumption',
-  'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
@@ -886,7 +891,6 @@ const AQUACULTURE_REPORT_ID_SET = new Set<ReportType>([
 const CONSUMPTION_REPORT_IDS = new Set<ReportType>([
   'aquaculture-feed-consumption',
   'aquaculture-medicine-consumption',
-  'aquaculture-feed-medicine-consumption',
 ])
 
 function consumptionReportMode(
@@ -900,6 +904,7 @@ function consumptionReportMode(
 /** Mix — Fuel & Aquaculture: core GL + fuel ops + every aquaculture report (when role allows). */
 const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'trial-balance',
+  'vat-return',
   'balance-sheet',
   'income-statement',
   'customer-balances',
@@ -1036,6 +1041,7 @@ const REPORTS_GL_STATION_SCOPED = new Set<ReportType>([
 /** Single source of truth: APIs that accept `start_date` / `end_date` (used for fetch + period UI). */
 const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'trial-balance',
+  'vat-return',
   'balance-sheet',
   'income-statement',
   'liabilities-detail',
@@ -1086,7 +1092,6 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'aquaculture-expenses',
   'aquaculture-feed-consumption',
   'aquaculture-medicine-consumption',
-  'aquaculture-feed-medicine-consumption',
   'aquaculture-sampling',
   'aquaculture-production-cycles',
   'aquaculture-profit-transfers',
@@ -1759,7 +1764,7 @@ function ReportsPageContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const t = localStorage.getItem('access_token')?.trim()
+    const t = readStoredAccessToken()
     if (!t) return
     let cancelled = false
     api
@@ -2169,7 +2174,7 @@ function ReportsPageContent() {
     const spRangeForFetch = opts?.salesPurchaseDateRange ?? salesPurchaseDateRange
 
     if (reportId === 'analytics-kpi') {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+      const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
       if (!token) {
         alert('Your session has expired. Please log in again.')
         router.push('/login')
@@ -2183,7 +2188,7 @@ function ReportsPageContent() {
     }
 
     if (reportId === 'aquaculture-pl-management') {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+      const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
       if (!token) {
         alert('Your session has expired. Please log in again.')
         router.push('/login')
@@ -2315,7 +2320,7 @@ function ReportsPageContent() {
     }
 
     try {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+      const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
       if (!token) {
         alert('Your session has expired. Please log in again.')
         router.push('/login')
@@ -2381,7 +2386,7 @@ function ReportsPageContent() {
       if (error?.response?.status === 401) {
         alert('You are not authorized or your session expired. Please log in again.')
         // Clear only auth tokens, preserve company/mode selection
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         localStorage.removeItem('refresh_token')
         localStorage.removeItem('user')
         router.push('/login')
@@ -2707,6 +2712,15 @@ function ReportsPageContent() {
         contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td>${acc.account_type || ''}</td><td style="text-align:right">${formatCurrency(acc.debit || 0)}</td><td style="text-align:right">${formatCurrency(acc.credit || 0)}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
       })
       contentHTML += `<tfoot><tr><td colspan="3"><strong>Totals:</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_debit || 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.total_credit || 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency((reportData.total_debit || 0) - (reportData.total_credit || 0))}</strong></td></tr></tfoot></tbody></table>`
+    } else if (selectedReport === 'vat-return') {
+      contentHTML += `<h2>VAT Return (GL working paper)</h2><table><tbody>
+        <tr><td>Output VAT (2100) net payable</td><td style="text-align:right">${formatCurrency(reportData.output_vat?.net_payable || 0)}</td></tr>
+        <tr><td>Input VAT (1170) net recoverable</td><td style="text-align:right">${formatCurrency(reportData.input_vat?.net_recoverable || 0)}</td></tr>
+        <tr><td><strong>Net payable to authority</strong></td><td style="text-align:right"><strong>${formatCurrency(reportData.net_payable_to_authority || 0)}</strong></td></tr>
+      </tbody></table>`
+      if (reportData.accounting_note) {
+        contentHTML += `<p>${escapeHtml(String(reportData.accounting_note))}</p>`
+      }
     } else if (selectedReport === 'balance-sheet') {
       const sections = [
         { title: 'Assets', data: reportData.assets },
@@ -3174,6 +3188,11 @@ function ReportsPageContent() {
         reportData.accounts.forEach((acc: any) => {
           csvContent += `${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${escapeCsv(acc.account_type)},${acc.debit || 0},${acc.credit || 0},${acc.balance || 0}\n`
         })
+      } else if (selectedReport === 'vat-return') {
+        csvContent += 'Line,Amount\n'
+        csvContent += `Output VAT (2100) net payable,${reportData.output_vat?.net_payable || 0}\n`
+        csvContent += `Input VAT (1170) net recoverable,${reportData.input_vat?.net_recoverable || 0}\n`
+        csvContent += `Net payable to authority,${reportData.net_payable_to_authority || 0}\n`
       } else if (selectedReport === 'customer-balances' && reportData.customers) {
         csvContent += 'Customer Number,Customer Name,Email,Phone,Balance\n'
         reportData.customers.forEach((cust: any) => {
@@ -5600,6 +5619,90 @@ function renderReportTable(
 
         {data.accounting_note ? (
           <p className="text-xs text-muted-foreground border-t border-border/70 pt-3">{data.accounting_note}</p>
+        ) : null}
+      </div>
+    )
+  }
+
+  if (reportType === 'vat-return' && data) {
+    const period = data?.period || {}
+    const output = data.output_vat || {}
+    const inputVat = data.input_vat || {}
+    return (
+      <div className="space-y-6">
+        {hasPeriod && pf(
+          period,
+          dateRange,
+          reportType,
+          handleReportDateChange,
+          "VAT return sums posted 2100 (output) and 1170 (input) in the selected dates."
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Output VAT (2100)</p>
+            <p className="text-2xl font-bold mt-1">{formatCurrency(Number(output.net_payable || 0))}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-card p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Input VAT (1170)</p>
+            <p className="text-2xl font-bold mt-1">{formatCurrency(Number(inputVat.net_recoverable || 0))}</p>
+          </div>
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Net payable to authority</p>
+            <p className="text-2xl font-bold mt-1">{formatCurrency(Number(data.net_payable_to_authority || 0))}</p>
+          </div>
+        </div>
+        {data.accounting_note ? (
+          <p className="text-xs text-muted-foreground">{String(data.accounting_note)}</p>
+        ) : null}
+        {Array.isArray(data.output_journals) && data.output_journals.length > 0 ? (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <h3 className="px-4 py-2 text-sm font-semibold bg-muted/50">Output VAT journals</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Number</th>
+                  <th className="px-3 py-2 text-right">Debit</th>
+                  <th className="px-3 py-2 text-right">Credit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.output_journals.map((row: Record<string, unknown>, idx: number) => (
+                  <tr key={`out-${String(row.journal_entry_id)}-${idx}`} className="border-b border-border/60">
+                    <td className="px-3 py-2">{String(row.entry_date || '')}</td>
+                    <td className="px-3 py-2">{String(row.entry_number || '')}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(Number(row.debit || 0))}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(Number(row.credit || 0))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {Array.isArray(data.input_journals) && data.input_journals.length > 0 ? (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <h3 className="px-4 py-2 text-sm font-semibold bg-muted/50">Input VAT journals</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Number</th>
+                  <th className="px-3 py-2 text-right">Debit</th>
+                  <th className="px-3 py-2 text-right">Credit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.input_journals.map((row: Record<string, unknown>, idx: number) => (
+                  <tr key={`in-${String(row.journal_entry_id)}-${idx}`} className="border-b border-border/60">
+                    <td className="px-3 py-2">{String(row.entry_date || '')}</td>
+                    <td className="px-3 py-2">{String(row.entry_number || '')}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(Number(row.debit || 0))}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(Number(row.credit || 0))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
       </div>
     )

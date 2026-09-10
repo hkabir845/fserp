@@ -59,6 +59,11 @@ def test_report_balance_sheet_includes_filter_station_id(company_tenant):
         unit_price=Decimal("100"),
         amount=Decimal("100"),
     )
+    # A costed inventory item has to be in stock to be sold: the sale relieves the inventory
+    # asset, so the goods have to be there to relieve.
+    from api.services.station_stock import set_station_stock
+
+    set_station_stock(company_tenant.id, st.id, item.id, Decimal("10"))
     sync_invoice_gl(company_tenant.id, inv)
 
     out = report_balance_sheet(company_tenant.id, date(2026, 4, 1), date(2026, 4, 30), station_id=st.id)
@@ -123,8 +128,8 @@ def test_report_balance_sheet_pond_scope(company_tenant):
     assert out.get("filter_pond_id") == pond.id
     assert out.get("filter_station_id") is None
     assert "Pond filter" in (out.get("accounting_note") or "")
-    assert out["assets"]["total"] == 300.0  # only this pond's cash, not the other pond's 999
-    assert out["net_income_cumulative"] == 300.0  # income rolled into equity for this pond
+    assert out["assets"]["total"] == "300.00"  # only this pond's cash, not the other pond's 999
+    assert out["net_income_cumulative"] == "300.00"  # income rolled into equity for this pond
     assert out["is_balanced"] is True
 
 
@@ -182,8 +187,8 @@ def test_report_trial_balance_pond_scope(company_tenant):
     assert out.get("filter_pond_id") == pond.id
     assert out.get("filter_station_id") is None
     assert "Pond filter" in (out.get("accounting_note") or "")
-    assert out["total_debit"] == 300.0  # only this pond's debits, not the other pond's 999
-    assert out["total_credit"] == 300.0
+    assert out["total_debit"] == "300.00"  # only this pond's debits, not the other pond's 999
+    assert out["total_credit"] == "300.00"
     assert out["debits_equal_credits"] is True
     codes = {row["account_code"] for row in out["accounts"]}
     assert codes == {"1010", "4200"}

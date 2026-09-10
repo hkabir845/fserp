@@ -22,6 +22,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatCurrency, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 /** Variance BDT uses item cost (৳/L) when set, else unit_price. */
 const VARIANCE_CURRENCY = 'BDT'
@@ -193,7 +194,7 @@ export default function TankDipsPage() {
   }, [dips])
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
     if (!token) {
       router.push('/login')
       return

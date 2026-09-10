@@ -49,6 +49,7 @@ import { loadPrintBranding } from '@/utils/printBranding'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
 import { formatDateOnly, localDateISO } from '@/utils/date'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   MAX_ANNUAL_APR,
   annualAprFromInterestFormInput,
   convertInterestFieldOnCounterpartyChange,
@@ -750,7 +751,7 @@ export default function LoansPage() {
   }, [router, toast])
 
   useEffect(() => {
-    const t = localStorage.getItem('access_token')
+    const t = readStoredAccessToken()
     if (!t) {
       router.push('/login')
       return

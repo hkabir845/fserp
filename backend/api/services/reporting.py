@@ -224,8 +224,9 @@ def _d(v: Any) -> Decimal:
     return Decimal(str(v))
 
 
-def _f(d: Decimal | int | float | str | None) -> float:
-    return float(_d(d).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+def _f(d: Decimal | int | float | str | None) -> str:
+    """Serialize money (and 2-dp report totals) as a decimal string — never IEEE float."""
+    return format(_d(d).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
 
 
 def _item_qoh_at_station(company_id: int, item: Item, station_id: int) -> Decimal:
@@ -424,19 +425,154 @@ def report_trial_balance(
             + " Pond filter: only journal lines tagged to this pond are included (pond as individual entity); "
             "chart opening balances and untagged lines (e.g. shared A/P) are not included."
         )
+        _inject_due_to_from_head_office(out, total_d, total_c, accounts_out)
     elif station_id is not None:
         out["filter_station_id"] = station_id
         out["accounting_note"] = (
             out["accounting_note"]
             + " Site filter: only journal lines for this station (line tag or journal header) are included."
         )
+        _inject_due_to_from_head_office(out, total_d, total_c, accounts_out)
     elif unscoped_dims:
         out["filter_head_office"] = True
         out["accounting_note"] = (
             out["accounting_note"]
             + " Head office filter: only journal lines with no station or pond tag are included."
         )
+        _inject_due_to_from_head_office(out, total_d, total_c, accounts_out)
     return out
+
+
+def _inject_due_to_from_head_office(
+    out: dict[str, Any],
+    total_d: Decimal,
+    total_c: Decimal,
+    accounts_out: list[dict[str, Any]],
+) -> None:
+    """Entity-scoped TB drops untagged treasury lines, so Dr ≠ Cr is structural.
+
+    A synthetic Due to / from Head Office line makes the slice present as a balanced
+    entity without mutating the GL.
+    """
+    diff = total_d - total_c
+    if abs(diff) <= Decimal("0.02"):
+        return
+    if diff > 0:
+        debit, credit = Decimal("0"), diff
+    else:
+        debit, credit = -diff, Decimal("0")
+    accounts_out.append(
+        {
+            "account_id": None,
+            "account_code": "HO-DUE",
+            "account_name": "Due to / from Head Office",
+            "account_type": "equity",
+            "debit": _f(debit),
+            "credit": _f(credit),
+            "balance": _f(debit - credit),
+            "synthetic": True,
+        }
+    )
+    out["accounts"] = accounts_out
+    out["total_debit"] = _f(total_d + debit)
+    out["total_credit"] = _f(total_c + credit)
+    out["debits_equal_credits"] = True
+    out["debit_credit_difference"] = _f(Decimal("0"))
+    out["scope_balanced_via"] = "due_to_from_head_office"
+    note = out.get("accounting_note") or ""
+    out["accounting_note"] = (
+        note
+        + " Untagged company-wide lines are omitted from this entity slice; "
+        "Due to / from Head Office is a reporting balancing line, not a posted journal."
+    )
+
+
+def report_vat_return(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """Working paper that ties output VAT (2100) and input VAT (1170) to the GL.
+
+    Net remittable = credits to 2100 − debits to 1170 in the period. This is not a Mushak
+    e-filing file; it is the book figure a Bangladesh VAT return must reconcile to.
+    """
+    from api.services.gl_posting import CODE_VAT, CODE_VAT_INPUT
+
+    def _period_movement(code: str) -> tuple[ChartOfAccount | None, Decimal, Decimal]:
+        coa = ChartOfAccount.objects.filter(company_id=company_id, account_code=code).first()
+        if not coa:
+            return None, Decimal("0"), Decimal("0")
+        agg = (
+            JournalEntryLine.objects.filter(
+                journal_entry__company_id=company_id,
+                journal_entry__is_posted=True,
+                journal_entry__entry_date__gte=start,
+                journal_entry__entry_date__lte=end,
+                account_id=coa.id,
+            ).aggregate(
+                td=Coalesce(Sum("debit"), Decimal("0")),
+                tc=Coalesce(Sum("credit"), Decimal("0")),
+            )
+        )
+        return coa, agg["td"], agg["tc"]
+
+    out_acc, out_d, out_c = _period_movement(CODE_VAT)
+    in_acc, in_d, in_c = _period_movement(CODE_VAT_INPUT)
+    output_net = out_c - out_d
+    input_net = in_d - in_c
+    net_payable = output_net - input_net
+
+    def _je_rows(account_id: int | None) -> list[dict[str, Any]]:
+        if not account_id:
+            return []
+        rows = (
+            JournalEntryLine.objects.filter(
+                journal_entry__company_id=company_id,
+                journal_entry__is_posted=True,
+                journal_entry__entry_date__gte=start,
+                journal_entry__entry_date__lte=end,
+                account_id=account_id,
+            )
+            .select_related("journal_entry")
+            .order_by("journal_entry__entry_date", "journal_entry_id")
+        )
+        return [
+            {
+                "journal_entry_id": ln.journal_entry_id,
+                "entry_number": ln.journal_entry.entry_number,
+                "entry_date": ln.journal_entry.entry_date.isoformat(),
+                "description": ln.journal_entry.description or "",
+                "debit": _f(ln.debit or 0),
+                "credit": _f(ln.credit or 0),
+            }
+            for ln in rows
+        ]
+
+    return {
+        "report_id": "vat-return",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "output_vat": {
+            "account_code": CODE_VAT,
+            "account_id": out_acc.id if out_acc else None,
+            "account_name": out_acc.account_name if out_acc else "Sales / VAT Payable",
+            "debit": _f(out_d),
+            "credit": _f(out_c),
+            "net_payable": _f(output_net),
+        },
+        "input_vat": {
+            "account_code": CODE_VAT_INPUT,
+            "account_id": in_acc.id if in_acc else None,
+            "account_name": in_acc.account_name if in_acc else "VAT Input / VAT Receivable",
+            "debit": _f(in_d),
+            "credit": _f(in_c),
+            "net_recoverable": _f(input_net),
+        },
+        "net_payable_to_authority": _f(net_payable),
+        "output_journals": _je_rows(out_acc.id if out_acc else None),
+        "input_journals": _je_rows(in_acc.id if in_acc else None),
+        "accounting_note": (
+            "Output VAT is credits to 2100 (tax on invoices). Input VAT is debits to 1170 "
+            "(tax on vendor bills). Net payable to the authority is output minus input for the "
+            "period. Remittance is a separate payment journal (Dr 2100 / Cr bank)."
+        ),
+    }
 
 
 def _movement_through(
@@ -456,16 +592,49 @@ def _movement_through(
     return agg["td"], agg["tc"]
 
 
+def _chart_opening_as_of(coa: ChartOfAccount, as_of: date | None) -> Decimal:
+    """Include the chart opening only when it is dated on or before the report date.
+
+    ``opening_balance_date`` was never read: a January opening appeared on a prior-year
+    balance sheet, and typing last year's profit into 3100.opening_balance double-counted
+    it against Σ-P&L. Openings with no date keep the historical (always-on) behaviour.
+    """
+    ob = coa.opening_balance or Decimal("0")
+    if ob == 0:
+        return Decimal("0")
+    ob_date = getattr(coa, "opening_balance_date", None)
+    if as_of is not None and ob_date is not None and ob_date > as_of:
+        return Decimal("0")
+    return ob
+
+
 def _ending_balance(coa: ChartOfAccount, company_id: int, as_of: date) -> Decimal:
-    return _ending_balance_from_movement(coa, _movement_through(company_id, coa.id, as_of))
+    return _ending_balance_from_movement(
+        coa, _movement_through(company_id, coa.id, as_of), as_of=as_of
+    )
 
 
 def _ending_balance_from_movement(
-    coa: ChartOfAccount, movement: tuple[Decimal, Decimal] | None
+    coa: ChartOfAccount, movement: tuple[Decimal, Decimal] | None, *, as_of: date | None = None
 ) -> Decimal:
-    """Chart opening balance plus an already-fetched (debit, credit) pair for this account."""
-    ob = coa.opening_balance or Decimal("0")
+    """Chart opening balance plus an already-fetched (debit, credit) pair for this account.
+
+    Balance-sheet rows are signed by the **section they print in**, not by their own normal
+    balance. A contra-asset (accumulated depreciation, allowance for doubtful accounts) is
+    stored as ``account_type="asset"`` and carries a credit balance: signing it by its normal
+    balance returned a positive number that was then *added* to total assets, overstating
+    assets by twice the accumulated depreciation and pushing the difference into the Sigma-ADJ
+    tie-out. Signing by bucket matches ``_balance_sheet_balance_from_line_qs`` so every scope
+    (company, site, pond, head office) states the same account the same way.
+
+    P&L accounts have no balance-sheet bucket and keep normal-balance signing, so income stays
+    positive as income and expense positive as expense.
+    """
+    ob = _chart_opening_as_of(coa, as_of)
     d, c = movement or (Decimal("0"), Decimal("0"))
+    bucket = _balance_sheet_bucket_for_coa(coa)
+    if bucket is not None:
+        return ob + d - c if bucket == "asset" else ob + c - d
     if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
         return ob + d - c
     return ob + c - d
@@ -512,6 +681,12 @@ def _balance_sheet_balance_from_pond_activity(
     return c - d
 
 
+def _internal_trade_realized_margin_through(company_id: int, as_of: date) -> Decimal:
+    """Lifetime inter-pond margin that the buying ponds have since sold on to real customers."""
+    elim = internal_trade_elimination(company_id, start=None, end=as_of)
+    return elim["gross_margin"] - elim["unrealized_margin"]
+
+
 def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
     """
     P&L rolled to equity for balance-sheet balancing when income/expense/COSG
@@ -527,14 +702,19 @@ def _cumulative_net_income_through(company_id: int, as_of: date) -> Decimal:
         if bucket is None:
             continue
         # Inter-pond trade is eliminated on consolidation: the company sold nothing to anyone.
-        # The balance sheet carries the removed margin as the 1585 contra so it still balances.
+        # The balance sheet carries the *unrealized* part as the 1585 contra so it still balances.
         if (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
             continue
-        bal = _ending_balance_from_movement(coa, moves.get(coa.id))
+        bal = _ending_balance_from_movement(coa, moves.get(coa.id), as_of=as_of)
         if bucket == "income":
             ni += bal
         else:
             ni -= bal
+    # Dropping 4245/5245 above removed the whole lifetime internal margin from equity. Only the
+    # part still swimming inside the group belongs out; once the buying pond sells the fish on to
+    # a real customer that profit is genuinely earned, so it comes back. Without this, company
+    # profit stayed understated for ever and the 1585 contra wrote down inventory that was gone.
+    ni += _internal_trade_realized_margin_through(company_id, as_of)
     return ni
 
 
@@ -839,7 +1019,7 @@ def report_balance_sheet(
         },
         "total_liabilities_and_equity": _f(tle),
         "net_income_cumulative": _f(ni_cum),
-        "auto_plug_amount": _f(auto_plug) if auto_plug != 0 else 0.0,
+        "auto_plug_amount": _f(auto_plug),
         "auto_plug_is_material": bool(material),
         "is_balanced": abs(final_diff) <= Decimal("0.02") and not material,
         "assets_minus_liabilities_equity": _f(final_diff),
@@ -1373,12 +1553,16 @@ def _internal_elimination_block(
         "accounts": rows,
         "internal_revenue": _f(totals["internal_revenue"]),
         "internal_cost_of_sales": _f(totals["internal_cogs"]),
+        "gross_internal_margin": _f(totals["gross_margin"]),
         "unrealized_margin": _f(totals["unrealized_margin"]),
+        "realized_margin": _f(totals["realized_margin"]),
         "note": (
             "Inter-pond fish trade removed from consolidated income and cost: one pond selling to "
-            "another is not a sale by the company. The margin on fish still held by the buying "
-            "pond is unrealized and is deducted from biological inventory on the balance sheet "
-            "(1585). Open Profit & Loss scoped to a pond to see that pond's own trade."
+            "another is not a sale by the company. The margin on fish the buying pond still holds "
+            "is unrealized and is deducted from biological inventory on the balance sheet (1585). "
+            "Margin on fish the buying pond has since sold on to a real customer is realized and "
+            "stays in consolidated profit. Open Profit & Loss scoped to a pond to see that pond's "
+            "own trade."
         ),
     }
 
@@ -1577,7 +1761,7 @@ def report_customer_balances(
     total_ar = Decimal("0")
     total_ar_external = Decimal("0")
     total_ar_internal = Decimal("0")
-    for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
+    for c in _reportable_customers(company_id).order_by(
         "display_name"
     ):
         if pond_id is not None:
@@ -1656,7 +1840,7 @@ def report_vendor_balances(
     total_ap = Decimal("0")
     total_ap_external = Decimal("0")
     total_ap_internal = Decimal("0")
-    for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
+    for v in _reportable_vendors(company_id).order_by(
         "company_name"
     ):
         if pond_id is not None:
@@ -1790,7 +1974,7 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
     (owed to us, or cash we hold), negative is a liability (we owe).
     """
     customer_rows: list[dict[str, Any]] = []
-    for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
+    for c in _reportable_customers(company_id).order_by(
         "display_name"
     ):
         bal = compute_customer_balance_due(company_id, c.id)
@@ -1812,7 +1996,7 @@ def report_party_balances(company_id: int, start: date, end: date) -> dict[str, 
         )
 
     vendor_rows: list[dict[str, Any]] = []
-    for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
+    for v in _reportable_vendors(company_id).order_by(
         "company_name"
     ):
         bal = compute_vendor_balance_due(company_id, v.id)
@@ -2002,7 +2186,7 @@ def _control_account_balance(company_id: int, code: str, as_of: date) -> Decimal
     if not coa:
         return None
     d, c = _movement_through(company_id, coa.id, as_of)
-    ob = coa.opening_balance or Decimal("0")
+    ob = _chart_opening_as_of(coa, as_of)
     if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
         return ob + d - c
     return ob + c - d
@@ -2116,7 +2300,7 @@ def report_ar_aging(
     customers_out: list[dict[str, Any]] = []
     totals = _empty_aging_buckets()
 
-    for c in Customer.objects.filter(company_id=company_id, is_active=True).order_by(
+    for c in _reportable_customers(company_id).order_by(
         "display_name", "company_name"
     ):
         buckets = _empty_aging_buckets()
@@ -2209,7 +2393,7 @@ def report_ap_aging(
     vendors_out: list[dict[str, Any]] = []
     totals = _empty_aging_buckets()
 
-    for v in Vendor.objects.filter(company_id=company_id, is_active=True).order_by(
+    for v in _reportable_vendors(company_id).order_by(
         "company_name", "display_name"
     ):
         buckets = _empty_aging_buckets()
@@ -2546,6 +2730,160 @@ def _period_net_income_from_lines(company_id: int, start: date, end: date, line_
     return _period_pl_totals_from_line_qs(company_id, start, end, line_qs)["net_income"]
 
 
+# IAS 7 activity for the cash-flow statement. Cash/bank registers are the statement's
+# subject, not a section. Everything else is classified from the contra account.
+_CASH_FLOW_INVESTING_CODES = frozenset(
+    {"1160", "1500", "1510", "1520", "1530", "1540", "1550", "1560", "1580"}
+)
+_CASH_FLOW_FINANCING_CODES = frozenset(
+    {"2400", "2410", "2500", "3000", "3100", "3190", "3200", "3300"}
+)
+_CASH_FLOW_INVESTING_SUB_TYPES = frozenset(
+    {
+        "fixed_asset",
+        "accumulated_depreciation",
+        "construction_in_progress",
+        "long_term_investment",
+        "vehicles",
+        "buildings",
+        "land",
+    }
+)
+_CASH_FLOW_FINANCING_SUB_TYPES = frozenset(
+    {
+        "loan_payable",
+        "long_term_debt",
+        "notes_payable",
+        "owner_draw",
+        "retained_earnings",
+        "opening_balance_equity",
+        "capital",
+    }
+)
+
+
+def _chart_accounts_for_company(company_id: int) -> list[ChartOfAccount]:
+    return list(ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"))
+
+
+def _cash_flow_activity(coa: ChartOfAccount) -> str:
+    """Classify a chart row as cash, operating, investing, or financing."""
+    if is_cash_or_bank_account(coa.account_type, coa.account_sub_type, coa.account_code):
+        return "cash"
+    code = (coa.account_code or "").strip()
+    t = normalize_chart_account_type(coa.account_type)
+    st = (coa.account_sub_type or "").strip().lower()
+    if code in _CASH_FLOW_INVESTING_CODES or st in _CASH_FLOW_INVESTING_SUB_TYPES:
+        return "investing"
+    if code in _CASH_FLOW_FINANCING_CODES or st in _CASH_FLOW_FINANCING_SUB_TYPES:
+        return "financing"
+    if t == "equity":
+        return "financing"
+    if t == "loan":
+        return "financing" if st == "loan_payable" else "investing"
+    if t == "liability" and code[:2] in ("24", "25"):
+        return "financing"
+    return "operating"
+
+
+def _classify_cash_movements(
+    start: date,
+    end: date,
+    line_qs,
+    chart_by_id: dict[int, ChartOfAccount],
+) -> dict[str, Decimal]:
+    """
+    Direct-method cash flow from posted cash lines in ``line_qs``.
+
+    Each journal's cash movement (debit − credit on cash/bank) is allocated to
+    operating / investing / financing in proportion to that journal's non-cash
+    lines. Cash-to-cash journals are transfers. Two queries, not one per account.
+    """
+    out = {
+        "operating": Decimal("0"),
+        "investing": Decimal("0"),
+        "financing": Decimal("0"),
+        "transfers": Decimal("0"),
+    }
+    cash_ids = [
+        cid
+        for cid, coa in chart_by_id.items()
+        if is_cash_or_bank_account(coa.account_type, coa.account_sub_type, coa.account_code)
+    ]
+    if not cash_ids:
+        return out
+    cash_rows = list(
+        line_qs.filter(
+            account_id__in=cash_ids,
+            journal_entry__entry_date__gte=start,
+            journal_entry__entry_date__lte=end,
+        ).values("journal_entry_id", "debit", "credit")
+    )
+    if not cash_rows:
+        return out
+    je_ids = {r["journal_entry_id"] for r in cash_rows}
+    sibling_rows = JournalEntryLine.objects.filter(journal_entry_id__in=je_ids).values(
+        "journal_entry_id", "account_id", "debit", "credit"
+    )
+    noncash_by_je: dict[int, dict[str, Decimal]] = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
+    company_cash_by_je: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for r in sibling_rows:
+        coa = chart_by_id.get(r["account_id"])
+        if coa is None:
+            continue
+        net = _d(r["debit"]) - _d(r["credit"])
+        act = _cash_flow_activity(coa)
+        if act == "cash":
+            company_cash_by_je[r["journal_entry_id"]] += net
+        else:
+            noncash_by_je[r["journal_entry_id"]][act] += net
+    scoped_cash_by_je: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    for r in cash_rows:
+        scoped_cash_by_je[r["journal_entry_id"]] += _d(r["debit"]) - _d(r["credit"])
+    for je_id, scoped_cash in scoped_cash_by_je.items():
+        company_cash = company_cash_by_je.get(je_id, Decimal("0"))
+        nc = noncash_by_je.get(je_id) or {}
+        if not nc or company_cash == 0:
+            out["transfers"] += scoped_cash
+            continue
+        for cat in ("operating", "investing", "financing"):
+            cat_nc = nc.get(cat, Decimal("0"))
+            out[cat] += -cat_nc * (scoped_cash / company_cash)
+    return out
+
+
+def _cash_flow_payment_totals(company_id: int, start: date, end: date) -> dict[str, Any]:
+    """One grouped read of the Payments module (disclosure, not the statement identity)."""
+    recv_by: dict[Any, Decimal] = defaultdict(lambda: Decimal("0"))
+    made_by: dict[Any, Decimal] = defaultdict(lambda: Decimal("0"))
+    all_recv = all_made = Decimal("0")
+    for r in (
+        Payment.objects.filter(
+            company_id=company_id,
+            payment_date__gte=start,
+            payment_date__lte=end,
+        )
+        .values("station_id", "payment_type")
+        .annotate(t=Coalesce(Sum("amount"), Decimal("0")))
+    ):
+        amt = _d(r["t"])
+        sid = r["station_id"]
+        if r["payment_type"] == Payment.PAYMENT_TYPE_RECEIVED:
+            recv_by[sid] += amt
+            all_recv += amt
+        elif r["payment_type"] == Payment.PAYMENT_TYPE_MADE:
+            made_by[sid] += amt
+            all_made += amt
+    return {
+        "all_recv": all_recv,
+        "all_made": all_made,
+        "unscoped_recv": recv_by.get(None, Decimal("0")),
+        "unscoped_made": made_by.get(None, Decimal("0")),
+        "recv_by_station": recv_by,
+        "made_by_station": made_by,
+    }
+
+
 def _summarize_bank_accounts_for_scope(
     company_id: int,
     start: date,
@@ -2554,7 +2892,9 @@ def _summarize_bank_accounts_for_scope(
     station_id: int | None = None,
     pond_id: int | None = None,
     unscoped_dims: bool = False,
-) -> dict[str, Decimal]:
+    chart_accounts: list[ChartOfAccount] | None = None,
+    include_rows: bool = False,
+) -> dict[str, Any]:
     begin_total = end_total = period_in = period_out = Decimal("0")
     if pond_id is not None:
         line_qs = _je_lines_pond(company_id, pond_id)
@@ -2574,27 +2914,29 @@ def _summarize_bank_accounts_for_scope(
     through = _movements_by_account(line_qs, end=end)
     period = _movements_by_account(line_qs, start=start, end=end)
     zero = (Decimal("0"), Decimal("0"))
+    accounts = chart_accounts or _chart_accounts_for_company(company_id)
+    rows: list[dict[str, Any]] = []
 
-    def _balance(coa: ChartOfAccount, movement) -> Decimal:
+    def _balance(coa: ChartOfAccount, movement, *, as_of: date) -> Decimal:
         # Mirrors _bank_cash_balance_as_of / _bank_slice_balance_as_of exactly:
         # company scope carries the chart opening balance, site scope is sign-aware
         # posted activity, and pond / head-office slices are raw debit-minus-credit.
         d, c = movement or zero
         if basis == "company":
-            return _ending_balance_from_movement(coa, movement)
+            return _ending_balance_from_movement(coa, movement, as_of=as_of)
         if basis == "site":
             if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
                 return d - c
             return c - d
         return d - c
 
-    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
+    for coa in accounts:
         if not is_cash_or_bank_account(
             coa.account_type, coa.account_sub_type, coa.account_code
         ):
             continue
-        b0 = _balance(coa, before.get(coa.id))
-        bend = _balance(coa, through.get(coa.id))
+        b0 = _balance(coa, before.get(coa.id), as_of=day_before)
+        bend = _balance(coa, through.get(coa.id), as_of=end)
         dep, wit = period.get(coa.id, zero)
         if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
             continue
@@ -2602,12 +2944,30 @@ def _summarize_bank_accounts_for_scope(
         end_total += bend
         period_in += dep
         period_out += wit
+        if include_rows:
+            nm = coa.account_name
+            if not coa.is_active:
+                nm = f"{nm} (inactive)"
+            rows.append(
+                {
+                    "account_id": coa.id,
+                    "account_code": coa.account_code,
+                    "account_name": nm,
+                    "beginning_balance": _f(b0),
+                    "deposits": _f(dep),
+                    "withdrawals": _f(wit),
+                    "ending_balance": _f(bend),
+                    "net_change": _f(bend - b0),
+                }
+            )
     return {
         "beginning": begin_total,
         "ending": end_total,
         "deposits": period_in,
         "withdrawals": period_out,
         "net_change": end_total - begin_total,
+        "rows": rows,
+        "line_qs": line_qs,
     }
 
 
@@ -2622,60 +2982,34 @@ def _cash_flow_entity_row(
     station_id: int | None = None,
     pond_id: int | None = None,
     unscoped_dims: bool = False,
+    chart_accounts: list[ChartOfAccount] | None = None,
+    chart_by_id: dict[int, ChartOfAccount] | None = None,
+    payments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if pond_id is not None:
         line_qs = _je_lines_pond(company_id, pond_id)
         net_income = _period_net_income_from_lines(company_id, start, end, line_qs)
-        pay_recv = _d(
-            AquacultureFishSale.objects.filter(
-                company_id=company_id,
-                pond_id=pond_id,
-                sale_date__gte=start,
-                sale_date__lte=end,
-            ).aggregate(t=Coalesce(Sum("total_amount"), Decimal("0")))["t"]
-        )
+        pay_recv = Decimal("0")
         pay_made = Decimal("0")
     elif unscoped_dims:
         line_qs = _je_lines_unscoped_dims(company_id)
         net_income = _period_net_income_from_lines(company_id, start, end, line_qs)
-        pay_recv = _d(
-            Payment.objects.filter(
-                company_id=company_id,
-                payment_type=Payment.PAYMENT_TYPE_RECEIVED,
-                payment_date__gte=start,
-                payment_date__lte=end,
-                station_id__isnull=True,
-            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-        )
-        pay_made = _d(
-            Payment.objects.filter(
-                company_id=company_id,
-                payment_type=Payment.PAYMENT_TYPE_MADE,
-                payment_date__gte=start,
-                payment_date__lte=end,
-                station_id__isnull=True,
-            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-        )
+        pay = payments or _cash_flow_payment_totals(company_id, start, end)
+        pay_recv = _d(pay["unscoped_recv"])
+        pay_made = _d(pay["unscoped_made"])
     else:
+        line_qs = _je_lines_base(company_id, station_id)
         net_income = _period_income_statement_totals(company_id, start, end, station_id)["net_income"]
-        pay_q = Payment.objects.filter(
-            company_id=company_id,
-            payment_date__gte=start,
-            payment_date__lte=end,
-        )
+        pay = payments or _cash_flow_payment_totals(company_id, start, end)
         if station_id is not None:
-            pay_q = pay_q.filter(station_id=station_id)
-        pay_recv = _d(
-            pay_q.filter(payment_type=Payment.PAYMENT_TYPE_RECEIVED).aggregate(
-                t=Coalesce(Sum("amount"), Decimal("0"))
-            )["t"]
-        )
-        pay_made = _d(
-            pay_q.filter(payment_type=Payment.PAYMENT_TYPE_MADE).aggregate(
-                t=Coalesce(Sum("amount"), Decimal("0"))
-            )["t"]
-        )
+            pay_recv = _d(pay["recv_by_station"].get(station_id, Decimal("0")))
+            pay_made = _d(pay["made_by_station"].get(station_id, Decimal("0")))
+        else:
+            pay_recv = _d(pay["all_recv"])
+            pay_made = _d(pay["all_made"])
 
+    accounts = chart_accounts or _chart_accounts_for_company(company_id)
+    by_id = chart_by_id or {coa.id: coa for coa in accounts}
     cash = _summarize_bank_accounts_for_scope(
         company_id,
         start,
@@ -2683,12 +3017,18 @@ def _cash_flow_entity_row(
         station_id=station_id,
         pond_id=pond_id,
         unscoped_dims=unscoped_dims,
+        chart_accounts=accounts,
     )
+    flows = _classify_cash_movements(start, end, cash["line_qs"], by_id)
     row: dict[str, Any] = {
         "entity_type": entity_type,
         "entity_id": entity_id,
         "entity_name": entity_name,
         "net_income": _f(net_income),
+        "cash_from_operating": _f(flows["operating"]),
+        "cash_from_investing": _f(flows["investing"]),
+        "cash_from_financing": _f(flows["financing"]),
+        "cash_transfers": _f(flows["transfers"]),
         "customer_payments_received": _f(pay_recv),
         "vendor_payments_made": _f(pay_made),
         "beginning_cash": _f(cash["beginning"]),
@@ -2697,8 +3037,6 @@ def _cash_flow_entity_row(
         "total_deposits": _f(cash["deposits"]),
         "total_withdrawals": _f(cash["withdrawals"]),
     }
-    if pond_id is not None:
-        row["aquaculture_sales_in_period"] = _f(pay_recv)
     return row
 
 
@@ -2709,139 +3047,100 @@ def report_cash_flow(
     unscoped_dims: bool = False,
 ) -> dict[str, Any]:
     """
-    Cash flow summary: bank register activity, customer/vendor payments, and P&L net income.
-    When not site-filtered, includes by_station, by_pond, and unscoped (head office) entity rows.
+    Direct-method cash-flow statement from posted cash/bank GL.
 
-    When ``pond_id`` is set, the report is scoped to that pond as an individual entity: net income,
-    bank activity, and cash use pond-tagged GL only, with registered pond fish sales (BDT) as the
-    cash-in proxy (payments are not pond-tagged). ``station_id`` is ignored in that case.
+    Operating, investing and financing cash are classified from the contra side of
+    each cash journal. Beginning + those three sections + cash-to-cash transfers equals
+    ending cash (the same cash total as the balance sheet). Payment-module totals and
+    P&L net income remain as disclosures; they are not the statement identity.
+
+    Pond scope uses pond-tagged cash GL only (not registered fish sales). ``station_id``
+    is ignored when ``pond_id`` is set.
     """
     if pond_id is not None:
         station_id = None
         unscoped_dims = False
     elif unscoped_dims:
         station_id = None
-    pond_lines = _je_lines_pond(company_id, pond_id) if pond_id is not None else None
-    unscoped_lines = _je_lines_unscoped_dims(company_id) if unscoped_dims else None
+
+    chart_accounts = _chart_accounts_for_company(company_id)
+    chart_by_id = {coa.id: coa for coa in chart_accounts}
+    payments = _cash_flow_payment_totals(company_id, start, end)
+
+    cash = _summarize_bank_accounts_for_scope(
+        company_id,
+        start,
+        end,
+        station_id=station_id,
+        pond_id=pond_id,
+        unscoped_dims=unscoped_dims,
+        chart_accounts=chart_accounts,
+        include_rows=True,
+    )
+    flows = _classify_cash_movements(start, end, cash["line_qs"], chart_by_id)
+
     if pond_id is not None:
-        pl = _period_pl_totals_from_line_qs(company_id, start, end, pond_lines)
-        pay_recv = _d(
-            AquacultureFishSale.objects.filter(
-                company_id=company_id,
-                pond_id=pond_id,
-                sale_date__gte=start,
-                sale_date__lte=end,
-            ).aggregate(t=Coalesce(Sum("total_amount"), Decimal("0")))["t"]
-        )
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, cash["line_qs"])
+        pay_recv = Decimal("0")
         pay_made = Decimal("0")
-    elif unscoped_dims and unscoped_lines is not None:
-        pl = _period_pl_totals_from_line_qs(company_id, start, end, unscoped_lines)
-        pay_recv = _d(
-            Payment.objects.filter(
-                company_id=company_id,
-                payment_type=Payment.PAYMENT_TYPE_RECEIVED,
-                payment_date__gte=start,
-                payment_date__lte=end,
-                station_id__isnull=True,
-            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-        )
-        pay_made = _d(
-            Payment.objects.filter(
-                company_id=company_id,
-                payment_type=Payment.PAYMENT_TYPE_MADE,
-                payment_date__gte=start,
-                payment_date__lte=end,
-                station_id__isnull=True,
-            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-        )
+    elif unscoped_dims:
+        pl = _period_pl_totals_from_line_qs(company_id, start, end, cash["line_qs"])
+        pay_recv = _d(payments["unscoped_recv"])
+        pay_made = _d(payments["unscoped_made"])
     else:
         pl = _period_income_statement_totals(company_id, start, end, station_id)
-        pay_recv = _d(
-            Payment.objects.filter(
-                company_id=company_id,
-                payment_type=Payment.PAYMENT_TYPE_RECEIVED,
-                payment_date__gte=start,
-                payment_date__lte=end,
-            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-        )
-        pay_made = _d(
-            Payment.objects.filter(
-                company_id=company_id,
-                payment_type=Payment.PAYMENT_TYPE_MADE,
-                payment_date__gte=start,
-                payment_date__lte=end,
-            ).aggregate(t=Coalesce(Sum("amount"), Decimal("0")))["t"]
-        )
-
-    bank_rows: list[dict[str, Any]] = []
-    begin_total = end_total = period_in = period_out = Decimal("0")
-    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
-        if not is_cash_or_bank_account(
-            coa.account_type, coa.account_sub_type, coa.account_code
-        ):
-            continue
-        if pond_id is not None:
-            b0, dep, wit, bend = _bank_period_flow_lines(coa, company_id, start, end, pond_lines)
-        elif unscoped_dims and unscoped_lines is not None:
-            b0, dep, wit, bend = _bank_period_flow_lines(
-                coa, company_id, start, end, unscoped_lines
-            )
+        if station_id is not None:
+            pay_recv = _d(payments["recv_by_station"].get(station_id, Decimal("0")))
+            pay_made = _d(payments["made_by_station"].get(station_id, Decimal("0")))
         else:
-            b0, dep, wit, bend = _bank_period_flow(coa, company_id, start, end, station_id)
-        if b0 == 0 and dep == 0 and wit == 0 and bend == 0:
-            continue
-        nm = coa.account_name
-        if not coa.is_active:
-            nm = f"{nm} (inactive)"
-        bank_rows.append(
-            {
-                "account_id": coa.id,
-                "account_code": coa.account_code,
-                "account_name": nm,
-                "beginning_balance": _f(b0),
-                "deposits": _f(dep),
-                "withdrawals": _f(wit),
-                "ending_balance": _f(bend),
-                "net_change": _f(bend - b0),
-            }
-        )
-        begin_total += b0
-        end_total += bend
-        period_in += dep
-        period_out += wit
+            pay_recv = _d(payments["all_recv"])
+            pay_made = _d(payments["all_made"])
 
-    net_bank_change = end_total - begin_total
     out_cf: dict[str, Any] = {
         "report_id": "cash-flow",
+        "statement_method": "direct",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "operating": {
             "net_income": _f(pl["net_income"]),
+            "cash_from_operations": _f(flows["operating"]),
             "customer_payments_received": _f(pay_recv),
             "vendor_payments_made": _f(pay_made),
         },
-        "bank_accounts": bank_rows,
+        "investing": {
+            "cash_from_investing": _f(flows["investing"]),
+        },
+        "financing": {
+            "cash_from_financing": _f(flows["financing"]),
+        },
+        "bank_accounts": cash["rows"],
         "cash_summary": {
-            "beginning_cash": _f(begin_total),
-            "ending_cash": _f(end_total),
-            "net_change_in_cash": _f(net_bank_change),
-            "total_deposits": _f(period_in),
-            "total_withdrawals": _f(period_out),
+            "beginning_cash": _f(cash["beginning"]),
+            "cash_from_operating": _f(flows["operating"]),
+            "cash_from_investing": _f(flows["investing"]),
+            "cash_from_financing": _f(flows["financing"]),
+            "cash_transfers": _f(flows["transfers"]),
+            "ending_cash": _f(cash["ending"]),
+            "net_change_in_cash": _f(cash["net_change"]),
+            "total_deposits": _f(cash["deposits"]),
+            "total_withdrawals": _f(cash["withdrawals"]),
         },
         "accounting_note": (
-            "Bank accounts use chart type bank_account from posted journals. "
-            "Payment totals are from the Payments module. "
-            "When viewing all entities, each station uses GL lines tagged to that site; "
-            "each pond uses pond-tagged GL bank activity plus registered pond sales (BDT) as cash-in proxy; "
-            "Unscoped is GL and payments without a station tag."
+            "Direct-method cash flow from posted cash and bank accounts. "
+            "Operating, investing and financing are classified from the other side of each "
+            "cash journal; cash-to-cash movements are transfers. "
+            "Beginning cash plus those sections equals ending cash, which matches the "
+            "balance-sheet cash total. Payment-module receipts/payments and P&L net income "
+            "are shown for reference and are not part of that identity. "
+            "When viewing all entities, each station uses GL lines tagged to that site, "
+            "each pond uses pond-tagged cash GL (not registered fish sales), and unscoped "
+            "is GL without a station or pond tag."
         ),
     }
     if pond_id is not None:
         out_cf["filter_pond_id"] = pond_id
-        out_cf["operating"]["aquaculture_sales_in_period"] = _f(pay_recv)
         out_cf["accounting_note"] = (
             out_cf["accounting_note"]
-            + " Pond filter: this pond is reported as an individual entity using pond-tagged GL "
-            "(net income and bank activity) plus registered pond fish sales as the cash-in proxy."
+            + " Pond filter: this pond is reported as an individual entity using pond-tagged GL."
         )
     elif station_id is not None:
         out_cf["filter_station_id"] = station_id
@@ -2856,6 +3155,11 @@ def report_cash_flow(
             + " Head office filter: GL and payments without a station or pond tag only."
         )
     else:
+        from api.services.station_business_kind import (
+            station_business_kind,
+            station_business_kind_label,
+        )
+
         by_station: list[dict[str, Any]] = []
         for st in _reportable_stations(company_id, end):
             row = _cash_flow_entity_row(
@@ -2866,7 +3170,13 @@ def report_cash_flow(
                 entity_id=st.id,
                 entity_name=_entity_display_name(st.station_name, f"Station #{st.id}", st.is_active),
                 station_id=st.id,
+                chart_accounts=chart_accounts,
+                chart_by_id=chart_by_id,
+                payments=payments,
             )
+            kind = station_business_kind(st)
+            row["business_kind"] = kind
+            row["business_kind_label"] = station_business_kind_label(kind)
             row["is_active"] = bool(st.is_active)
             by_station.append(row)
         by_pond: list[dict[str, Any]] = []
@@ -2879,6 +3189,9 @@ def report_cash_flow(
                 entity_id=pond.id,
                 entity_name=_entity_display_name(pond.name, f"Pond #{pond.id}", pond.is_active),
                 pond_id=pond.id,
+                chart_accounts=chart_accounts,
+                chart_by_id=chart_by_id,
+                payments=payments,
             )
             row["is_active"] = bool(pond.is_active)
             by_pond.append(row)
@@ -2890,6 +3203,9 @@ def report_cash_flow(
             entity_id=None,
             entity_name="Head office / unassigned (no site or pond tag)",
             unscoped_dims=True,
+            chart_accounts=chart_accounts,
+            chart_by_id=chart_by_id,
+            payments=payments,
         )
         out_cf["by_station"] = by_station
         out_cf["by_pond"] = by_pond
@@ -2956,7 +3272,11 @@ def _bs_totals_station(company_id: int, as_of: date, station_id: int) -> dict[st
         if not bucket:
             continue
         d, c = moves.get(coa.id, (Decimal("0"), Decimal("0")))
-        if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+        bucket = _balance_sheet_bucket_for_coa(coa)
+        if bucket == "asset" or (
+            bucket is None
+            and is_debit_normal_chart_type(coa.account_type, coa.account_sub_type)
+        ):
             bal = d - c
         else:
             bal = c - d
@@ -2986,7 +3306,7 @@ def _bs_totals_company(company_id: int, as_of: date) -> dict[str, Decimal]:
         bucket = _balance_sheet_bucket_for_coa(coa)
         if not bucket:
             continue
-        bal = _ending_balance_from_movement(coa, moves.get(coa.id))
+        bal = _ending_balance_from_movement(coa, moves.get(coa.id), as_of=as_of)
         if bal == 0:
             continue
         if bucket == "asset":
@@ -3128,8 +3448,13 @@ _FINANCIAL_ALL_SUM_KEYS: tuple[str, ...] = (
 )
 _CASH_FLOW_ENTITY_SUM_KEYS: tuple[str, ...] = (
     "net_income",
+    "cash_from_operating",
+    "cash_from_investing",
+    "cash_from_financing",
+    "cash_transfers",
     "customer_payments_received",
     "vendor_payments_made",
+    "beginning_cash",
     "net_change_in_cash",
     "ending_cash",
 )
@@ -3209,14 +3534,6 @@ def _enrich_cash_flow_entity_splits(out_cf: dict[str, Any]) -> None:
     by_station = out_cf.get("by_station") or []
     if not by_station:
         return
-    from api.services.station_business_kind import station_business_kind, station_business_kind_label
-
-    for row in by_station:
-        st = Station.objects.filter(pk=row.get("entity_id")).first()
-        if st:
-            kind = station_business_kind(st)
-            row["business_kind"] = kind
-            row["business_kind_label"] = station_business_kind_label(kind)
     fuel, shop = _split_stations_by_business_kind(by_station)
     out_cf["by_fuel_station"] = fuel
     out_cf["by_shop_hub"] = shop
@@ -3294,6 +3611,38 @@ def _ponds_with_gl_activity(company_id: int, as_of: date) -> set[int]:
         .distinct()
         if pid is not None
     }
+
+
+def _reportable_customers(company_id: int):
+    """Active customers, plus deactivated ones that still have a document outstanding.
+
+    Deactivating a customer who still owes money removed them from A/R aging, Customer Balances
+    and Party Balances while their invoices stayed in the ledger — so GL 1100 stopped matching
+    the customer list and ``_subledger_gl_reconciliation`` reported an unexplained difference
+    that no user could trace to anything. Mirrors ``_reportable_stations``.
+    """
+    open_ids = (
+        Invoice.objects.filter(company_id=company_id, customer__isnull=False)
+        .exclude(status__in=("draft", "void", "paid"))
+        .values_list("customer_id", flat=True)
+        .distinct()
+    )
+    return Customer.objects.filter(company_id=company_id).filter(
+        Q(is_active=True) | Q(id__in=open_ids)
+    )
+
+
+def _reportable_vendors(company_id: int):
+    """Active vendors, plus deactivated ones that still have a bill outstanding."""
+    open_ids = (
+        Bill.objects.filter(company_id=company_id, vendor__isnull=False)
+        .exclude(status__in=("draft", "void", "paid"))
+        .values_list("vendor_id", flat=True)
+        .distinct()
+    )
+    return Vendor.objects.filter(company_id=company_id).filter(
+        Q(is_active=True) | Q(id__in=open_ids)
+    )
 
 
 def _reportable_stations(company_id: int, as_of: date):
@@ -3573,6 +3922,8 @@ def _entity_consolidation_bridge(company_id: int, start: date, end: date, bundle
     seg += _d(unscoped.get("net_income"))
     company = _d((bundle.get("company_total") or {}).get("net_income"))
 
+    # Segments keep their own internal margin (each pond really did trade); the company total
+    # keeps only the realized part, so the bridge is the change in *unrealized* margin.
     elim = internal_trade_elimination(company_id, start=start, end=end)
     margin = elim["unrealized_margin"]
     residual = seg - margin - company
@@ -4174,7 +4525,7 @@ def report_shift_summary(company_id: int, start: date, end: date, station_id: in
             "total_sales": _f(period_sales_sum),
             "total_liters": _f(liters),
             "cash_expected": _f(expected_cash),
-            "cash_counted": _f(counted) if s.closing_cash_counted is not None else 0.0,
+            "cash_counted": _f(counted) if s.closing_cash_counted is not None else _f(0),
             "variance": _f(var),
             "status": "closed" if s.closed_at else "open",
             "documents": session_docs,
@@ -4391,7 +4742,7 @@ def report_sales_by_nozzle(company_id: int, start: date, end: date, station_id: 
             "total_transactions": int(tot_tx),
             "total_liters": _f(tot_l),
             "total_amount": _f(tot_a),
-            "average_sale_amount": _f(tot_a / tot_tx) if tot_tx else 0.0,
+            "average_sale_amount": _f(tot_a / tot_tx) if tot_tx else _f(0),
         },
         "nozzles": out,
     }
@@ -5945,7 +6296,7 @@ def _inventory_gl_reconciliation(company_id: int, as_of: date, valuation_total: 
     Priced-stock total vs the inventory asset accounts in the GL.
 
     The two are built differently on purpose: the GL carries what was actually paid and
-    relieved through COGS, while this report prices live on-hand at Item.cost (last cost,
+    relieved through COGS, while this report prices live on-hand at Item.cost (AVCO,
     with a list-price fallback for zero-cost SKUs). Showing the gap keeps a stock valuation
     from quietly disagreeing with the balance sheet.
     """
@@ -6105,7 +6456,7 @@ def report_inventory_sku_valuation(
                 "period_quantity_sold": _f(pq),
                 "period_revenue": _f(pa),
                 "period_days": int(period_days),
-                "velocity_per_day": _f(daily_avg) if daily_avg is not None else 0.0,
+                "velocity_per_day": _f(daily_avg) if daily_avg is not None else _f(0),
                 "days_of_cover": None if doc is None else round(doc, 1),
                 "gross_margin_pct": None if margin_pct is None else round(margin_pct, 2),
                 "stock_status": stock_status,
@@ -6138,8 +6489,8 @@ def report_inventory_sku_valuation(
         "rows": rows_out,
         "accounting_note": (
             "On-hand is live Item quantity (including tank-synced products). "
-            "Stock is valued at latest purchase cost (Item.cost, set from the most recent bill "
-            "rate), with a fallback to list price for zero-cost items — not weighted average. "
+            "Stock is valued at moving weighted-average cost (Item.cost, from opening stock "
+            "plus posted bill receipts), with a fallback to list price for zero-cost items. "
             "Velocity = period quantity ÷ day count. Days of cover = on-hand ÷ average daily period sales; "
             "N/A when there is no period movement."
         ),
@@ -6154,9 +6505,9 @@ def report_inventory_sku_valuation(
         )
         if recon["difference"]:
             out_val["accounting_note"] += (
-                "; difference %s. Expected under latest-cost valuation: the GL holds what was "
-                "actually paid and relieved through COGS, while this report re-prices the same "
-                "stock at today's purchase rate." % recon["difference"]
+                "; difference %s. Investigate quantity or cost-basis drift: the GL holds "
+                "posted receipts less COGS, while this report prices on-hand at AVCO."
+                % recon["difference"]
             )
         else:
             out_val["accounting_note"] += " — which ties."

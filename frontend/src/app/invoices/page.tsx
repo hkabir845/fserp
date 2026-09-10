@@ -64,6 +64,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransactionListEmptyState } from '@/components/TransactionListEmptyState'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { fetchEntityScopeDirectory } from '@/lib/entityScopeDirectory'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface InvoiceLineItem extends InvoiceFormLine {}
 
@@ -228,7 +229,7 @@ export default function InvoicesPage() {
 
   const loadRevenueCoa = useCallback(async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) return
       const r = await api.get('/chart-of-accounts/', {
         headers: { Authorization: `Bearer ${token}` },
@@ -356,7 +357,7 @@ export default function InvoicesPage() {
   ])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -365,7 +366,7 @@ export default function InvoicesPage() {
   }, [router, loadInvoices])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

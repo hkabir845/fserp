@@ -15,6 +15,7 @@ import {
 import { useToast } from '@/components/Toast'
 import { formatDateOnly } from '@/utils/date'
 import { getApiBaseUrl } from '@/lib/api'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Plan {
   id: number
@@ -89,7 +90,7 @@ export default function SubscriptionsPage() {
   const [selectedBillingCycle, setSelectedBillingCycle] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly')
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -99,7 +100,7 @@ export default function SubscriptionsPage() {
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const baseUrl = getApiBaseUrl()
 
       const [plansRes, subscriptionRes, usageRes, paymentsRes] = await Promise.allSettled([
@@ -143,7 +144,7 @@ export default function SubscriptionsPage() {
   const handleSubscribe = async (planId: number) => {
     try {
       setSubscribing(planId)
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const baseUrl = getApiBaseUrl()
 
       const response = await fetch(`${baseUrl}/subscriptions/subscribe`, {
@@ -180,7 +181,7 @@ export default function SubscriptionsPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const baseUrl = getApiBaseUrl()
 
       const response = await fetch(`${baseUrl}/subscriptions/my-subscription/cancel`, {
@@ -201,7 +202,7 @@ export default function SubscriptionsPage() {
 
   const handleReactivate = async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const baseUrl = getApiBaseUrl()
 
       const response = await fetch(`${baseUrl}/subscriptions/my-subscription/reactivate`, {

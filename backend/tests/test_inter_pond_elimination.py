@@ -24,7 +24,7 @@ from api.services.reporting import report_balance_sheet, report_income_statement
 
 PERIOD_START = date(2026, 1, 1)
 PERIOD_END = date(2026, 12, 31)
-CENT = 0.02
+CENT = Decimal("0.02")
 
 SALE_PRICE = Decimal("50000.00")
 SELLER_COST = Decimal("30000.00")
@@ -106,10 +106,10 @@ def traded(company_tenant):
 @pytest.mark.django_db
 def test_company_revenue_excludes_the_inter_pond_sale(traded):
     inc = report_income_statement(traded["cid"], PERIOD_START, PERIOD_END)
-    assert inc["income"]["total"] == 0.0, (
+    assert inc["income"]["total"] == "0.00", (
         "an internal transfer was counted as company revenue"
     )
-    assert inc["cost_of_goods_sold"]["total"] == 0.0
+    assert inc["cost_of_goods_sold"]["total"] == "0.00"
     codes = {a["account_code"] for a in inc["income"]["accounts"]}
     assert "4245" not in codes
 
@@ -119,9 +119,9 @@ def test_the_eliminated_amounts_are_disclosed_not_hidden(traded):
     """Removing internal trade silently would be as misleading as leaving it in."""
     block = report_income_statement(traded["cid"], PERIOD_START, PERIOD_END)["internal_eliminations"]
     assert block["applied"] is True
-    assert block["internal_revenue"] == float(SALE_PRICE)
-    assert block["internal_cost_of_sales"] == float(SELLER_COST)
-    assert block["unrealized_margin"] == float(MARGIN)
+    assert Decimal(str(block["internal_revenue"])) == SALE_PRICE
+    assert Decimal(str(block["internal_cost_of_sales"])) == SELLER_COST
+    assert Decimal(str(block["unrealized_margin"])) == MARGIN
     assert {a["account_code"] for a in block["accounts"]} == {"4245", "5245"}
 
 
@@ -129,7 +129,7 @@ def test_the_eliminated_amounts_are_disclosed_not_hidden(traded):
 def test_company_profit_is_not_inflated_by_unsold_internal_margin(traded):
     """The whole point: the group has not earned 20,000 by moving fish between its own ponds."""
     inc = report_income_statement(traded["cid"], PERIOD_START, PERIOD_END)
-    assert inc["net_income"] == 0.0, (
+    assert inc["net_income"] == "0.00", (
         f"company profit reads {inc['net_income']} on an internal transfer"
     )
 
@@ -139,19 +139,20 @@ def test_biological_inventory_is_written_down_by_the_unrealized_margin(traded):
     bs = report_balance_sheet(traded["cid"], PERIOD_START, PERIOD_END)
     contra = [a for a in bs["assets"]["accounts"] if a["account_code"] == "1585"]
     assert contra, "no unrealized-margin contra on the balance sheet"
-    assert contra[0]["balance"] == -float(MARGIN)
+    assert Decimal(str(contra[0]["balance"])) == -MARGIN
 
 
 @pytest.mark.django_db
 def test_the_balance_sheet_still_balances_after_elimination(traded):
     """Eliminating profit without writing down the asset would break the accounting equation."""
     bs = report_balance_sheet(traded["cid"], PERIOD_START, PERIOD_END)
-    assert bs["auto_plug_amount"] == 0, (
+    assert Decimal(str(bs["auto_plug_amount"])) == 0, (
         f"elimination left the sheet needing a plug of {bs['auto_plug_amount']}"
     )
     assert bs["is_balanced"] is True
-    assets = bs["assets"]["total"]
-    assert abs(assets - (bs["liabilities"]["total"] + bs["equity"]["total"])) <= CENT
+    assets = Decimal(str(bs["assets"]["total"]))
+    rhs = Decimal(str(bs["liabilities"]["total"])) + Decimal(str(bs["equity"]["total"]))
+    assert abs(assets - rhs) <= CENT
 
 
 @pytest.mark.django_db
@@ -159,7 +160,7 @@ def test_balance_sheet_and_income_statement_still_agree(traded):
     cid = traded["cid"]
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
     inc = report_income_statement(cid, PERIOD_START, PERIOD_END)
-    assert abs(bs["net_income_cumulative"] - inc["net_income"]) <= CENT
+    assert abs(Decimal(str(bs["net_income_cumulative"])) - Decimal(str(inc["net_income"]))) <= CENT
 
 
 @pytest.mark.django_db
@@ -170,13 +171,13 @@ def test_each_pond_still_sees_its_own_side_of_the_trade(traded):
     """
     cid = traded["cid"]
     seller_pl = report_income_statement(cid, PERIOD_START, PERIOD_END, pond_id=traded["seller"].id)
-    assert seller_pl["income"]["total"] == float(SALE_PRICE), "the selling pond lost its revenue"
-    assert seller_pl["cost_of_goods_sold"]["total"] == float(SELLER_COST)
-    assert seller_pl["net_income"] == float(MARGIN)
+    assert Decimal(str(seller_pl["income"]["total"])) == SALE_PRICE, "the selling pond lost its revenue"
+    assert Decimal(str(seller_pl["cost_of_goods_sold"]["total"])) == SELLER_COST
+    assert Decimal(str(seller_pl["net_income"])) == MARGIN
     assert seller_pl["internal_eliminations"]["applied"] is False
 
     buyer_pl = report_income_statement(cid, PERIOD_START, PERIOD_END, pond_id=traded["buyer"].id)
-    assert buyer_pl["income"]["total"] == 0.0, "the buying pond has not sold anything yet"
+    assert buyer_pl["income"]["total"] == "0.00", "the buying pond has not sold anything yet"
 
 
 @pytest.mark.django_db
@@ -190,4 +191,4 @@ def test_a_company_with_no_inter_pond_trade_is_untouched(company_tenant):
     assert inc["internal_eliminations"]["applied"] is False
     bs = report_balance_sheet(cid, PERIOD_START, PERIOD_END)
     assert not [a for a in bs["assets"]["accounts"] if a["account_code"] == "1585"]
-    assert bs["auto_plug_amount"] == 0
+    assert Decimal(str(bs["auto_plug_amount"])) == 0

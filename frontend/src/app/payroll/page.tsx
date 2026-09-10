@@ -25,6 +25,7 @@ import {
   templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
 import { syncBooleanFieldTouchedForAccountPick } from '@/lib/coaSuggestForm'
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 interface PayrollRun {
   id: number
@@ -44,6 +45,12 @@ interface PayrollRun {
   salary_journal_entry_id?: number | null
   salary_journal_entry_number?: string
   is_salary_posted?: boolean
+  net_pay_journal_entry_id?: number | null
+  net_pay_journal_entry_number?: string
+  needs_net_settle?: boolean
+  deduction_remittance_journal_entry_id?: number | null
+  deduction_remittance_journal_entry_number?: string
+  needs_deduction_remit?: boolean
   message?: string
   created_at: string
   updated_at: string
@@ -494,7 +501,7 @@ export default function PayrollPage() {
   )
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !localStorage.getItem('access_token')?.trim()) return
+    if (typeof window === 'undefined' || !readStoredAccessToken()) return
     void loadAquacultureContext()
   }, [loadAquacultureContext, selectedCompany?.id])
 
@@ -568,7 +575,7 @@ export default function PayrollPage() {
 
   useEffect(() => {
     if (!isClientReady) return
-    if (typeof window === 'undefined' || !localStorage.getItem('access_token')?.trim()) {
+    if (typeof window === 'undefined' || !readStoredAccessToken()) {
       router.push('/login')
       return
     }
@@ -700,7 +707,7 @@ export default function PayrollPage() {
       setPayrolls(rows)
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1155,7 +1162,19 @@ export default function PayrollPage() {
     }
   }
 
-  const postToBooks = async () => {
+  const payFromPayload = (): { bank_account_id?: number; pay_from_chart_account_id?: number } => {
+    const payload: { bank_account_id?: number; pay_from_chart_account_id?: number } = {}
+    if (payFromSelect.startsWith('b:')) {
+      const id = parseInt(payFromSelect.slice(2), 10)
+      if (!isNaN(id)) payload.bank_account_id = id
+    } else if (payFromSelect.startsWith('c:')) {
+      const id = parseInt(payFromSelect.slice(2), 10)
+      if (!isNaN(id)) payload.pay_from_chart_account_id = id
+    }
+    return payload
+  }
+
+  const postToBooks = async (mode: 'pay' | 'accrue' = 'pay') => {
     if (!selectedPayroll || selectedPayroll.is_salary_posted) return
     if (showPayrollSiteSection && isMixedEntityPayrollDraft && detailStationId === '') {
       toast.error(
@@ -1181,7 +1200,9 @@ export default function PayrollPage() {
     }
     if (
       !window.confirm(
-        'Post salary to the general ledger? This records the expense and bank (or default cash/bank) per your chart. Pay staff in your bank or cash first, then use this to update your books.'
+        mode === 'accrue'
+          ? 'Accrue wages? This records the expense and credits 2200 Salaries Payable. Staff are not paid until you settle net pay from a bank.'
+          : 'Post salary to the general ledger? This records the expense and credits the selected bank or cash for net pay.'
       )
     ) {
       return
@@ -1190,14 +1211,7 @@ export default function PayrollPage() {
     try {
       const saved = await persistDetailDraft()
       if (!saved) return
-      const payload: { bank_account_id?: number; pay_from_chart_account_id?: number } = {}
-      if (payFromSelect.startsWith('b:')) {
-        const id = parseInt(payFromSelect.slice(2), 10)
-        if (!isNaN(id)) payload.bank_account_id = id
-      } else if (payFromSelect.startsWith('c:')) {
-        const id = parseInt(payFromSelect.slice(2), 10)
-        if (!isNaN(id)) payload.pay_from_chart_account_id = id
-      }
+      const payload = { ...payFromPayload(), mode }
       const { data } = await api.post<PayrollRun & { message?: string }>(
         `/payroll/${selectedPayroll.id}/post-to-books/`,
         payload
@@ -1213,10 +1227,64 @@ export default function PayrollPage() {
     }
   }
 
+  const settleNetPay = async () => {
+    if (!selectedPayroll?.needs_net_settle) return
+    if (
+      !window.confirm(
+        'Pay accrued net wages from the selected bank? This debits 2200 Salaries Payable and credits bank or cash.'
+      )
+    ) {
+      return
+    }
+    setActionLoading(true)
+    try {
+      const { data } = await api.post<PayrollRun & { message?: string }>(
+        `/payroll/${selectedPayroll.id}/settle-net-pay/`,
+        payFromPayload()
+      )
+      applyPayrollResponseToDetailState(data)
+      toast.success(data.message || 'Net pay settled')
+      fetchPayrolls()
+    } catch (e) {
+      console.error(e)
+      toast.error(readApiErrorDetail(e) || 'Request failed')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const remitDeductions = async () => {
+    if (!selectedPayroll?.needs_deduction_remit) return
+    if (
+      !window.confirm(
+        'Remit statutory deductions from the selected bank? This debits 2210 and credits bank or cash.'
+      )
+    ) {
+      return
+    }
+    setActionLoading(true)
+    try {
+      const { data } = await api.post<PayrollRun & { message?: string }>(
+        `/payroll/${selectedPayroll.id}/remit-deductions/`,
+        payFromPayload()
+      )
+      applyPayrollResponseToDetailState(data)
+      toast.success(data.message || 'Deductions remitted')
+      fetchPayrolls()
+    } catch (e) {
+      console.error(e)
+      toast.error(readApiErrorDetail(e) || 'Request failed')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
       case 'paid':
         return <CheckCircle className="h-4 w-4 text-success" />
+      case 'accrued':
+        return <Clock className="h-4 w-4 text-yellow-600" />
       case 'processed':
         return <Clock className="h-4 w-4 text-yellow-600" />
       case 'draft':
@@ -1230,6 +1298,8 @@ export default function PayrollPage() {
     switch (status.toLowerCase()) {
       case 'paid':
         return 'bg-success/15 text-success'
+      case 'accrued':
+        return 'bg-yellow-100 text-yellow-800'
       case 'processed':
         return 'bg-yellow-100 text-yellow-800'
       case 'draft':
@@ -1903,6 +1973,77 @@ export default function PayrollPage() {
                           {formatNumber(Number(selectedPayroll.total_net) || 0)}
                         </span>
                       </div>
+                      {(selectedPayroll.needs_net_settle || selectedPayroll.needs_deduction_remit) && (
+                        <div className="mt-4 rounded-lg border border-border p-3">
+                          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+                            <Landmark className="h-4 w-4" />
+                            Settle from bank
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Accrued net pay sits in 2200 until settled. Statutory deductions stay in 2210
+                            until remitted.
+                          </p>
+                          <label className="mt-2 block text-xs text-muted-foreground">
+                            Pay from (bank register or GL account)
+                          </label>
+                          <select
+                            className="mt-1 w-full max-w-lg rounded border border-border px-2 py-2 text-sm"
+                            value={payFromSelect}
+                            onChange={(e) => {
+                              payFromTouched.current = true
+                              setPayFromSelect(e.target.value)
+                            }}
+                          >
+                            <option value="">
+                              Default — operating bank / cash (GL 1030 or 1010)
+                            </option>
+                            {bankRegisters
+                              .filter((b) => b.chart_account_id)
+                              .map((b) => (
+                                <option key={`settle-b-${b.id}`} value={`b:${b.id}`}>
+                                  {formatBankRegisterLabel(b)}
+                                </option>
+                              ))}
+                            {glPayAccounts.map((a) => (
+                              <option key={`settle-c-${a.id}`} value={`c:${a.id}`}>
+                                {formatCoaOptionLabel(a)}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedPayroll.needs_net_settle && (
+                              <button
+                                type="button"
+                                onClick={settleNetPay}
+                                disabled={actionLoading}
+                                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                              >
+                                Pay net wages
+                              </button>
+                            )}
+                            {selectedPayroll.needs_deduction_remit && (
+                              <button
+                                type="button"
+                                onClick={remitDeductions}
+                                disabled={actionLoading}
+                                className="rounded-lg border border-border bg-muted px-4 py-2 text-sm font-medium text-foreground disabled:opacity-50"
+                              >
+                                Remit deductions
+                              </button>
+                            )}
+                          </div>
+                          {selectedPayroll.net_pay_journal_entry_number ? (
+                            <p className="mt-2 font-mono text-xs text-muted-foreground">
+                              Net pay {selectedPayroll.net_pay_journal_entry_number}
+                            </p>
+                          ) : null}
+                          {selectedPayroll.deduction_remittance_journal_entry_number ? (
+                            <p className="mt-1 font-mono text-xs text-muted-foreground">
+                              Remittance {selectedPayroll.deduction_remittance_journal_entry_number}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -2493,16 +2634,26 @@ export default function PayrollPage() {
                         <p className="mt-1 text-xs text-muted-foreground">
                           If you do not choose, net pay credits default bank/cash (1030/1010) when they exist. The
                           salary journal debits the expense account configured for this run (if set) or otherwise the
-                          template account (e.g. 6400).
+                          template account (e.g. 6400). Accrue wages if staff will be paid later (credits 2200).
                         </p>
-                        <button
-                          type="button"
-                          onClick={postToBooks}
-                          disabled={actionLoading}
-                          className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
-                        >
-                          {actionLoading ? 'Working…' : 'Post to books'}
-                        </button>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => postToBooks('pay')}
+                            disabled={actionLoading}
+                            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary disabled:opacity-50"
+                          >
+                            {actionLoading ? 'Working…' : 'Post and pay from bank'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => postToBooks('accrue')}
+                            disabled={actionLoading}
+                            className="rounded-lg border border-border bg-muted px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                          >
+                            Accrue wages (pay later)
+                          </button>
+                        </div>
                       </div>
                     </>
                   )}

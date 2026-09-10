@@ -26,6 +26,7 @@ import {
   type ErpAppSection,
 } from '@/navigation/erpAppMenu'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 type UseErpNavigationMenuOptions = {
   /** Hide entries (e.g. `/apps` on the app launcher page). */
@@ -137,7 +138,7 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
         setAquacultureEnabled(true)
         return
       }
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) {
         setAquacultureEnabled(false)
         return

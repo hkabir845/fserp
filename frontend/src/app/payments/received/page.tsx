@@ -39,6 +39,7 @@ import {
   downloadJsonFile,
 } from '@/utils/businessDocumentExport'
 import { ContactArApBalances } from '@/components/ContactArApBalances'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface OutstandingInvoice {
   id: number
@@ -189,7 +190,7 @@ export default function PaymentReceivedPage() {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

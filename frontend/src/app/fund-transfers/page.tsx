@@ -15,6 +15,7 @@ import { formatBankAccountFundTransferOption } from '@/lib/bankAccountDisplay'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { AMOUNT_FUND_TRANSFER_INPUT_CLASS } from '@/utils/amountFieldStyles'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface FundTransfer {
   id: number
@@ -86,7 +87,7 @@ export default function FundTransfersPage() {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -96,7 +97,7 @@ export default function FundTransfersPage() {
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) {
         router.push('/login')
         return

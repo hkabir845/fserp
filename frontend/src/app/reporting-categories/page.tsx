@@ -42,6 +42,7 @@ import {
 import { entityScopeKeyFromCategoryRow, countBusinessEntities, formatEntityCountSummary, entityScopeParamsFromKey } from '@/lib/billLineEntity'
 import { BillLineEntitySelect } from '@/components/bills/BillLineEntitySelect'
 import { ReportingMapTargetCombobox } from '@/components/reference/ReportingMapTargetCombobox'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface CategoryRow {
   id: number
@@ -183,7 +184,7 @@ export default function ReportingCategoriesPage() {
   const showPonds = aquacultureEnabled !== false && ponds.length > 0
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

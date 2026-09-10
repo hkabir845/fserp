@@ -21,6 +21,7 @@ import { formatDateLong } from '@/utils/date'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 interface Employee {
   id: number
@@ -204,7 +205,7 @@ export default function EmployeesPage() {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -280,7 +281,7 @@ export default function EmployeesPage() {
 
   const fetchCompanyCurrency = async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const baseUrl = getApiBaseUrl()
       const response = await fetch(`${baseUrl}/companies/current/`, {
         headers: {
@@ -306,7 +307,7 @@ export default function EmployeesPage() {
     setLoading(true)
     setError(null)
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       if (!token) {
         toast.error('No authentication token found')
         setLoading(false)
@@ -316,7 +317,7 @@ export default function EmployeesPage() {
       const response = await api.get('/employees/', { timeout: 15000 })
 
       if (response.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return

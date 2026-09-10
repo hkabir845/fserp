@@ -1,5 +1,20 @@
 /** Client-side JWT helpers — avoid 401 storms when access token is expired. */
 
+import { isCapacitorNativeApp } from '@/lib/androidApp'
+
+const ACCESS_TOKEN_KEY = 'access_token'
+
+function storage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    // Native shells need persistence across process death; browsers keep access in
+    // sessionStorage so a closed tab does not leave a long-lived XSS-readable token.
+    return isCapacitorNativeApp() ? window.localStorage : window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
 export function decodeJwtPayload(token: string): Record<string, unknown> | null {
   const t = (token || '').trim()
   if (!t) return null
@@ -31,12 +46,49 @@ export function isAccessTokenExpired(token: string, skewSeconds = 45): boolean {
 export function readStoredAccessToken(): string {
   if (typeof window === 'undefined') return ''
   try {
-    const t = localStorage.getItem('access_token')?.trim()
-    if (!t || t === 'undefined' || t === 'null') return ''
+    const primary = storage()
+    let t = primary?.getItem(ACCESS_TOKEN_KEY)?.trim() || ''
+    if (!t || t === 'undefined' || t === 'null') {
+      // One-time migrate away from legacy localStorage browser sessions.
+      t = localStorage.getItem(ACCESS_TOKEN_KEY)?.trim() || ''
+      if (t && t !== 'undefined' && t !== 'null') {
+        writeStoredAccessToken(t)
+        if (!isCapacitorNativeApp()) {
+          localStorage.removeItem(ACCESS_TOKEN_KEY)
+        }
+      } else {
+        return ''
+      }
+    }
     return t
   } catch {
     return ''
   }
+}
+
+export function writeStoredAccessToken(token: string): void {
+  if (typeof window === 'undefined') return
+  const t = String(token || '').trim()
+  try {
+    const store = storage()
+    if (!store) return
+    if (!t) {
+      store.removeItem(ACCESS_TOKEN_KEY)
+      localStorage.removeItem(ACCESS_TOKEN_KEY)
+      return
+    }
+    store.setItem(ACCESS_TOKEN_KEY, t)
+    if (!isCapacitorNativeApp()) {
+      localStorage.removeItem(ACCESS_TOKEN_KEY)
+      localStorage.removeItem('refresh_token')
+    }
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function clearStoredAccessToken(): void {
+  writeStoredAccessToken('')
 }
 
 export function hasStoredSession(): boolean {

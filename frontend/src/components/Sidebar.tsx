@@ -13,6 +13,7 @@ import { safeLogError } from '@/utils/connectionError'
 import { useErpNavigationMenu } from '@/hooks/useErpNavigationMenu'
 import { useCenterActiveListItem } from '@/hooks/useCenterActiveListItem'
 import { useT } from '@/lib/i18n'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width_px'
 const SIDEBAR_WIDTH_DEFAULT = 256
@@ -214,7 +215,7 @@ export default function Sidebar() {
       setScopeCompanyLabel(null)
       return
     }
-    if (typeof window !== 'undefined' && !localStorage.getItem('access_token')?.trim()) {
+    if (typeof window !== 'undefined' && !readStoredAccessToken()) {
       setScopeCompanyLabel(null)
       return
     }

@@ -9,6 +9,7 @@ import api from '@/lib/api'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { formatDate } from '@/utils/date'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Company {
   id: number
@@ -56,7 +57,7 @@ function BroadcastingPageContent() {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

@@ -43,6 +43,7 @@ import { escapeHtml } from '@/utils/printDocument'
 import { printListView } from '@/utils/printListView'
 import { formatDate } from '@/utils/date'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   buildPaymentListCsv,
   downloadCsvFile,
   downloadJsonFile,
@@ -146,7 +147,7 @@ export default function AllPaymentsPage() {
   }, [typeFilter, startDate, endDate, debouncedQ, minAmount, maxAmount, listPage, pageSize, hasTextSearch])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       setLoading(false)
@@ -165,7 +166,7 @@ export default function AllPaymentsPage() {
   }, [router])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     let cancelled = false
     ;(async () => {

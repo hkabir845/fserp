@@ -31,6 +31,7 @@ import {
 } from '@/utils/companyLocaleFormats'
 import { aquacultureT } from '@/lib/aquacultureI18n'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   COMPANY_TIME_ZONE_OPTIONS,
   DEFAULT_COMPANY_TIME_ZONE,
   isKnownCompanyTimeZone,
@@ -186,7 +187,7 @@ export default function CompanyPage() {
   }, [showError])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

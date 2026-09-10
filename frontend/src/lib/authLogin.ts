@@ -3,10 +3,11 @@
 import { isCapacitorNativeApp } from '@/lib/androidApp'
 import { getApiBaseUrl, setAuthApiOriginStamp } from '@/lib/api'
 import { formatApiErrorJson } from '@/utils/errorHandler'
+import { writeStoredAccessToken } from './authSession'
 
 export type LoginResult = {
   access_token: string
-  refresh_token: string
+  refresh_token?: string
   user: Record<string, unknown>
 }
 
@@ -21,6 +22,12 @@ async function fetchWithTimeout(
     return await fetch(url, { ...options, signal: controller.signal })
   } finally {
     clearTimeout(timeoutId)
+  }
+}
+
+function authClientHeader(): Record<string, string> {
+  return {
+    'X-Auth-Client': isCapacitorNativeApp() ? 'native' : 'browser',
   }
 }
 
@@ -42,7 +49,11 @@ export async function performLogin(username: string, password: string): Promise<
     {
       url: `${baseUrl}/auth/login/json/`,
       body: JSON.stringify({ username: trimmedUser, password }),
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...authClientHeader(),
+      },
     },
   ]
 
@@ -55,7 +66,7 @@ export async function performLogin(username: string, password: string): Promise<
         fd.append('password', password)
         return fd
       })(),
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', ...authClientHeader() },
     })
   }
 
@@ -66,7 +77,7 @@ export async function performLogin(username: string, password: string): Promise<
         method: 'POST',
         mode: 'cors',
         cache: 'no-cache',
-        credentials: 'omit',
+        credentials: 'include',
         headers: ep.headers,
         body: ep.body,
       })
@@ -91,8 +102,12 @@ export async function performLogin(username: string, password: string): Promise<
       }
       const data = await response.json()
       if (!data?.access_token) throw new Error('No access token received')
-      localStorage.setItem('access_token', String(data.access_token).trim())
-      localStorage.setItem('refresh_token', String(data.refresh_token || '').trim())
+      writeStoredAccessToken(String(data.access_token).trim())
+      try {
+        localStorage.removeItem('refresh_token')
+      } catch {
+        /* ignore */
+      }
       localStorage.setItem('user', JSON.stringify(data.user))
       setAuthApiOriginStamp()
       try {

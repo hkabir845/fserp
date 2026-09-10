@@ -17,6 +17,7 @@ import {
 import { getCurrencySymbol } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   AlertCircle,
   ArrowLeft,
   Banknote,
@@ -107,7 +108,7 @@ export default function DepositsPage() {
   }, [])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       setBootLoading(false)

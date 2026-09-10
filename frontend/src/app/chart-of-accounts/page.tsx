@@ -33,6 +33,7 @@ import {
   deletePaymentRequest,
 } from '@/app/payments/paymentMutations'
 import {
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
   hasTransactionTextSearch,
   transactionDateParams,
 } from '@/lib/transactionListFilters'
@@ -529,7 +530,7 @@ export default function ChartOfAccountsPage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       console.warn('No access token found, redirecting to login')
       router.push('/login')
@@ -556,7 +557,7 @@ export default function ChartOfAccountsPage() {
   useEffect(() => {
     let cancelled = false
     const loadMeta = async () => {
-      if (typeof window === 'undefined' || !localStorage.getItem('access_token')) return
+      if (typeof window === 'undefined' || !readStoredAccessToken()) return
       try {
         const res = await api.get('/chart-of-accounts/templates/fuel-station/')
         if (!cancelled) setFuelTemplateMeta(res.data)
@@ -747,7 +748,7 @@ export default function ChartOfAccountsPage() {
         
         if (status === 401) {
           errorMessage = 'Authentication required. Please log in again.'
-          localStorage.removeItem('access_token')
+          clearStoredAccessToken()
           localStorage.removeItem('refresh_token')
           router.push('/login')
           return
@@ -831,7 +832,7 @@ export default function ChartOfAccountsPage() {
       await refreshUnlinkedBanks()
     } catch (error: any) {
       if (error.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -949,7 +950,7 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error fetching statement:', error)
       if (error.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1138,7 +1139,7 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error creating account:', error)
       if (error.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1221,7 +1222,7 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error updating account:', error)
       if (error.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1239,7 +1240,7 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error deleting account:', error)
       if (error.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return

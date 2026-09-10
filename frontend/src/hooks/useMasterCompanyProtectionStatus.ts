@@ -6,6 +6,7 @@ import { useCompany } from '@/contexts/CompanyContext'
 import api, { isSuperAdminRole } from '@/lib/api'
 import { isConnectionError } from '@/utils/connectionError'
 import { isPublicAuthRoute } from '@/utils/publicAuthRoutes'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 export interface ProtectionStatus {
   is_master: boolean
@@ -48,7 +49,7 @@ export function useMasterCompanyProtectionStatus(): ProtectionStatus | null {
     if (!isMasterCompany || !selectedCompany || typeof window === 'undefined') return
     if (isPublicAuthRoute(pathname)) return
 
-    const token = localStorage.getItem('access_token')?.trim()
+    const token = readStoredAccessToken()
     let role: string | null = null
     try {
       const raw = localStorage.getItem('user')

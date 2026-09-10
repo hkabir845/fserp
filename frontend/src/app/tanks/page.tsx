@@ -13,6 +13,7 @@ import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatNumber } from '@/utils/currency'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
 import { filterFuelForecourtStations } from '@/utils/stationCapabilities'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Tank {
   id: number
@@ -82,7 +83,7 @@ export default function TanksPage() {
   }, [stations, selectedStation, fuelForecourtStations])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

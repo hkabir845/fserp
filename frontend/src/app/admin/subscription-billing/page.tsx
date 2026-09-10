@@ -12,6 +12,7 @@ import { formatCurrency, formatAmountPlain } from '@/utils/currency'
 import { safeLogError, isConnectionError } from '@/utils/connectionError'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
 import {
+import { readStoredAccessToken } from '@/lib/authSession'
   ArrowLeft,
   BarChart3,
   Banknote,
@@ -336,7 +337,7 @@ function SubscriptionBillingContent() {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

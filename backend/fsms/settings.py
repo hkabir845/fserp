@@ -256,6 +256,7 @@ _CAPACITOR_ORIGINS = [
 _LOCALHOST_SUBDOMAIN = r"^http://[a-zA-Z0-9-]+\.localhost(:\d+)?$"
 
 CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_PRIVATE_NETWORK = True
 _env_cors = _csv("FSERP_CORS_ALLOWED_ORIGINS")
 if _env_cors:
@@ -285,6 +286,7 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-tenant-subdomain",
     "x-request-id",
     "idempotency-key",
+    "x-auth-client",
 ]
 
 _env_csrf = _csv("FSERP_CSRF_TRUSTED_ORIGINS")
@@ -361,6 +363,15 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_SECURE = not _is_runserver
 CSRF_COOKIE_SECURE = not _is_runserver
+
+# Browser refresh sessions live in an HttpOnly cookie, never JavaScript storage.
+# SameSite=None is required because production may serve the UI and API from
+# different HTTPS origins. Local runserver uses Lax because Secure cookies are
+# intentionally unavailable over plain HTTP.
+AUTH_REFRESH_COOKIE_NAME = "fserp_refresh"
+AUTH_REFRESH_COOKIE_SECURE = not _is_runserver
+AUTH_REFRESH_COOKIE_SAMESITE = "None" if not _is_runserver else "Lax"
+AUTH_REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60
 
 # Production HTTPS defaults (nginx terminates TLS; proxy sets X-Forwarded-Proto).
 # Opt out: FSERP_SECURE_SSL_REDIRECT=0 / FSERP_SECURE_HSTS_SECONDS=0

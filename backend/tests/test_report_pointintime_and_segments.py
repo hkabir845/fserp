@@ -59,11 +59,11 @@ def test_ar_aging_counts_an_invoice_paid_after_the_end_date(company_tenant):
 
     # End of January: the receipt is still two months away, so the invoice was open.
     jan = report_ar_aging(cid, date(2026, 1, 1), date(2026, 1, 31))
-    assert jan["totals"]["total"] == 1000.0
+    assert jan["totals"]["total"] == "1000.00"
 
     # End of March: settled, so it drops out.
     mar = report_ar_aging(cid, date(2026, 1, 1), date(2026, 3, 31))
-    assert mar["totals"]["total"] == 0.0
+    assert mar["totals"]["total"] == "0.00"
 
 
 @pytest.mark.django_db
@@ -76,8 +76,8 @@ def test_ar_aging_excludes_invoices_issued_after_the_end_date(company_tenant):
         status="sent", total=Decimal("500.00"),
     )
     out = report_ar_aging(cid, date(2026, 1, 1), date(2026, 5, 31))
-    assert out["totals"]["total"] == 0.0
-    assert report_ar_aging(cid, date(2026, 1, 1), date(2026, 6, 30))["totals"]["total"] == 500.0
+    assert out["totals"]["total"] == "0.00"
+    assert report_ar_aging(cid, date(2026, 1, 1), date(2026, 6, 30))["totals"]["total"] == "500.00"
 
 
 @pytest.mark.django_db
@@ -90,7 +90,7 @@ def test_ar_aging_ignores_a_cash_sale_that_never_touched_receivables(company_ten
         payment_method="cash",
     )
     out = report_ar_aging(cid, date(2026, 1, 1), date(2026, 12, 31))
-    assert out["totals"]["total"] == 0.0
+    assert out["totals"]["total"] == "0.00"
 
 
 @pytest.mark.django_db
@@ -104,8 +104,8 @@ def test_ar_aging_reports_its_reconciliation_to_the_control_account(company_tena
     out = report_ar_aging(cid, date(2026, 1, 1), date(2026, 12, 31))
     recon = out["gl_reconciliation"]
     assert recon["control_account_code"] == "1100"
-    assert recon["subledger_total"] == 300.0
-    assert recon["unapplied_payments"] == 0.0
+    assert recon["subledger_total"] == "300.00"
+    assert recon["unapplied_payments"] == "0.00"
 
 
 @pytest.mark.django_db
@@ -126,8 +126,8 @@ def test_ap_aging_counts_a_bill_paid_after_the_end_date(company_tenant):
     )
     PaymentBillAllocation.objects.create(payment=pay, bill=bill, amount=Decimal("800.00"))
 
-    assert report_ap_aging(cid, date(2026, 1, 1), date(2026, 1, 31))["totals"]["total"] == 800.0
-    assert report_ap_aging(cid, date(2026, 1, 1), date(2026, 4, 30))["totals"]["total"] == 0.0
+    assert report_ap_aging(cid, date(2026, 1, 1), date(2026, 1, 31))["totals"]["total"] == "800.00"
+    assert report_ap_aging(cid, date(2026, 1, 1), date(2026, 4, 30))["totals"]["total"] == "0.00"
 
 
 @pytest.mark.django_db
@@ -151,17 +151,17 @@ def test_entity_pl_rows_still_include_a_closed_pond_with_gl_history(company_tena
     out = report_entities_pl_summary(cid, date(2026, 1, 1), date(2026, 12, 31))
     pond_rows = [r for r in out["by_pond"] if r["entity_id"] == pond.id]
     assert pond_rows, "a closed pond carrying posted GL must still appear as an entity row"
-    assert pond_rows[0]["expenses"] == 1500.0
+    assert pond_rows[0]["expenses"] == "1500.00"
     assert pond_rows[0]["is_active"] is False
 
     # The whole point: the slices have to add back up to the company.
     company = report_income_statement(cid, date(2026, 1, 1), date(2026, 12, 31))
     segments = (
-        out["stations_total"]["expenses"]
-        + out["ponds_total"]["expenses"]
-        + out["unscoped"]["expenses"]
+        Decimal(str(out["stations_total"]["expenses"]))
+        + Decimal(str(out["ponds_total"]["expenses"]))
+        + Decimal(str(out["unscoped"]["expenses"]))
     )
-    assert segments == pytest.approx(company["expenses"]["total"])
+    assert segments == Decimal(str(company["expenses"]["total"]))
 
 
 @pytest.mark.django_db

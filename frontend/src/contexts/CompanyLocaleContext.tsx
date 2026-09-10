@@ -38,7 +38,7 @@ export function CompanyLocaleProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setCtx(initialCtx)
         return
       }
-      const token = localStorage.getItem('access_token')?.trim()
+      const token = readStoredAccessToken()
       if (!token || !hasStoredSession()) {
         setTenantLocaleConfig(null)
         if (!cancelled) setCtx(initialCtx)

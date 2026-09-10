@@ -8,6 +8,7 @@ import { useToast } from '@/components/Toast'
 import { Receipt, Info } from 'lucide-react'
 import { safeLogError } from '@/utils/connectionError'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 function SubscriptionLedgerPageContent() {
   const router = useRouter()
@@ -22,7 +23,7 @@ function SubscriptionLedgerPageContent() {
       : undefined
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

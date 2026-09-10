@@ -21,6 +21,7 @@ import {
   type TenantJobTypeOption,
 } from '@/constants/tenantJobTypes'
 import { getAccessProfileSeedLabel, getRoleDisplayName } from '@/utils/rbac'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 type PermDef = { id: string; label: string; group: string }
 
@@ -104,7 +105,7 @@ export default function RolesPage() {
   }, [toast, language])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

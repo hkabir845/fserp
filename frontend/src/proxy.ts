@@ -20,6 +20,23 @@ export function proxy(request: NextRequest) {
     'Permissions-Policy',
     isBrainApp ? 'camera=(), microphone=(self), geolocation=()' : 'camera=(), microphone=(), geolocation=()',
   )
+  // Next App Router needs inline/eval for hydration; tighten connect/img/frame.
+  res.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'self'",
+      "form-action 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      "connect-src 'self' https: wss: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*",
+      "worker-src 'self' blob:",
+    ].join('; '),
+  )
   return res
 }
 

@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from api.models import AquaculturePond, Bill, BillLine, Customer, Invoice, Station, Vendor
+from api.models import AquaculturePond, Bill, Customer, Invoice, Station, Vendor
 from api.services.reporting import (
     report_ap_aging,
     report_ar_aging,
@@ -43,8 +43,8 @@ def test_ar_aging_buckets_open_invoice(company_tenant):
     assert len(out["customers"]) == 1
     row = out["customers"][0]
     assert row["display_name"] == "Aging Customer"
-    assert row["total"] == 1000.0
-    assert row["days_1_30"] == 1000.0
+    assert row["total"] == "1000.00"
+    assert row["days_1_30"] == "1000.00"
 
 
 @pytest.mark.django_db
@@ -81,12 +81,12 @@ def test_ar_aging_station_filter_excludes_other_sites(company_tenant):
     scoped = report_ar_aging(cid, date(2026, 1, 1), date(2026, 2, 1), station_id=st_a.id)
     assert scoped["filter_station_id"] == st_a.id
     assert len(scoped["customers"]) == 1
-    assert scoped["customers"][0]["total"] == 400.0
+    assert scoped["customers"][0]["total"] == "400.00"
 
     balances = report_customer_balances(
         cid, date(2026, 1, 1), date(2026, 2, 1), station_id=st_a.id
     )
-    assert balances["customers"][0]["balance"] == 400.0
+    assert balances["customers"][0]["balance"] == "400.00"
 
 
 @pytest.mark.django_db
@@ -131,7 +131,7 @@ def test_ar_aging_pond_filter_uses_pos_customer(company_tenant):
     scoped = report_ar_aging(cid, date(2026, 1, 1), date(2026, 2, 1), pond_id=pond.id)
     assert scoped["filter_pond_id"] == pond.id
     assert len(scoped["customers"]) == 1
-    assert scoped["customers"][0]["total"] == 300.0
+    assert scoped["customers"][0]["total"] == "300.00"
 
 
 @pytest.mark.django_db
@@ -155,7 +155,7 @@ def test_ap_aging_buckets_open_bill(company_tenant):
     out = report_ap_aging(cid, date(2026, 3, 1), date(2026, 4, 1))
     assert out["report_id"] == "ap-aging"
     assert len(out["vendors"]) == 1
-    assert out["vendors"][0]["total"] == 500.0
+    assert out["vendors"][0]["total"] == "500.00"
 
 
 @pytest.mark.django_db

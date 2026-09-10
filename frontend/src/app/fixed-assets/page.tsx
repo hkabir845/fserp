@@ -37,6 +37,7 @@ import {
   type CoaPick,
 } from '@/lib/coaDefaults'
 import { formatCoaOptionLabel } from '@/utils/coaOptionLabel'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Station {
   id: number
@@ -274,7 +275,7 @@ export default function FixedAssetsPage() {
   }, [toast])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

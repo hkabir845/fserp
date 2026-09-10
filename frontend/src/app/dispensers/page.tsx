@@ -9,6 +9,7 @@ import { Plus, Edit, Trash2, Search, Zap } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Dispenser {
   id: number
@@ -75,7 +76,7 @@ export default function DispensersPage() {
   }
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -594,8 +595,3 @@ export default function DispensersPage() {
     </PageLayout>
   )
 }
-
-
-
-
-

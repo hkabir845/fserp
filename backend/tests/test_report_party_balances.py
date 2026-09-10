@@ -44,7 +44,7 @@ def test_party_balances_has_all_sections(company_tenant):
         True,
     ]
     assert out["parties"] == []
-    assert out["summary"]["net_position"] == 0.0
+    assert out["summary"]["net_position"] == "0.00"
 
 
 @pytest.mark.django_db
@@ -88,25 +88,25 @@ def test_customer_receivable_is_positive_and_vendor_payable_is_negative(company_
     crow = customers["rows"][0]
     assert crow["party_type"] == "customer"
     assert crow["name"] == "Rahman Traders"
-    assert crow["balance"] == 1000.0
-    assert crow["net_position"] == 1000.0
+    assert crow["balance"] == "1000.00"
+    assert crow["net_position"] == "1000.00"
 
     vendors = _section(out, "vendors")
     assert vendors["count"] == 1
     vrow = vendors["rows"][0]
     assert vrow["party_type"] == "vendor"
-    assert vrow["balance"] == 400.0
+    assert vrow["balance"] == "400.00"
     # Money we owe is a negative position for the company.
-    assert vrow["net_position"] == -400.0
-    assert vendors["total_payable"] == 400.0
+    assert vrow["net_position"] == "-400.00"
+    assert vendors["total_payable"] == "400.00"
 
     summary = out["summary"]
     assert summary["party_count"] == 2
-    assert summary["customer_receivable"] == 1000.0
-    assert summary["vendor_payable"] == 400.0
-    assert summary["total_receivable"] == 1000.0
-    assert summary["total_payable"] == 400.0
-    assert summary["net_position"] == 600.0
+    assert summary["customer_receivable"] == "1000.00"
+    assert summary["vendor_payable"] == "400.00"
+    assert summary["total_receivable"] == "1000.00"
+    assert summary["total_payable"] == "400.00"
+    assert summary["net_position"] == "600.00"
 
 
 @pytest.mark.django_db
@@ -168,15 +168,15 @@ def test_loans_split_by_direction_and_draft_excluded(company_tenant):
     lent = next(r for r in loans["rows"] if r["loan_no"] == "LN-LENT-1")
     assert borrowed["party_type"] == "loan_borrowed"
     assert borrowed["name"] == "Agrani Bank"
-    assert borrowed["net_position"] == -1250000.0
+    assert borrowed["net_position"] == "-1250000.00"
     assert lent["party_type"] == "loan_lent"
-    assert lent["net_position"] == 300000.0
+    assert lent["net_position"] == "300000.00"
 
-    assert loans["total_payable"] == 1250000.0
-    assert loans["total_receivable"] == 300000.0
-    assert loans["net_position"] == -950000.0
-    assert out["summary"]["loans_borrowed_outstanding"] == 1250000.0
-    assert out["summary"]["loans_lent_outstanding"] == 300000.0
+    assert loans["total_payable"] == "1250000.00"
+    assert loans["total_receivable"] == "300000.00"
+    assert loans["net_position"] == "-950000.00"
+    assert out["summary"]["loans_borrowed_outstanding"] == "1250000.00"
+    assert out["summary"]["loans_lent_outstanding"] == "300000.00"
 
 
 @pytest.mark.django_db
@@ -230,10 +230,10 @@ def test_bank_registers_listed_and_other_account_types_excluded(company_tenant):
     assert row["party_type"] == "bank"
     assert row["code"] == "1010"
     assert row["name"] == "Islami Bank — CD 3341"
-    assert row["balance"] == 412900.0
-    assert row["net_position"] == 412900.0
-    assert out["summary"]["bank_cash_on_hand"] == 412900.0
-    assert out["summary"]["net_position"] == 412900.0
+    assert row["balance"] == "412900.00"
+    assert row["net_position"] == "412900.00"
+    assert out["summary"]["bank_cash_on_hand"] == "412900.00"
+    assert out["summary"]["net_position"] == "412900.00"
 
 
 @pytest.mark.django_db

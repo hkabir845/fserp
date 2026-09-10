@@ -15,6 +15,7 @@ import { formatDateOnly } from '@/utils/date'
 import { printContractAgreement } from '@/utils/printDocument'
 import { loadPrintBranding } from '@/utils/printBranding'
 import { useRequireSaasDashboardMode } from '@/hooks/useRequireSaasDashboardMode'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Contract {
   id: number
@@ -134,7 +135,7 @@ function ContractsPageContent() {
   }, [toast])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

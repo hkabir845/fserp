@@ -50,6 +50,7 @@ import {
   type TenantJobTypeOption,
 } from '@/constants/tenantJobTypes'
 import {
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
   getAccessProfileSeedLabel,
   getAccessProfileSeedOptionLabel,
   getRoleBadgeColor,
@@ -210,7 +211,7 @@ export default function UsersPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!isCompanyOwner && !isSuperAdminSession) return
-    const t = localStorage.getItem('access_token')?.trim()
+    const t = readStoredAccessToken()
     if (!t) return
     let cancelled = false
     api
@@ -231,7 +232,7 @@ export default function UsersPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!isCompanyOwner && !isSuperAdminSession) return
-    const t = localStorage.getItem('access_token')?.trim()
+    const t = readStoredAccessToken()
     if (!t) return
     let cancelled = false
     void api
@@ -289,7 +290,7 @@ export default function UsersPage() {
   }, [])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -410,7 +411,7 @@ export default function UsersPage() {
 
   const fetchCompanies = async () => {
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const res = await fetch(`${getApiBaseUrl()}/admin/companies/`, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
         credentials: 'omit'
@@ -439,7 +440,7 @@ export default function UsersPage() {
       const err = error as { response?: { status?: number } }
       if (err.response?.status === 401) {
         try {
-          localStorage.removeItem('access_token')
+          clearStoredAccessToken()
         } catch {
           /* ignore */
         }
@@ -884,7 +885,7 @@ export default function UsersPage() {
       return
     }
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const response = await fetch(`${getApiBaseUrl()}/users/${user.id}/`, {
         method: 'PUT',
         headers: {
@@ -925,7 +926,7 @@ export default function UsersPage() {
     }
 
     try {
-      const token = localStorage.getItem('access_token')
+      const token = readStoredAccessToken()
       const response = await fetch(`${getApiBaseUrl()}/users/${user.id}/`, {
         method: 'DELETE',
         headers: {

@@ -11,6 +11,7 @@ import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { formatDateOnly } from '@/utils/date'
 import { hasPermission } from '@/utils/rbac'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface Meter {
   id: number
@@ -74,7 +75,7 @@ export default function MetersPage() {
   }, [selectedDispenser, dispensers, fuelForecourtDispensers])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -653,8 +654,3 @@ export default function MetersPage() {
     </PageLayout>
   )
 }
-
-
-
-
-

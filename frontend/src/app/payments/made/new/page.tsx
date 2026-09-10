@@ -21,6 +21,7 @@ import {
   type BankAccountLike,
 } from '@/lib/bankAccountDisplay'
 import { VendorReferenceCombobox } from '@/components/reference/VendorReferenceCombobox'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface OutstandingBill {
   id: number
@@ -251,7 +252,7 @@ function RecordPaymentMadeInner() {
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳')
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       setLoading(false)

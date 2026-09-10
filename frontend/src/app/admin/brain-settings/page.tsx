@@ -12,6 +12,7 @@ import api, { isSuperAdminRole } from '@/lib/api'
 import { safeLogError } from '@/utils/connectionError'
 import { BrainOwnerAppCard } from '@/components/brain/BrainOwnerAppCard'
 import { Brain, Eye, EyeOff, Loader2, Save } from 'lucide-react'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 type BrainConfig = {
   free_api_key_set: boolean
@@ -58,7 +59,7 @@ function SaasBrainSettingsContent() {
   const [showVendorKey, setShowVendorKey] = useState(false)
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
     if (!token) {
       router.push('/login')
       return

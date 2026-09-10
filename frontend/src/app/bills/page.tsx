@@ -107,6 +107,7 @@ import { COA_OFFICE_EXP, coaPickIdIfValid, suggestedBillLineExpenseAccountId, te
 import { syncLineTouchedForAccount } from '@/lib/coaSuggestForm'
 import { ItemCogsOnSaleHint } from '@/components/items/ItemCogsOnSaleHint'
 import type { CoaPickForItemDefault } from '@/lib/itemGlDefaults'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 /** Bill line inputs: fixed height so grid rows align across columns */
 const BILL_LINE_CTL =
@@ -1663,7 +1664,7 @@ export default function BillsPage() {
   ])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -1959,7 +1960,7 @@ export default function BillsPage() {
   }, [loadCompanyCurrency, loadBillReferenceData, loadBills])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     void loadCompanyCurrency()
   }, [router, loadCompanyCurrency])
@@ -1971,7 +1972,7 @@ export default function BillsPage() {
   }, [showModal, showEditModal, showViewModal, ensureBillReferenceData, loadBillReportingCategories])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) return
     void loadBills()
     void loadReceiptLocationDirectory()

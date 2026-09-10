@@ -24,6 +24,7 @@ import api, { getBackendOrigin } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { isConnectionError } from '@/utils/connectionError'
 import { formatNumber } from '@/utils/currency'
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 /** Matches Django `tax_views._tax_to_json` */
 interface TaxRateRow {
@@ -118,7 +119,7 @@ export default function TaxPage() {
   }, [userRole])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -156,7 +157,7 @@ export default function TaxPage() {
       }
       const err = error as { response?: { status?: number } }
       if (err.response?.status === 401) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please sign in again.')
       } else {

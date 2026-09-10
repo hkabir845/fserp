@@ -13,6 +13,7 @@ import { Database } from 'lucide-react'
 import { useToast } from '@/components/Toast'
 import api, { isSuperAdminRole } from '@/lib/api'
 import { safeLogError } from '@/utils/connectionError'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 function SaasBackupRestoreContent() {
   useRequireSaasDashboardMode()
@@ -23,7 +24,7 @@ function SaasBackupRestoreContent() {
   const [targetCompanyId, setTargetCompanyId] = useState<number | null>(null)
 
   useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
     if (!token) {
       router.push('/login')
       return

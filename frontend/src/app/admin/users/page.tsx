@@ -26,6 +26,7 @@ import {
   formatPosSaleScopeShort,
 } from '@/components/pos/PosSaleScopeSelector'
 import { defaultPosScopeForRole } from '@/constants/tenantJobTypes'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 interface AdminUser {
   id: number
@@ -77,7 +78,7 @@ function UsersPageContent() {
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return

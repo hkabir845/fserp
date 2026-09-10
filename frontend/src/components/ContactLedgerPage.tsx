@@ -22,6 +22,7 @@ import {
 } from '@/lib/transactionListFilters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useToast } from '@/components/Toast'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 export type LedgerEntity = 'customers' | 'vendors' | 'employees'
 
@@ -146,7 +147,7 @@ export default function ContactLedgerPage({
   }, [entity, entityId, startDate, endDate, debouncedSearch, hasTextSearch, ledgerPath, toast, initialLoading])
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -397,7 +398,9 @@ export default function ContactLedgerPage({
                 <div className="mb-6 rounded-lg bg-white p-6 shadow">
                   <h2 className="text-lg font-semibold text-foreground">Add ledger entry</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Debit increases net payable to the employee; credit records payment or recovery.
+                    Debit increases net payable to the employee (wages to 6400 / 2200). Credit
+                    records a payment from cash or an advance (1150). Every line posts a balanced
+                    journal.
                   </p>
                   <form onSubmit={submitEntry} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>

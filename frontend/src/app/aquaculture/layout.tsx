@@ -18,6 +18,7 @@ import {
 } from '@/lib/adibAndroidApp'
 import { isAquacultureNavUnlocked } from '@/navigation/erpAppMenu'
 import { ShieldAlert } from 'lucide-react'
+import { readStoredAccessToken } from '@/lib/authSession'
 
 function readSessionRoleAndPermissions(): {
   role: string | null
@@ -57,7 +58,7 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
   const [navUnlocked, setNavUnlocked] = useState(false)
 
   const evaluateAccess = useCallback(async () => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.replace('/login')
       return

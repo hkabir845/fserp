@@ -13,6 +13,7 @@ import { usePageMeta } from '@/hooks/usePageMeta'
 import api, { getApiDocsUrl } from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { stationHasFuelForecourt } from '@/utils/stationCapabilities'
+import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 interface Station {
   id: number
@@ -56,7 +57,7 @@ export default function StationsPage() {
   const [aquacultureLicensed, setAquacultureLicensed] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
+    const token = readStoredAccessToken()
     if (!token) {
       router.push('/login')
       return
@@ -97,7 +98,7 @@ export default function StationsPage() {
         : undefined
       const isAuth = status === 401 || status === 403
       if (isAuth) {
-        localStorage.removeItem('access_token')
+        clearStoredAccessToken()
         router.push('/login')
         return
       }

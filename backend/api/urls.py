@@ -407,6 +407,10 @@ urlpatterns = [
         "vendors/<int:vendor_id>/credits/<int:credit_id>/",
         vendor_purchase_views.vendor_credit_detail,
     ),
+    path(
+        "vendors/<int:vendor_id>/yearly-scheme/",
+        vendor_purchase_views.vendor_apply_yearly_scheme,
+    ),
     path("vendors/<int:vendor_id>/ledger/", vendor_views.vendor_ledger),
     path("vendors/<int:vendor_id>/", vendor_views.vendor_detail),
     # Accounting

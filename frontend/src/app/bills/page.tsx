@@ -236,6 +236,7 @@ interface Bill {
   filtered_amount?: number | string
   has_multiple_entities?: boolean
   entity_allocations?: BillEntityAllocationRow[]
+  truck_transport_amount?: number | string
 }
 
 type BillAmountSource = Pick<
@@ -446,6 +447,7 @@ function applyMillTermsToLine(
   const sackKg = Number(item?.content_weight_kg) || 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
+  // Per-truck is applied once on the bill, not multiplied by qty.
   const transport = qty * tUnit + qty * sackKg * tKg
   const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
@@ -457,6 +459,38 @@ function applyMillTermsToLine(
     unit_cost: roundBillMoney(amount / qty),
     amount_manual: true,
   }
+}
+
+/** Edit load: backend already allocated per-truck onto lines. Peel it off so totals can subtract once. */
+function stripTruckFromLines(lines: BillLineItem[], truck: number): BillLineItem[] {
+  if (!(truck > 0) || !lines.length) return lines
+  const mrpIdx = lines
+    .map((line, i) => (Number(line.mrp) > 0 ? i : -1))
+    .filter((i) => i >= 0)
+  if (!mrpIdx.length) return lines
+  const weights = mrpIdx.map((i) => {
+    const line = lines[i]
+    const g = (Number(line.quantity) || 0) * (Number(line.mrp) || 0)
+    return g > 0 ? g : 0.01
+  })
+  const totalW = weights.reduce((a, b) => a + b, 0) || 0.01
+  let remaining = roundBillMoney(truck)
+  const next = lines.slice()
+  mrpIdx.forEach((i, n) => {
+    const share = n === mrpIdx.length - 1 ? remaining : roundBillMoney((truck * weights[n]) / totalW)
+    remaining = roundBillMoney(remaining - share)
+    const line = next[i]
+    const qty = Number(line.quantity) || 1
+    const newTransport = Math.max(0, roundBillMoney(Number(line.transport_amount || 0) - share))
+    const newAmount = roundBillMoney(Number(line.amount || 0) + share)
+    next[i] = {
+      ...line,
+      transport_amount: newTransport,
+      amount: newAmount,
+      unit_cost: qty > 0 ? roundBillMoney(newAmount / qty) : line.unit_cost,
+    }
+  })
+  return next
 }
 
 function roundFishWeightKg(n: number): number {
@@ -1323,6 +1357,7 @@ export default function BillsPage() {
   const [showModal, setShowModal] = useState(false)
   const [vendorPurchaseTerms, setVendorPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
   const [cashWithBill, setCashWithBill] = useState('')
+  const [truckTransportAmount, setTruckTransportAmount] = useState('')
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
   const [showViewModal, setShowViewModal] = useState(false)
@@ -1517,10 +1552,19 @@ export default function BillsPage() {
     if (vendorUsesPurchaseTerms(vendor?.supplier_category) || vendor?.credit_facility_enabled) {
       void api
         .get(`/vendors/${vendor_id}/purchase-terms/`)
-        .then((res) => setVendorPurchaseTerms(res.data as VendorPurchaseTerms))
-        .catch(() => setVendorPurchaseTerms(null))
+        .then((res) => {
+          const data = res.data as VendorPurchaseTerms
+          setVendorPurchaseTerms(data)
+          const truck = Number(data.rate_card?.transport_per_truck) || 0
+          setTruckTransportAmount(truck > 0 ? String(truck) : '')
+        })
+        .catch(() => {
+          setVendorPurchaseTerms(null)
+          setTruckTransportAmount('')
+        })
     } else {
       setVendorPurchaseTerms(null)
+      setTruckTransportAmount('')
     }
   }
 
@@ -1967,8 +2011,10 @@ export default function BillsPage() {
   }, [searchParams, billExpenseCategories, ensureBillReferenceData])
 
   const calculateTotals = (lines: BillLineItem[] = formData.lines) => {
-    const subtotal = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)
+    const lineSum = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)
     const taxAmount = lines.reduce((sum, line) => sum + (Number(line.tax_amount) || 0), 0)
+    const truck = parseFloat(truckTransportAmount) || 0
+    const subtotal = Math.max(0, roundBillMoney(lineSum - truck))
     const total = subtotal + taxAmount
     return { subtotal, taxAmount, total }
   }
@@ -2346,7 +2392,7 @@ export default function BillsPage() {
             newLines[index].unit_cost = roundBillMoney(amount / quantity)
           }
         }
-      } else if (field === 'quantity' || field === 'unit_cost') {
+      } else if (field === 'quantity' || field === 'unit_cost' || field === 'mrp') {
         if (fishLineAuto) {
           newLines[index] = applyFishBillLineAutoCalc(
             newLines[index],
@@ -2357,6 +2403,13 @@ export default function BillsPage() {
           // Typing Qty or Rate hands Amount back to Qty × Rate.
           newLines[index].amount_manual = false
           newLines[index] = syncStandardBillLineAmount(newLines[index])
+          if (field === 'quantity' || field === 'mrp') {
+            newLines[index] = applyMillTermsToLine(
+              newLines[index],
+              lineItem,
+              vendorPurchaseTerms
+            )
+          }
         }
       } else if (
         field === 'item_id' &&
@@ -2423,6 +2476,7 @@ export default function BillsPage() {
         approveBill && parseFloat(cashWithBill) > 0
           ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
           : undefined,
+      truck_transport_amount: parseFloat(truckTransportAmount) || 0,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -2510,13 +2564,9 @@ export default function BillsPage() {
           const exp = line.expense_account_id != null ? Number(line.expense_account_id) : 0
           if (ln > 0 && exp > 0) billLineExpenseTouchedRef.current.add(ln)
         }
-        setFormData({
-          vendor_id: fullBill.vendor_id,
-          bill_date: fullBill.bill_date.split('T')[0],
-          due_date: fullBill.due_date ? fullBill.due_date.split('T')[0] : '',
-          vendor_reference: fullBill.vendor_reference || '',
-          memo: fullBill.memo || '',
-          lines: fullBill.lines?.map((line: BillLineItem) => ({
+        const truckOnBill = Number(fullBill.truck_transport_amount) || 0
+        setTruckTransportAmount(truckOnBill > 0 ? String(truckOnBill) : '')
+        const mappedLines = (fullBill.lines || []).map((line: BillLineItem) => ({
             id: line.id,
             line_number: line.line_number,
             description: line.description || '',
@@ -2579,7 +2629,14 @@ export default function BillsPage() {
               }
               return undefined
             })(),
-          })) || [],
+        }))
+        setFormData({
+          vendor_id: fullBill.vendor_id,
+          bill_date: fullBill.bill_date.split('T')[0],
+          due_date: fullBill.due_date ? fullBill.due_date.split('T')[0] : '',
+          vendor_reference: fullBill.vendor_reference || '',
+          memo: fullBill.memo || '',
+          lines: stripTruckFromLines(mappedLines, truckOnBill),
         })
         setShowEditModal(true)
         if (fullBill.vendor_id) {
@@ -2641,6 +2698,7 @@ export default function BillsPage() {
         willPostReceipt && parseFloat(cashWithBill) > 0
           ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
           : undefined,
+      truck_transport_amount: parseFloat(truckTransportAmount) || 0,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -2980,6 +3038,7 @@ export default function BillsPage() {
     setApproveBill(false)
     setVendorPurchaseTerms(null)
     setCashWithBill('')
+    setTruckTransportAmount('')
   }
 
   const handleCloseModal = () => {
@@ -3646,9 +3705,23 @@ export default function BillsPage() {
                           {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
                         </p>
                         {vendorPurchaseTerms.uses_purchase_terms ? (
-                          <p className="text-muted-foreground">
-                            MRP lines: instant discount and transport come from this mill&apos;s rate card (net is stock cost).
-                          </p>
+                          <>
+                            <p className="text-muted-foreground">
+                              MRP lines: filled rate-card terms apply (instant %, per-unit transport). Blank terms are skipped. Per-truck is once on this bill.
+                            </p>
+                            <label className="block text-xs font-medium pt-1">
+                              Transport this truck / bill
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={truckTransportAmount}
+                                onChange={(e) => setTruckTransportAmount(e.target.value)}
+                                className={`${BILL_LINE_CTL} mt-1`}
+                                placeholder="0 = skip"
+                              />
+                            </label>
+                          </>
                         ) : null}
                         {(vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0) ? (
                           <label className="block text-xs font-medium pt-1">
@@ -4179,9 +4252,23 @@ export default function BillsPage() {
                           {vendorPurchaseTerms.cash_only ? ' · Cash only — pay with this bill' : ''}
                         </p>
                         {vendorPurchaseTerms.uses_purchase_terms ? (
-                          <p className="text-muted-foreground">
-                            MRP lines: instant discount and transport come from this mill&apos;s rate card (net is stock cost).
-                          </p>
+                          <>
+                            <p className="text-muted-foreground">
+                              MRP lines: filled rate-card terms apply (instant %, per-unit transport). Blank terms are skipped. Per-truck is once on this bill.
+                            </p>
+                            <label className="block text-xs font-medium pt-1">
+                              Transport this truck / bill
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={truckTransportAmount}
+                                onChange={(e) => setTruckTransportAmount(e.target.value)}
+                                className={`${BILL_LINE_CTL} mt-1`}
+                                placeholder="0 = skip"
+                              />
+                            </label>
+                          </>
                         ) : null}
                         {(vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0) ? (
                           <label className="block text-xs font-medium pt-1">

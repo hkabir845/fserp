@@ -35,11 +35,15 @@ export function rateCardFormFromPayload(card: VendorRateCardPayload | null | und
     effective_from: (card.effective_from || empty.effective_from).slice(0, 10),
     instant_discount_percent: String(card.instant_discount_percent ?? '0'),
     instant_discount_per_unit: String(card.instant_discount_per_unit ?? '0'),
+    transport_per_truck: String(card.transport_per_truck ?? '0'),
     transport_per_unit: String(card.transport_per_unit ?? '0'),
     transport_per_kg: String(card.transport_per_kg ?? '0'),
     monthly_rebate_percent: String(card.monthly_rebate_percent ?? '0'),
     yearly_rebate_percent: String(card.yearly_rebate_percent ?? '0'),
-    yearly_target_kg: String(card.yearly_target_kg ?? '0'),
+    yearly_target_tons: String(
+      card.yearly_target_tons ??
+        (Number(card.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : 0)
+    ),
   }
 }
 
@@ -62,7 +66,8 @@ export function VendorPurchaseTermsFields({
       <div>
         <h3 className="text-sm font-semibold text-foreground">Dealer credit & mill terms</h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Limit, dates, and percentages are whatever this mill promised — nothing is hardcoded.
+          Fill only what this mill uses. Leave a field at 0 to skip that term — the bill
+          continues with the values you did provide. Nothing is hardcoded.
           When used credit reaches the limit, further feed/medicine is cash-only until you pay down
           or raise the limit.
         </p>
@@ -140,6 +145,7 @@ export function VendorPurchaseTermsFields({
               value={rateCard.instant_discount_percent}
               onChange={(e) => onRateCardChange({ instant_discount_percent: e.target.value })}
               className="erp-field"
+              placeholder="0 = skip"
             />
           </div>
           <div>
@@ -151,10 +157,26 @@ export function VendorPurchaseTermsFields({
               value={rateCard.instant_discount_per_unit}
               onChange={(e) => onRateCardChange({ instant_discount_per_unit: e.target.value })}
               className="erp-field"
+              placeholder="0 = skip"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium">Transport Tk / unit (deducted)</label>
+            <label className="mb-1 block text-xs font-medium">Transport Tk / truck (once per bill)</label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={rateCard.transport_per_truck}
+              onChange={(e) => onRateCardChange({ transport_per_truck: e.target.value })}
+              className="erp-field"
+              placeholder="0 = skip"
+            />
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Deducted once on the bill, not per sack. Leave 0 if this mill has no truck rebate.
+            </p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">Transport Tk / unit (optional)</label>
             <input
               type="number"
               min={0}
@@ -162,10 +184,11 @@ export function VendorPurchaseTermsFields({
               value={rateCard.transport_per_unit}
               onChange={(e) => onRateCardChange({ transport_per_unit: e.target.value })}
               className="erp-field"
+              placeholder="0 = skip"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium">Transport Tk / kg (deducted)</label>
+            <label className="mb-1 block text-xs font-medium">Transport Tk / kg (optional)</label>
             <input
               type="number"
               min={0}
@@ -173,10 +196,11 @@ export function VendorPurchaseTermsFields({
               value={rateCard.transport_per_kg}
               onChange={(e) => onRateCardChange({ transport_per_kg: e.target.value })}
               className="erp-field"
+              placeholder="0 = skip"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium">Monthly account credit % of MRP</label>
+            <label className="mb-1 block text-xs font-medium">Monthly scheme % of MRP (reserve)</label>
             <input
               type="number"
               min={0}
@@ -184,10 +208,14 @@ export function VendorPurchaseTermsFields({
               value={rateCard.monthly_rebate_percent}
               onChange={(e) => onRateCardChange({ monthly_rebate_percent: e.target.value })}
               className="erp-field"
+              placeholder="0 = skip"
             />
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Tracked in the mill&apos;s favour. Does not reduce what you owe unless you post a mill credit.
+            </p>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium">Yearly account credit % of MRP</label>
+            <label className="mb-1 block text-xs font-medium">Yearly scheme % of MRP</label>
             <input
               type="number"
               min={0}
@@ -195,18 +223,26 @@ export function VendorPurchaseTermsFields({
               value={rateCard.yearly_rebate_percent}
               onChange={(e) => onRateCardChange({ yearly_rebate_percent: e.target.value })}
               className="erp-field"
+              placeholder="0 = skip"
             />
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Credited to the dealer account at square-off if the target (if any) is met.
+            </p>
           </div>
           <div className="col-span-2 sm:col-span-1">
-            <label className="mb-1 block text-xs font-medium">Yearly target (kg)</label>
+            <label className="mb-1 block text-xs font-medium">Yearly target (tons)</label>
             <input
               type="number"
               min={0}
               step="0.01"
-              value={rateCard.yearly_target_kg}
-              onChange={(e) => onRateCardChange({ yearly_target_kg: e.target.value })}
+              value={rateCard.yearly_target_tons}
+              onChange={(e) => onRateCardChange({ yearly_target_tons: e.target.value })}
               className="erp-field"
+              placeholder="0 = no tonnage gate"
             />
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Leave 0 if this mill has no volume target. 1 ton = 1,000 kg.
+            </p>
           </div>
         </div>
       </div>

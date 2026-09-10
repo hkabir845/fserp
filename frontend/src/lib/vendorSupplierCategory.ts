@@ -26,11 +26,13 @@ export type VendorRateCardPayload = {
   effective_to?: string | null
   instant_discount_percent?: string | number
   instant_discount_per_unit?: string | number
+  transport_per_truck?: string | number
   transport_per_unit?: string | number
   transport_per_kg?: string | number
   monthly_rebate_percent?: string | number
   yearly_rebate_percent?: string | number
   yearly_target_kg?: string | number
+  yearly_target_tons?: string | number
   is_active?: boolean
 }
 
@@ -53,12 +55,18 @@ export type VendorPurchaseTerms = {
     month_mrp: string
     year_mrp: string
     year_kg: string
+    year_tons?: string
     yearly_target_kg: string
+    yearly_target_tons?: string
     monthly_rebate_percent: string
     yearly_rebate_percent: string
     estimated_monthly_credit: string
+    monthly_reserved?: string
+    monthly_is_reserve?: boolean
     estimated_yearly_credit: string
     yearly_target_reached: boolean
+    yearly_credit_posted?: boolean
+    can_post_yearly?: boolean
     year_start: string
     year_end: string
   } | null
@@ -70,15 +78,24 @@ export type VendorPurchaseTerms = {
     period_label: string
     memo: string
   }>
+  recent_reserves?: Array<{
+    id: number
+    credit_kind: string
+    period_label: string
+    amount: string
+    mrp_base_amount: string
+    percent_applied: string
+  }>
 }
 
 export const emptyRateCardForm = () => ({
   effective_from: new Date().toISOString().split('T')[0],
   instant_discount_percent: '0',
   instant_discount_per_unit: '0',
+  transport_per_truck: '0',
   transport_per_unit: '0',
   transport_per_kg: '0',
   monthly_rebate_percent: '0',
   yearly_rebate_percent: '0',
-  yearly_target_kg: '0',
+  yearly_target_tons: '0',
 })

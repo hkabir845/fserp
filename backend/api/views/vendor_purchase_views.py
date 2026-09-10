@@ -4,6 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.models import Vendor, VendorCredit, VendorRateCard
 from api.services.vendor_purchase_terms import (
+    apply_yearly_scheme_credit,
     create_vendor_credit,
     delete_vendor_credit,
     purchase_terms_payload,
@@ -128,3 +129,21 @@ def vendor_credit_detail(request, vendor_id: int, credit_id: int):
         delete_vendor_credit(request.company_id, credit)
         return JsonResponse({"detail": "Vendor credit deleted"})
     return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@auth_required
+@require_company_id
+def vendor_apply_yearly_scheme(request, vendor_id: int):
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+    v = _vendor(request, vendor_id)
+    if not v:
+        return JsonResponse({"detail": "Vendor not found"}, status=404)
+    body, err = parse_json_body(request)
+    if err:
+        return err
+    credit, resp = apply_yearly_scheme_credit(request.company_id, v, body or {})
+    if resp:
+        return resp
+    return JsonResponse(vendor_credit_to_json(credit), status=201)

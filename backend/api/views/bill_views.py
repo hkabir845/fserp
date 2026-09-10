@@ -46,6 +46,7 @@ from api.services.document_posting_lifecycle import (
     body_has_material_bill_change,
     reconcile_bill_after_material_edit,
 )
+from api.services.document_status import BILL_STATUSES
 from api.services.gl_posting import (
     bill_eligible_for_posting,
     cleanup_vendor_bill_posting_effects,
@@ -54,11 +55,14 @@ from api.services.gl_posting import (
 )
 from api.services.vendor_purchase_terms import (
     apply_bill_cash_payment,
+    apply_bill_truck_transport,
     bill_line_purchase_term_kwargs,
     credit_limit_error_response,
     evaluate_bill_credit_limit,
     parse_cash_payment_amount,
     price_parsed_bill_line,
+    sync_monthly_scheme_reserve,
+    uses_purchase_terms,
 )
 from api.utils.auth import auth_required
 from api.utils.pagination import json_paged, parse_skip_limit, wants_paged_response
@@ -108,9 +112,9 @@ from api.services.tenant_reporting_categories import (
 
 def _next_bill_number(company_id: int) -> str:
     """Next BILL-n: lowest free suffix (reuses gaps when a bill number is deleted)."""
-    from api.services.reference_code import next_available_code
+    from api.services.reference_code import next_sequential_code
 
-    return next_available_code(company_id, Bill, "bill_number", "BILL")
+    return next_sequential_code(company_id, Bill, "bill_number", "BILL")
 
 
 def _bill_line_aquaculture_expense_category(line: BillLine) -> str | None:
@@ -741,6 +745,7 @@ def _bill_to_json(
         "gross_mrp_total": str(_bill_gross_mrp(b)),
         "instant_discount_total": str(_bill_instant_total(b)),
         "transport_total": str(_bill_transport_total(b)),
+        "truck_transport_amount": str(getattr(b, "truck_transport_amount", 0) or 0),
     }
     if not include_lines:
         receipt_pond_id, receipt_pond_display_name = _bill_receipt_pond_summary(b)
@@ -824,17 +829,47 @@ def _normalize_due_date(bill_date: date, due: Optional[date]) -> Optional[date]:
     return due
 
 
+BILL_STATUS_ALIASES = {
+    "partially_paid": "partial",
+    "approved": "open",
+    "posted": "open",
+}
+
+
 def _normalize_bill_status(val: Optional[str], fallback: str = "draft") -> str:
-    """Map UI/accounting aliases to stored status; only known values are kept."""
+    """Map UI/accounting aliases to stored status; only known values are kept.
+
+    Prefer ``_validated_bill_status`` on write paths: silently coercing an unrecognised value
+    to "draft" un-posted a bill in the subledger while its journal and A/P bump stayed.
+    """
     s = (val or fallback or "draft").strip().lower()[:32]
-    aliases = {
-        "partially_paid": "partial",
-        "approved": "open",
-        "posted": "open",
-    }
-    s = aliases.get(s, s)
-    allowed = ("draft", "open", "paid", "partial", "overdue", "void")
-    return s if s in allowed else "draft"
+    s = BILL_STATUS_ALIASES.get(s, s)
+    return s if s in BILL_STATUSES else "draft"
+
+
+def _validated_bill_status(raw, fallback: str) -> tuple[Optional[str], Optional[str]]:
+    """``(status, error)`` — an unrecognised status is an error, never a silent downgrade.
+
+    A typo used to be stored as "draft". Draft is neither "void" nor eligible for posting, so
+    no branch of the save handler fired: the AUTO-BILL journal and the vendor A/P bump stayed
+    while the A/P subledger (which excludes drafts) dropped the bill, and the control account
+    silently stopped reconciling.
+    """
+    if raw is None or str(raw).strip() == "":
+        return fallback, None
+    st = str(raw).strip().lower()[:32]
+    st = BILL_STATUS_ALIASES.get(st, st)
+    if st not in BILL_STATUSES:
+        return None, (
+            "status: '%s' is not a valid bill status. Use one of: %s."
+            % (st, ", ".join(BILL_STATUSES))
+        )
+    return st, None
+
+
+def _bill_status_was_posted(status: Optional[str]) -> bool:
+    """True when this status put the bill into A/P (i.e. posting side effects exist)."""
+    return (status or "").strip().lower() in ("open", "paid", "partial", "overdue")
 
 
 def _coerce_item_id(row: dict) -> Optional[int]:
@@ -1001,7 +1036,9 @@ def bills_create(request):
     bill_date = _parse_date(body.get("bill_date")) or date.today()
     due_date = _normalize_due_date(bill_date, _parse_date(body.get("due_date")))
     tax_total = _decimal(body.get("tax_amount", body.get("tax_total")))
-    status = _normalize_bill_status(body.get("status"), "draft")
+    status, status_err = _validated_bill_status(body.get("status"), "draft")
+    if status_err:
+        return JsonResponse({"detail": status_err}, status=400)
     ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
     receipt_station_id = None
     raw_rs = body.get("receipt_station_id") or body.get("station_id")
@@ -1027,6 +1064,9 @@ def bills_create(request):
     )
     if parse_err:
         return parse_err
+    truck_amount, truck_err = apply_bill_truck_transport(parsed_lines, vendor, bill_date, body)
+    if truck_err:
+        return truck_err
     item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
         request.company_id, body.get("lines")
     )
@@ -1071,6 +1111,7 @@ def bills_create(request):
                 subtotal=_decimal(body.get("subtotal")),
                 tax_total=tax_total,
                 total=_decimal(body.get("total_amount", body.get("total"))),
+                truck_transport_amount=truck_amount,
             )
             b.save()
             assign_auto_production_cycles_for_parsed_bill_lines(request.company_id, b, parsed_lines)
@@ -1140,6 +1181,8 @@ def bills_create(request):
             },
             status=409,
         )
+    if uses_purchase_terms(vendor):
+        sync_monthly_scheme_reserve(request.company_id, vendor, bill_date)
     return JsonResponse(_bill_to_json(b), status=201)
 
 
@@ -1224,8 +1267,12 @@ def bill_detail(request, bill_id: int):
         if "memo" in body:
             b.memo = (body.get("memo") or "")[:5000]
         b.tax_total = _decimal(body.get("tax_amount", body.get("tax_total")), b.tax_total)
+        old_bill_status = b.status
         if "status" in body:
-            b.status = _normalize_bill_status(body.get("status"), b.status)
+            new_bill_status, status_err = _validated_bill_status(body.get("status"), b.status)
+            if status_err:
+                return JsonResponse({"detail": status_err}, status=400)
+            b.status = new_bill_status
         ack_tank_overfill = _acknowledge_tank_overfill_from_body(body)
         lines_in_body = "lines" in body
         material_bill = body_has_material_bill_change(body, lines_changed=lines_in_body)
@@ -1241,6 +1288,12 @@ def bill_detail(request, bill_id: int):
             )
             if parse_err:
                 return parse_err
+            truck_amount, truck_err = apply_bill_truck_transport(
+                parsed_lines, vendor_for_lines, b.bill_date, body
+            )
+            if truck_err:
+                return truck_err
+            b.truck_transport_amount = truck_amount
             item_catalog_updates, catalog_err = parse_bill_line_item_catalog_updates(
                 request.company_id, body.get("lines")
             )
@@ -1329,6 +1382,13 @@ def bill_detail(request, bill_id: int):
                 )
                 if (b.status or "").strip().lower() == "void":
                     cleanup_vendor_bill_posting_effects(request.company_id, b)
+                elif (b.status or "").strip().lower() == "draft" and _bill_status_was_posted(
+                    old_bill_status
+                ):
+                    # Moving a posted bill back to draft is an un-post. The journal, the vendor
+                    # A/P bump and the stock receipt all have to come back off, or the A/P
+                    # subledger (which excludes drafts) silently stops matching GL 2000.
+                    cleanup_vendor_bill_posting_effects(request.company_id, b)
                 elif bill_eligible_for_posting(b):
                     if material_bill:
                         reconcile_bill_after_material_edit(
@@ -1372,6 +1432,8 @@ def bill_detail(request, bill_id: int):
             return JsonResponse({"detail": e.detail}, status=400)
         except StockBusinessError as e:
             return JsonResponse({"detail": e.detail}, status=400)
+        if vendor_for_limit and uses_purchase_terms(vendor_for_limit):
+            sync_monthly_scheme_reserve(request.company_id, vendor_for_limit, b.bill_date)
         return JsonResponse(_bill_to_json(b))
     if request.method == "DELETE":
         paid = _amount_paid(b)
@@ -1389,6 +1451,11 @@ def bill_detail(request, bill_id: int):
             cleanup_vendor_bill_posting_effects(request.company_id, b)
         except GlPostingError as e:
             return JsonResponse({"detail": e.detail}, status=409)
+        mill_vendor = b.vendor if uses_purchase_terms(getattr(b, "vendor", None)) else None
+        mill_date = b.bill_date
+        mill_company = request.company_id
         b.delete()
+        if mill_vendor:
+            sync_monthly_scheme_reserve(mill_company, mill_vendor, mill_date)
         return HttpResponse(status=204)
     return JsonResponse({"detail": "Method not allowed"}, status=405)

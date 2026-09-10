@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
-from api.models import Item, VendorCredit
+from api.models import Item, VendorCredit, VendorSchemeReserve
 
 
 def _vendor(api_client, headers, **extra) -> dict:
@@ -210,3 +211,242 @@ def test_purchase_terms_endpoint(api_client, company_tenant, auth_admin_headers)
     assert data["uses_purchase_terms"] is True
     assert data["square_off_date"] == "2027-01-01"
     assert Decimal(data["credit_limit"]) == Decimal("50000.00")
+
+
+def _mill_sack_line(item_id: int) -> dict:
+    return {"item_id": item_id, "quantity": "200", "mrp": "1900"}
+
+
+@pytest.mark.django_db
+def test_mill_bill_applies_only_filled_instant_percent(api_client, company_tenant, auth_admin_headers):
+    """Blank transport / scheme fields are skipped; only the filled instant % applies."""
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Instant only mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="draft")
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    # 200 × 1900 = 380000; 5.5% = 20900; no transport
+    assert Decimal(bill["total"]) == Decimal("359100.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_truck_transport_is_once_per_bill(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Truck mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="draft")
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    line = bill["lines"][0]
+    # 380000 − 5.5% − 950 truck (once, not × 200)
+    assert Decimal(line["instant_discount_amount"]) == Decimal("20900.00")
+    assert Decimal(line["transport_amount"]) == Decimal("950.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("950.00")
+    assert Decimal(bill["total"]) == Decimal("358150.00")
+
+
+@pytest.mark.django_db
+def test_bill_may_skip_rate_card_truck_with_explicit_zero(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Override mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="draft",
+        extra={"truck_transport_amount": "0"},
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    assert Decimal(bill["total"]) == Decimal("359100.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_monthly_scheme_is_reserved_not_payable_credit(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Reserve mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+            "monthly_rebate_percent": "3",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    today = date.today().isoformat()
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="open",
+        extra={"bill_date": today},
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    assert Decimal(bill["total"]) == Decimal("358150.00")
+    terms = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
+    assert Decimal(terms["used"]) == Decimal("358150.00")
+    assert Decimal(terms["scheme"]["monthly_reserved"]) == Decimal("11400.00")
+    assert terms["scheme"]["monthly_is_reserve"] is True
+    assert VendorSchemeReserve.objects.filter(vendor_id=v["id"]).count() == 1
+    assert VendorCredit.objects.filter(vendor_id=v["id"]).count() == 0
+
+
+@pytest.mark.django_db
+def test_yearly_scheme_blocked_before_square_off(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Early yearly mill",
+        supplier_category="feed",
+        credit_start_date="2026-03-15",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "yearly_rebate_percent": "2.5",
+            "yearly_target_tons": "5",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="open")
+    assert r.status_code == 201, r.content.decode()
+    cr = api_client.post(
+        f"/api/vendors/{v['id']}/yearly-scheme/",
+        data=json.dumps({"credit_date": "2026-08-20"}),
+        content_type="application/json",
+        **h,
+    )
+    assert cr.status_code == 400, cr.content.decode()
+
+
+@pytest.mark.django_db
+def test_yearly_scheme_blocked_when_target_missed(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Missed target mill",
+        supplier_category="feed",
+        credit_start_date="2025-03-15",
+        square_off_date="2026-03-15",
+        rate_card={
+            "effective_from": "2025-01-01",
+            "instant_discount_percent": "5.5",
+            "yearly_rebate_percent": "2.5",
+            "yearly_target_tons": "500",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="open",
+        extra={"bill_date": "2025-08-20"},
+    )
+    assert r.status_code == 201, r.content.decode()
+    cr = api_client.post(
+        f"/api/vendors/{v['id']}/yearly-scheme/",
+        data=json.dumps({"credit_date": "2026-03-15"}),
+        content_type="application/json",
+        **h,
+    )
+    assert cr.status_code == 400, cr.content.decode()
+    assert b"target" in cr.content.lower()
+
+
+@pytest.mark.django_db
+def test_yearly_scheme_credits_at_square_off_when_target_met(
+    api_client, company_tenant, auth_admin_headers
+):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Yearly mill",
+        supplier_category="feed",
+        opening_balance="0",
+        opening_balance_date="2025-03-15",
+        credit_start_date="2025-03-15",
+        square_off_date="2026-03-15",
+        rate_card={
+            "effective_from": "2025-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+            "yearly_rebate_percent": "2.5",
+            "yearly_target_tons": "5",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="open",
+        extra={"bill_date": "2025-08-20"},
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    payable = Decimal(bill["total"])
+    cr = api_client.post(
+        f"/api/vendors/{v['id']}/yearly-scheme/",
+        data=json.dumps({"credit_date": "2026-03-15"}),
+        content_type="application/json",
+        **h,
+    )
+    assert cr.status_code == 201, cr.content.decode()
+    credit = json.loads(cr.content)
+    # 2.5% of 380000 MRP
+    assert Decimal(credit["amount"]) == Decimal("9500.00")
+    assert credit["credit_kind"] == "yearly"
+    terms = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
+    assert Decimal(terms["used"]) == payable - Decimal("9500.00")
+    again = api_client.post(
+        f"/api/vendors/{v['id']}/yearly-scheme/",
+        data=json.dumps({"credit_date": "2026-03-15"}),
+        content_type="application/json",
+        **h,
+    )
+    assert again.status_code == 400

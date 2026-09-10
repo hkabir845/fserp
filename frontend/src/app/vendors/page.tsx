@@ -415,11 +415,12 @@ export default function VendorsPage() {
         effective_from: rateCardForm.effective_from,
         instant_discount_percent: parseFloat(rateCardForm.instant_discount_percent) || 0,
         instant_discount_per_unit: parseFloat(rateCardForm.instant_discount_per_unit) || 0,
+        transport_per_truck: parseFloat(rateCardForm.transport_per_truck) || 0,
         transport_per_unit: parseFloat(rateCardForm.transport_per_unit) || 0,
         transport_per_kg: parseFloat(rateCardForm.transport_per_kg) || 0,
         monthly_rebate_percent: parseFloat(rateCardForm.monthly_rebate_percent) || 0,
         yearly_rebate_percent: parseFloat(rateCardForm.yearly_rebate_percent) || 0,
-        yearly_target_kg: parseFloat(rateCardForm.yearly_target_kg) || 0,
+        yearly_target_kg: (parseFloat(rateCardForm.yearly_target_tons) || 0) * 1000,
       }
     }
     return payload
@@ -1211,12 +1212,23 @@ export default function VendorsPage() {
                       {purchaseTerms.scheme ? (
                         <p className="text-xs text-muted-foreground">
                           This month MRP {currencySymbol}
-                          {Number(purchaseTerms.scheme.month_mrp).toLocaleString()} · est. monthly credit{' '}
-                          {currencySymbol}
-                          {Number(purchaseTerms.scheme.estimated_monthly_credit).toLocaleString()}
-                          {' · '}YTD {Number(purchaseTerms.scheme.year_kg).toLocaleString()} kg
-                          {Number(purchaseTerms.scheme.yearly_target_kg) > 0
-                            ? ` of ${Number(purchaseTerms.scheme.yearly_target_kg).toLocaleString()} kg target`
+                          {Number(purchaseTerms.scheme.month_mrp).toLocaleString()}
+                          {Number(purchaseTerms.scheme.monthly_rebate_percent) > 0
+                            ? ` · monthly reserved ${currencySymbol}${Number(
+                                purchaseTerms.scheme.monthly_reserved ||
+                                  purchaseTerms.scheme.estimated_monthly_credit
+                              ).toLocaleString()} (not A/P)`
+                            : ''}
+                          {' · '}YTD {Number(purchaseTerms.scheme.year_tons || 0).toLocaleString()} tons
+                          {Number(purchaseTerms.scheme.yearly_target_tons || 0) > 0
+                            ? ` of ${Number(purchaseTerms.scheme.yearly_target_tons).toLocaleString()} ton target`
+                            : ''}
+                          {Number(purchaseTerms.scheme.yearly_rebate_percent) > 0
+                            ? purchaseTerms.scheme.yearly_target_reached
+                              ? ` · yearly ${purchaseTerms.scheme.yearly_rebate_percent}% est. ${currencySymbol}${Number(
+                                  purchaseTerms.scheme.estimated_yearly_credit
+                                ).toLocaleString()}`
+                              : ' · yearly target not yet reached'
                             : ''}
                         </p>
                       ) : null}
@@ -1235,9 +1247,9 @@ export default function VendorsPage() {
                           onChange={(e) => setMillCreditKind(e.target.value)}
                           className="erp-field"
                         >
-                          <option value="manual">Manual</option>
-                          <option value="monthly">Monthly scheme</option>
-                          <option value="yearly">Yearly scheme</option>
+                          <option value="manual">Manual (posts to payable)</option>
+                          <option value="yearly">Yearly scheme (posts to payable)</option>
+                          <option value="monthly">Monthly (posts to payable — only if this mill credits monthly)</option>
                         </select>
                         <input
                           type="text"
@@ -1273,6 +1285,31 @@ export default function VendorsPage() {
                         >
                           Record mill account credit
                         </button>
+                        {Number(purchaseTerms.scheme?.yearly_rebate_percent) > 0 ? (
+                          <button
+                            type="button"
+                            className="col-span-2 text-sm px-3 py-2 rounded-md border border-emerald-700 text-emerald-800 hover:bg-emerald-50"
+                            onClick={async () => {
+                              try {
+                                await api.post(`/vendors/${editingVendor.id}/yearly-scheme/`, {
+                                  memo: millCreditMemo,
+                                })
+                                toast.success('Yearly scheme credited to the mill account.')
+                                void loadPurchaseTerms(editingVendor.id)
+                                void fetchVendors()
+                              } catch (err) {
+                                toast.error(
+                                  extractErrorMessage(
+                                    err,
+                                    'Yearly scheme could not be posted (target, square-off date, or already credited).'
+                                  )
+                                )
+                              }
+                            }}
+                          >
+                            Post yearly scheme at square-off
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}

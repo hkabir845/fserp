@@ -3,10 +3,12 @@
 Vendor types (supplier_category) classify every supplier. Mill dealer schemes
 (instant MRP discount, transport deduction, volume rebates, credit limit) apply
 to Feed and Medicine. Other types keep ordinary vendor-bill behaviour.
+
+Every rate-card field is optional. Blank/zero means that mill does not use the
+term; the bill is priced from whatever the clerk actually filled in.
 """
 from __future__ import annotations
 
-import calendar
 import calendar
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -16,6 +18,7 @@ from django.db import transaction
 from django.db.models import F
 from django.http import JsonResponse
 
+from api.exceptions import GlPostingError
 from api.models import (
     Bill,
     BillLine,
@@ -26,6 +29,7 @@ from api.models import (
     Vendor,
     VendorCredit,
     VendorRateCard,
+    VendorSchemeReserve,
 )
 from api.services.gl_posting import (
     CODE_AP,
@@ -216,11 +220,13 @@ def rate_card_to_json(card: Optional[VendorRateCard]) -> Optional[dict[str, Any]
         "effective_to": card.effective_to.isoformat() if card.effective_to else None,
         "instant_discount_percent": str(_q(card.instant_discount_percent, _Q4)),
         "instant_discount_per_unit": str(_q(card.instant_discount_per_unit, _Q4)),
+        "transport_per_truck": str(_q(card.transport_per_truck, _Q4)),
         "transport_per_unit": str(_q(card.transport_per_unit, _Q4)),
         "transport_per_kg": str(_q(card.transport_per_kg, _Q4)),
         "monthly_rebate_percent": str(_q(card.monthly_rebate_percent, _Q4)),
         "yearly_rebate_percent": str(_q(card.yearly_rebate_percent, _Q4)),
         "yearly_target_kg": str(_q(card.yearly_target_kg, _Q4)),
+        "yearly_target_tons": str(_q(_q(card.yearly_target_kg, _Q4) / Decimal("1000"), _Q4)),
         "is_active": bool(card.is_active),
     }
 
@@ -250,6 +256,7 @@ def apply_rate_card_to_line(
     instant = _q(gross * _q(card.instant_discount_percent, _Q4) / Decimal("100"))
     instant += _q(qty * _q(card.instant_discount_per_unit, _Q4))
     kg = line_weight_kg(qty, item)
+    # Per-unit / per-kg only. Per-truck is applied once on the bill, not multiplied by qty.
     transport = _q(qty * _q(card.transport_per_unit, _Q4))
     transport += _q(kg * _q(card.transport_per_kg, _Q4))
     net = _q(gross - instant - transport)
@@ -340,6 +347,91 @@ def split_purchase_term_amounts(pl: dict, portion: Decimal, original_amount: Dec
             pl[key] = _q(_q(raw) * ratio)
 
 
+def resolve_truck_transport_amount(
+    vendor: Optional[Vendor],
+    bill_date: Optional[date],
+    body: Optional[dict],
+) -> Decimal:
+    """Per-bill truck transport: explicit body value wins; else the rate card; else 0."""
+    body = body or {}
+    if "truck_transport_amount" in body and body.get("truck_transport_amount") not in (None, ""):
+        val = _q(body.get("truck_transport_amount"))
+        return val if val > 0 else Decimal("0.00")
+    card = active_rate_card(vendor, bill_date) if vendor else None
+    if not card:
+        return Decimal("0.00")
+    val = _q(card.transport_per_truck, _Q4)
+    return val if val > 0 else Decimal("0.00")
+
+
+def _reprice_line_without_truck(
+    pl: dict,
+    card: Optional[VendorRateCard],
+    item: Optional[Item],
+) -> None:
+    qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+    mrp = _q(pl.get("mrp"))
+    if mrp <= 0 or qty <= 0:
+        return
+    gross = _q(qty * mrp)
+    instant = _q(pl.get("instant_discount_amount"))
+    transport = Decimal("0.00")
+    if card:
+        priced = apply_rate_card_to_line(quantity=qty, mrp_unit=mrp, card=card, item=item)
+        transport = priced["transport_amount"]
+    net = _q(gross - instant - transport)
+    if net < 0:
+        net = Decimal("0.00")
+    pl["transport_amount"] = transport
+    pl["amount"] = net
+    pl["unit_price"] = _q(net / qty)
+
+
+def apply_bill_truck_transport(
+    parsed_lines: list[dict],
+    vendor: Optional[Vendor],
+    bill_date: Optional[date],
+    body: Optional[dict],
+) -> tuple[Decimal, Optional[JsonResponse]]:
+    """Deduct per-truck transport once across MRP lines. No-op when the mill left it blank."""
+    truck = resolve_truck_transport_amount(vendor, bill_date, body)
+    if truck <= 0 or not parsed_lines:
+        return Decimal("0.00"), None
+    mrp_indexes = [i for i, pl in enumerate(parsed_lines) if _q(pl.get("mrp")) > 0]
+    if not mrp_indexes:
+        return Decimal("0.00"), None
+    card = active_rate_card(vendor, bill_date) if vendor else None
+    item_ids = [parsed_lines[i].get("item_id") for i in mrp_indexes if parsed_lines[i].get("item_id")]
+    items = {it.id: it for it in Item.objects.filter(pk__in=item_ids)} if item_ids else {}
+    weights: list[Decimal] = []
+    for i in mrp_indexes:
+        pl = parsed_lines[i]
+        item = items.get(pl.get("item_id")) if pl.get("item_id") else None
+        _reprice_line_without_truck(pl, card, item)
+        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+        gross = _q(qty * _q(pl.get("mrp")))
+        weights.append(gross if gross > 0 else Decimal("0.01"))
+    total_w = sum(weights) or Decimal("0.01")
+    remaining = truck
+    for n, i in enumerate(mrp_indexes):
+        share = remaining if n == len(mrp_indexes) - 1 else _q(truck * weights[n] / total_w)
+        remaining = _q(remaining - share)
+        pl = parsed_lines[i]
+        pl["transport_amount"] = _q(_q(pl.get("transport_amount")) + share)
+        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+        mrp = _q(pl.get("mrp"))
+        gross = _q(qty * mrp)
+        net = _q(gross - _q(pl.get("instant_discount_amount")) - _q(pl.get("transport_amount")))
+        if net < 0:
+            return Decimal("0.00"), JsonResponse(
+                {"detail": "Instant discount plus transport cannot exceed qty × MRP."},
+                status=400,
+            )
+        pl["amount"] = net
+        pl["unit_price"] = _q(net / qty) if qty > 0 else Decimal("0.00")
+    return truck, None
+
+
 def evaluate_bill_credit_limit(
     company_id: int,
     vendor: Vendor,
@@ -428,9 +520,15 @@ def upsert_rate_card_from_body(vendor: Vendor, body: dict) -> tuple[Optional[Ven
     )
     if "effective_to" in raw:
         card.effective_to = _parse_date(raw.get("effective_to"))
+    if "yearly_target_tons" in raw and "yearly_target_kg" not in raw:
+        tons = _q(raw.get("yearly_target_tons"), _Q4)
+        if tons < 0:
+            return None, "yearly_target_tons cannot be negative"
+        raw = {**raw, "yearly_target_kg": tons * Decimal("1000")}
     for fname in (
         "instant_discount_percent",
         "instant_discount_per_unit",
+        "transport_per_truck",
         "transport_per_unit",
         "transport_per_kg",
         "monthly_rebate_percent",
@@ -468,7 +566,34 @@ def _credit_year_bounds(vendor: Vendor, as_of: date) -> tuple[date, date]:
     return window_start, last
 
 
-def scheme_progress(company_id: int, vendor: Vendor, as_of: Optional[date] = None) -> dict[str, Any]:
+def closed_credit_year(vendor: Vendor, as_of: date) -> Optional[tuple[date, date]]:
+    """Credit year whose square-off date is on or before as_of, or None if none has closed yet."""
+    start = vendor.credit_start_date
+    if not start:
+        if as_of.month == 12 and as_of.day == 31:
+            return date(as_of.year, 1, 1), as_of
+        if as_of.year > 1:
+            return date(as_of.year - 1, 1, 1), date(as_of.year - 1, 12, 31)
+        return None
+    ws = start
+    we = effective_square_off_date(vendor) or _add_years(start, 1)
+    last_closed: Optional[tuple[date, date]] = None
+    guard = 0
+    while we <= as_of and guard < 40:
+        last_closed = (ws, we - timedelta(days=1) if we > ws else we)
+        ws = we
+        we = _add_years(ws, 1)
+        guard += 1
+    return last_closed
+
+
+def scheme_progress(
+    company_id: int,
+    vendor: Vendor,
+    as_of: Optional[date] = None,
+    *,
+    _skip_closed_eligibility: bool = False,
+) -> dict[str, Any]:
     as_of = as_of or date.today()
     month_start = as_of.replace(day=1)
     month_end = date(as_of.year, as_of.month, calendar.monthrange(as_of.year, as_of.month)[1])
@@ -505,6 +630,57 @@ def scheme_progress(company_id: int, vendor: Vendor, as_of: Optional[date] = Non
     if yearly_pct > 0 and (target <= 0 or year_kg + Decimal("0.00005") >= target):
         yearly_est = _q(year_mrp * yearly_pct / Decimal("100"))
         yearly_earned = target <= 0 or year_kg >= target
+    month_period = as_of.strftime("%Y-%m")
+    reserved_row = (
+        VendorSchemeReserve.objects.filter(
+            company_id=company_id,
+            vendor_id=vendor.id,
+            credit_kind=VendorSchemeReserve.KIND_MONTHLY,
+            period_label=month_period,
+        ).first()
+        if monthly_pct > 0
+        else None
+    )
+    monthly_reserved = _q(reserved_row.amount) if reserved_row else monthly_est
+    year_start_s = year_start.isoformat()
+    yearly_posted = VendorCredit.objects.filter(
+        company_id=company_id,
+        vendor_id=vendor.id,
+        credit_kind=VendorCredit.KIND_YEARLY,
+        period_label=year_start_s,
+    ).exists()
+    closed = closed_credit_year(vendor, as_of)
+    can_post_yearly = bool(
+        closed
+        and yearly_pct > 0
+        and yearly_earned
+        and yearly_est > 0
+        and not yearly_posted
+        and closed[0] == year_start
+    )
+    # On/after square-off, this as_of is already in the next year; eligibility uses the closed year.
+    if (
+        not _skip_closed_eligibility
+        and closed
+        and not can_post_yearly
+        and yearly_pct > 0
+        and closed[0] != year_start
+    ):
+        closed_start, closed_end = closed
+        closed_posted = VendorCredit.objects.filter(
+            company_id=company_id,
+            vendor_id=vendor.id,
+            credit_kind=VendorCredit.KIND_YEARLY,
+            period_label=closed_start.isoformat(),
+        ).exists()
+        nested = scheme_progress(
+            company_id, vendor, closed_end, _skip_closed_eligibility=True
+        )
+        can_post_yearly = bool(
+            not closed_posted
+            and nested.get("yearly_target_reached")
+            and _q(nested.get("estimated_yearly_credit")) > 0
+        )
     return {
         "as_of": as_of.isoformat(),
         "month_start": month_start.isoformat(),
@@ -514,12 +690,18 @@ def scheme_progress(company_id: int, vendor: Vendor, as_of: Optional[date] = Non
         "month_mrp": str(_q(month_mrp)),
         "year_mrp": str(_q(year_mrp)),
         "year_kg": str(_q(year_kg, _Q4)),
+        "year_tons": str(_q(year_kg / Decimal("1000"), _Q4)),
         "yearly_target_kg": str(target),
+        "yearly_target_tons": str(_q(target / Decimal("1000"), _Q4)),
         "monthly_rebate_percent": str(monthly_pct),
         "yearly_rebate_percent": str(yearly_pct),
         "estimated_monthly_credit": str(monthly_est),
+        "monthly_reserved": str(monthly_reserved),
+        "monthly_is_reserve": True,
         "estimated_yearly_credit": str(yearly_est),
         "yearly_target_reached": yearly_earned,
+        "yearly_credit_posted": yearly_posted,
+        "can_post_yearly": can_post_yearly,
     }
 
 
@@ -531,12 +713,126 @@ def purchase_terms_payload(company_id: int, vendor: Vendor, as_of: Optional[date
         vendor_credit_to_json(c)
         for c in VendorCredit.objects.filter(company_id=company_id, vendor_id=vendor.id)[:25]
     ]
+    reserves = [
+        {
+            "id": r.id,
+            "credit_kind": r.credit_kind,
+            "period_label": r.period_label,
+            "amount": str(_q(r.amount)),
+            "mrp_base_amount": str(_q(r.mrp_base_amount)),
+            "percent_applied": str(_q(r.percent_applied, _Q4)),
+        }
+        for r in VendorSchemeReserve.objects.filter(company_id=company_id, vendor_id=vendor.id)[:24]
+    ]
     return {
         **snap,
         "rate_card": rate_card_to_json(card),
         "scheme": scheme_progress(company_id, vendor, as_of) if uses_purchase_terms(vendor) else None,
         "recent_credits": credits,
+        "recent_reserves": reserves,
     }
+
+
+def sync_monthly_scheme_reserve(
+    company_id: int,
+    vendor: Vendor,
+    as_of: Optional[date] = None,
+) -> Optional[VendorSchemeReserve]:
+    """Track monthly % of MRP as a reserve. Does not reduce A/P. No-op if monthly % was left blank."""
+    if not uses_purchase_terms(vendor):
+        return None
+    as_of = as_of or date.today()
+    card = active_rate_card(vendor, as_of)
+    pct = _q(card.monthly_rebate_percent, _Q4) if card else Decimal("0")
+    if pct <= 0:
+        return None
+    prog = scheme_progress(company_id, vendor, as_of, _skip_closed_eligibility=True)
+    period = as_of.strftime("%Y-%m")
+    amount = _q(prog.get("estimated_monthly_credit"))
+    row, _created = VendorSchemeReserve.objects.update_or_create(
+        company_id=company_id,
+        vendor=vendor,
+        credit_kind=VendorSchemeReserve.KIND_MONTHLY,
+        period_label=period,
+        defaults={
+            "amount": amount,
+            "mrp_base_amount": _q(prog.get("month_mrp")),
+            "percent_applied": pct,
+            "as_of": as_of,
+            "memo": f"{pct}% of MRP reserved (not credited to A/P)",
+        },
+    )
+    return row
+
+
+def apply_yearly_scheme_credit(
+    company_id: int,
+    vendor: Vendor,
+    body: Optional[dict] = None,
+) -> tuple[Optional[VendorCredit], Optional[JsonResponse]]:
+    """Credit yearly % of MRP at square-off if the (optional) tonnage target was met."""
+    body = body or {}
+    as_of = _parse_date(body.get("credit_date")) or date.today()
+    closed = closed_credit_year(vendor, as_of)
+    if closed is None:
+        return None, JsonResponse(
+            {
+                "detail": (
+                    "Yearly mill credit posts on or after square-off (the credit-year end). "
+                    "That date has not been reached."
+                )
+            },
+            status=400,
+        )
+    year_start, year_end = closed
+    prog = scheme_progress(company_id, vendor, year_end, _skip_closed_eligibility=True)
+    pct = _q(prog.get("yearly_rebate_percent"), _Q4)
+    if pct <= 0:
+        return None, JsonResponse(
+            {"detail": "This mill has no yearly scheme percent on the rate card."},
+            status=400,
+        )
+    if not prog.get("yearly_target_reached"):
+        return None, JsonResponse(
+            {
+                "detail": (
+                    "Yearly tonnage target was not reached; no mill account credit is due. "
+                    "Leave the target blank if this mill has no volume gate."
+                )
+            },
+            status=400,
+        )
+    amount = _q(prog.get("estimated_yearly_credit"))
+    if amount <= 0:
+        return None, JsonResponse(
+            {"detail": "No yearly scheme amount to credit (no MRP in the credit year)."},
+            status=400,
+        )
+    period = year_start.isoformat()
+    if VendorCredit.objects.filter(
+        company_id=company_id,
+        vendor_id=vendor.id,
+        credit_kind=VendorCredit.KIND_YEARLY,
+        period_label=period,
+    ).exists():
+        return None, JsonResponse(
+            {"detail": "Yearly scheme already credited for this credit year."},
+            status=400,
+        )
+    memo = (body.get("memo") or f"Yearly {pct}% of MRP (target met)").strip()[:500]
+    return create_vendor_credit(
+        company_id,
+        vendor,
+        {
+            "amount": str(amount),
+            "credit_kind": VendorCredit.KIND_YEARLY,
+            "period_label": period,
+            "mrp_base_amount": prog.get("year_mrp"),
+            "percent_applied": str(pct),
+            "credit_date": as_of.isoformat(),
+            "memo": memo,
+        },
+    )
 
 
 def vendor_list_purchase_fields(company_id: int, vendor: Vendor, balance: Decimal) -> dict[str, Any]:
@@ -573,7 +869,10 @@ def vendor_credit_to_json(c: VendorCredit) -> dict[str, Any]:
 
 def _post_vendor_credit_journal(company_id: int, credit: VendorCredit) -> Optional[JournalEntry]:
     ap = _ensure_core_posting_account(company_id, CODE_AP)
-    income = _coa(company_id, CODE_REBATE_INCOME) or _coa(company_id, CODE_OTHER_REV)
+    income = (
+        _coa(company_id, CODE_REBATE_INCOME)
+        or _ensure_core_posting_account(company_id, CODE_OTHER_REV)
+    )
     if not ap or not income:
         return None
     entry_number = f"AUTO-VCRED-{credit.id}"
@@ -609,16 +908,31 @@ def create_vendor_credit(company_id: int, vendor: Vendor, body: dict) -> tuple[O
         percent_applied=_q(body.get("percent_applied"), _Q4),
         memo=(body.get("memo") or "")[:500],
     )
-    credit.save()
-    je = _post_vendor_credit_journal(company_id, credit)
-    with transaction.atomic():
-        row = VendorCredit.objects.select_for_update().filter(pk=credit.pk).first()
-        if row and not row.vendor_ap_decremented:
-            Vendor.objects.filter(pk=vendor.id).update(current_balance=F("current_balance") - amount)
-            VendorCredit.objects.filter(pk=row.pk).update(
-                vendor_ap_decremented=True,
-                journal_id=je.id if je else None,
-            )
+    # The credit row, its journal and the A/P decrement are one operation. Previously the row
+    # was saved and A/P was reduced even when _post_vendor_credit_journal returned None (a
+    # missing 2000 or rebate-income account), so the vendor balance fell with nothing behind it
+    # in the ledger — a pure subledger-vs-GL divergence with no error shown.
+    try:
+        with transaction.atomic():
+            credit.save()
+            je = _post_vendor_credit_journal(company_id, credit)
+            if je is None:
+                raise GlPostingError(
+                    "G/L: The supplier credit could not be posted. Check that Accounts Payable "
+                    "(%s) and a rebate / other income account (%s or %s) exist and are active."
+                    % (CODE_AP, CODE_REBATE_INCOME, CODE_OTHER_REV)
+                )
+            row = VendorCredit.objects.select_for_update().filter(pk=credit.pk).first()
+            if row and not row.vendor_ap_decremented:
+                Vendor.objects.filter(pk=vendor.id).update(
+                    current_balance=F("current_balance") - amount
+                )
+                VendorCredit.objects.filter(pk=row.pk).update(
+                    vendor_ap_decremented=True,
+                    journal_id=je.id,
+                )
+    except GlPostingError as e:
+        return None, JsonResponse({"detail": e.detail}, status=400)
     refresh_vendor_balance(company_id, vendor.id)
     credit.refresh_from_db()
     return credit, None

@@ -998,6 +998,12 @@ class VendorRateCard(models.Model):
     effective_to = models.DateField(null=True, blank=True)
     instant_discount_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
     instant_discount_per_unit = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    transport_per_truck = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        default=0,
+        help_text="Transport deducted once per bill/truck. 0 = this mill does not use per-truck transport.",
+    )
     transport_per_unit = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     transport_per_kg = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     monthly_rebate_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
@@ -1050,6 +1056,35 @@ class VendorCredit(models.Model):
     class Meta:
         db_table = "vendor_credit"
         ordering = ["-credit_date", "-id"]
+
+
+class VendorSchemeReserve(models.Model):
+    """Monthly mill scheme held in the mill's favour. Does not reduce A/P unless posted as VendorCredit."""
+
+    KIND_MONTHLY = "monthly"
+    KIND_CHOICES = ((KIND_MONTHLY, "Monthly scheme reserve"),)
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="vendor_scheme_reserves")
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="scheme_reserves")
+    credit_kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_MONTHLY)
+    period_label = models.CharField(max_length=32)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    mrp_base_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    percent_applied = models.DecimalField(max_digits=8, decimal_places=4, default=0)
+    as_of = models.DateField()
+    memo = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "vendor_scheme_reserve"
+        ordering = ["-period_label", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "vendor", "credit_kind", "period_label"],
+                name="uniq_vendor_scheme_reserve_period",
+            ),
+        ]
 
 
 class Employee(models.Model):
@@ -1709,6 +1744,12 @@ class Bill(models.Model):
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     tax_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    truck_transport_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Per-bill/truck transport deducted from mill MRP bills. 0 = not used on this bill.",
+    )
     stock_receipt_applied = models.BooleanField(
         default=False,
         help_text="Set when inventory receipt from this bill has been applied (tank + QOH).",

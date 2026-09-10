@@ -180,6 +180,19 @@ def test_all_sites_pl_folds_capitalized_feed_into_expenses(company_tenant):
     assert "AQ-INC-fish_harvest_sale" in inc_codes
     assert Decimal(str(pl["expenses"]["total"])) >= Decimal("9000.00")
     assert Decimal(str(pl["income"]["total"])) >= Decimal("7500.00")
+    # Every register expense category with activity is in the Expenses total (not only capitalized).
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_date=date(2026, 6, 5),
+        expense_category="fisherman",
+        amount=Decimal("500.00"),
+    )
+    pl2 = report_income_statement(cid, start, end)
+    assert "AQ-EXP-fisherman" in {
+        a.get("account_code") for a in (pl2.get("expenses") or {}).get("accounts") or []
+    }
+    assert Decimal(str(pl2["expenses"]["total"])) >= Decimal("9500.00")
 
 
 @pytest.mark.django_db
@@ -291,15 +304,17 @@ def test_fisherman_vendor_bills_are_period_expenses_on_all_entities_pl(
 
     start, end = date(2026, 5, 1), date(2026, 5, 31)
     pl = report_income_statement(cid, start, end)
-    gl_6719 = next(
+    # All-sites P&L lists fisherman via the aquaculture register (not duplicate GL 6719).
+    aq_fisherman = next(
         (
             Decimal(str(a["balance"]))
             for a in pl["expenses"]["accounts"]
-            if a.get("account_code") == "6719"
+            if a.get("account_code") == "AQ-EXP-fisherman"
         ),
         Decimal("0"),
     )
-    assert gl_6719 == Decimal("4200.00")
+    assert aq_fisherman == Decimal("4200.00")
+    assert not any(a.get("account_code") == "6719" for a in pl["expenses"]["accounts"])
     mgmt = pl.get("aquaculture_management") or {}
     exp_cats = {r["category"]: Decimal(str(r["amount"])) for r in (mgmt.get("expenses_by_category") or [])}
     assert exp_cats.get("fisherman", 0) == Decimal("4200.00")
@@ -312,15 +327,15 @@ def test_fisherman_vendor_bills_are_period_expenses_on_all_entities_pl(
     assert ent_cats.get("fisherman", 0) == Decimal("4200.00")
 
     exp_detail = report_expense_detail(cid, start, end)
-    ed_6719 = next(
+    ed_fisherman = next(
         (
             Decimal(str(a["balance"]))
             for a in (exp_detail.get("expenses") or {}).get("accounts") or []
-            if a.get("account_code") == "6719"
+            if a.get("account_code") == "AQ-EXP-fisherman"
         ),
         Decimal("0"),
     )
-    assert ed_6719 == Decimal("4200.00")
+    assert ed_fisherman == Decimal("4200.00")
     ed_cats = {
         r["category"]: Decimal(str(r["amount"]))
         for r in ((exp_detail.get("aquaculture_management") or {}).get("expenses_by_category") or [])

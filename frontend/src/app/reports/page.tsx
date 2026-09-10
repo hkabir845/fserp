@@ -6105,9 +6105,9 @@ function renderReportTable(
 
         {data.includes_aquaculture_register ? (
           <p className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950">
-            All sites: aquaculture register categories are included in the Income and Expenses lists below
-            (codes starting with AQ-). Capitalized pond inputs (feed, medicine, etc.) are added into Expenses
-            so they appear before harvest COGS.
+            All sites P&L includes <span className="font-medium">every income and every expense</span>:
+            fuel/shop/head-office GL accounts plus every aquaculture category (AQ-INC-* / AQ-EXP-*).
+            Each amount is listed once.
           </p>
         ) : null}
 

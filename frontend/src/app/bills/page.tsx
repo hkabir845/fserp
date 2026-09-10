@@ -487,9 +487,8 @@ function millTermsBanner(
       {vendorPurchaseTerms.uses_purchase_terms ? (
         <>
           <p className="text-muted-foreground">
-            Feed/medicine mill policy: apply instant % of MRP and variable transport (% and/or ৳) on this
-            bill. Monthly/yearly commissions post later via Post monthly / yearly scheme on the vendor —
-            not as a bank payment.
+            Instant % of MRP and transport fixed per lorry apply on this bill. Monthly / yearly commission %
+            are set in Mill terms and posted later from the vendor (not bank cash).
           </p>
           <div className="flex flex-wrap items-end gap-2 pt-1">
             <button
@@ -497,10 +496,10 @@ function millTermsBanner(
               className="rounded-md bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800"
               onClick={opts.onOpenMillTerms}
             >
-              Apply mill terms…
+              Mill terms…
             </button>
             <label className="block text-xs font-medium flex-1 min-w-[10rem]">
-              Transport this truck / bill
+              Transport this lorry (fixed ৳)
               <input
                 type="number"
                 min={0}
@@ -512,6 +511,23 @@ function millTermsBanner(
               />
             </label>
           </div>
+          {vendorPurchaseTerms.rate_card &&
+          (Number(vendorPurchaseTerms.rate_card.monthly_rebate_percent) > 0 ||
+            Number(vendorPurchaseTerms.rate_card.yearly_rebate_percent) > 0) ? (
+            <p className="text-muted-foreground pt-0.5">
+              Scheme:
+              {Number(vendorPurchaseTerms.rate_card.monthly_rebate_percent) > 0
+                ? ` monthly ${vendorPurchaseTerms.rate_card.monthly_rebate_percent}% of MRP`
+                : ''}
+              {Number(vendorPurchaseTerms.rate_card.yearly_rebate_percent) > 0
+                ? ` · yearly ${vendorPurchaseTerms.rate_card.yearly_rebate_percent}%${
+                    Number(vendorPurchaseTerms.rate_card.yearly_target_tons) > 0
+                      ? ` @ ${vendorPurchaseTerms.rate_card.yearly_target_tons} tons`
+                      : ''
+                  }`
+                : ''}
+            </p>
+          ) : null}
         </>
       ) : null}
       {vendorPurchaseTerms.cash_only || Number(vendorPurchaseTerms.cash_required) > 0 ? (
@@ -1640,7 +1656,7 @@ export default function BillsPage() {
     }
   }
 
-  const applyBillMillTermsValues = (values: BillMillTermsValues) => {
+  const applyBillMillTermsValues = async (values: BillMillTermsValues) => {
     const nextCard = {
       ...(vendorPurchaseTerms?.rate_card || {}),
       instant_discount_percent: values.instant_discount_percent,
@@ -1649,6 +1665,10 @@ export default function BillsPage() {
       transport_per_truck: values.transport_per_truck,
       transport_per_unit: values.transport_per_unit,
       transport_per_kg: values.transport_per_kg,
+      monthly_rebate_percent: values.monthly_rebate_percent,
+      yearly_rebate_percent: values.yearly_rebate_percent,
+      yearly_target_tons: values.yearly_target_tons,
+      yearly_target_kg: (parseFloat(values.yearly_target_tons) || 0) * 1000,
     }
     const nextTerms: VendorPurchaseTerms = {
       ...(vendorPurchaseTerms || {
@@ -1680,7 +1700,30 @@ export default function BillsPage() {
         return applyMillTermsToLine(line, item, nextTerms)
       }),
     }))
-    toast.success('Mill terms applied to MRP lines on this bill.')
+
+    const vendorId = Number(formData.vendor_id) || 0
+    if (vendorId > 0) {
+      try {
+        await api.post(`/vendors/${vendorId}/rate-cards/`, {
+          effective_from:
+            nextCard.effective_from || new Date().toISOString().slice(0, 10),
+          instant_discount_percent: parseFloat(values.instant_discount_percent) || 0,
+          instant_discount_per_unit: parseFloat(values.instant_discount_per_unit) || 0,
+          transport_percent: parseFloat(values.transport_percent) || 0,
+          transport_per_truck: parseFloat(values.transport_per_truck) || 0,
+          transport_per_unit: parseFloat(values.transport_per_unit) || 0,
+          transport_per_kg: parseFloat(values.transport_per_kg) || 0,
+          monthly_rebate_percent: parseFloat(values.monthly_rebate_percent) || 0,
+          yearly_rebate_percent: parseFloat(values.yearly_rebate_percent) || 0,
+          yearly_target_kg: (parseFloat(values.yearly_target_tons) || 0) * 1000,
+        })
+        toast.success('Bill pricing applied. Monthly/yearly scheme rates saved on the mill.')
+      } catch {
+        toast.success('Bill pricing applied. Scheme rates kept for this bill only (vendor save failed).')
+      }
+    } else {
+      toast.success('Mill terms applied to MRP lines on this bill.')
+    }
   }
 
   const detectedBillPurpose = useMemo(

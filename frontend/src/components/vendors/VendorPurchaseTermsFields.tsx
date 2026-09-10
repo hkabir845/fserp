@@ -136,9 +136,9 @@ export function VendorPurchaseTermsFields({
             Commercial terms (defaults for bills)
           </h4>
           <p className="text-[11px] text-muted-foreground mb-2">
-            Examples: 5.5% instant on MRP; transport as % of MRP and/or fixed ৳; 3% monthly commission on
-            month MRP; 2.5% yearly when you reach e.g. 500 tons. Leave unused fields at 0. Override per bill
-            with <span className="font-medium text-foreground">Apply mill terms</span>.
+            Examples: 5.5% instant on MRP; transport fixed ৳ per lorry; 3% monthly commission on month MRP;
+            2.5% yearly when you reach e.g. 500 tons. Leave unused fields at 0. Override per bill with{' '}
+            <span className="font-medium text-foreground">Mill terms</span>.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 sm:col-span-1">
@@ -186,7 +186,7 @@ export function VendorPurchaseTermsFields({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium">Transport Tk / truck (once per bill)</label>
+              <label className="mb-1 block text-xs font-medium">Transport Tk / lorry (once per bill)</label>
               <input
                 type="number"
                 min={0}
@@ -194,8 +194,11 @@ export function VendorPurchaseTermsFields({
                 value={rateCard.transport_per_truck}
                 onChange={(e) => onRateCardChange({ transport_per_truck: e.target.value })}
                 className="erp-field"
-                placeholder="0 = skip"
+                placeholder="Fixed ৳ per lorry / truck"
               />
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Primary transport for mills — fixed amount per load, changeable on each bill.
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium">Transport Tk / unit (optional)</label>

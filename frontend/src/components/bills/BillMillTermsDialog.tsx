@@ -68,9 +68,8 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
             Mill terms (feed / medicine)
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Instant discount % and mill lorry share are the mill's terms. On credit they wait for
-            the mill's credit note; when the limit is full they come off the bank transfer immediately.
-            Monthly and yearly commissions are counted automatically and posted when the mill approves.
+            Instant discount % and mill lorry share apply when they send feed (same day as the bill).
+            Monthly and yearly commissions count automatically and post when the mill approves.
           </p>
         </div>
         <div className="px-4 py-3 space-y-5">

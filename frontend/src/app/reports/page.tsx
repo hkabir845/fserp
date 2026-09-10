@@ -125,7 +125,11 @@ import { AquacultureFeedMedicineConsumptionPanel } from '@/app/reports/aquacultu
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
-const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>(['sales-report', 'purchase-report'])
+const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>([
+  'sales-report',
+  'purchase-report',
+  'mill-dealer-terms',
+])
 const BUSINESS_LINE_REPORT_IDS = new Set<ReportType>([
   'sales-report',
   'purchase-report',
@@ -213,6 +217,7 @@ type ReportType =
   | 'sales-by-products'
   | 'sales-report'
   | 'purchase-report'
+  | 'mill-dealer-terms'
   | 'daily-summary'
   | 'inventory-sku-valuation'
   | 'item-master-by-category'
@@ -595,6 +600,14 @@ const reports: ReportCard[] = [
     category: 'operational'
   },
   {
+    id: 'mill-dealer-terms',
+    title: 'Mill dealer terms',
+    description:
+      'Feed/medicine mills: total discount, lorry, monthly commission, and yearly commission when the tonnage target is reached',
+    icon: ShoppingCart,
+    category: 'operational'
+  },
+  {
     id: 'fuel-sales',
     title: 'Fuel Sales Analytics',
     description: 'Sales trends and volume analysis',
@@ -930,6 +943,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'sales-by-products',
   'sales-report',
   'purchase-report',
+  'mill-dealer-terms',
   'shift-summary',
   'aquaculture-pl-management',
   'aquaculture-fish-sales',
@@ -986,6 +1000,7 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'sales-by-products',
   'sales-report',
   'purchase-report',
+  'mill-dealer-terms',
   'sales-by-nozzle',
   'meter-readings',
   'tank-dip-variance',
@@ -1072,6 +1087,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'sales-by-products',
   'sales-report',
   'purchase-report',
+  'mill-dealer-terms',
   'fuel-sales',
   'tank-inventory',
   'tank-dip-variance',
@@ -2893,6 +2909,23 @@ function ReportsPageContent() {
       renderPurchaseReportSection('Credit vendors', reportData.credit_vendors || [])
       const sum = reportData.summary || {}
       contentHTML += `<p><strong>Grand total:</strong> ${formatCurrency(sum.grand_total ?? 0)} (${sum.total_bills ?? 0} bill portions)</p>`
+    } else if (selectedReport === 'mill-dealer-terms' && Array.isArray(reportData.vendors)) {
+      contentHTML +=
+        '<h2>Mill dealer terms</h2><table><thead><tr><th>Vendor</th><th>Type</th><th style="text-align:right">Bills</th><th style="text-align:right">MRP</th><th style="text-align:right">Discount</th><th style="text-align:right">Lorry</th><th style="text-align:right">Driver fare</th><th style="text-align:right">Net</th><th style="text-align:right">Monthly</th><th style="text-align:right">Yearly</th><th>Target</th></tr></thead><tbody>'
+      reportData.vendors.forEach((r: any) => {
+        const target =
+          Number(r.yearly_target_tons || 0) > 0
+            ? `${r.year_tons} / ${r.yearly_target_tons} t`
+            : r.yearly_target_reached
+              ? 'No target'
+              : ''
+        contentHTML += `<tr><td>${escapeHtml(String(r.display_name || ''))}</td><td>${escapeHtml(String(r.supplier_category_label || ''))}</td><td style="text-align:right">${r.bill_count ?? 0}</td><td style="text-align:right">${formatCurrency(r.gross_mrp_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.discount_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.lorry_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.actual_lorry_fare_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.net_bill_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.monthly_commission ?? 0)}</td><td style="text-align:right">${r.yearly_target_reached ? formatCurrency(r.yearly_commission ?? 0) : '—'}</td><td>${escapeHtml(target)}</td></tr>`
+      })
+      const sum = reportData.summary || {}
+      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.gross_mrp_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.discount_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.lorry_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.actual_lorry_fare_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.net_bill_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.monthly_commission ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.yearly_commission ?? 0)}</strong></td><td></td></tr></tfoot></tbody></table>`
+      if (reportData.accounting_note) {
+        contentHTML += `<p>${escapeHtml(String(reportData.accounting_note))}</p>`
+      }
     } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
       contentHTML += '<h2>Tank Inventory</h2><table><thead><tr><th>Tank</th><th>Station</th><th>Product</th><th style="text-align:right">Capacity (L)</th><th style="text-align:right">Stock (L)</th><th style="text-align:right">Fill %</th><th>Needs Refill</th></tr></thead><tbody>'
       reportData.inventory.forEach((tank: any) => {
@@ -3266,6 +3299,14 @@ function ReportsPageContent() {
         }
         exportPurchaseSection('Cash vendors', reportData.cash_vendors || [])
         exportPurchaseSection('Credit vendors', reportData.credit_vendors || [])
+      } else if (selectedReport === 'mill-dealer-terms' && Array.isArray(reportData.vendors)) {
+        csvContent +=
+          'Vendor #,Vendor,Type,Bills,MRP,Discount,Lorry,Driver fare,Net,Monthly,Yearly,Year tons,Target tons,Target reached\n'
+        reportData.vendors.forEach((r: any) => {
+          csvContent += `${escapeCsv(r.vendor_number)},${escapeCsv(r.display_name)},${escapeCsv(r.supplier_category_label)},${r.bill_count ?? 0},${r.gross_mrp_total ?? 0},${r.discount_total ?? 0},${r.lorry_total ?? 0},${r.actual_lorry_fare_total ?? 0},${r.net_bill_total ?? 0},${r.monthly_commission ?? 0},${r.yearly_commission ?? 0},${r.year_tons ?? 0},${r.yearly_target_tons ?? 0},${r.yearly_target_reached ? 'Yes' : 'No'}\n`
+        })
+        const sum = reportData.summary || {}
+        csvContent += `\nTotals,,,${sum.vendor_count ?? ''},${sum.gross_mrp_total ?? 0},${sum.discount_total ?? 0},${sum.lorry_total ?? 0},${sum.actual_lorry_fare_total ?? 0},${sum.net_bill_total ?? 0},${sum.monthly_commission ?? 0},${sum.yearly_commission ?? 0}\n`
       } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
         csvContent += 'Tank,Station,Product,Capacity (L),Current Stock (L),Fill %,Needs Refill\n'
         reportData.inventory.forEach((tank: any) => {
@@ -8586,6 +8627,136 @@ function renderReportTable(
 
         {renderVendorTable('Cash vendors', cashRows, 'text-success')}
         {renderVendorTable('Credit vendors', creditRows, 'text-warning-foreground')}
+
+        {data.accounting_note && (
+          <p className="text-xs text-muted-foreground border-t border-border/70 pt-3">{data.accounting_note}</p>
+        )}
+      </div>
+    )
+  }
+
+  // Mill dealer terms (discount / lorry / monthly / yearly)
+  if (reportType === 'mill-dealer-terms' && data) {
+    const summary = data.summary || {}
+    const rows = Array.isArray(data.vendors) ? data.vendors : []
+    const period = data.period || {}
+    return (
+      <div className="space-y-6">
+        {salesPurchasePeriodProps ? (
+          <SalesPurchasePeriodFilter
+            dateRange={salesPurchasePeriodProps.dateRange}
+            preset={salesPurchasePeriodProps.preset}
+            onPresetChange={salesPurchasePeriodProps.onPresetChange}
+            onDateChange={salesPurchasePeriodProps.onDateChange}
+            period={period}
+            description="Discount and mill lorry from bills in this range. Monthly commission from period MRP × rate card %. Yearly shows when the tonnage target is reached."
+          />
+        ) : hasPeriod ? (
+          pf(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Mill discount, lorry, and commission totals for bills in this date range.'
+          )
+        ) : null}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Discount', amount: summary.discount_total },
+            { label: 'Mill lorry', amount: summary.lorry_total },
+            { label: 'Monthly commission', amount: summary.monthly_commission },
+            { label: 'Yearly (if target)', amount: summary.yearly_commission },
+          ].map((item) => (
+            <div key={item.label} className="rounded-lg border border-border bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
+                {Money(item.amount ?? 0)}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Vendor</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Type</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Bills</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">MRP</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Discount</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Lorry</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Driver fare</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Net bills</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Monthly</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Yearly</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Target</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border bg-white">
+              {rows.length > 0 ? (
+                rows.map((r: any) => (
+                  <tr key={r.vendor_id} className="hover:bg-muted/40">
+                    <td className="px-3 py-3 text-sm font-medium text-foreground">
+                      {r.display_name || '—'}
+                      <div className="text-xs text-muted-foreground">{r.vendor_number || ''}</div>
+                    </td>
+                    <td className="px-3 py-3 text-sm text-muted-foreground">{r.supplier_category_label || r.supplier_category || '—'}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{r.bill_count ?? 0}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.gross_mrp_total ?? 0)}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.discount_total ?? 0)}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.lorry_total ?? 0)}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.actual_lorry_fare_total ?? 0)}</td>
+                    <td className="px-3 py-3 text-right text-sm font-medium tabular-nums">{Money(r.net_bill_total ?? 0)}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">
+                      {Money(r.monthly_commission ?? 0)}
+                      {r.monthly_rebate_percent ? (
+                        <div className="text-xs text-muted-foreground">{r.monthly_rebate_percent}%</div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">
+                      {r.yearly_target_reached ? Money(r.yearly_commission ?? 0) : '—'}
+                      {r.yearly_rebate_percent ? (
+                        <div className="text-xs text-muted-foreground">{r.yearly_rebate_percent}%</div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-muted-foreground">
+                      {Number(r.yearly_target_tons || 0) > 0
+                        ? `${r.year_tons} / ${r.yearly_target_tons} t${r.yearly_target_reached ? ' ✓' : ''}`
+                        : r.yearly_target_reached
+                          ? 'No target'
+                          : '—'}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
+                    No feed/medicine mill activity in this period.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot className="bg-muted/40">
+                <tr>
+                  <td colSpan={3} className="px-3 py-3 text-right text-sm font-semibold">
+                    Totals ({summary.vendor_count ?? rows.length} mills)
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.gross_mrp_total ?? 0)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.discount_total ?? 0)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.lorry_total ?? 0)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.actual_lorry_fare_total ?? 0)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.net_bill_total ?? 0)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.monthly_commission ?? 0)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.yearly_commission ?? 0)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
 
         {data.accounting_note && (
           <p className="text-xs text-muted-foreground border-t border-border/70 pt-3">{data.accounting_note}</p>

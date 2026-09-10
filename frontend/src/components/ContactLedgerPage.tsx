@@ -52,6 +52,39 @@ export interface LedgerPayload {
   transactions: LedgerTransaction[]
   start_date?: string | null
   end_date?: string | null
+  mill_terms?: {
+    discount_total: string
+    lorry_total: string
+    monthly_commission_posted: string
+    yearly_commission_posted: string
+    estimated_monthly_credit: string
+    estimated_yearly_credit: string
+    yearly_target_reached: boolean
+    year_tons: string
+    yearly_target_tons: string
+    can_post_monthly: boolean
+    can_post_yearly: boolean
+  }
+}
+
+function ledgerTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    bill: 'Bill',
+    mill_discount: 'Discount',
+    mill_transport: 'Lorry',
+    mill_monthly: 'Monthly commission',
+    mill_yearly: 'Yearly commission',
+    bill_adjust: 'Bill adjust',
+    payment: 'Payment',
+    supplier_credit: 'Credit',
+    opening: 'Opening',
+  }
+  return map[type] || type
+}
+
+function moneyFmt(symbol: string, raw: string | number | undefined) {
+  const n = typeof raw === 'number' ? raw : parseFloat(String(raw || '0'))
+  return `${symbol}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 interface ContactLedgerPageProps {
@@ -341,6 +374,50 @@ export default function ContactLedgerPage({
                   )}
                 </div>
 
+                {data.mill_terms && (
+                  <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-foreground">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-900/80">
+                      Mill terms in this view
+                    </p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Discount</p>
+                        <p className="font-semibold tabular-nums">
+                          {moneyFmt(currencySymbol, data.mill_terms.discount_total)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Lorry / transport</p>
+                        <p className="font-semibold tabular-nums">
+                          {moneyFmt(currencySymbol, data.mill_terms.lorry_total)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Monthly commission (posted)</p>
+                        <p className="font-semibold tabular-nums">
+                          {moneyFmt(currencySymbol, data.mill_terms.monthly_commission_posted)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Accruing now {moneyFmt(currencySymbol, data.mill_terms.estimated_monthly_credit)}
+                          {data.mill_terms.can_post_monthly ? ' · ready to apply' : ''}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Yearly commission (posted)</p>
+                        <p className="font-semibold tabular-nums">
+                          {moneyFmt(currencySymbol, data.mill_terms.yearly_commission_posted)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {data.mill_terms.yearly_target_reached
+                            ? `Target reached · earnable ${moneyFmt(currencySymbol, data.mill_terms.estimated_yearly_credit)}`
+                            : `Progress ${data.mill_terms.year_tons} / ${data.mill_terms.yearly_target_tons || '—'} tons`}
+                          {data.mill_terms.can_post_yearly ? ' · ready to apply' : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-6 flex flex-wrap items-end gap-4 border-t border-border/70 pt-4">
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground">Start date</label>
@@ -523,7 +600,9 @@ export default function ContactLedgerPage({
                       data.transactions.map((row, idx) => (
                         <tr key={`${row.date}-${row.reference}-${idx}`} className="hover:bg-muted/40">
                           <td className="whitespace-nowrap px-4 py-3 text-sm text-foreground">{row.date}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">{row.type}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">
+                            {ledgerTypeLabel(row.type)}
+                          </td>
                           <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">{row.reference}</td>
                           <td className="px-4 py-3 text-sm text-foreground/85">
                             <div>{row.description}</div>

@@ -1955,7 +1955,10 @@ class Bill(models.Model):
         max_length=16,
         blank=True,
         default="",
-        help_text="credit = payable at MRP (terms wait for mill credit notes); cash = discount+lorry taken now.",
+        help_text=(
+            "credit = net after discount+lorry stays on A/P; "
+            "cash = credit limit full, pay that same net by bank/cash now."
+        ),
     )
     stock_receipt_applied = models.BooleanField(
         default=False,

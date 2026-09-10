@@ -455,8 +455,7 @@ function millUsesCreditLane(terms: VendorPurchaseTerms | null, billMrp: number):
 function applyMillTermsToLine(
   line: BillLineItem,
   item: Item | undefined,
-  terms: VendorPurchaseTerms | null,
-  keepGross = false
+  terms: VendorPurchaseTerms | null
 ): BillLineItem {
   if (!terms?.rate_card) return line
   const qty = Number(line.quantity) || 1
@@ -471,8 +470,7 @@ function applyMillTermsToLine(
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
   const transport = (gross * tPct) / 100 + qty * tUnit + qty * sackKg * tKg
-  const net = Math.max(0, roundBillMoney(gross - instant - transport))
-  const amount = keepGross ? roundBillMoney(gross) : net
+  const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
     ...line,
     mrp,
@@ -511,17 +509,15 @@ function millTermsBanner(
           ? ` · Limit ${formatNumber(Number(vendorPurchaseTerms.credit_limit))} · Used ${formatNumber(Number(vendorPurchaseTerms.used))} · Available ${formatNumber(Number(vendorPurchaseTerms.available || 0))}`
           : ''}
         {opts.limitFull
-          ? ' · Credit full — pay mill now (discount + lorry off the transfer)'
-          : opts.cashLane
-            ? ' · Discount and mill lorry come off this bill'
-            : ' · On credit (MRP on mill account)'}
+          ? ' · Credit full — pay net now (MRP − discount − mill lorry)'
+          : ' · Discount + mill lorry apply when they send feed'}
       </p>
       {vendorPurchaseTerms.uses_purchase_terms ? (
         <>
           <p className="text-muted-foreground">
-            {opts.cashLane
-              ? 'Bank transfer = MRP − discount − mill lorry share. Then they send the feed. Monthly/yearly still wait for the mill credit note.'
-              : 'This load goes on the mill account at MRP. Discount and mill lorry wait for their credit note. Pay the driver the real fare below.'}
+            {opts.limitFull
+              ? 'Bank transfer = MRP − discount − mill lorry (from this mill’s rate card). Then they send the feed. Monthly/yearly wait until the mill approves.'
+              : 'When they send feed, discount and mill lorry reduce what you owe immediately. Pay the driver the real fare below (extra over mill share is your transport cost). Monthly/yearly wait until approved.'}
           </p>
           <div className="flex flex-wrap items-end gap-2 pt-1">
             <button
@@ -576,7 +572,7 @@ function millTermsBanner(
                       : ''
                   }`
                 : ''}
-              {' '}— applied when the mill posts the credit note.
+              {' '}— applied when the mill approves (not on the feed bill).
             </p>
           ) : null}
         </>
@@ -1749,12 +1745,7 @@ export default function BillsPage() {
       ...prev,
       lines: prev.lines.map((line) => {
         const item = items.find((i) => i.id === line.item_id)
-        return applyMillTermsToLine(
-          line,
-          item,
-          nextTerms,
-          millUsesCreditLane(nextTerms, millBillMrp(prev.lines, items))
-        )
+        return applyMillTermsToLine(line, item, nextTerms)
       }),
     }))
 
@@ -2229,11 +2220,7 @@ export default function BillsPage() {
     const lineSum = lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)
     const taxAmount = lines.reduce((sum, line) => sum + (Number(line.tax_amount) || 0), 0)
     const truck = parseFloat(truckTransportAmount) || 0
-    const mrp = millBillMrp(lines, items)
-    const creditLane = millUsesCreditLane(vendorPurchaseTerms, mrp)
-    const subtotal = creditLane
-      ? roundBillMoney(lineSum)
-      : Math.max(0, roundBillMoney(lineSum - truck))
+    const subtotal = Math.max(0, roundBillMoney(lineSum - truck))
     const total = subtotal + taxAmount
     return { subtotal, taxAmount, total }
   }
@@ -2651,8 +2638,7 @@ export default function BillsPage() {
             newLines[index] = applyMillTermsToLine(
               newLines[index],
               lineItem,
-              vendorPurchaseTerms,
-              millUsesCreditLane(vendorPurchaseTerms, millBillMrp(newLines, items))
+              vendorPurchaseTerms
             )
           }
         }
@@ -2665,8 +2651,7 @@ export default function BillsPage() {
         newLines[index] = applyMillTermsToLine(
           syncStandardBillLineAmount(newLines[index]),
           picked,
-          vendorPurchaseTerms,
-          millUsesCreditLane(vendorPurchaseTerms, millBillMrp(newLines, items))
+          vendorPurchaseTerms
         )
       }
 

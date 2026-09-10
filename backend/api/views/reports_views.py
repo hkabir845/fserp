@@ -56,6 +56,7 @@ from api.services.reporting import (
     report_vat_return,
     report_vendor_balances,
 )
+from api.services.vendor_purchase_terms import report_mill_dealer_terms
 from api.utils.auth import auth_required
 from api.views.common import require_company_id
 from api.services.station_scope import effective_report_station_id
@@ -98,6 +99,7 @@ _REPORT_HANDLERS = {
     "sales-by-station": report_sales_by_station,
     "sales-report": report_sales_report,
     "purchase-report": report_purchase_report,
+    "mill-dealer-terms": report_mill_dealer_terms,
     "financial-analytics": report_financial_analytics,
     "inventory-sku-valuation": report_inventory_sku_valuation,
     "item-master-by-category": report_item_master_by_category,
@@ -445,7 +447,7 @@ def report_by_id(request, report_id: str):
             if st_err:
                 return st_err
         payload = report_financial_analytics(cid, start, end, st_id, pond_id)
-    elif report_id in ("sales-report", "purchase-report", "daily-summary"):
+    elif report_id in ("sales-report", "purchase-report", "daily-summary", "mill-dealer-terms"):
         st_id, st_err = effective_report_station_id(request, cid)
         if st_err:
             return st_err
@@ -463,6 +465,8 @@ def report_by_id(request, report_id: str):
             payload = report_purchase_report(
                 cid, start, end, st_id, business_segment=segment or "all"
             )
+        elif report_id == "mill-dealer-terms":
+            payload = report_mill_dealer_terms(cid, start, end)
         else:
             payload = report_daily_summary(
                 cid, start, end, st_id, business_segment=segment or "all"

@@ -184,6 +184,11 @@ REPORT_PERMISSION_DEFINITIONS: list[dict[str, str]] = [
     {"report_id": "sales-by-products", "label": "Sales by Products", "group": "Reports — Operational"},
     {"report_id": "sales-report", "label": "Sales Report", "group": "Reports — Operational"},
     {"report_id": "purchase-report", "label": "Purchase Report", "group": "Reports — Operational"},
+    {
+        "report_id": "mill-dealer-terms",
+        "label": "Mill dealer terms (discount / lorry / commission)",
+        "group": "Reports — Operational",
+    },
     {"report_id": "fuel-sales", "label": "Fuel Sales Analytics", "group": "Reports — Operational"},
     {"report_id": "tank-inventory", "label": "Tank Inventory", "group": "Reports — Operational"},
     {"report_id": "tank-dip-register", "label": "Tank Dip Register", "group": "Reports — Operational"},

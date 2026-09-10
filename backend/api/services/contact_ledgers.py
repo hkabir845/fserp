@@ -343,7 +343,6 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
         )
 
     from api.services.vendor_purchase_terms import (
-        MILL_SETTLEMENT_CASH,
         bill_gross_mrp,
         bill_instant_discount_total,
         bill_transport_total,
@@ -365,8 +364,8 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
         mrp = bill_gross_mrp(bill) if mill_vendor else Decimal("0")
         disc = bill_instant_discount_total(bill) if mill_vendor else Decimal("0")
         lorry = bill_transport_total(bill) if mill_vendor else Decimal("0")
-        cash_settled = mill_vendor and (bill.mill_settlement or "") == MILL_SETTLEMENT_CASH
-        if mill_vendor and mrp > 0 and cash_settled and (disc > 0 or lorry > 0):
+        # Mill statement: always show MRP, then discount and transport when they sent the feed.
+        if mill_vendor and mrp > 0 and (disc > 0 or lorry > 0 or mrp != t):
             rows.append(
                 _Row(
                     sort_date=bill.bill_date,
@@ -374,7 +373,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                     sort_id=bill.id,
                     kind="bill",
                     reference=bill.bill_number or f"BILL-{bill.id}",
-                    description=f"Bill {bill.bill_number or bill.id} MRP{f' — {memo}' if memo else ''}",
+                    description=f"Bill {bill.bill_number or bill.id} — MRP{f' — {memo}' if memo else ''}",
                     debit=mrp,
                     credit=Decimal("0"),
                     related_id=bill.id,
@@ -388,7 +387,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                         sort_id=bill.id,
                         kind="mill_discount",
                         reference=bill.bill_number or f"BILL-{bill.id}",
-                        description="Discount (same day — cash purchase)",
+                        description="Discount (when feed received)",
                         debit=Decimal("0"),
                         credit=disc,
                         related_id=bill.id,
@@ -402,16 +401,33 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                         sort_id=bill.id,
                         kind="mill_transport",
                         reference=bill.bill_number or f"BILL-{bill.id}",
-                        description="Lorry / transport (same day — cash purchase)",
+                        description="Lorry / transport (when feed received)",
                         debit=Decimal("0"),
                         credit=lorry,
+                        related_id=bill.id,
+                    )
+                )
+            # Rounding / tax remainder so ledger still ties to bill.total
+            implied = _d(mrp - disc - lorry)
+            rem = _d(t - implied)
+            if rem != 0:
+                rows.append(
+                    _Row(
+                        sort_date=bill.bill_date,
+                        seq=13,
+                        sort_id=bill.id,
+                        kind="bill_adjust",
+                        reference=bill.bill_number or f"BILL-{bill.id}",
+                        description="Bill tax / rounding",
+                        debit=rem if rem > 0 else Decimal("0"),
+                        credit=-rem if rem < 0 else Decimal("0"),
                         related_id=bill.id,
                     )
                 )
             continue
         desc = f"Bill {bill.bill_number or bill.id} ({bill.status})"
         if mill_vendor and mrp > 0:
-            desc = f"Bill {bill.bill_number or bill.id} MRP"
+            desc = f"Bill {bill.bill_number or bill.id} — MRP"
         if memo:
             desc = f"{desc} — {memo}"
         rows.append(
@@ -422,7 +438,7 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
                 kind="bill",
                 reference=bill.bill_number or f"BILL-{bill.id}",
                 description=desc,
-                debit=t,
+                debit=t if not (mill_vendor and mrp > 0) else mrp,
                 credit=Decimal("0"),
                 related_id=bill.id,
             )
@@ -477,17 +493,23 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
         kind_label = {
             "monthly": "Monthly commission",
             "yearly": "Yearly commission",
-            "discount": "Discount",
-            "transport": "Lorry / transport",
+            "discount": "Discount (credit note)",
+            "transport": "Lorry / transport (credit note)",
             "manual": "Mill account credit",
         }.get(cred.credit_kind, cred.credit_kind)
+        row_kind = {
+            "monthly": "mill_monthly",
+            "yearly": "mill_yearly",
+            "discount": "mill_discount",
+            "transport": "mill_transport",
+        }.get(cred.credit_kind, "supplier_credit")
         memo = (cred.memo or cred.period_label or "").strip()
         rows.append(
             _Row(
                 sort_date=cred.credit_date,
                 seq=2,
                 sort_id=cred.id,
-                kind="supplier_credit",
+                kind=row_kind,
                 reference=cred.period_label or f"VCRED-{cred.id}",
                 description=f"{kind_label}{f' — {memo}' if memo else ''}",
                 debit=Decimal("0"),
@@ -548,14 +570,57 @@ def build_vendor_ledger(
         running += r.debit - r.credit
         tx_json.append(row_to_json(r, running))
 
-    return {
+    from api.services.vendor_purchase_terms import scheme_progress, uses_purchase_terms
+
+    balance_note = (
+        "Running balance: amount you owe this vendor (accounts payable). "
+        "Vendor balance and ledger closing (all-time) use the same A/P subledger total."
+    )
+    mill_terms: dict[str, Any] | None = None
+    if uses_purchase_terms(vendor):
+        disc_tot = sum(
+            (r.credit for r in visible if r.kind == "mill_discount"),
+            start=Decimal("0"),
+        )
+        lorry_tot = sum(
+            (r.credit for r in visible if r.kind == "mill_transport"),
+            start=Decimal("0"),
+        )
+        monthly_tot = sum(
+            (r.credit for r in visible if r.kind == "mill_monthly"),
+            start=Decimal("0"),
+        )
+        yearly_tot = sum(
+            (r.credit for r in visible if r.kind == "mill_yearly"),
+            start=Decimal("0"),
+        )
+        scheme = scheme_progress(company_id, vendor, end_date or date.today())
+        mill_terms = {
+            "discount_total": str(_d(disc_tot)),
+            "lorry_total": str(_d(lorry_tot)),
+            "monthly_commission_posted": str(_d(monthly_tot)),
+            "yearly_commission_posted": str(_d(yearly_tot)),
+            "estimated_monthly_credit": str(
+                _d(scheme.get("estimated_monthly_credit") or scheme.get("monthly_reserved") or 0)
+            ),
+            "estimated_yearly_credit": str(_d(scheme.get("estimated_yearly_credit") or 0)),
+            "yearly_target_reached": bool(scheme.get("yearly_target_reached")),
+            "year_tons": str(_d(scheme.get("year_tons") or 0)),
+            "yearly_target_tons": str(_d(scheme.get("yearly_target_tons") or 0)),
+            "can_post_monthly": bool(scheme.get("can_post_monthly")),
+            "can_post_yearly": bool(scheme.get("can_post_yearly")),
+        }
+        balance_note = (
+            "Mill ledger: each feed bill shows MRP, then discount and lorry (when they sent feed). "
+            "Monthly and yearly commissions appear when posted (mill approved). "
+            "Running balance is what you still owe this mill."
+        )
+
+    out: dict[str, Any] = {
         "entity": "vendor",
         "entity_id": vendor.id,
         "display_name": vendor.display_name or vendor.company_name or "",
-        "balance_note": (
-            "Running balance: amount you owe this vendor (accounts payable). "
-            "Vendor balance and ledger closing (all-time) use the same A/P subledger total."
-        ),
+        "balance_note": balance_note,
         "opening_balance": str(ob),
         "opening_balance_date": obd.isoformat() if obd else None,
         "period_start_balance": str(period_start),
@@ -566,6 +631,9 @@ def build_vendor_ledger(
         "start_date": start_date.isoformat() if start_date else None,
         "end_date": end_date.isoformat() if end_date else None,
     }
+    if mill_terms is not None:
+        out["mill_terms"] = mill_terms
+    return out
 
 
 def ledger_query_dates(request) -> tuple[Optional[date], Optional[date]]:

@@ -528,7 +528,10 @@ def test_post_monthly_scheme_credits_payable(api_client, company_tenant, auth_ad
 
 
 @pytest.mark.django_db
-def test_credit_lane_bill_stays_at_mrp(api_client, company_tenant, auth_admin_headers):
+def test_credit_lane_applies_discount_and_lorry(
+    api_client, company_tenant, auth_admin_headers
+):
+    """When feed arrives on credit: discount and mill lorry both reduce payable immediately."""
     h = auth_admin_headers
     v = _vendor(
         api_client,
@@ -549,22 +552,59 @@ def test_credit_lane_bill_stays_at_mrp(api_client, company_tenant, auth_admin_he
     assert r.status_code == 201, r.content.decode()
     bill = json.loads(r.content)
     assert bill["mill_settlement"] == "credit"
-    assert Decimal(bill["total"]) == Decimal("380000.00")
+    # MRP 380000 − 5.5% − mill lorry 950
+    assert Decimal(bill["total"]) == Decimal("358150.00")
     assert Decimal(bill["instant_discount_total"]) == Decimal("20900.00")
     assert Decimal(bill["truck_transport_amount"]) == Decimal("950.00")
     terms = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
-    assert Decimal(terms["used"]) == Decimal("380000.00")
-    assert terms["pending_terms"]["can_post_discount"] is True
-    assert terms["pending_terms"]["can_post_transport"] is True
-    note = api_client.post(
-        f"/api/vendors/{v['id']}/mill-credit-notes/",
-        data=json.dumps({"credit_kind": "discount"}),
-        content_type="application/json",
-        **h,
+    assert Decimal(terms["used"]) == Decimal("358150.00")
+    assert terms["pending_terms"]["can_post_discount"] is False
+    assert terms["pending_terms"]["can_post_transport"] is False
+    ledger = json.loads(api_client.get(f"/api/vendors/{v['id']}/ledger/", **h).content)
+    kinds = {t["type"] for t in ledger["transactions"]}
+    assert "mill_discount" in kinds
+    assert "mill_transport" in kinds
+    assert ledger["mill_terms"]["discount_total"] == "20900.00"
+    assert ledger["mill_terms"]["lorry_total"] == "950.00"
+
+
+@pytest.mark.django_db
+def test_mill_dealer_terms_report(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Report mill",
+        supplier_category="feed",
+        credit_facility_enabled=True,
+        credit_limit="5000000",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_truck": "950",
+            "monthly_rebate_percent": "3",
+            "yearly_rebate_percent": "2.5",
+            "yearly_target_kg": "0",
+        },
     )
-    assert note.status_code == 201, note.content.decode()
-    terms2 = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
-    assert Decimal(terms2["used"]) == Decimal("359100.00")
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="open")
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    report = json.loads(
+        api_client.get(
+            "/api/reports/mill-dealer-terms/",
+            {"start_date": bill["bill_date"], "end_date": bill["bill_date"]},
+            **h,
+        ).content
+    )
+    assert report["report_id"] == "mill-dealer-terms"
+    assert Decimal(report["summary"]["discount_total"]) == Decimal("20900.00")
+    assert Decimal(report["summary"]["lorry_total"]) == Decimal("950.00")
+    assert Decimal(report["summary"]["monthly_commission"]) == Decimal("11400.00")
+    assert Decimal(report["summary"]["yearly_commission"]) == Decimal("9500.00")
+    row = next(x for x in report["vendors"] if x["vendor_id"] == v["id"])
+    assert row["yearly_target_reached"] is True
 
 
 @pytest.mark.django_db

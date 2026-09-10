@@ -252,7 +252,6 @@ function RecordPaymentMadeInner() {
   const [error, setError] = useState('')
   const [currencySymbol, setCurrencySymbol] = useState<string>('৳')
   const [millTerms, setMillTerms] = useState<VendorPurchaseTerms | null>(null)
-  const [millApplyDiscount, setMillApplyDiscount] = useState(false)
   const [millApplyLorry, setMillApplyLorry] = useState(false)
   const [millApplyMonthly, setMillApplyMonthly] = useState(false)
   const [millApplyYearly, setMillApplyYearly] = useState(false)
@@ -296,7 +295,6 @@ function RecordPaymentMadeInner() {
     if (!selectedVendorId) {
       setOutstandingBills([])
       setMillTerms(null)
-      setMillApplyDiscount(false)
       setMillApplyLorry(false)
       setMillApplyMonthly(false)
       setMillApplyYearly(false)
@@ -327,7 +325,6 @@ function RecordPaymentMadeInner() {
         } catch {
           setMillTerms(null)
         }
-        setMillApplyDiscount(false)
         setMillApplyLorry(false)
         setMillApplyMonthly(false)
         setMillApplyYearly(false)
@@ -625,9 +622,8 @@ function RecordPaymentMadeInner() {
           allocated_amount: roundMoney(al.allocated_amount),
         })),
         mill_apply:
-          millTerms && (millApplyDiscount || millApplyLorry || millApplyMonthly || millApplyYearly)
+          millTerms && (millApplyLorry || millApplyMonthly || millApplyYearly)
             ? {
-                discount: millApplyDiscount,
                 transport: millApplyLorry,
                 monthly: millApplyMonthly,
                 yearly: millApplyYearly,
@@ -870,21 +866,11 @@ function RecordPaymentMadeInner() {
                 <div className="mt-6 rounded-md border border-amber-200 bg-amber-50/80 p-4">
                   <h3 className="text-sm font-semibold text-foreground">Mill credit notes (when they approve)</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Discount and lorry on credit purchases wait for the mill. Tick a box only when they have
-                    posted that credit note. Monthly {millTerms.scheme?.monthly_rebate_percent || 0}% and yearly{' '}
-                    {millTerms.scheme?.yearly_rebate_percent || 0}% keep counting automatically.
+                    Discount already came off when the feed was billed. Tick mill lorry / monthly / yearly
+                    only when the mill has approved that credit note. Rates come from this mill&apos;s card
+                    (not fixed amounts).
                   </p>
                   <div className="mt-3 grid gap-2 text-sm">
-                    {millTerms.pending_terms?.can_post_discount ? (
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={millApplyDiscount}
-                          onChange={(e) => setMillApplyDiscount(e.target.checked)}
-                        />
-                        Apply discount credit note ({formatNumber(Number(millTerms.pending_terms.discount))})
-                      </label>
-                    ) : null}
                     {millTerms.pending_terms?.can_post_transport ? (
                       <label className="flex items-center gap-2">
                         <input
@@ -917,8 +903,7 @@ function RecordPaymentMadeInner() {
                         {formatNumber(Number(millTerms.pending_terms.estimated_yearly))})
                       </label>
                     ) : null}
-                    {!millTerms.pending_terms?.can_post_discount &&
-                    !millTerms.pending_terms?.can_post_transport &&
+                    {!millTerms.pending_terms?.can_post_transport &&
                     !millTerms.pending_terms?.can_post_monthly &&
                     !millTerms.pending_terms?.can_post_yearly ? (
                       <p className="text-xs text-muted-foreground">No mill credit notes waiting to apply.</p>

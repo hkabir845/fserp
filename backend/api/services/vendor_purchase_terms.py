@@ -461,18 +461,6 @@ def mill_mrp_of_parsed_lines(parsed_lines: list[dict]) -> Decimal:
     return total
 
 
-def restore_parsed_lines_to_mrp(parsed_lines: list[dict]) -> None:
-    """Credit-lane mill bills: payable and stock at MRP; keep discount/lorry on the line for later notes."""
-    for pl in parsed_lines:
-        mrp = _q(pl.get("mrp"))
-        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
-        if mrp <= 0 or qty <= 0:
-            continue
-        gross = _q(qty * mrp)
-        pl["amount"] = gross
-        pl["unit_price"] = _q(gross / qty)
-
-
 def mill_settlement_lane(
     company_id: int,
     vendor: Optional[Vendor],
@@ -481,7 +469,7 @@ def mill_settlement_lane(
     bill_date: Optional[date] = None,
     exclude_bill_id: Optional[int] = None,
 ) -> str:
-    """credit = still inside limit (payable at MRP); cash = limit full or no facility (net now)."""
+    """credit = room under limit (net payable on A/P); cash = limit full (must pay net now)."""
     if not uses_purchase_terms(vendor):
         return MILL_SETTLEMENT_CASH
     if not credit_facility_active(vendor):
@@ -512,7 +500,7 @@ def apply_mill_bill_settlement(
     *,
     exclude_bill_id: Optional[int] = None,
 ) -> tuple[Decimal, str, Optional[JsonResponse]]:
-    """Truck share on the bill, then credit-lane restore to MRP or keep cash net."""
+    """Discount and mill lorry always reduce the bill when feed arrives; lane only controls cash vs A/P."""
     truck, err = apply_bill_truck_transport(parsed_lines, vendor, bill_date, body)
     if err:
         return Decimal("0.00"), MILL_SETTLEMENT_CASH, err
@@ -526,8 +514,6 @@ def apply_mill_bill_settlement(
         bill_date=bill_date,
         exclude_bill_id=exclude_bill_id,
     )
-    if lane == MILL_SETTLEMENT_CREDIT:
-        restore_parsed_lines_to_mrp(parsed_lines)
     return truck, lane, None
 
 
@@ -1223,36 +1209,15 @@ def _credit_credit_bills(company_id: int, vendor: Vendor):
 
 
 def pending_mill_term_credits(company_id: int, vendor: Vendor) -> dict[str, Any]:
-    posted = {
-        (c.bill_id, c.credit_kind)
-        for c in VendorCredit.objects.filter(
-            company_id=company_id,
-            vendor_id=vendor.id,
-            credit_kind__in=(VendorCredit.KIND_DISCOUNT, VendorCredit.KIND_TRANSPORT),
-            bill_id__isnull=False,
-        )
-    }
-    discount = Decimal("0.00")
-    lorry = Decimal("0.00")
-    discount_bills: list[int] = []
-    lorry_bills: list[int] = []
-    for bill in _credit_credit_bills(company_id, vendor):
-        d = bill_instant_discount_total(bill)
-        t = bill_transport_total(bill)
-        if d > 0 and (bill.id, VendorCredit.KIND_DISCOUNT) not in posted:
-            discount += d
-            discount_bills.append(bill.id)
-        if t > 0 and (bill.id, VendorCredit.KIND_TRANSPORT) not in posted:
-            lorry += t
-            lorry_bills.append(bill.id)
+    """Pending mill approvals. Discount and lorry already hit the feed bill; only monthly/yearly wait."""
     scheme = scheme_progress(company_id, vendor)
     return {
-        "discount": str(discount),
-        "transport": str(lorry),
-        "can_post_discount": discount > 0,
-        "can_post_transport": lorry > 0,
-        "discount_bill_ids": discount_bills,
-        "transport_bill_ids": lorry_bills,
+        "discount": "0.00",
+        "transport": "0.00",
+        "can_post_discount": False,
+        "can_post_transport": False,
+        "discount_bill_ids": [],
+        "transport_bill_ids": [],
         "can_post_monthly": bool(scheme.get("can_post_monthly")),
         "can_post_yearly": bool(scheme.get("can_post_yearly")),
         "estimated_monthly": str(_q(scheme.get("estimated_monthly_credit") or scheme.get("monthly_reserved"))),
@@ -1266,48 +1231,16 @@ def apply_pending_discount_or_lorry(
     kind: str,
     body: Optional[dict] = None,
 ) -> tuple[list[VendorCredit], Optional[JsonResponse]]:
-    """Post mill credit notes for discount or lorry on credit-lane bills not yet credited."""
-    body = body or {}
-    if kind not in (VendorCredit.KIND_DISCOUNT, VendorCredit.KIND_TRANSPORT):
-        return [], JsonResponse({"detail": "kind must be discount or transport"}, status=400)
-    if not uses_purchase_terms(vendor):
-        return [], JsonResponse({"detail": "Mill credit notes apply to feed/medicine vendors."}, status=400)
-    created: list[VendorCredit] = []
-    for bill in _credit_credit_bills(company_id, vendor):
-        if VendorCredit.objects.filter(
-            company_id=company_id,
-            vendor_id=vendor.id,
-            bill_id=bill.id,
-            credit_kind=kind,
-        ).exists():
-            continue
-        amount = bill_instant_discount_total(bill) if kind == VendorCredit.KIND_DISCOUNT else bill_transport_total(bill)
-        if amount <= 0:
-            continue
-        label = "Discount" if kind == VendorCredit.KIND_DISCOUNT else "Lorry / transport"
-        credit, resp = create_vendor_credit(
-            company_id,
-            vendor,
-            {
-                "amount": str(amount),
-                "credit_kind": kind,
-                "bill_id": bill.id,
-                "period_label": f"BILL-{bill.id}-{kind}"[:32],
-                "credit_date": (_parse_date(body.get("credit_date")) or bill.bill_date or date.today()).isoformat(),
-                "mrp_base_amount": str(bill_gross_mrp(bill)),
-                "memo": (body.get("memo") or f"{label} mill credit note — {bill.bill_number}")[:500],
-            },
-        )
-        if resp:
-            return created, resp
-        if credit:
-            created.append(credit)
-    if not created:
-        return [], JsonResponse(
-            {"detail": f"No pending {kind} mill credit notes to apply."},
-            status=400,
-        )
-    return created, None
+    """Discount and mill lorry are applied on the feed bill; they are not later credit notes."""
+    return [], JsonResponse(
+        {
+            "detail": (
+                "Discount and mill lorry are applied when the feed bill is recorded "
+                "(same day they send feed). Use monthly/yearly scheme when the mill approves those."
+            )
+        },
+        status=400,
+    )
 
 
 def apply_mill_flags(
@@ -1318,18 +1251,16 @@ def apply_mill_flags(
     """Apply ticked mill credit notes (discount, lorry, monthly, yearly) in one payment save."""
     if not mill_apply or not isinstance(mill_apply, dict):
         return None
-    if mill_apply.get("discount"):
-        _created, resp = apply_pending_discount_or_lorry(
-            company_id, vendor, VendorCredit.KIND_DISCOUNT, mill_apply
+    if mill_apply.get("discount") or mill_apply.get("transport") or mill_apply.get("lorry"):
+        return JsonResponse(
+            {
+                "detail": (
+                    "Discount and mill lorry are applied on the feed bill when they send feed. "
+                    "Only monthly/yearly commissions are applied here when the mill approves."
+                )
+            },
+            status=400,
         )
-        if resp:
-            return resp
-    if mill_apply.get("transport") or mill_apply.get("lorry"):
-        _created, resp = apply_pending_discount_or_lorry(
-            company_id, vendor, VendorCredit.KIND_TRANSPORT, mill_apply
-        )
-        if resp:
-            return resp
     if mill_apply.get("monthly"):
         _credit, resp = apply_monthly_scheme_credit(company_id, vendor, mill_apply)
         if resp:
@@ -1457,4 +1388,118 @@ def bill_line_purchase_term_kwargs(pl: dict) -> dict:
         "mrp": _q(pl.get("mrp")),
         "instant_discount_amount": _q(pl.get("instant_discount_amount")),
         "transport_amount": _q(pl.get("transport_amount")),
+    }
+
+def report_mill_dealer_terms(
+    company_id: int,
+    start: date,
+    end: date,
+) -> dict[str, Any]:
+    """
+    Feed/medicine mill totals for a period: discount, mill lorry, monthly commission,
+    and yearly commission when the tonnage target is reached (or progress toward it).
+    """
+    vendors = list(
+        Vendor.objects.filter(
+            company_id=company_id,
+            supplier_category__in=Vendor.PURCHASE_TERMS_CATEGORIES,
+            is_active=True,
+        ).order_by("display_name", "company_name", "id")
+    )
+    rows: list[dict[str, Any]] = []
+    tot_mrp = Decimal("0.00")
+    tot_disc = Decimal("0.00")
+    tot_lorry = Decimal("0.00")
+    tot_fare = Decimal("0.00")
+    tot_net = Decimal("0.00")
+    tot_monthly = Decimal("0.00")
+    tot_yearly = Decimal("0.00")
+
+    for vendor in vendors:
+        bills = list(
+            Bill.objects.filter(
+                company_id=company_id,
+                vendor_id=vendor.id,
+                bill_date__gte=start,
+                bill_date__lte=end,
+            )
+            .exclude(status__in=("draft", "void"))
+            .prefetch_related("lines")
+        )
+        mrp = Decimal("0.00")
+        disc = Decimal("0.00")
+        lorry = Decimal("0.00")
+        fare = Decimal("0.00")
+        net = Decimal("0.00")
+        for bill in bills:
+            mrp += bill_gross_mrp(bill)
+            disc += bill_instant_discount_total(bill)
+            lorry += bill_transport_total(bill)
+            fare += _q(getattr(bill, "actual_lorry_fare", 0))
+            net += _q(bill.total)
+        card = active_rate_card(vendor, end)
+        monthly_pct = _q(card.monthly_rebate_percent, _Q4) if card else Decimal("0")
+        yearly_pct = _q(card.yearly_rebate_percent, _Q4) if card else Decimal("0")
+        monthly_est = _q(mrp * monthly_pct / Decimal("100")) if monthly_pct > 0 else Decimal("0")
+        scheme = scheme_progress(company_id, vendor, end) if uses_purchase_terms(vendor) else {}
+        year_tons = _q(scheme.get("year_tons") or 0, _Q4)
+        target_tons = _q(scheme.get("yearly_target_tons") or 0, _Q4)
+        target_reached = bool(scheme.get("yearly_target_reached"))
+        yearly_est = _q(scheme.get("estimated_yearly_credit") or 0) if target_reached else Decimal("0")
+        # If no tonnage target is set, yearly % of year MRP still counts as earnable.
+        if yearly_pct > 0 and target_tons <= 0:
+            yearly_est = _q(scheme.get("estimated_yearly_credit") or 0)
+            target_reached = yearly_est > 0
+        rows.append(
+            {
+                "vendor_id": vendor.id,
+                "vendor_number": vendor.vendor_number or "",
+                "display_name": (vendor.display_name or vendor.company_name or "").strip(),
+                "supplier_category": vendor.supplier_category or "",
+                "supplier_category_label": supplier_category_label(vendor.supplier_category),
+                "bill_count": len(bills),
+                "gross_mrp_total": str(mrp),
+                "discount_total": str(disc),
+                "lorry_total": str(lorry),
+                "actual_lorry_fare_total": str(fare),
+                "net_bill_total": str(net),
+                "monthly_rebate_percent": str(monthly_pct),
+                "monthly_commission": str(monthly_est),
+                "yearly_rebate_percent": str(yearly_pct),
+                "yearly_target_tons": str(target_tons),
+                "year_tons": str(year_tons),
+                "yearly_target_reached": target_reached,
+                "yearly_commission": str(yearly_est),
+                "yearly_commission_posted": bool(scheme.get("yearly_credit_posted")),
+                "monthly_commission_posted": bool(scheme.get("monthly_credit_posted")),
+            }
+        )
+        tot_mrp += mrp
+        tot_disc += disc
+        tot_lorry += lorry
+        tot_fare += fare
+        tot_net += net
+        tot_monthly += monthly_est
+        tot_yearly += yearly_est
+
+    return {
+        "report_id": "mill-dealer-terms",
+        "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "summary": {
+            "vendor_count": len(rows),
+            "gross_mrp_total": str(tot_mrp),
+            "discount_total": str(tot_disc),
+            "lorry_total": str(tot_lorry),
+            "actual_lorry_fare_total": str(tot_fare),
+            "net_bill_total": str(tot_net),
+            "monthly_commission": str(tot_monthly),
+            "yearly_commission": str(tot_yearly),
+        },
+        "vendors": rows,
+        "accounting_note": (
+            "Discount and mill lorry are taken when feed/medicine bills are posted (same day they send feed). "
+            "Monthly commission is % of period MRP from the mill rate card (counts automatically). "
+            "Yearly commission shows only when the tonnage target is reached (or when no target is set). "
+            "Actual lorry fare is what you paid the driver; mill lorry is their fixed share from the rate card."
+        ),
     }

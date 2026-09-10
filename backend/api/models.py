@@ -1068,6 +1068,12 @@ class VendorRateCard(models.Model):
         default=0,
         help_text="Transport deducted once per bill/truck. 0 = this mill does not use per-truck transport.",
     )
+    transport_percent = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        default=0,
+        help_text="Transport allowance as % of line MRP (qty×MRP). Stacks with per-unit/kg/truck when set.",
+    )
     transport_per_unit = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     transport_per_kg = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     monthly_rebate_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)

@@ -450,3 +450,78 @@ def test_yearly_scheme_credits_at_square_off_when_target_met(
         **h,
     )
     assert again.status_code == 400
+
+@pytest.mark.django_db
+def test_transport_percent_of_mrp_on_bill(api_client, company_tenant, auth_admin_headers):
+    """Variable transport as % of MRP stacks with instant % (no fixed truck)."""
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Pct transport mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_percent": "1.5",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="draft")
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    line = bill["lines"][0]
+    # Gross 380000; instant 5.5% = 20900; transport 1.5% = 5700; net = 353400
+    assert Decimal(line["instant_discount_amount"]) == Decimal("20900.00")
+    assert Decimal(line["transport_amount"]) == Decimal("5700.00")
+    assert Decimal(bill["total"]) == Decimal("353400.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_post_monthly_scheme_credits_payable(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Monthly post mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "monthly_rebate_percent": "3",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    today = date.today().isoformat()
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="open",
+        extra={"bill_date": today},
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    payable = Decimal(bill["total"])
+    cr = api_client.post(
+        f"/api/vendors/{v['id']}/monthly-scheme/",
+        data=json.dumps({}),
+        content_type="application/json",
+        **h,
+    )
+    assert cr.status_code == 201, cr.content.decode()
+    credit = json.loads(cr.content)
+    assert credit["credit_kind"] == "monthly"
+    assert Decimal(credit["amount"]) == Decimal("11400.00")
+    terms = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
+    assert Decimal(terms["used"]) == payable - Decimal("11400.00")
+    assert terms["scheme"]["monthly_credit_posted"] is True
+    again = api_client.post(
+        f"/api/vendors/{v['id']}/monthly-scheme/",
+        data=json.dumps({}),
+        content_type="application/json",
+        **h,
+    )
+    assert again.status_code == 400

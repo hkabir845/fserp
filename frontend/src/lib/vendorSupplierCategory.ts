@@ -26,6 +26,7 @@ export type VendorRateCardPayload = {
   effective_to?: string | null
   instant_discount_percent?: string | number
   instant_discount_per_unit?: string | number
+  transport_percent?: string | number
   transport_per_truck?: string | number
   transport_per_unit?: string | number
   transport_per_kg?: string | number
@@ -63,6 +64,8 @@ export type VendorPurchaseTerms = {
     estimated_monthly_credit: string
     monthly_reserved?: string
     monthly_is_reserve?: boolean
+    monthly_credit_posted?: boolean
+    can_post_monthly?: boolean
     estimated_yearly_credit: string
     yearly_target_reached: boolean
     yearly_credit_posted?: boolean
@@ -92,6 +95,7 @@ export const emptyRateCardForm = () => ({
   effective_from: new Date().toISOString().split('T')[0],
   instant_discount_percent: '0',
   instant_discount_per_unit: '0',
+  transport_percent: '0',
   transport_per_truck: '0',
   transport_per_unit: '0',
   transport_per_kg: '0',

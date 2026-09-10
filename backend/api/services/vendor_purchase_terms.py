@@ -220,6 +220,7 @@ def rate_card_to_json(card: Optional[VendorRateCard]) -> Optional[dict[str, Any]
         "effective_to": card.effective_to.isoformat() if card.effective_to else None,
         "instant_discount_percent": str(_q(card.instant_discount_percent, _Q4)),
         "instant_discount_per_unit": str(_q(card.instant_discount_per_unit, _Q4)),
+        "transport_percent": str(_q(card.transport_percent, _Q4)),
         "transport_per_truck": str(_q(card.transport_per_truck, _Q4)),
         "transport_per_unit": str(_q(card.transport_per_unit, _Q4)),
         "transport_per_kg": str(_q(card.transport_per_kg, _Q4)),
@@ -256,8 +257,9 @@ def apply_rate_card_to_line(
     instant = _q(gross * _q(card.instant_discount_percent, _Q4) / Decimal("100"))
     instant += _q(qty * _q(card.instant_discount_per_unit, _Q4))
     kg = line_weight_kg(qty, item)
-    # Per-unit / per-kg only. Per-truck is applied once on the bill, not multiplied by qty.
-    transport = _q(qty * _q(card.transport_per_unit, _Q4))
+    # Variable transport: % of MRP and/or fixed ৳. Per-truck is once on the bill, not × qty.
+    transport = _q(gross * _q(card.transport_percent, _Q4) / Decimal("100"))
+    transport += _q(qty * _q(card.transport_per_unit, _Q4))
     transport += _q(kg * _q(card.transport_per_kg, _Q4))
     net = _q(gross - instant - transport)
     if net < 0:
@@ -528,6 +530,7 @@ def upsert_rate_card_from_body(vendor: Vendor, body: dict) -> tuple[Optional[Ven
     for fname in (
         "instant_discount_percent",
         "instant_discount_per_unit",
+        "transport_percent",
         "transport_per_truck",
         "transport_per_unit",
         "transport_per_kg",
@@ -643,6 +646,15 @@ def scheme_progress(
     )
     monthly_reserved = _q(reserved_row.amount) if reserved_row else monthly_est
     year_start_s = year_start.isoformat()
+    monthly_posted = VendorCredit.objects.filter(
+        company_id=company_id,
+        vendor_id=vendor.id,
+        credit_kind=VendorCredit.KIND_MONTHLY,
+        period_label=month_period,
+    ).exists()
+    can_post_monthly = bool(
+        monthly_pct > 0 and monthly_reserved > 0 and not monthly_posted
+    )
     yearly_posted = VendorCredit.objects.filter(
         company_id=company_id,
         vendor_id=vendor.id,
@@ -698,6 +710,8 @@ def scheme_progress(
         "estimated_monthly_credit": str(monthly_est),
         "monthly_reserved": str(monthly_reserved),
         "monthly_is_reserve": True,
+        "monthly_credit_posted": monthly_posted,
+        "can_post_monthly": can_post_monthly,
         "estimated_yearly_credit": str(yearly_est),
         "yearly_target_reached": yearly_earned,
         "yearly_credit_posted": yearly_posted,
@@ -763,6 +777,64 @@ def sync_monthly_scheme_reserve(
         },
     )
     return row
+
+
+def apply_monthly_scheme_credit(
+    company_id: int,
+    vendor: Vendor,
+    body: Optional[dict] = None,
+) -> tuple[Optional[VendorCredit], Optional[JsonResponse]]:
+    """
+    Post monthly % of MRP as a VendorCredit (reduces A/P).
+
+    Amount comes from the current month reserve / estimate. One credit per YYYY-MM.
+    """
+    body = body or {}
+    as_of = _parse_date(body.get("credit_date")) or date.today()
+    if not uses_purchase_terms(vendor):
+        return None, JsonResponse(
+            {"detail": "Monthly scheme credits apply only to feed/medicine mill vendors."},
+            status=400,
+        )
+    sync_monthly_scheme_reserve(company_id, vendor, as_of)
+    prog = scheme_progress(company_id, vendor, as_of, _skip_closed_eligibility=True)
+    pct = _q(prog.get("monthly_rebate_percent"), _Q4)
+    if pct <= 0:
+        return None, JsonResponse(
+            {"detail": "This mill has no monthly scheme percent on the rate card."},
+            status=400,
+        )
+    period = as_of.strftime("%Y-%m")
+    if VendorCredit.objects.filter(
+        company_id=company_id,
+        vendor_id=vendor.id,
+        credit_kind=VendorCredit.KIND_MONTHLY,
+        period_label=period,
+    ).exists():
+        return None, JsonResponse(
+            {"detail": f"Monthly scheme already credited for {period}."},
+            status=400,
+        )
+    amount = _q(prog.get("monthly_reserved") or prog.get("estimated_monthly_credit"))
+    if amount <= 0:
+        return None, JsonResponse(
+            {"detail": "No monthly scheme amount to credit (no MRP purchases this month)."},
+            status=400,
+        )
+    memo = (body.get("memo") or f"Monthly {pct}% of MRP for {period}").strip()[:500]
+    return create_vendor_credit(
+        company_id,
+        vendor,
+        {
+            "amount": str(amount),
+            "credit_kind": VendorCredit.KIND_MONTHLY,
+            "period_label": period,
+            "mrp_base_amount": prog.get("month_mrp"),
+            "percent_applied": str(pct),
+            "credit_date": as_of.isoformat(),
+            "memo": memo,
+        },
+    )
 
 
 def apply_yearly_scheme_credit(

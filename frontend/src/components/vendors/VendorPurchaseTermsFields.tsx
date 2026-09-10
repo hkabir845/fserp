@@ -39,6 +39,7 @@ export function rateCardFormFromPayload(card: VendorRateCardPayload | null | und
     effective_from: (card.effective_from || empty.effective_from).slice(0, 10),
     instant_discount_percent: String(card.instant_discount_percent ?? '0'),
     instant_discount_per_unit: String(card.instant_discount_per_unit ?? '0'),
+    transport_percent: String(card.transport_percent ?? '0'),
     transport_per_truck: String(card.transport_per_truck ?? '0'),
     transport_per_unit: String(card.transport_per_unit ?? '0'),
     transport_per_kg: String(card.transport_per_kg ?? '0'),
@@ -74,7 +75,7 @@ export function VendorPurchaseTermsFields({
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
           {showRateCard
-            ? 'Credit limit controls how much you can buy on account. Instant discount and transport are defaults for bills; monthly/yearly scheme % are used when you post mill credits.'
+            ? 'Credit limit = buy on account up to the ceiling (or pay cash). Instant % of MRP and transport (% and/or ৳) are bill defaults. Monthly % and yearly % @ ton target post as mill account credits when due.'
             : 'Set the credit ceiling here. Instant discount, transport and scheme commissions are applied when you receive a bill (Apply mill terms) or post a mill credit — not when creating the vendor.'}
         </p>
       </div>
@@ -135,8 +136,9 @@ export function VendorPurchaseTermsFields({
             Commercial terms (defaults for bills)
           </h4>
           <p className="text-[11px] text-muted-foreground mb-2">
-            Leave a field at 0 to skip that term. On each bill you can still override with{' '}
-            <span className="font-medium text-foreground">Apply mill terms</span>.
+            Examples: 5.5% instant on MRP; transport as % of MRP and/or fixed ৳; 3% monthly commission on
+            month MRP; 2.5% yearly when you reach e.g. 500 tons. Leave unused fields at 0. Override per bill
+            with <span className="font-medium text-foreground">Apply mill terms</span>.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 sm:col-span-1">
@@ -156,7 +158,7 @@ export function VendorPurchaseTermsFields({
                 value={rateCard.instant_discount_percent}
                 onChange={(e) => onRateCardChange({ instant_discount_percent: e.target.value })}
                 className="erp-field"
-                placeholder="0 = skip"
+                placeholder="e.g. 5.5"
               />
             </div>
             <div>
@@ -169,6 +171,18 @@ export function VendorPurchaseTermsFields({
                 onChange={(e) => onRateCardChange({ instant_discount_per_unit: e.target.value })}
                 className="erp-field"
                 placeholder="0 = skip"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium">Transport % of MRP</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={rateCard.transport_percent}
+                onChange={(e) => onRateCardChange({ transport_percent: e.target.value })}
+                className="erp-field"
+                placeholder="e.g. 1.5"
               />
             </div>
             <div>
@@ -208,7 +222,7 @@ export function VendorPurchaseTermsFields({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium">Monthly scheme % of MRP (reserve)</label>
+              <label className="mb-1 block text-xs font-medium">Monthly commission % of MRP</label>
               <input
                 type="number"
                 min={0}
@@ -216,14 +230,15 @@ export function VendorPurchaseTermsFields({
                 value={rateCard.monthly_rebate_percent}
                 onChange={(e) => onRateCardChange({ monthly_rebate_percent: e.target.value })}
                 className="erp-field"
-                placeholder="0 = skip"
+                placeholder="e.g. 3"
               />
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Tracked only. Use Record mill credit when the mill actually credits A/P.
+                Reserved from monthly purchase MRP. Post with <strong>Post monthly scheme</strong> when the mill
+                credits your account.
               </p>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium">Yearly scheme % of MRP</label>
+              <label className="mb-1 block text-xs font-medium">Yearly commission % of MRP</label>
               <input
                 type="number"
                 min={0}
@@ -231,7 +246,7 @@ export function VendorPurchaseTermsFields({
                 value={rateCard.yearly_rebate_percent}
                 onChange={(e) => onRateCardChange({ yearly_rebate_percent: e.target.value })}
                 className="erp-field"
-                placeholder="0 = skip"
+                placeholder="e.g. 2.5"
               />
             </div>
             <div className="col-span-2 sm:col-span-1">
@@ -243,8 +258,11 @@ export function VendorPurchaseTermsFields({
                 value={rateCard.yearly_target_tons}
                 onChange={(e) => onRateCardChange({ yearly_target_tons: e.target.value })}
                 className="erp-field"
-                placeholder="0 = no tonnage gate"
+                placeholder="e.g. 500"
               />
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                0 = no tonnage gate. Credit posts at square-off when target is met.
+              </p>
             </div>
           </div>
         </div>

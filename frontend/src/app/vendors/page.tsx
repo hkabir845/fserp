@@ -420,6 +420,7 @@ export default function VendorsPage() {
           effective_from: rateCardForm.effective_from,
           instant_discount_percent: parseFloat(rateCardForm.instant_discount_percent) || 0,
           instant_discount_per_unit: parseFloat(rateCardForm.instant_discount_per_unit) || 0,
+          transport_percent: parseFloat(rateCardForm.transport_percent) || 0,
           transport_per_truck: parseFloat(rateCardForm.transport_per_truck) || 0,
           transport_per_unit: parseFloat(rateCardForm.transport_per_unit) || 0,
           transport_per_kg: parseFloat(rateCardForm.transport_per_kg) || 0,
@@ -1303,6 +1304,34 @@ export default function VendorsPage() {
                         >
                           Record mill account credit
                         </button>
+                        {Number(purchaseTerms.scheme?.monthly_rebate_percent) > 0 ? (
+                          <button
+                            type="button"
+                            className="col-span-2 text-sm px-3 py-2 rounded-md border border-emerald-700 text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+                            disabled={purchaseTerms.scheme?.monthly_credit_posted === true}
+                            onClick={async () => {
+                              try {
+                                await api.post(`/vendors/${editingVendor.id}/monthly-scheme/`, {
+                                  memo: millCreditMemo,
+                                })
+                                toast.success('Monthly scheme credited to the mill account (A/P reduced).')
+                                void loadPurchaseTerms(editingVendor.id)
+                                void fetchVendors()
+                              } catch (err) {
+                                toast.error(
+                                  extractErrorMessage(
+                                    err,
+                                    'Monthly scheme could not be posted (no MRP this month, or already credited).'
+                                  )
+                                )
+                              }
+                            }}
+                          >
+                            {purchaseTerms.scheme?.monthly_credit_posted
+                              ? 'Monthly scheme already posted this month'
+                              : `Post monthly scheme (${purchaseTerms.scheme?.monthly_rebate_percent}% of month MRP)`}
+                          </button>
+                        ) : null}
                         {Number(purchaseTerms.scheme?.yearly_rebate_percent) > 0 ? (
                           <button
                             type="button"

@@ -444,13 +444,14 @@ function applyMillTermsToLine(
   if (!(mrp > 0) || !(qty > 0)) return line
   const pct = Number(terms.rate_card.instant_discount_percent) || 0
   const perUnit = Number(terms.rate_card.instant_discount_per_unit) || 0
+  const tPct = Number(terms.rate_card.transport_percent) || 0
   const tUnit = Number(terms.rate_card.transport_per_unit) || 0
   const tKg = Number(terms.rate_card.transport_per_kg) || 0
   const sackKg = Number(item?.content_weight_kg) || 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
-  // Per-truck is applied once on the bill, not multiplied by qty.
-  const transport = qty * tUnit + qty * sackKg * tKg
+  // Variable transport: % of MRP and/or fixed ৳. Per-truck is once on the bill, not × qty.
+  const transport = (gross * tPct) / 100 + qty * tUnit + qty * sackKg * tKg
   const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
     ...line,
@@ -486,8 +487,9 @@ function millTermsBanner(
       {vendorPurchaseTerms.uses_purchase_terms ? (
         <>
           <p className="text-muted-foreground">
-            Feed/medicine mill policy: apply instant discount and transport on this bill. Scheme
-            commissions post later via Record mill credit on the vendor — not as a bank payment.
+            Feed/medicine mill policy: apply instant % of MRP and variable transport (% and/or ৳) on this
+            bill. Monthly/yearly commissions post later via Post monthly / yearly scheme on the vendor —
+            not as a bank payment.
           </p>
           <div className="flex flex-wrap items-end gap-2 pt-1">
             <button
@@ -1643,6 +1645,7 @@ export default function BillsPage() {
       ...(vendorPurchaseTerms?.rate_card || {}),
       instant_discount_percent: values.instant_discount_percent,
       instant_discount_per_unit: values.instant_discount_per_unit,
+      transport_percent: values.transport_percent,
       transport_per_truck: values.transport_per_truck,
       transport_per_unit: values.transport_per_unit,
       transport_per_kg: values.transport_per_kg,

@@ -490,14 +490,15 @@ function renderEntitySectionTables(
             pondScopeId ? pondEntityName(byPond, pondScopeId) ?? 'Total — pond' : 'Total — all ponds',
           )
         : null}
-      {kind === 'pl' && !stationScopeId && scopedByPond.length > 0 ? (
+      {kind === 'pl' && !stationScopeId && !headOfficeScope ? (
         <div className="space-y-3">
           {!pondScopeId ? (
             <p className="rounded-lg border border-teal-200 bg-teal-50/50 px-4 py-3 text-sm text-teal-950">
               Pond table columns above are <span className="font-medium">posted GL</span> (Income / COGS / Expenses).
               The aquaculture register below lists <span className="font-medium">all pond income and expense
-              categories</span> from the register. When pond inputs are capitalized to biological inventory,
-              GL Expenses stay low until harvest COGS — use the register lists for full period costs.
+              categories</span> from the register — including Fisherman, lease, feed, and every other pond cost.
+              When pond inputs are capitalized to biological inventory, GL Expenses stay low until harvest COGS —
+              use the register lists for full period costs.
             </p>
           ) : null}
           <PondScopedAquaculturePlBlock

@@ -1698,6 +1698,13 @@ def report_income_statement(
         )
     elif station_id is not None:
         out_is["filter_station_id"] = station_id
+    elif not unscoped_dims:
+        # All entities: GL P&L omits pond costs that sit in biological inventory
+        # until harvest. Attach the aquaculture register so Fisherman / lease /
+        # feed and every other pond category still list on this report.
+        out_is["aquaculture_management"] = _aquaculture_management_snapshot(
+            company_id, start, end
+        )
     if unscoped_dims:
         out_is["filter_head_office"] = True
     return out_is

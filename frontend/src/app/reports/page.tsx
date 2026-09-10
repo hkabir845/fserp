@@ -6167,6 +6167,11 @@ function renderReportTable(
           ))}
         </div>
 
+        <PondScopedAquaculturePlBlock
+          data={data as Record<string, unknown>}
+          pondId={null}
+        />
+
         {/* Summary Totals */}
         {(() => {
           const grossProfit = Number(data.gross_profit ?? 0)

@@ -82,6 +82,54 @@ def test_entities_pl_aquaculture_management_lists_all_expense_and_income_categor
 
 
 @pytest.mark.django_db
+def test_income_statement_all_entities_includes_aquaculture_register_categories(
+    company_tenant,
+):
+    from api.services.reporting import report_income_statement
+
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid,
+        name="P-Fisherman",
+        is_active=True,
+        sort_order=1,
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_date=date(2026, 5, 8),
+        expense_category="fisherman",
+        amount=Decimal("4200.00"),
+        memo="harvest crew",
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=None,
+        expense_date=date(2026, 5, 9),
+        expense_category="lease",
+        amount=Decimal("3000.00"),
+        memo="company-wide lease, no pond shares",
+    )
+    start, end = date(2026, 5, 1), date(2026, 5, 31)
+    pl = report_income_statement(cid, start, end)
+    mgmt = pl.get("aquaculture_management") or {}
+    exp_cats = {
+        r["category"]: Decimal(str(r["amount"]))
+        for r in (mgmt.get("expenses_by_category") or [])
+    }
+    assert exp_cats.get("fisherman", 0) == Decimal("4200.00")
+    assert exp_cats.get("lease", 0) == Decimal("3000.00")
+
+    entities = report_entities_pl_summary(cid, start, end)
+    ent_cats = {
+        r["category"]: Decimal(str(r["amount"]))
+        for r in ((entities.get("aquaculture_management") or {}).get("expenses_by_category") or [])
+    }
+    assert ent_cats.get("fisherman", 0) == Decimal("4200.00")
+    assert ent_cats.get("lease", 0) == Decimal("3000.00")
+
+
+@pytest.mark.django_db
 def test_aquaculture_pl_includes_inactive_pond_with_period_expense(company_tenant):
     from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 

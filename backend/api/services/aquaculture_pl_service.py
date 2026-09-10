@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 
 from api.models import (
     AquacultureExpense,
@@ -37,7 +37,10 @@ from api.services.aquaculture_cost_per_kg import (
     vendor_bill_only_pond_bucket_additions,
     vendor_bill_pond_operating_total,
 )
-from api.services.aquaculture_pl_expense_sum import pond_consumption_amounts_by_category
+from api.services.aquaculture_pl_expense_sum import (
+    aquaculture_expenses_for_pl_direct_sum,
+    pond_consumption_amounts_by_category,
+)
 from api.services.aquaculture_pond_pl_opening import pl_opening_totals_for_pond
 
 
@@ -439,8 +442,6 @@ def compute_aquaculture_pl_summary_dict(
         return q
 
     def _dexp_q(pond_id: int):
-        from api.services.aquaculture_pl_expense_sum import aquaculture_expenses_for_pl_direct_sum
-
         q = AquacultureExpense.objects.filter(
             company_id=cid,
             pond_id=pond_id,
@@ -732,6 +733,37 @@ def compute_aquaculture_pl_summary_dict(
         total_other_consumption += other_consumption_total
         total_feed += feed_consumption_total
         total_med += medicine_consumption_total
+
+    # Company-wide (All entities) expenses with no pond and no pond_shares never
+    # enter a pond row. Fold them into company category totals so Fisherman /
+    # lease / etc. still appear on all-ponds P&L.
+    if pond_filter_id is None and cycle_filter_id is None:
+        unalloc_qs = aquaculture_expenses_for_pl_direct_sum(
+            AquacultureExpense.objects.filter(
+                company_id=cid,
+                pond_id__isnull=True,
+                expense_date__gte=start,
+                expense_date__lte=end,
+            )
+            .annotate(_share_n=Count("pond_shares"))
+            .filter(_share_n=0)
+        )
+        unallocated_exp: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+        for row in unalloc_qs.values("expense_category").annotate(s=Sum("amount")):
+            code = str(row["expense_category"] or "")
+            if not code:
+                continue
+            unallocated_exp[code] += _money_q(row["s"] or Decimal("0"))
+        unalloc_total = _money_q(sum(unallocated_exp.values(), Decimal("0")))
+        if unalloc_total:
+            for code, amt in unallocated_exp.items():
+                company_expense_dec[code] += _money_q(amt)
+            pond_expense_amounts.append(
+                (0, "All ponds (unallocated)", dict(unallocated_exp))
+            )
+            total_exp += unalloc_total
+            total_direct += unalloc_total
+            total_shared += unalloc_total
 
     total_profit = _money_q(total_income - total_exp)
 

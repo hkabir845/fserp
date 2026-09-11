@@ -510,11 +510,14 @@ function applyMillTermsToLine(
   const tPct = Number(terms.rate_card.transport_percent) || 0
   const tUnit = Number(terms.rate_card.transport_per_unit) || 0
   const tKg = Number(terms.rate_card.transport_per_kg) || 0
+  const tTon = Number(terms.rate_card.transport_per_ton) || 0
   const lineKg = millLineWeightKg(line, item)
+  const lineTons = lineKg > 0 ? lineKg / 1000 : 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
-  // ৳/ton is applied at bill level via applyMillTonTransportToLines (ordered tons × rate).
-  const transport = (gross * tPct) / 100 + qty * tUnit + lineKg * tKg
+  // Line-level ৳/ton when weight is known; bill Ordered tons can override via applyMillTonTransportToLines.
+  const transport =
+    (gross * tPct) / 100 + qty * tUnit + lineKg * tKg + lineTons * tTon
   const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
     ...line,
@@ -527,7 +530,7 @@ function applyMillTermsToLine(
   }
 }
 
-/** Distribute ordered tons × ৳/ton across MRP lines (primary mill transport rule). */
+/** Distribute ordered tons × ৳/ton across MRP lines (overrides line-weight tons when set). */
 function applyMillTonTransportToLines(
   lines: BillLineItem[],
   items: Item[],
@@ -536,22 +539,36 @@ function applyMillTonTransportToLines(
 ): BillLineItem[] {
   if (!terms?.rate_card) return lines
   const perTon = Number(terms.rate_card.transport_per_ton) || 0
-  const tonCredit = perTon > 0 && orderedTons > 0 ? roundBillMoney(orderedTons * perTon) : 0
+  // First apply discount + any line-weight tonnage.
   const priced = lines.map((line) => {
     const item = items.find((i) => i.id === line.item_id)
     return applyMillTermsToLine(line, item, terms)
   })
-  if (!(tonCredit > 0)) return priced
+  // No bill-level override — keep line-level transport (including tons from kg/sack).
+  if (!(perTon > 0) || !(orderedTons > 0)) return priced
 
+  const computedTons = millBillTons(priced, items)
+  // Same tonnage already on lines — nothing to redistribute.
+  if (Math.abs(computedTons - orderedTons) < 0.00005) return priced
+
+  const tonCredit = roundBillMoney(orderedTons * perTon)
   const mrpIdx: number[] = []
   const weights: number[] = []
+  const baseWithoutTon: number[] = []
   priced.forEach((line, i) => {
     const qty = Number(line.quantity) || 0
     const mrp = Number(line.mrp) || 0
-    if (mrp > 0 && qty > 0) {
-      mrpIdx.push(i)
-      weights.push(qty * mrp)
-    }
+    if (!(mrp > 0 && qty > 0)) return
+    const item = items.find((it) => it.id === line.item_id)
+    const lineKg = millLineWeightKg(line, item)
+    const tPct = Number(terms.rate_card?.transport_percent) || 0
+    const tUnit = Number(terms.rate_card?.transport_per_unit) || 0
+    const tKg = Number(terms.rate_card?.transport_per_kg) || 0
+    const gross = qty * mrp
+    const withoutTon = (gross * tPct) / 100 + qty * tUnit + lineKg * tKg
+    mrpIdx.push(i)
+    weights.push(gross)
+    baseWithoutTon.push(withoutTon)
   })
   if (!mrpIdx.length) return priced
 
@@ -569,8 +586,7 @@ function applyMillTonTransportToLines(
     const mrp = Number(line.mrp) || 0
     const gross = qty * mrp
     const instant = Number(line.instant_discount_amount) || 0
-    const baseTransport = Number(line.transport_amount) || 0
-    const transport = roundBillMoney(baseTransport + share)
+    const transport = roundBillMoney(baseWithoutTon[slot] + share)
     const amount = Math.max(0, roundBillMoney(gross - instant - transport))
     return {
       ...line,
@@ -670,9 +686,24 @@ function buildMillDeductionRows(opts: {
       key: 'tons-warn',
       kind: 'note',
       label:
-        'Transport ৳/ton is set but ordered tons is 0 — set Content weight (kg/sack) on the feed item (Edit item on the line), then re-enter Qty or Rate so credit can calculate (e.g. 240 sacks × 25 kg = 6 t × 950).',
+        'Transport ৳/ton is set but Ordered tons is 0 — type Ordered tons above (e.g. 10), or set Kg/sack on the feed item so Qty can convert to tons (240 sacks × 25 kg = 6 t).',
       amount: null,
     })
+  } else if (
+    opts.transportPerTon > 0 &&
+    opts.millTons > 0 &&
+    transportOnLines <= 0.005
+  ) {
+    // Lines not yet synced — still show the mill credit so the math is visible.
+    const credit = roundBillMoney(opts.millTons * opts.transportPerTon)
+    rows.push({
+      key: 'tr-bill',
+      kind: 'transport',
+      label: 'Transport credit',
+      detail: `${formatNumber(opts.millTons)} t × ${formatNumber(opts.transportPerTon)}`,
+      amount: credit,
+    })
+    transportOnLines += credit
   }
 
   const net = roundBillMoney(grossTotal - discTotal - transportOnLines - truck)
@@ -771,10 +802,11 @@ function millTermsBanner(
   }
   const perTon = Number(termsForm.transport_per_ton) || 0
   const tonCredit = roundBillMoney(opts.millTons * perTon)
-  // When ৳/ton is set, ignore leftover fixed-truck amounts in the summary.
+  // Prefer the per-ton formula for display; fall back to line sum / rare fixed truck.
   const millShare = roundBillMoney(
-    opts.millTransportTotal +
-      (perTon > 0 ? 0 : parseFloat(opts.truckTransportAmount) || 0)
+    tonCredit > 0
+      ? Math.max(tonCredit, opts.millTransportTotal)
+      : opts.millTransportTotal + (parseFloat(opts.truckTransportAmount) || 0)
   )
   const driverPerTon = parseFloat(opts.actualLorryFarePerTon) || 0
   const actual = roundBillMoney(opts.millTons * driverPerTon)
@@ -893,7 +925,7 @@ function millTermsBanner(
           :{' '}
           <span className="font-semibold tabular-nums">−{formatNumber(millShare)}</span>
           {perTon > 0 && opts.millTons <= 0
-            ? ' (set item sack kg or qty in kg)'
+            ? ' (enter Ordered tons below)'
             : null}
         </span>
       </div>
@@ -944,7 +976,9 @@ function millTermsBanner(
                   step="0.01"
                   value={opts.orderedTonsInput}
                   onChange={(e) => opts.onOrderedTonsChange(e.target.value)}
-                  className={`${opts.fieldClass} mt-1`}
+                  className={`${opts.fieldClass} mt-1${
+                    perTon > 0 && opts.millTons <= 0 ? ' border-amber-500 ring-1 ring-amber-300' : ''
+                  }`}
                   placeholder="e.g. 10"
                 />
               </label>
@@ -2219,6 +2253,15 @@ export default function BillsPage() {
           const truck = Number(data.rate_card?.transport_per_truck) || 0
           // Prefer ৳/ton; do not pull leftover fixed lorry into the bill when per-ton is set.
           setTruckTransportAmount(perTon > 0 ? '' : truck > 0 ? asTwoDecimals(truck) : '')
+          setFormData((prev) => {
+            const tons = orderedTonsManual
+              ? parseFloat(orderedTonsInput) || 0
+              : millBillTons(prev.lines, items)
+            return {
+              ...prev,
+              lines: applyMillTonTransportToLines(prev.lines, items, data, tons),
+            }
+          })
         })
         .catch(() => {
           setVendorPurchaseTerms(null)
@@ -2907,6 +2950,44 @@ export default function BillsPage() {
         discPct: Number(vendorPurchaseTerms.rate_card?.instant_discount_percent) || 0,
       })
     : []
+
+  // Keep line amounts in sync with Ordered tons × ৳/ton (and kg/sack-derived tons).
+  useEffect(() => {
+    if (!vendorPurchaseTerms?.uses_purchase_terms) return
+    if (!formData.lines.length) return
+    const perTon = Number(vendorPurchaseTerms.rate_card?.transport_per_ton) || 0
+    if (!(perTon > 0) && millTons <= 0) return
+    setFormData((prev) => {
+      const nextLines = applyMillTonTransportToLines(
+        prev.lines,
+        items,
+        vendorPurchaseTerms,
+        millTons
+      )
+      let changed = false
+      for (let i = 0; i < prev.lines.length; i++) {
+        const a = prev.lines[i]
+        const b = nextLines[i]
+        if (!b) continue
+        if (
+          Math.abs((Number(a.transport_amount) || 0) - (Number(b.transport_amount) || 0)) > 0.005 ||
+          Math.abs((Number(a.amount) || 0) - (Number(b.amount) || 0)) > 0.005
+        ) {
+          changed = true
+          break
+        }
+      }
+      return changed ? { ...prev, lines: nextLines } : prev
+    })
+  }, [
+    vendorPurchaseTerms,
+    millTons,
+    items,
+    formData.lines.length,
+    // Re-run when rate card transport/discount fields change
+    vendorPurchaseTerms?.rate_card?.transport_per_ton,
+    vendorPurchaseTerms?.rate_card?.instant_discount_percent,
+  ])
 
   const addBillLine = (kind: BillLineKind) => {
     setFormData((prev) => {

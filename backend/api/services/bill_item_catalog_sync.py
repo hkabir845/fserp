@@ -28,7 +28,15 @@ from api.services.item_name_uniqueness import (
 from api.services.item_reporting_categories import normalize_item_reporting_category
 
 # Catalog fields the bill line's "Edit item" panel may write.
-CATALOG_PANEL_FIELDS = ("name", "description", "unit", "category", "unit_price", "pieces_per_kg")
+CATALOG_PANEL_FIELDS = (
+    "name",
+    "description",
+    "unit",
+    "category",
+    "unit_price",
+    "pieces_per_kg",
+    "content_weight_kg",
+)
 
 
 def _decimal_or_none(raw):
@@ -158,6 +166,7 @@ def parse_bill_line_item_catalog_updates(
                 "unit_price",
                 "cost",
                 "pieces_per_kg",
+                "content_weight_kg",
             )
             .first()
         )
@@ -213,6 +222,18 @@ def parse_bill_line_item_catalog_updates(
                 return {}, f"Line {idx}: item unit_price cannot be negative."
             fields["unit_price"] = _money(up)
 
+        if "content_weight_kg" in panel:
+            raw_cw = panel.get("content_weight_kg")
+            if raw_cw in (None, ""):
+                fields["content_weight_kg"] = None
+            else:
+                cw = _decimal_or_none(raw_cw)
+                if cw is None or cw <= 0:
+                    return {}, f"Line {idx}: content_weight_kg (kg/sack) must be greater than zero."
+                fields["content_weight_kg"] = cw.quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
+                )
+
     return {item_id: f for item_id, f in updates.items() if f}, None
 
 
@@ -231,6 +252,7 @@ def apply_bill_line_item_catalog_updates(company_id: int, updates: dict[int, dic
                 "unit_price",
                 "cost",
                 "pieces_per_kg",
+                "content_weight_kg",
             )
             .first()
         )

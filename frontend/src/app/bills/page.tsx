@@ -12,6 +12,7 @@ import { Plus, Trash2, Search, X, PlusCircle, Eye, Edit2, FileText, Ban } from '
 import { DocumentExportButtons } from '@/components/DocumentExportButtons'
 import { useToast } from '@/components/Toast'
 import { type BillMillTermsValues } from '@/components/bills/BillMillTermsDialog'
+import { MillBillDeductionLines, type MillDeductionLineRow } from '@/components/bills/MillBillDeductionLines'
 import { usePageMeta } from '@/hooks/usePageMeta'
 import { useT } from '@/lib/i18n'
 import { useErpCommonT } from '@/lib/moduleI18n/erpCommon'
@@ -463,6 +464,30 @@ function millUsesCreditLane(terms: VendorPurchaseTerms | null, billMrp: number):
   return available + 0.005 >= billMrp
 }
 
+function millLineSackKg(line: BillLineItem, item: Item | undefined): number {
+  const fromCatalog = Number(
+    (line.item_catalog as { content_weight_kg?: number | string } | undefined)?.content_weight_kg
+  )
+  if (Number.isFinite(fromCatalog) && fromCatalog > 0) return fromCatalog
+  const fromItem = Number(item?.content_weight_kg)
+  if (Number.isFinite(fromItem) && fromItem > 0) return fromItem
+  return 0
+}
+
+function millLineWeightKg(line: BillLineItem, item: Item | undefined): number {
+  const qty = Number(line.quantity) || 0
+  if (!(qty > 0)) return 0
+  const sackKg = millLineSackKg(line, item)
+  const unit = String(
+    (line.item_catalog as { unit?: string } | undefined)?.unit || item?.unit || ''
+  )
+    .trim()
+    .toLowerCase()
+  if (sackKg > 0) return qty * sackKg
+  if (['kg', 'kgs', 'kilogram', 'kilograms'].includes(unit)) return qty
+  return 0
+}
+
 function applyMillTermsToLine(
   line: BillLineItem,
   item: Item | undefined,
@@ -479,10 +504,7 @@ function applyMillTermsToLine(
   const tUnit = Number(terms.rate_card.transport_per_unit) || 0
   const tKg = Number(terms.rate_card.transport_per_kg) || 0
   const tTon = Number(terms.rate_card.transport_per_ton) || 0
-  const sackKg = Number(item?.content_weight_kg) || 0
-  const unit = (item?.unit || '').trim().toLowerCase()
-  const lineKg =
-    sackKg > 0 ? qty * sackKg : ['kg', 'kgs', 'kilogram', 'kilograms'].includes(unit) ? qty : 0
+  const lineKg = millLineWeightKg(line, item)
   const tons = lineKg > 0 ? lineKg / 1000 : 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
@@ -505,14 +527,118 @@ function applyMillTermsToLine(
 function millBillTons(lines: BillLineItem[], items: Item[]): number {
   return lines.reduce((sum, line) => {
     const item = items.find((i) => i.id === line.item_id)
-    const qty = Number(line.quantity) || 0
-    if (!(qty > 0)) return sum
-    const sackKg = Number(item?.content_weight_kg) || 0
-    const unit = (item?.unit || '').trim().toLowerCase()
-    const lineKg =
-      sackKg > 0 ? qty * sackKg : ['kg', 'kgs', 'kilogram', 'kilograms'].includes(unit) ? qty : 0
-    return sum + lineKg / 1000
+    return sum + millLineWeightKg(line, item) / 1000
   }, 0)
+}
+
+function buildMillDeductionRows(opts: {
+  lines: BillLineItem[]
+  items: Item[]
+  millTons: number
+  transportPerTon: number
+  driverPerTon: number
+  driverFareTotal: number
+  truckTransport: number
+  discPct: number
+}): MillDeductionLineRow[] {
+  const rows: MillDeductionLineRow[] = []
+  let grossTotal = 0
+  let discTotal = 0
+  let transportOnLines = 0
+
+  opts.lines.forEach((line, idx) => {
+    const item = opts.items.find((i) => i.id === line.item_id)
+    const qty = Number(line.quantity) || 0
+    const mrp = Number(line.mrp || item?.mrp || 0)
+    if (!(mrp > 0) || !(qty > 0)) return
+    const name = item?.name || line.description || `Line ${idx + 1}`
+    const gross = roundBillMoney(qty * mrp)
+    const disc = roundBillMoney(Number(line.instant_discount_amount) || 0)
+    const transport = roundBillMoney(Number(line.transport_amount) || 0)
+    const lineKg = millLineWeightKg(line, item)
+    const tons = lineKg / 1000
+    grossTotal += gross
+    discTotal += disc
+    transportOnLines += transport
+
+    rows.push({
+      key: `gross-${idx}`,
+      kind: 'gross',
+      label: `${name} — MRP`,
+      detail: `${formatNumber(qty)} × ${formatNumber(mrp)}${
+        tons > 0 ? ` · ${formatNumber(tons)} t` : lineKg <= 0 ? ' · set kg/sack on item for tonnage' : ''
+      }`,
+      amount: gross,
+    })
+    if (disc > 0) {
+      rows.push({
+        key: `disc-${idx}`,
+        kind: 'discount',
+        label: `Instant discount${opts.discPct > 0 ? ` (${opts.discPct}%)` : ''}`,
+        detail: name,
+        amount: disc,
+      })
+    }
+    if (transport > 0) {
+      rows.push({
+        key: `tr-${idx}`,
+        kind: 'transport',
+        label: 'Transport credit',
+        detail:
+          tons > 0 && opts.transportPerTon > 0
+            ? `${formatNumber(tons)} t × ${formatNumber(opts.transportPerTon)}`
+            : name,
+        amount: transport,
+      })
+    }
+  })
+
+  if (!rows.length) return []
+
+  const truck = roundBillMoney(opts.truckTransport)
+  if (truck > 0) {
+    rows.push({
+      key: 'truck',
+      kind: 'transport',
+      label: 'Fixed transport / bill',
+      detail: 'Optional fixed amount (prefer ৳/ton)',
+      amount: truck,
+    })
+  }
+
+  if (opts.transportPerTon > 0 && opts.millTons <= 0) {
+    rows.push({
+      key: 'tons-warn',
+      kind: 'note',
+      label:
+        'Transport ৳/ton is set but ordered tons is 0 — set Content weight (kg/sack) on the feed item (Edit item on the line), then re-enter Qty or Rate so credit can calculate (e.g. 240 sacks × 25 kg = 6 t × 950).',
+      amount: null,
+    })
+  }
+
+  const net = roundBillMoney(grossTotal - discTotal - transportOnLines - truck)
+  rows.push({
+    key: 'net',
+    kind: 'net',
+    label: 'Net bill (after discount & transport)',
+    detail: 'Matches product line amounts + fixed transport if any',
+    amount: net,
+  })
+
+  if (opts.driverPerTon > 0 || opts.driverFareTotal > 0) {
+    rows.push({
+      key: 'driver',
+      kind: 'driver',
+      label: 'Paid to driver (ours — not on mill bill)',
+      detail:
+        opts.millTons > 0
+          ? `${formatNumber(opts.millTons)} t × ${formatNumber(opts.driverPerTon)}`
+          : 'Needs ordered tons (kg/sack on item)',
+      amount: opts.driverFareTotal,
+    })
+  }
+
+  return rows
 }
 
 function millTermsBanner(
@@ -552,7 +678,10 @@ function millTermsBanner(
     ),
     transport_percent: asTwoDecimals(card?.transport_percent, empty.transport_percent),
     transport_per_truck: asTwoDecimals(
-      opts.truckTransportAmount || card?.transport_per_truck,
+      opts.truckTransportAmount ||
+        ((Number(card?.transport_per_ton) || 0) > 0
+          ? ''
+          : card?.transport_per_truck),
       empty.transport_per_truck
     ),
     transport_per_unit: asTwoDecimals(card?.transport_per_unit, empty.transport_per_unit),
@@ -2004,8 +2133,10 @@ export default function BillsPage() {
         .then((res) => {
           const data = res.data as VendorPurchaseTerms
           setVendorPurchaseTerms(data)
+          const perTon = Number(data.rate_card?.transport_per_ton) || 0
           const truck = Number(data.rate_card?.transport_per_truck) || 0
-          setTruckTransportAmount(truck > 0 ? asTwoDecimals(truck) : '')
+          // Prefer ৳/ton; do not pull leftover fixed lorry into the bill when per-ton is set.
+          setTruckTransportAmount(perTon > 0 ? '' : truck > 0 ? asTwoDecimals(truck) : '')
         })
         .catch(() => {
           setVendorPurchaseTerms(null)
@@ -2053,8 +2184,18 @@ export default function BillsPage() {
       rate_card: nextCard,
     }
     setVendorPurchaseTerms(nextTerms)
+    const perTon = parseFloat(values.transport_per_ton) || 0
     const truck = parseFloat(values.transport_per_truck) || 0
-    setTruckTransportAmount(truck > 0 ? toTwoDecimals(truck) : '')
+    // Prefer ৳/ton; keep fixed truck only when the field has a value.
+    setTruckTransportAmount(
+      perTon > 0
+        ? truck > 0 && String(values.transport_per_truck || '').trim() !== ''
+          ? toTwoDecimals(truck)
+          : ''
+        : truck > 0
+          ? toTwoDecimals(truck)
+          : ''
+    )
     setFormData((prev) => ({
       ...prev,
       lines: prev.lines.map((line) => {
@@ -2643,6 +2784,19 @@ export default function BillsPage() {
     fieldClass: BILL_LINE_CTL,
   }
 
+  const millDeductionRows = vendorPurchaseTerms?.uses_purchase_terms
+    ? buildMillDeductionRows({
+        lines: formData.lines,
+        items,
+        millTons,
+        transportPerTon: Number(vendorPurchaseTerms.rate_card?.transport_per_ton) || 0,
+        driverPerTon: parseFloat(actualLorryFarePerTon) || 0,
+        driverFareTotal,
+        truckTransport: parseFloat(truckTransportAmount) || 0,
+        discPct: Number(vendorPurchaseTerms.rate_card?.instant_discount_percent) || 0,
+      })
+    : []
+
   const addBillLine = (kind: BillLineKind) => {
     setFormData((prev) => {
       const lineNumber = prev.lines.length + 1
@@ -2789,6 +2943,15 @@ export default function BillsPage() {
   }
 
   const handleLineChange = (index: number, field: string, value: any) => {
+    let catalogCwUpdate: { itemId: number; kg: number } | null = null
+    if (field === 'item_catalog') {
+      const cw = Number((value as BillLineItemCatalogEdits | undefined)?.content_weight_kg)
+      const itemId = formData.lines[index]?.item_id
+      if (itemId && Number.isFinite(cw) && cw > 0) {
+        catalogCwUpdate = { itemId, kg: cw }
+      }
+    }
+
     setFormData((prev) => {
       const newLines = [...prev.lines]
 
@@ -3071,10 +3234,26 @@ export default function BillsPage() {
           picked,
           vendorPurchaseTerms
         )
+      } else if (field === 'item_catalog' && vendorPurchaseTerms?.uses_purchase_terms) {
+        // Kg/sack (or unit) edits change tonnage — recompute mill discount/transport.
+        newLines[index] = applyMillTermsToLine(
+          newLines[index],
+          lineItem,
+          vendorPurchaseTerms
+        )
       }
 
       return { ...prev, lines: newLines }
     })
+    if (catalogCwUpdate) {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === catalogCwUpdate!.itemId
+            ? { ...it, content_weight_kg: catalogCwUpdate!.kg }
+            : it
+        )
+      )
+    }
   }
   
   // Get tanks for a specific item (fuel items)
@@ -4680,6 +4859,10 @@ export default function BillsPage() {
                   {formData.lines.length === 0 && (
                     <p className="text-center text-muted-foreground py-4">No line items added. Click &quot;Add Line&quot; to add items.</p>
                   )}
+                  <MillBillDeductionLines
+                    currencySymbol={currencySymbol}
+                    rows={millDeductionRows}
+                  />
                 </div>
 
                 {/* Totals */}
@@ -5222,6 +5405,10 @@ export default function BillsPage() {
                       <p>No line items. Click "Add Line" to add items or expense accounts.</p>
                     </div>
                   )}
+                  <MillBillDeductionLines
+                    currencySymbol={currencySymbol}
+                    rows={millDeductionRows}
+                  />
                 </div>
 
                 {/* Totals */}

@@ -11,6 +11,8 @@ export type BillLineItemCatalogEdits = {
   category?: string
   unit_price?: number | string
   pieces_per_kg?: number | string
+  /** Feed sack weight — needed for mill transport ৳/ton. */
+  content_weight_kg?: number | string
 }
 
 export type BillLineCatalogItem = {
@@ -21,6 +23,7 @@ export type BillLineCatalogItem = {
   category?: string
   unit_price?: number | string
   pieces_per_kg?: number | string | null
+  content_weight_kg?: number | string | null
   pos_category?: string
 }
 
@@ -35,6 +38,7 @@ const FIELDS: {
 }[] = [
   { key: 'name', label: 'Item name', type: 'text' },
   { key: 'unit', label: 'Unit', type: 'text', placeholder: 'piece, kg, sack…' },
+  { key: 'content_weight_kg', label: 'Kg / sack', type: 'number', placeholder: 'e.g. 25' },
   { key: 'category', label: 'Category', type: 'text', placeholder: 'General' },
   { key: 'unit_price', label: 'Sale price', type: 'number' },
   { key: 'description', label: 'Item description', type: 'text', wide: true },
@@ -53,7 +57,7 @@ function isChanged(item: BillLineCatalogItem, edits: BillLineItemCatalogEdits, k
   const next = edits[key]
   if (next === undefined) return false
   const current = catalogValue(item, key)
-  if (key === 'unit_price' || key === 'pieces_per_kg') {
+  if (key === 'unit_price' || key === 'pieces_per_kg' || key === 'content_weight_kg') {
     const a = Number(next)
     const b = Number(current)
     if (Number.isFinite(a) && Number.isFinite(b)) return a !== b
@@ -172,6 +176,10 @@ export function billLineItemCatalogPayload(
   if (isChanged(item, edits, 'pieces_per_kg')) {
     const n = Number(edits.pieces_per_kg)
     if (Number.isFinite(n) && n > 0) out.pieces_per_kg = n
+  }
+  if (isChanged(item, edits, 'content_weight_kg')) {
+    const n = Number(edits.content_weight_kg)
+    if (Number.isFinite(n) && n > 0) out.content_weight_kg = n
   }
   return Object.keys(out).length ? out : null
 }

@@ -27,7 +27,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto overflow-x-hidden bg-foreground/50 p-0 pb-[env(safe-area-inset-bottom,0px)] sm:items-center sm:p-3 md:p-6">
+    <div className="erp-modal-backdrop overflow-y-auto overflow-x-hidden pb-[env(safe-area-inset-bottom,0px)]">
       <div
         className={`my-0 w-full min-w-0 max-w-full overflow-y-auto overscroll-y-contain rounded-t-xl erp-surface p-4 shadow-elevated sm:my-auto sm:max-h-[min(96vh,100%)] sm:rounded-2xl sm:p-6 md:p-8 ${sizeClasses[size]} mx-auto`}
       >

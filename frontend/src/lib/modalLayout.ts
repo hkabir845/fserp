@@ -6,9 +6,9 @@
 /** Same width as AquaculturePageShell default and /aquaculture/sales listing. */
 export const ERP_PAGE_VIEWPORT = 'max-w-[1440px]' as const
 
-/** Full-screen dimmed overlay for centered modals. */
+/** Dimmed overlay for centered modals — main column only (leaves sidebar visible). */
 export const MODAL_BACKDROP =
-  'fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-3 sm:p-6'
+  'erp-modal-backdrop'
 
 /** Large data-entry modal (header + scroll body + footer), matches Record pond sale. */
 export const MODAL_FORM_PANEL =

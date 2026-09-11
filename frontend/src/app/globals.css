@@ -496,8 +496,13 @@
     @apply rounded-xl border border-destructive/25 bg-destructive/5 p-4 sm:p-6 md:p-8;
   }
 
+  /**
+   * Dimmed overlay for dialogs — stays in the main content column so the left
+   * menubar remains visible. Width comes from Sidebar via --erp-sidebar-width.
+   */
   .erp-modal-backdrop {
-    @apply fixed inset-0 z-50 flex items-end justify-center bg-foreground/50 p-0 sm:items-center sm:p-3 md:p-6;
+    @apply fixed bottom-0 right-0 top-0 z-50 flex items-end justify-center bg-foreground/50 p-0 sm:items-center sm:p-3 md:p-6;
+    left: var(--erp-sidebar-width, 0px);
   }
 
   /** Default modal panel — prefer size modifiers below for new code. */

@@ -112,6 +112,13 @@ export default function Sidebar() {
     }
   }, [])
 
+  /** Keep overlays (modals) inside the main column — do not cover the menubar. */
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const px = isDesktopLayout ? sidebarWidthPx : 0
+    document.documentElement.style.setProperty('--erp-sidebar-width', `${px}px`)
+  }, [isDesktopLayout, sidebarWidthPx])
+
   const endSidebarResize = useCallback(() => {
     resizeDragRef.current = null
     setIsResizingSidebar(false)

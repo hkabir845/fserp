@@ -120,7 +120,7 @@ function PlDetailSection({
                       </p>
                     </div>
                     <div className="ml-4 whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">
-                      <DrillAmount amount={account.balance} drill={glDrill} />
+                      <DrillAmount amount={account.balance ?? 0} drill={glDrill} />
                     </div>
                   </div>
                 )

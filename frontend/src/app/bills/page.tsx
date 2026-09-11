@@ -243,6 +243,7 @@ interface Bill {
   has_multiple_entities?: boolean
   entity_allocations?: BillEntityAllocationRow[]
   truck_transport_amount?: number | string
+  actual_lorry_fare?: number | string
 }
 
 type BillAmountSource = Pick<
@@ -793,7 +794,7 @@ function millTermsBanner(
     ),
     yearly_target_tons: asTwoDecimals(
       card?.yearly_target_tons ??
-        (Number(card?.yearly_target_kg) ? Number(card.yearly_target_kg) / 1000 : empty.yearly_target_tons),
+        (Number(card?.yearly_target_kg) ? Number(card?.yearly_target_kg) / 1000 : empty.yearly_target_tons),
       empty.yearly_target_tons
     ),
   }

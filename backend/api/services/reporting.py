@@ -144,6 +144,161 @@ def _movements_by_account(
     return {r["account_id"]: (r["td"], r["tc"]) for r in rows}
 
 
+_HO_ENTITY_NAME = "Head office / unassigned"
+
+
+def _movements_by_account_and_entity(
+    company_id: int,
+    line_qs,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> list[tuple[int, str, int | None, str, Decimal, Decimal]]:
+    """
+    One grouped query: (account_id, entity_type, entity_id, entity_name, debit, credit).
+
+    Pond tag wins over station; untagged lines are Head office / unassigned.
+    Station may come from the line or the journal header (legacy rows).
+    """
+    qs = line_qs
+    if start is not None:
+        qs = qs.filter(journal_entry__entry_date__gte=start)
+    if end is not None:
+        qs = qs.filter(journal_entry__entry_date__lte=end)
+    raw = qs.values(
+        "account_id",
+        "aquaculture_pond_id",
+        "station_id",
+        "journal_entry__station_id",
+    ).annotate(
+        td=Coalesce(Sum("debit"), Decimal("0")),
+        tc=Coalesce(Sum("credit"), Decimal("0")),
+    )
+    pond_ids: set[int] = set()
+    station_ids: set[int] = set()
+    for r in raw:
+        pid = r.get("aquaculture_pond_id")
+        if pid is not None:
+            pond_ids.add(int(pid))
+            continue
+        sid = r.get("station_id") or r.get("journal_entry__station_id")
+        if sid is not None:
+            station_ids.add(int(sid))
+    pond_names = {
+        int(p.id): _entity_display_name(p.name, f"Pond #{p.id}", p.is_active)
+        for p in AquaculturePond.objects.filter(
+            company_id=company_id, id__in=pond_ids
+        ).only("id", "name", "is_active")
+    }
+    station_names = {
+        int(s.id): _entity_display_name(
+            s.station_name, f"Station #{s.id}", s.is_active
+        )
+        for s in Station.objects.filter(
+            company_id=company_id, id__in=station_ids
+        ).only("id", "station_name", "is_active")
+    }
+    out: list[tuple[int, str, int | None, str, Decimal, Decimal]] = []
+    # Merge rows that resolve to the same (account, entity) after pond/station/HO rules.
+    merged: dict[tuple[int, str, int | None], list[Any]] = {}
+    for r in raw:
+        aid = r["account_id"]
+        if aid is None:
+            continue
+        pid = r.get("aquaculture_pond_id")
+        if pid is not None:
+            et, eid = "pond", int(pid)
+            ename = pond_names.get(eid) or f"Pond #{eid}"
+        else:
+            sid = r.get("station_id") or r.get("journal_entry__station_id")
+            if sid is not None:
+                et, eid = "station", int(sid)
+                ename = station_names.get(eid) or f"Station #{eid}"
+            else:
+                et, eid, ename = "unscoped", None, _HO_ENTITY_NAME
+        key = (int(aid), et, eid)
+        slot = merged.get(key)
+        if slot is None:
+            merged[key] = [ename, _d(r["td"]), _d(r["tc"])]
+        else:
+            slot[1] += _d(r["td"])
+            slot[2] += _d(r["tc"])
+    for (aid, et, eid), (ename, td, tc) in merged.items():
+        out.append((aid, et, eid, str(ename), td, tc))
+    return out
+
+
+def _pl_scope_entity_meta(
+    company_id: int,
+    *,
+    station_id: int | None,
+    pond_id: int | None,
+    pond_name: str | None,
+    unscoped_dims: bool,
+) -> dict[str, Any] | None:
+    """Entity stamp for single-entity / head-office P&L rows (None = multi-entity split)."""
+    if pond_id is not None:
+        name = (pond_name or "").strip() or f"Pond #{pond_id}"
+        pond = AquaculturePond.objects.filter(
+            pk=pond_id, company_id=company_id
+        ).only("name", "is_active").first()
+        if pond:
+            name = _entity_display_name(pond.name, name, pond.is_active)
+        return {
+            "entity_type": "pond",
+            "entity_id": pond_id,
+            "entity_name": name,
+            "pond_id": pond_id,
+            "pond_name": name,
+        }
+    if station_id is not None:
+        st = Station.objects.filter(pk=station_id, company_id=company_id).only(
+            "station_name", "is_active"
+        ).first()
+        name = _entity_display_name(
+            st.station_name if st else None,
+            f"Station #{station_id}",
+            st.is_active if st else True,
+        )
+        return {
+            "entity_type": "station",
+            "entity_id": station_id,
+            "entity_name": name,
+            "station_id": station_id,
+            "station_name": name,
+        }
+    if unscoped_dims:
+        return {
+            "entity_type": "unscoped",
+            "entity_id": None,
+            "entity_name": _HO_ENTITY_NAME,
+        }
+    return None
+
+
+def _pl_account_row(
+    coa: ChartOfAccount,
+    amt: Decimal,
+    *,
+    entity_meta: dict[str, Any] | None = None,
+    bucket: str | None = None,
+) -> dict[str, Any]:
+    display_name = coa.account_name
+    if not coa.is_active:
+        display_name = f"{display_name} (inactive)"
+    row: dict[str, Any] = {
+        "account_id": coa.id,
+        "account_code": coa.account_code,
+        "account_name": display_name,
+        "balance": _f(amt),
+    }
+    if bucket:
+        row["pl_bucket"] = bucket
+    if entity_meta:
+        row.update(entity_meta)
+    return row
+
+
 def _period_pl_totals_from_line_qs(
     company_id: int, start: date, end: date, line_qs, *, eliminate_internal: bool = False
 ) -> dict[str, Decimal]:
@@ -1613,40 +1768,95 @@ def report_income_statement(
     # site-scoped statement keeps it, because from that pond's side the sale really happened.
     eliminate_internal = pond_id is None and station_id is None and not unscoped_dims
     elimination_rows: list[dict[str, Any]] = []
-    pl_moves = _movements_by_account(line_qs, start=start, end=end)
-    for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by(
-        "account_code"
-    ):
-        bucket = _pl_bucket(coa)
-        if bucket is None:
-            continue
-        d_mv, c_mv = pl_moves.get(coa.id, (Decimal("0"), Decimal("0")))
-        amt = _pl_amount_from_movement(coa, d_mv, c_mv)
-        if amt == 0:
-            continue
-        display_name = coa.account_name
-        if not coa.is_active:
-            display_name = f"{display_name} (inactive)"
-        row = {
-            "account_id": coa.id,
-            "account_code": coa.account_code,
-            "account_name": display_name,
-            "balance": _f(amt),
-        }
-        if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
-            elimination_rows.append({**row, "bucket": bucket})
-            continue
-        if bucket == "income":
-            income_rows.append(row)
-            ti += amt
-        elif bucket == "cost_of_goods_sold":
-            cogs_rows.append(row)
-            tcogs += amt
-        else:
-            exp_rows.append(row)
-            te += amt
+    scope_entity = _pl_scope_entity_meta(
+        company_id,
+        station_id=station_id,
+        pond_id=pond_id,
+        pond_name=pond_name,
+        unscoped_dims=unscoped_dims,
+    )
+    coa_by_id = {
+        c.id: c
+        for c in ChartOfAccount.objects.filter(company_id=company_id).order_by(
+            "account_code"
+        )
+    }
+    if scope_entity is None:
+        # All entities: one detail row per account × entity with activity in the period.
+        entity_moves = _movements_by_account_and_entity(
+            company_id, line_qs, start=start, end=end
+        )
+        for aid, et, eid, ename, d_mv, c_mv in entity_moves:
+            coa = coa_by_id.get(aid)
+            if coa is None:
+                continue
+            bucket = _pl_bucket(coa)
+            if bucket is None:
+                continue
+            amt = _pl_amount_from_movement(coa, d_mv, c_mv)
+            if amt == 0:
+                continue
+            entity_meta = {
+                "entity_type": et,
+                "entity_id": eid,
+                "entity_name": ename,
+            }
+            if et == "pond":
+                entity_meta["pond_id"] = eid
+                entity_meta["pond_name"] = ename
+            elif et == "station":
+                entity_meta["station_id"] = eid
+                entity_meta["station_name"] = ename
+            row = _pl_account_row(coa, amt, entity_meta=entity_meta, bucket=bucket)
+            if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
+                elimination_rows.append({**row, "bucket": bucket})
+                continue
+            if bucket == "income":
+                income_rows.append(row)
+                ti += amt
+            elif bucket == "cost_of_goods_sold":
+                cogs_rows.append(row)
+                tcogs += amt
+            else:
+                exp_rows.append(row)
+                te += amt
+    else:
+        pl_moves = _movements_by_account(line_qs, start=start, end=end)
+        for coa in coa_by_id.values():
+            bucket = _pl_bucket(coa)
+            if bucket is None:
+                continue
+            d_mv, c_mv = pl_moves.get(coa.id, (Decimal("0"), Decimal("0")))
+            amt = _pl_amount_from_movement(coa, d_mv, c_mv)
+            if amt == 0:
+                continue
+            row = _pl_account_row(coa, amt, entity_meta=scope_entity, bucket=bucket)
+            if eliminate_internal and (coa.account_code or "").strip() in INTERNAL_TRADE_PL_CODES:
+                elimination_rows.append({**row, "bucket": bucket})
+                continue
+            if bucket == "income":
+                income_rows.append(row)
+                ti += amt
+            elif bucket == "cost_of_goods_sold":
+                cogs_rows.append(row)
+                tcogs += amt
+            else:
+                exp_rows.append(row)
+                te += amt
+
+    def _pl_row_sort_key(r: dict[str, Any]) -> tuple:
+        return (
+            str(r.get("entity_name") or ""),
+            str(r.get("account_code") or ""),
+            str(r.get("account_name") or ""),
+        )
+
+    income_rows.sort(key=_pl_row_sort_key)
+    cogs_rows.sort(key=_pl_row_sort_key)
+    exp_rows.sort(key=_pl_row_sort_key)
     gross = ti - tcogs
     net = gross - te
+    total_expenses = tcogs + te
     # Posted activity in [start, end] should match Δ cumulative P&L unless COA opening balances exist on P&L rows.
     day_before = start - timedelta(days=1)
     if pond_id is not None or station_id is not None:
@@ -1679,6 +1889,7 @@ def report_income_statement(
         "income": {"accounts": income_rows, "total": _f(ti)},
         "cost_of_goods_sold": {"accounts": cogs_rows, "total": _f(tcogs)},
         "expenses": {"accounts": exp_rows, "total": _f(te)},
+        "total_expenses": _f(total_expenses),
         "gross_profit": _f(gross),
         "net_income": _f(net),
         "internal_eliminations": _internal_elimination_block(
@@ -4325,34 +4536,91 @@ def _fold_aquaculture_register_into_pl_sections(
         _strip_gl_codes(income_block, _AQ_GL_INCOME_CODES)
         accounts = list(income_block.get("accounts") or [])
         existing = {
-            str(a.get("account_code") or "").strip()
+            (
+                str(a.get("account_code") or "").strip(),
+                str(a.get("entity_type") or ""),
+                a.get("entity_id"),
+            )
             for a in accounts
             if isinstance(a, dict)
         }
         added_income = Decimal("0")
-        for row in mgmt.get("income_by_category") or []:
-            if not isinstance(row, dict):
-                continue
-            cat = str(row.get("category") or "").strip()
-            amt = _d(row.get("amount"))
-            if not cat or amt <= 0:
-                continue
-            code = f"AQ-INC-{cat}"
-            if code in existing:
-                continue
-            label = INCOME_TYPE_LABELS.get(cat) or cat.replace("_", " ").title()
-            accounts.append(
-                {
-                    "account_id": None,
-                    "account_code": code,
-                    "account_name": f"{label} (aquaculture)",
-                    "balance": _f(amt),
-                    "source": "aquaculture_register",
-                }
+        pond_income_groups = [
+            g for g in (mgmt.get("income_by_pond") or []) if isinstance(g, dict)
+        ]
+        if pond_income_groups:
+            for group in pond_income_groups:
+                pid = group.get("pond_id")
+                pname = (group.get("pond_name") or "").strip() or (
+                    f"Pond #{pid}" if pid is not None else "Pond"
+                )
+                for row in group.get("categories") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    cat = str(row.get("category") or "").strip()
+                    amt = _d(row.get("amount"))
+                    if not cat or amt <= 0:
+                        continue
+                    code = f"AQ-INC-{cat}"
+                    key = (code, "pond", pid)
+                    if key in existing:
+                        continue
+                    label = INCOME_TYPE_LABELS.get(cat) or cat.replace("_", " ").title()
+                    accounts.append(
+                        {
+                            "account_id": None,
+                            "account_code": code,
+                            "account_name": f"{label} (aquaculture)",
+                            "balance": _f(amt),
+                            "source": "aquaculture_register",
+                            "pl_bucket": "income",
+                            "entity_type": "pond",
+                            "entity_id": pid,
+                            "entity_name": pname,
+                            "pond_id": pid,
+                            "pond_name": pname,
+                        }
+                    )
+                    existing.add(key)
+                    added_income += amt
+                    changed = True
+        else:
+            for row in mgmt.get("income_by_category") or []:
+                if not isinstance(row, dict):
+                    continue
+                cat = str(row.get("category") or "").strip()
+                amt = _d(row.get("amount"))
+                if not cat or amt <= 0:
+                    continue
+                code = f"AQ-INC-{cat}"
+                key = (code, "", None)
+                if key in existing or any(
+                    str(a.get("account_code") or "").strip() == code for a in accounts
+                ):
+                    continue
+                label = INCOME_TYPE_LABELS.get(cat) or cat.replace("_", " ").title()
+                accounts.append(
+                    {
+                        "account_id": None,
+                        "account_code": code,
+                        "account_name": f"{label} (aquaculture)",
+                        "balance": _f(amt),
+                        "source": "aquaculture_register",
+                        "pl_bucket": "income",
+                        "entity_name": "Aquaculture (all ponds)",
+                        "entity_type": "pond",
+                        "entity_id": None,
+                    }
+                )
+                existing.add(key)
+                added_income += amt
+                changed = True
+        accounts.sort(
+            key=lambda a: (
+                str(a.get("entity_name") or ""),
+                str(a.get("account_code") or ""),
             )
-            existing.add(code)
-            added_income += amt
-            changed = True
+        )
         income_block["accounts"] = accounts
         if added_income > 0:
             income_block["total"] = _f(_d(income_block.get("total")) + added_income)
@@ -4362,34 +4630,87 @@ def _fold_aquaculture_register_into_pl_sections(
         _strip_gl_codes(expense_block, _AQ_GL_EXPENSE_CODES)
         accounts = list(expense_block.get("accounts") or [])
         existing = {
-            str(a.get("account_code") or "").strip()
+            (
+                str(a.get("account_code") or "").strip(),
+                str(a.get("entity_type") or ""),
+                a.get("entity_id"),
+            )
             for a in accounts
             if isinstance(a, dict)
         }
         added_expense = Decimal("0")
-        for row in mgmt.get("expenses_by_category") or []:
-            if not isinstance(row, dict):
-                continue
-            cat = str(row.get("category") or "").strip()
-            amt = _d(row.get("amount"))
-            if not cat or amt <= 0:
-                continue
-            code = f"AQ-EXP-{cat}"
-            if code in existing:
-                continue
-            label = EXPENSE_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
-            accounts.append(
-                {
-                    "account_id": None,
-                    "account_code": code,
-                    "account_name": f"{label} (aquaculture)",
-                    "balance": _f(amt),
-                    "source": "aquaculture_register",
-                }
+        pond_expense_groups = [
+            g for g in (mgmt.get("expenses_by_pond") or []) if isinstance(g, dict)
+        ]
+        if pond_expense_groups:
+            for group in pond_expense_groups:
+                pid = group.get("pond_id")
+                pname = (group.get("pond_name") or "").strip() or (
+                    f"Pond #{pid}" if pid is not None else "Pond"
+                )
+                for row in group.get("categories") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    cat = str(row.get("category") or "").strip()
+                    amt = _d(row.get("amount"))
+                    if not cat or amt <= 0:
+                        continue
+                    code = f"AQ-EXP-{cat}"
+                    key = (code, "pond", pid)
+                    if key in existing:
+                        continue
+                    label = EXPENSE_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
+                    accounts.append(
+                        {
+                            "account_id": None,
+                            "account_code": code,
+                            "account_name": f"{label} (aquaculture)",
+                            "balance": _f(amt),
+                            "source": "aquaculture_register",
+                            "pl_bucket": "expense",
+                            "entity_type": "pond",
+                            "entity_id": pid,
+                            "entity_name": pname,
+                            "pond_id": pid,
+                            "pond_name": pname,
+                        }
+                    )
+                    existing.add(key)
+                    added_expense += amt
+                    changed = True
+        else:
+            for row in mgmt.get("expenses_by_category") or []:
+                if not isinstance(row, dict):
+                    continue
+                cat = str(row.get("category") or "").strip()
+                amt = _d(row.get("amount"))
+                if not cat or amt <= 0:
+                    continue
+                code = f"AQ-EXP-{cat}"
+                if any(str(a.get("account_code") or "").strip() == code for a in accounts):
+                    continue
+                label = EXPENSE_CATEGORY_LABELS.get(cat) or cat.replace("_", " ").title()
+                accounts.append(
+                    {
+                        "account_id": None,
+                        "account_code": code,
+                        "account_name": f"{label} (aquaculture)",
+                        "balance": _f(amt),
+                        "source": "aquaculture_register",
+                        "pl_bucket": "expense",
+                        "entity_name": "Aquaculture (all ponds)",
+                        "entity_type": "pond",
+                        "entity_id": None,
+                    }
+                )
+                added_expense += amt
+                changed = True
+        accounts.sort(
+            key=lambda a: (
+                str(a.get("entity_name") or ""),
+                str(a.get("account_code") or ""),
             )
-            existing.add(code)
-            added_expense += amt
-            changed = True
+        )
         expense_block["accounts"] = accounts
         if added_expense > 0:
             expense_block["total"] = _f(_d(expense_block.get("total")) + added_expense)
@@ -4411,6 +4732,7 @@ def _fold_aquaculture_register_into_pl_sections(
             out["gross_profit"] = _f(ti - tcogs)
         if "net_income" in out:
             out["net_income"] = _f(ti - tcogs - te)
+        out["total_expenses"] = _f(tcogs + te)
         out["includes_aquaculture_register"] = True
         note = str(out.get("accounting_note") or "")
         extra = (

@@ -94,6 +94,7 @@ import {
   resolveEffectiveReportPondScope,
   resolvePlMgmtSnapshot,
 } from '@/components/reports/AquaculturePlCategoryMatrices'
+import { IncomeStatementPlPanel } from '@/components/reports/IncomeStatementPlPanel'
 import {
   accountsTotalRow,
   agingBucketTotalRow,
@@ -2769,16 +2770,24 @@ function ReportsPageContent() {
       } else {
         const sections = [
           { title: 'Income', data: reportData.income },
-          { title: 'Cost of Goods Sold', data: reportData.cost_of_goods_sold },
-          { title: 'Expenses', data: reportData.expenses },
+          { title: 'Expenses', data: { accounts: [
+            ...((reportData.cost_of_goods_sold?.accounts || []).map((a: any) => ({ ...a, _bucket: 'COGS' }))),
+            ...(reportData.expenses?.accounts || []),
+          ], total: reportData.total_expenses ?? (Number(reportData.cost_of_goods_sold?.total ?? 0) + Number(reportData.expenses?.total ?? 0)) } },
         ]
+        contentHTML += `<div class="summary"><h2>P&L summary</h2>
+<p><strong>Total income:</strong> ${formatCurrency(reportData.income?.total || 0)}</p>
+<p><strong>Total expense:</strong> ${formatCurrency(sections[1].data.total)}</p>
+<p><strong>Net income:</strong> ${formatCurrency(reportData.net_income || 0)}</p></div>`
         sections.forEach((section) => {
-          if (section.data?.accounts?.length > 0) {
-            contentHTML += `<h2>${section.title}</h2><p><strong>Total: ${formatCurrency(section.data.total || 0)}</strong></p><table><thead><tr><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
-            section.data.accounts.forEach((acc: any) => {
-              contentHTML += `<tr><td>${acc.account_code || ''}</td><td>${acc.account_name || ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
+          const accounts = (section.data?.accounts || []).filter((acc: any) => Number(acc.balance || 0) !== 0)
+          if (accounts.length > 0) {
+            contentHTML += `<h2>${section.title}</h2><table><thead><tr><th>Entity</th><th>Account Code</th><th>Account Name</th><th style="text-align:right">Balance</th></tr></thead><tbody>`
+            accounts.forEach((acc: any) => {
+              const entity = acc.entity_name || acc.pond_name || acc.station_name || ''
+              contentHTML += `<tr><td>${escapeHtml(entity)}</td><td>${escapeHtml(acc.account_code || '')}</td><td>${escapeHtml(acc.account_name || '')}${acc._bucket === 'COGS' ? ' (COGS)' : ''}</td><td style="text-align:right">${formatCurrency(acc.balance || 0)}</td></tr>`
             })
-            contentHTML += `<tfoot><tr><td colspan="2"><strong>Sub-total — ${section.title}</strong></td><td style="text-align:right"><strong>${formatCurrency(section.data.total || 0)}</strong></td></tr></tfoot></tbody></table>`
+            contentHTML += `<tfoot><tr><td colspan="3"><strong>Total ${section.title.toLowerCase()}</strong></td><td style="text-align:right"><strong>${formatCurrency(section.data.total || 0)}</strong></td></tr></tfoot></tbody></table>`
           }
         })
         const income = Number(reportData.income?.total ?? 0)
@@ -3516,22 +3525,20 @@ function ReportsPageContent() {
         if (aqFigures && pondId != null) {
           csvContent += buildAquaculturePlRegisterCsv(aqFigures)
         } else {
-          csvContent += 'Section,Account Code,Account Name,Balance\n'
-          if (reportData.income?.accounts) {
-            reportData.income.accounts.forEach((acc: any) => {
-              csvContent += `Income,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
+          csvContent += 'Section,Entity,Account Code,Account Name,Balance\n'
+          const pushRows = (section: string, accounts: any[] | undefined, markCogs = false) => {
+            ;(accounts || []).forEach((acc: any) => {
+              if (Number(acc.balance || 0) === 0) return
+              const entity = acc.entity_name || acc.pond_name || acc.station_name || ''
+              const name = markCogs && !String(acc.account_name || '').includes('COGS')
+                ? `${acc.account_name || ''} (COGS)`
+                : acc.account_name || ''
+              csvContent += `${section},${escapeCsv(entity)},${escapeCsv(acc.account_code)},${escapeCsv(name)},${acc.balance || 0}\n`
             })
           }
-          if (reportData.cost_of_goods_sold?.accounts) {
-            reportData.cost_of_goods_sold.accounts.forEach((acc: any) => {
-              csvContent += `Cost of Goods Sold,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
-            })
-          }
-          if (reportData.expenses?.accounts) {
-            reportData.expenses.accounts.forEach((acc: any) => {
-              csvContent += `Expenses,${escapeCsv(acc.account_code)},${escapeCsv(acc.account_name)},${acc.balance || 0}\n`
-            })
-          }
+          pushRows('Income', reportData.income?.accounts)
+          pushRows('Expenses', reportData.cost_of_goods_sold?.accounts, true)
+          pushRows('Expenses', reportData.expenses?.accounts)
           const income = Number(reportData.income?.total ?? 0)
           const cogs = Number(reportData.cost_of_goods_sold?.total ?? 0)
           const opExp = Number(reportData.expenses?.total ?? 0)
@@ -6071,259 +6078,36 @@ function renderReportTable(
       )
     }
 
-    const blocks = [
-      { title: 'Income', payload: data.income, accent: 'border-emerald-200 bg-emerald-50/50' },
-      {
-        title: 'Cost of Goods Sold',
-        payload: data.cost_of_goods_sold,
-        accent: 'border-warning/30 bg-warning/10/50',
-      },
-      { title: 'Expenses', payload: data.expenses, accent: 'border-border bg-muted/40' },
-    ]
-    const incomeTotal = Number(data.income?.total ?? 0)
-    const cogsTotal = Number(data.cost_of_goods_sold?.total ?? 0)
-    const expenseTotal = Number(data.expenses?.total ?? 0)
-    const incomeAccounts = data.income?.accounts ?? []
-    const cogsAccounts = data.cost_of_goods_sold?.accounts ?? []
-    const expenseAccounts = data.expenses?.accounts ?? []
-    const allPlAccounts = [...incomeAccounts, ...cogsAccounts, ...expenseAccounts]
-    const plIncomeDrill = accountsTotalRow(incomeAccounts, 'Income')
-    const plCogsDrill = accountsTotalRow(cogsAccounts, 'COGS')
-    const plExpenseDrill = accountsTotalRow(expenseAccounts, 'Expenses')
-    const plAllDrill = accountsTotalRow(allPlAccounts, 'Profit & Loss')
-
     return (
       <div className="space-y-8">
-        {/* Report Period - Date Range */}
-        {hasPeriod && pf(
-          period,
-          dateRange,
-          reportType,
-          handleReportDateChange,
-          "P&L includes posted journal activity from start through end date (not opening balances on revenue/expense accounts)."
-        )}
+        {hasPeriod &&
+          pf(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'P&L includes posted journal activity from start through end date (not opening balances on revenue/expense accounts). Only accounts with activity in the period are listed.',
+          )}
 
-        {data.includes_aquaculture_register ? (
-          <p className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950">
-            All sites P&L includes <span className="font-medium">every income and every expense</span>:
-            fuel/shop/head-office GL accounts plus every aquaculture category (AQ-INC-* / AQ-EXP-*).
-            Each amount is listed once.
-          </p>
-        ) : null}
+        <IncomeStatementPlPanel
+          data={data as Record<string, unknown>}
+          drillScope={reportDrillScope()}
+          Money={Money}
+          banner={
+            data.includes_aquaculture_register ? (
+              <p className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950">
+                All sites P&amp;L includes <span className="font-medium">every income and every expense</span>:
+                fuel/shop/head-office GL accounts plus every aquaculture category (AQ-INC-* / AQ-EXP-*).
+                Each amount is listed once, under the entity that earned or spent it.
+              </p>
+            ) : null
+          }
+        />
 
         <PondScopedAquaculturePlBlock
           data={data as Record<string, unknown>}
           pondId={null}
         />
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="rounded-lg border border-emerald-200 bg-white p-3 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
-            <div className="mt-1 text-lg font-bold tabular-nums text-emerald-900">{Money(incomeTotal, plIncomeDrill, 'total')}</div>
-          </div>
-          <div className="rounded-lg border-2 border-amber-400 bg-warning/10 p-3 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning-foreground">COGS</p>
-            <div className="mt-1 text-lg font-bold tabular-nums text-warning-foreground">{Money(cogsTotal, plCogsDrill, 'total')}</div>
-          </div>
-          <div className="rounded-lg border border-green-300 bg-green-50 p-3 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-success">Gross profit</p>
-            <div className="mt-1 text-lg font-bold tabular-nums text-green-900">
-              {Money(data.gross_profit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
-            </div>
-          </div>
-          <div className="rounded-lg border border-border bg-white p-3 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Expenses</p>
-            <div className="mt-1 text-lg font-bold tabular-nums text-foreground">{Money(expenseTotal, plExpenseDrill, 'total')}</div>
-          </div>
-          <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 shadow-sm sm:col-span-2 lg:col-span-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net income</p>
-            <div
-              className={`mt-1 text-lg font-bold tabular-nums ${
-                Number(data.net_income ?? 0) >= 0 ? 'text-blue-900' : 'text-destructive'
-              }`}
-            >
-              {Money(data.net_income, plAllDrill, 'total')}
-            </div>
-          </div>
-        </div>
-
-        {data.period_matches_cumulative_change === false && (
-          <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
-            <p className="font-semibold">Period net income vs cumulative P&L change</p>
-            <p className="mt-1">
-              This period&apos;s net ({formatCurrency(data.net_income)}) differs from the change in cumulative P&amp;L (
-              {formatCurrency(data.cumulative_net_income_change)}) by{' '}
-              {formatCurrency(data.cumulative_vs_period_difference)}. That usually means an opening balance on an
-              income, COGS, or expense account, or activity dated outside the selected range.
-            </p>
-          </div>
-        )}
-
-        <div className="space-y-6">
-          {blocks.map(({ title, payload, accent }) => (
-            <div key={title} className={`rounded-lg border bg-white shadow-sm ${accent}`}>
-              <div className="flex flex-col gap-2 border-b border-inherit p-4 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-                <div className="text-sm font-bold tabular-nums text-foreground">
-                  {Money(payload?.total, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
-                </div>
-              </div>
-              <div className="divide-y divide-border">
-                {(payload?.accounts ?? []).length > 0 ? (
-                  (payload?.accounts ?? []).map((account: any, accIdx: number) => {
-                    const glDrill = glAccountDrill(account, reportDrillScope())
-                    return (
-                    <div
-                      key={`${title}-${accIdx}-${account.account_code ?? 'acct'}`}
-                      className="flex justify-between px-4 py-3 transition-colors hover:bg-card/80"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">{account.account_name}</p>
-                        <p className="text-xs text-muted-foreground">{account.account_code}</p>
-                      </div>
-                      <div className="ml-4 whitespace-nowrap text-sm font-semibold tabular-nums text-foreground">
-                        <DrillAmount amount={account.balance} drill={glDrill} />
-                      </div>
-                    </div>
-                    )
-                  })
-                ) : (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    {title === 'Cost of Goods Sold' ? (
-                      <>
-                        <p className="font-medium text-warning-foreground">No COGS activity in this period</p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          COGS comes from <strong>posted sales</strong> of inventory items (POS / invoices): Dr COGS /
-                          Cr inventory at each item&apos;s <strong>unit cost</strong> × quantity. Assigning a COGS
-                          account on the item alone does not create P&amp;L amounts — you need sales in this date
-                          range and a non-zero cost on the product (Items → Cost). Use chart type{' '}
-                          <strong>Cost of goods sold</strong> (5100 fuel, 5120 shop, 5200 shrinkage). After fixing
-                          costs, run{' '}
-                          <code className="rounded bg-muted px-1">
-                            python manage.py backfill_invoice_cogs
-                          </code>{' '}
-                          for past invoices.
-                        </p>
-                      </>
-                    ) : (
-                      <>No {title.toLowerCase()} accounts with activity in this period</>
-                    )}
-                  </div>
-                )}
-                <div className="flex items-center justify-between border-t border-border bg-muted/50 px-4 py-3">
-                  <span className="text-sm font-semibold text-foreground">Sub-total — {title}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">
-                    {Money(payload?.total ?? 0, accountsTotalRow(payload?.accounts ?? [], title), 'total')}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Summary Totals */}
-        {(() => {
-          const grossProfit = Number(data.gross_profit ?? 0)
-          const netIncome = Number(data.net_income ?? 0)
-          const grossMargin = incomeTotal !== 0 ? (grossProfit / incomeTotal) * 100 : 0
-          const netMargin = incomeTotal !== 0 ? (netIncome / incomeTotal) * 100 : 0
-
-          return (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gradient-to-br from-green-50 to-card border-2 border-green-300 rounded-lg p-5 shadow-sm">
-                  <p className="text-xs text-success uppercase tracking-wide font-semibold">Gross Profit</p>
-                  <div className="text-2xl font-bold text-success mt-2">
-                    {Money(grossProfit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
-                  </div>
-                  <p className="text-xs text-success mt-1">
-                    Income − COGS · {grossMargin.toFixed(1)}% margin
-                  </p>
-                </div>
-                <div className="bg-gradient-to-br from-accent to-card border-2 border-blue-300 rounded-lg p-5 shadow-sm">
-                  <p className="text-xs text-primary uppercase tracking-wide font-semibold">Net Income</p>
-                  <div className={`text-2xl font-bold mt-2 ${
-                    netIncome >= 0 ? 'text-primary' : 'text-destructive'
-                  }`}>
-                    {Money(netIncome, plAllDrill, 'total')}
-                  </div>
-                  <p className="text-xs text-primary mt-1">
-                    Gross Profit − Expenses
-                  </p>
-                </div>
-                <div className={`bg-gradient-to-br ${
-                  netMargin >= 0 ? 'from-accent' : 'from-red-50'
-                } to-card border-2 ${
-                  netMargin >= 0 ? 'border-primary/30' : 'border-destructive/30'
-                } rounded-lg p-5 shadow-sm`}>
-                  <p className={`text-xs uppercase tracking-wide font-semibold ${
-                    netMargin >= 0 ? 'text-primary' : 'text-destructive'
-                  }`}>Net Profit Margin</p>
-                  <p className={`text-2xl font-bold mt-2 ${
-                    netMargin >= 0 ? 'text-primary' : 'text-destructive'
-                  }`}>
-                    {netMargin.toFixed(1)}%
-                  </p>
-                  <p className={`text-xs mt-1 ${netMargin >= 0 ? 'text-primary' : 'text-destructive'}`}>
-                    Net Income ÷ Income
-                  </p>
-                </div>
-              </div>
-
-              {/* Profit & Loss Breakdown (waterfall) */}
-              <div className="bg-white border-2 border-border rounded-lg shadow-sm overflow-hidden">
-                <div className="border-b border-border bg-muted/40 px-5 py-3">
-                  <p className="text-sm font-semibold text-foreground">Profit &amp; Loss Breakdown</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">How net income is derived for this period</p>
-                </div>
-                <div className="divide-y divide-border/70">
-                  <div className="flex items-center justify-between px-5 py-3">
-                    <span className="text-sm text-foreground/85">Income</span>
-                    <span className="text-sm font-semibold tabular-nums text-foreground">
-                      {Money(incomeTotal, plIncomeDrill, 'total')}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-3">
-                    <span className="text-sm text-foreground/85">Less: Cost of Goods Sold</span>
-                    <span className="text-sm font-semibold tabular-nums text-warning-foreground">
-                      ({Money(cogsTotal, plCogsDrill, 'total')})
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-3 bg-green-50/60">
-                    <span className="text-sm font-semibold text-success">= Gross Profit</span>
-                    <span className="text-sm font-bold tabular-nums text-success">
-                      {Money(grossProfit, accountsTotalRow([...incomeAccounts, ...cogsAccounts], 'Gross profit'), 'total')}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-3">
-                    <span className="text-sm text-foreground/85">Less: Operating Expenses</span>
-                    <span className="text-sm font-semibold tabular-nums text-foreground/85">
-                      ({Money(expenseTotal, plExpenseDrill, 'total')})
-                    </span>
-                  </div>
-                  <div className={`flex items-center justify-between px-5 py-3 ${
-                    netIncome >= 0 ? 'bg-blue-50/70' : 'bg-destructive/5/70'
-                  }`}>
-                    <span className={`text-sm font-bold ${netIncome >= 0 ? 'text-primary' : 'text-destructive'}`}>
-                      = Net Income
-                    </span>
-                    <span className={`text-base font-bold tabular-nums ${
-                      netIncome >= 0 ? 'text-primary' : 'text-destructive'
-                    }`}>
-                      {Money(netIncome, plAllDrill, "total")}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <AquaculturePlBottomLine
-                income={incomeTotal}
-                expenses={cogsTotal + expenseTotal}
-                netProfit={Number(data.net_income ?? incomeTotal - cogsTotal - expenseTotal)}
-              />
-            </div>
-          )
-        })()}
 
         {Number(data.net_income ?? 0) < 0 && (
           <p className="text-sm text-muted-foreground max-w-3xl">

@@ -241,7 +241,66 @@ def test_mill_bill_applies_only_filled_instant_percent(api_client, company_tenan
 
 
 @pytest.mark.django_db
-def test_truck_transport_is_once_per_bill(api_client, company_tenant, auth_admin_headers):
+def test_transport_credit_is_per_ton(api_client, company_tenant, auth_admin_headers):
+    """Feed mills credit transport as ordered tons x rate (200 sacks x 25 kg = 5 t x 950)."""
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Per-ton mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_ton": "950",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="draft")
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    line = bill["lines"][0]
+    # 380000 - 5.5% - (5 t x 950)
+    assert Decimal(line["instant_discount_amount"]) == Decimal("20900.00")
+    assert Decimal(line["transport_amount"]) == Decimal("4750.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("0.00")
+    assert Decimal(bill["total"]) == Decimal("354350.00")
+
+
+@pytest.mark.django_db
+def test_transport_credit_uses_ordered_tons_override(api_client, company_tenant, auth_admin_headers):
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Ordered tons mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_ton": "950",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1900"))
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="draft",
+        extra={"ordered_tons": "10"},
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    line = bill["lines"][0]
+    # 10 t x 950 = 9500 (override sack-derived 5 t)
+    assert Decimal(line["transport_amount"]) == Decimal("9500.00")
+    assert Decimal(bill["total"]) == Decimal("349600.00")
+
+
+@pytest.mark.django_db
+def test_truck_transport_is_once_per_bill_when_explicit(api_client, company_tenant, auth_admin_headers):
+    """Fixed /bill is optional and only applies when the bill body sends it (not from rate card)."""
     h = auth_admin_headers
     v = _vendor(
         api_client,
@@ -255,11 +314,18 @@ def test_truck_transport_is_once_per_bill(api_client, company_tenant, auth_admin
         },
     )
     item = _item(company_tenant.id, mrp=Decimal("1900"))
-    r = _post_bill(api_client, h, v["id"], _mill_sack_line(item.id), status="draft")
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        _mill_sack_line(item.id),
+        status="draft",
+        extra={"truck_transport_amount": "950"},
+    )
     assert r.status_code == 201, r.content.decode()
     bill = json.loads(r.content)
     line = bill["lines"][0]
-    # 380000 − 5.5% − 950 truck (once, not × 200)
+    # 380000 - 5.5% - 950 truck (once, not x 200)
     assert Decimal(line["instant_discount_amount"]) == Decimal("20900.00")
     assert Decimal(line["transport_amount"]) == Decimal("950.00")
     assert Decimal(bill["truck_transport_amount"]) == Decimal("950.00")
@@ -318,7 +384,7 @@ def test_monthly_scheme_is_reserved_not_payable_credit(api_client, company_tenan
         v["id"],
         _mill_sack_line(item.id),
         status="open",
-        extra={"bill_date": today},
+        extra={"bill_date": today, "truck_transport_amount": "950"},
     )
     assert r.status_code == 201, r.content.decode()
     bill = json.loads(r.content)
@@ -425,7 +491,7 @@ def test_yearly_scheme_credits_at_square_off_when_target_met(
         v["id"],
         _mill_sack_line(item.id),
         status="open",
-        extra={"bill_date": "2025-08-20"},
+        extra={"bill_date": "2025-08-20", "truck_transport_amount": "950"},
     )
     assert r.status_code == 201, r.content.decode()
     bill = json.loads(r.content)
@@ -528,10 +594,10 @@ def test_post_monthly_scheme_credits_payable(api_client, company_tenant, auth_ad
 
 
 @pytest.mark.django_db
-def test_credit_lane_applies_discount_and_lorry(
+def test_credit_lane_applies_discount_and_transport(
     api_client, company_tenant, auth_admin_headers
 ):
-    """When feed arrives on credit: discount and mill lorry both reduce payable immediately."""
+    """When feed arrives on credit: discount and mill transport ৳/ton both reduce payable immediately."""
     h = auth_admin_headers
     v = _vendor(
         api_client,
@@ -543,7 +609,7 @@ def test_credit_lane_applies_discount_and_lorry(
         rate_card={
             "effective_from": "2026-01-01",
             "instant_discount_percent": "5.5",
-            "transport_per_truck": "950",
+            "transport_per_ton": "950",
             "monthly_rebate_percent": "3",
         },
     )
@@ -552,12 +618,12 @@ def test_credit_lane_applies_discount_and_lorry(
     assert r.status_code == 201, r.content.decode()
     bill = json.loads(r.content)
     assert bill["mill_settlement"] == "credit"
-    # MRP 380000 − 5.5% − mill lorry 950
-    assert Decimal(bill["total"]) == Decimal("358150.00")
+    # MRP 380000 − 5.5% − (5 t × 950)
+    assert Decimal(bill["total"]) == Decimal("354350.00")
     assert Decimal(bill["instant_discount_total"]) == Decimal("20900.00")
-    assert Decimal(bill["truck_transport_amount"]) == Decimal("950.00")
+    assert Decimal(bill["truck_transport_amount"]) == Decimal("0.00")
     terms = json.loads(api_client.get(f"/api/vendors/{v['id']}/purchase-terms/", **h).content)
-    assert Decimal(terms["used"]) == Decimal("358150.00")
+    assert Decimal(terms["used"]) == Decimal("354350.00")
     assert terms["pending_terms"]["can_post_discount"] is False
     assert terms["pending_terms"]["can_post_transport"] is False
     ledger = json.loads(api_client.get(f"/api/vendors/{v['id']}/ledger/", **h).content)
@@ -565,7 +631,7 @@ def test_credit_lane_applies_discount_and_lorry(
     assert "mill_discount" in kinds
     assert "mill_transport" in kinds
     assert ledger["mill_terms"]["discount_total"] == "20900.00"
-    assert ledger["mill_terms"]["lorry_total"] == "950.00"
+    assert ledger["mill_terms"]["lorry_total"] == "4750.00"
 
 
 @pytest.mark.django_db
@@ -581,7 +647,7 @@ def test_mill_dealer_terms_report(api_client, company_tenant, auth_admin_headers
         rate_card={
             "effective_from": "2026-01-01",
             "instant_discount_percent": "5.5",
-            "transport_per_truck": "950",
+            "transport_per_ton": "950",
             "monthly_rebate_percent": "3",
             "yearly_rebate_percent": "2.5",
             "yearly_target_kg": "0",
@@ -600,7 +666,7 @@ def test_mill_dealer_terms_report(api_client, company_tenant, auth_admin_headers
     )
     assert report["report_id"] == "mill-dealer-terms"
     assert Decimal(report["summary"]["discount_total"]) == Decimal("20900.00")
-    assert Decimal(report["summary"]["lorry_total"]) == Decimal("950.00")
+    assert Decimal(report["summary"]["lorry_total"]) == Decimal("4750.00")
     assert Decimal(report["summary"]["monthly_commission"]) == Decimal("11400.00")
     assert Decimal(report["summary"]["yearly_commission"]) == Decimal("9500.00")
     row = next(x for x in report["vendors"] if x["vendor_id"] == v["id"])
@@ -622,7 +688,7 @@ def test_cash_lane_when_limit_full_requires_net_payment(
         rate_card={
             "effective_from": "2026-01-01",
             "instant_discount_percent": "5.5",
-            "transport_per_truck": "950",
+            "transport_per_ton": "950",
         },
     )
     item = _item(company_tenant.id, mrp=Decimal("1900"))
@@ -637,14 +703,13 @@ def test_cash_lane_when_limit_full_requires_net_payment(
         _mill_sack_line(item.id),
         status="open",
         extra={
-            "cash_payment": {"amount": "358150", "payment_method": "bank"},
+            "cash_payment": {"amount": "354350", "payment_method": "bank"},
             "actual_lorry_fare": "1500",
         },
     )
     assert paid.status_code == 201, paid.content.decode()
     bill = json.loads(paid.content)
     assert bill["mill_settlement"] == "cash"
-    assert Decimal(bill["total"]) == Decimal("358150.00")
+    assert Decimal(bill["total"]) == Decimal("354350.00")
     assert Decimal(bill["actual_lorry_fare"]) == Decimal("1500.00")
     assert Decimal(bill["balance_due"]) == Decimal("0.00")
-

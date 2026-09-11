@@ -251,15 +251,41 @@ def rate_card_to_json(card: Optional[VendorRateCard]) -> Optional[dict[str, Any]
     }
 
 
-def line_weight_kg(qty: Decimal, item: Optional[Item]) -> Decimal:
-    if not item:
-        return qty
-    sack = getattr(item, "content_weight_kg", None)
+_TON_UNITS = frozenset(
+    {
+        "t",
+        "ton",
+        "tons",
+        "tonne",
+        "tonnes",
+        "mt",
+        "m.t",
+        "m.t.",
+        "metric ton",
+        "metric tons",
+        "metric tonne",
+        "metric tonnes",
+    }
+)
+
+
+def line_weight_kg(qty: Decimal, item: Optional[Item], *, content_weight_kg=None) -> Decimal:
+    """Ordered weight in kg for mill transport (÷1000 → tons)."""
+    qty = _q(qty, Decimal("0.0001"))
+    if qty <= 0:
+        return Decimal("0")
+    sack = content_weight_kg
+    if sack is None and item is not None:
+        sack = getattr(item, "content_weight_kg", None)
     if sack is not None and _q(sack, _Q4) > 0:
         return _q(qty * _q(sack, _Q4), _Q4)
-    unit = (item.unit or "").strip().lower()
+    unit = ""
+    if item is not None:
+        unit = (item.unit or "").strip().lower()
     if unit in ("kg", "kgs", "kilogram", "kilograms"):
-        return _q(qty, _Q4)
+        return qty
+    if unit in _TON_UNITS:
+        return _q(qty * Decimal("1000"), _Q4)
     return Decimal("0")
 
 
@@ -276,13 +302,11 @@ def apply_rate_card_to_line(
     instant = _q(gross * _q(card.instant_discount_percent, _Q4) / Decimal("100"))
     instant += _q(qty * _q(card.instant_discount_per_unit, _Q4))
     kg = line_weight_kg(qty, item)
-    tons = _q(kg / Decimal("1000"), _Q4) if kg > 0 else Decimal("0")
-    # Feed mills credit transport per ton (e.g. 10 t × 950). Optional % / unit / kg still stack.
-    # Per-truck is bill-level (apply_bill_truck_transport), not × qty here.
+    # Transport ৳/ton is applied once at bill level (apply_ordered_ton_transport) from ordered tons —
+    # not here — so 0 kg/sack does not silently drop credit when the clerk enters tons on the bill.
     transport = _q(gross * _q(card.transport_percent, _Q4) / Decimal("100"))
     transport += _q(qty * _q(card.transport_per_unit, _Q4))
     transport += _q(kg * _q(card.transport_per_kg, _Q4))
-    transport += _q(tons * _q(getattr(card, "transport_per_ton", 0), _Q4))
     net = _q(gross - instant - transport)
     if net < 0:
         net = Decimal("0.00")
@@ -376,39 +400,107 @@ def resolve_truck_transport_amount(
     bill_date: Optional[date],
     body: Optional[dict],
 ) -> Decimal:
-    """Per-bill truck transport: explicit body value wins; else the rate card; else 0."""
+    """Optional fixed ৳/bill only when the clerk sends it. Never auto-load from the rate card.
+
+    Feed mills credit transport per ton (ordered tons × transport_per_ton). Auto-loading
+    transport_per_truck reintroduced the old lorry fee (e.g. −950 with 0.00 t).
+    """
+    del vendor, bill_date  # rate card is intentionally not used
     body = body or {}
-    if "truck_transport_amount" in body and body.get("truck_transport_amount") not in (None, ""):
-        val = _q(body.get("truck_transport_amount"))
-        return val if val > 0 else Decimal("0.00")
-    card = active_rate_card(vendor, bill_date) if vendor else None
-    if not card:
+    if "truck_transport_amount" not in body or body.get("truck_transport_amount") in (None, ""):
         return Decimal("0.00")
-    val = _q(card.transport_per_truck, _Q4)
+    val = _q(body.get("truck_transport_amount"))
     return val if val > 0 else Decimal("0.00")
 
 
-def _reprice_line_without_truck(
-    pl: dict,
-    card: Optional[VendorRateCard],
-    item: Optional[Item],
-) -> None:
-    qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
-    mrp = _q(pl.get("mrp"))
-    if mrp <= 0 or qty <= 0:
-        return
-    gross = _q(qty * mrp)
-    instant = _q(pl.get("instant_discount_amount"))
-    transport = Decimal("0.00")
-    if card:
+def _line_catalog_sack_kg(pl: dict) -> Optional[Decimal]:
+    catalog = pl.get("item_catalog")
+    if not isinstance(catalog, dict):
+        return None
+    raw = catalog.get("content_weight_kg")
+    if raw in (None, ""):
+        return None
+    val = _q(raw, _Q4)
+    return val if val > 0 else None
+
+
+def bill_ordered_tons_from_lines(parsed_lines: list[dict], items: dict[int, Item]) -> Decimal:
+    total_kg = Decimal("0")
+    for pl in parsed_lines:
+        qty = _q(pl.get("quantity") or 0, Decimal("0.0001"))
+        if qty <= 0:
+            continue
+        item = items.get(pl.get("item_id")) if pl.get("item_id") else None
+        total_kg += line_weight_kg(qty, item, content_weight_kg=_line_catalog_sack_kg(pl))
+    return _q(total_kg / Decimal("1000"), _Q4) if total_kg > 0 else Decimal("0")
+
+
+def apply_ordered_ton_transport(
+    parsed_lines: list[dict],
+    vendor: Optional[Vendor],
+    bill_date: Optional[date],
+    body: Optional[dict],
+) -> tuple[Decimal, Optional[JsonResponse]]:
+    """Apply mill transport credit = ordered tons x rate across MRP lines (primary mill rule)."""
+    if not parsed_lines:
+        return Decimal("0.00"), None
+    card = active_rate_card(vendor, bill_date) if vendor else None
+    if not card:
+        return Decimal("0.00"), None
+    per_ton = _q(getattr(card, "transport_per_ton", 0), _Q4)
+    if per_ton <= 0:
+        return Decimal("0.00"), None
+
+    body = body or {}
+    item_ids = [pl.get("item_id") for pl in parsed_lines if pl.get("item_id")]
+    items = {it.id: it for it in Item.objects.filter(pk__in=item_ids)} if item_ids else {}
+
+    if "ordered_tons" in body and body.get("ordered_tons") not in (None, ""):
+        tons = _q(body.get("ordered_tons"), _Q4)
+    else:
+        tons = bill_ordered_tons_from_lines(parsed_lines, items)
+    if tons <= 0:
+        return Decimal("0.00"), None
+
+    ton_credit = _q(tons * per_ton)
+    mrp_indexes = [i for i, pl in enumerate(parsed_lines) if _q(pl.get("mrp")) > 0]
+    if not mrp_indexes:
+        return Decimal("0.00"), None
+
+    weights: list[Decimal] = []
+    base_transport: list[Decimal] = []
+    for i in mrp_indexes:
+        pl = parsed_lines[i]
+        item = items.get(pl.get("item_id")) if pl.get("item_id") else None
+        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+        mrp = _q(pl.get("mrp"))
+        gross = _q(qty * mrp)
+        weights.append(gross if gross > 0 else Decimal("0.01"))
+        # Keep % / unit / kg only; ton credit is added as a bill-level share below.
         priced = apply_rate_card_to_line(quantity=qty, mrp_unit=mrp, card=card, item=item)
-        transport = priced["transport_amount"]
-    net = _q(gross - instant - transport)
-    if net < 0:
-        net = Decimal("0.00")
-    pl["transport_amount"] = transport
-    pl["amount"] = net
-    pl["unit_price"] = _q(net / qty)
+        base_transport.append(priced["transport_amount"])
+
+    total_w = sum(weights) or Decimal("0.01")
+    remaining = ton_credit
+    for n, i in enumerate(mrp_indexes):
+        share = remaining if n == len(mrp_indexes) - 1 else _q(ton_credit * weights[n] / total_w)
+        remaining = _q(remaining - share)
+        pl = parsed_lines[i]
+        qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
+        mrp = _q(pl.get("mrp"))
+        gross = _q(qty * mrp)
+        instant = _q(pl.get("instant_discount_amount"))
+        transport = _q(base_transport[n] + share)
+        net = _q(gross - instant - transport)
+        if net < 0:
+            return Decimal("0.00"), JsonResponse(
+                {"detail": "Instant discount plus transport cannot exceed qty x MRP."},
+                status=400,
+            )
+        pl["transport_amount"] = transport
+        pl["amount"] = net
+        pl["unit_price"] = _q(net / qty) if qty > 0 else Decimal("0.00")
+    return ton_credit, None
 
 
 def apply_bill_truck_transport(
@@ -417,21 +509,16 @@ def apply_bill_truck_transport(
     bill_date: Optional[date],
     body: Optional[dict],
 ) -> tuple[Decimal, Optional[JsonResponse]]:
-    """Deduct per-truck transport once across MRP lines. No-op when the mill left it blank."""
+    """Add optional fixed amount/bill on top of existing line transport (does not wipe per-ton credit)."""
     truck = resolve_truck_transport_amount(vendor, bill_date, body)
     if truck <= 0 or not parsed_lines:
         return Decimal("0.00"), None
     mrp_indexes = [i for i, pl in enumerate(parsed_lines) if _q(pl.get("mrp")) > 0]
     if not mrp_indexes:
         return Decimal("0.00"), None
-    card = active_rate_card(vendor, bill_date) if vendor else None
-    item_ids = [parsed_lines[i].get("item_id") for i in mrp_indexes if parsed_lines[i].get("item_id")]
-    items = {it.id: it for it in Item.objects.filter(pk__in=item_ids)} if item_ids else {}
     weights: list[Decimal] = []
     for i in mrp_indexes:
         pl = parsed_lines[i]
-        item = items.get(pl.get("item_id")) if pl.get("item_id") else None
-        _reprice_line_without_truck(pl, card, item)
         qty = _q(pl.get("quantity") or 1, Decimal("0.0001"))
         gross = _q(qty * _q(pl.get("mrp")))
         weights.append(gross if gross > 0 else Decimal("0.01"))
@@ -448,7 +535,7 @@ def apply_bill_truck_transport(
         net = _q(gross - _q(pl.get("instant_discount_amount")) - _q(pl.get("transport_amount")))
         if net < 0:
             return Decimal("0.00"), JsonResponse(
-                {"detail": "Instant discount plus transport cannot exceed qty × MRP."},
+                {"detail": "Instant discount plus transport cannot exceed qty x MRP."},
                 status=400,
             )
         pl["amount"] = net
@@ -506,6 +593,9 @@ def apply_mill_bill_settlement(
     exclude_bill_id: Optional[int] = None,
 ) -> tuple[Decimal, str, Optional[JsonResponse]]:
     """Discount and mill transport credit always reduce the bill when feed arrives; lane only controls cash vs A/P."""
+    _, ton_err = apply_ordered_ton_transport(parsed_lines, vendor, bill_date, body)
+    if ton_err:
+        return Decimal("0.00"), MILL_SETTLEMENT_CASH, ton_err
     truck, err = apply_bill_truck_transport(parsed_lines, vendor, bill_date, body)
     if err:
         return Decimal("0.00"), MILL_SETTLEMENT_CASH, err

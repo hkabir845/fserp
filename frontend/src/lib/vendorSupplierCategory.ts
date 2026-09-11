@@ -30,6 +30,8 @@ export type VendorRateCardPayload = {
   transport_per_truck?: string | number
   transport_per_unit?: string | number
   transport_per_kg?: string | number
+  /** Mill transport credit ৳ per metric ton (e.g. 950). */
+  transport_per_ton?: string | number
   monthly_rebate_percent?: string | number
   yearly_rebate_percent?: string | number
   yearly_target_kg?: string | number
@@ -140,6 +142,7 @@ export const emptyRateCardForm = () => ({
   transport_per_truck: '0.00',
   transport_per_unit: '0.00',
   transport_per_kg: '0.00',
+  transport_per_ton: '0.00',
   monthly_rebate_percent: '0.00',
   yearly_rebate_percent: '0.00',
   yearly_target_tons: '0.00',

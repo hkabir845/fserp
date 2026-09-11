@@ -1066,16 +1066,22 @@ class VendorRateCard(models.Model):
         max_digits=14,
         decimal_places=4,
         default=0,
-        help_text="Transport deducted once per bill/truck. 0 = this mill does not use per-truck transport.",
+        help_text="Optional fixed ৳ once per bill. Prefer transport_per_ton for feed mills.",
     )
     transport_percent = models.DecimalField(
         max_digits=8,
         decimal_places=4,
         default=0,
-        help_text="Transport allowance as % of line MRP (qty×MRP). Stacks with per-unit/kg/truck when set.",
+        help_text="Transport allowance as % of line MRP (qty×MRP). Stacks with per-unit/kg/ton when set.",
     )
     transport_per_unit = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     transport_per_kg = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    transport_per_ton = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        default=0,
+        help_text="Mill transport credit ৳ per metric ton (kg÷1000). Example: 10 t × 950 = 9500.",
+    )
     monthly_rebate_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
     yearly_rebate_percent = models.DecimalField(max_digits=8, decimal_places=4, default=0)
     yearly_target_kg = models.DecimalField(max_digits=14, decimal_places=4, default=0)

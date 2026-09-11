@@ -424,6 +424,7 @@ export default function VendorsPage() {
           transport_per_truck: parseFloat(rateCardForm.transport_per_truck) || 0,
           transport_per_unit: parseFloat(rateCardForm.transport_per_unit) || 0,
           transport_per_kg: parseFloat(rateCardForm.transport_per_kg) || 0,
+          transport_per_ton: parseFloat(rateCardForm.transport_per_ton) || 0,
           monthly_rebate_percent: parseFloat(rateCardForm.monthly_rebate_percent) || 0,
           yearly_rebate_percent: parseFloat(rateCardForm.yearly_rebate_percent) || 0,
           yearly_target_kg: (parseFloat(rateCardForm.yearly_target_tons) || 0) * 1000,

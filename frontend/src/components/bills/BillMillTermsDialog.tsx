@@ -11,6 +11,7 @@ export type BillMillTermsValues = {
   transport_per_truck: string
   transport_per_unit: string
   transport_per_kg: string
+  transport_per_ton: string
   monthly_rebate_percent: string
   yearly_rebate_percent: string
   yearly_target_tons: string
@@ -39,6 +40,7 @@ function fromCard(card: VendorRateCardPayload | null | undefined): BillMillTerms
     transport_per_truck: toTwoDecimals(card?.transport_per_truck, empty.transport_per_truck),
     transport_per_unit: toTwoDecimals(card?.transport_per_unit, empty.transport_per_unit),
     transport_per_kg: toTwoDecimals(card?.transport_per_kg, empty.transport_per_kg),
+    transport_per_ton: toTwoDecimals(card?.transport_per_ton, empty.transport_per_ton),
     monthly_rebate_percent: toTwoDecimals(
       card?.monthly_rebate_percent,
       empty.monthly_rebate_percent
@@ -54,8 +56,8 @@ function fromCard(card: VendorRateCardPayload | null | undefined): BillMillTerms
 
 /**
  * Full mill commercial terms for feed/medicine:
- * - This bill: instant % of MRP + transport fixed per lorry
- * - Scheme: monthly % and yearly % @ ton target (saved on vendor; posted later as mill credits)
+ * - This bill: instant % of MRP + transport ৳ per ton
+ * - Scheme: monthly % and yearly % @ ton target (credited after mill approval)
  */
 export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onClose, onApply }: Props) {
   const [form, setForm] = useState<BillMillTermsValues>(fromCard(initial))
@@ -78,8 +80,8 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
             Mill terms (feed / medicine)
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Instant discount % and mill lorry share apply when they send feed (same day as the bill).
-            Monthly and yearly commissions count automatically and post when the mill approves.
+            Instant discount and transport credit (৳ per ton) apply when they send feed. Monthly and
+            yearly commissions are credited to your mill account only after their official approval.
           </p>
         </div>
         <div className="px-4 py-3 space-y-5">
@@ -99,7 +101,7 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
                   value={form.instant_discount_percent}
                   onChange={(e) => setForm({ ...form, instant_discount_percent: e.target.value })}
                 />
-        <p className="mt-0.5 text-[11px] text-muted-foreground">Immediate on cash; credit note on account</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Taken on this bill</p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium">
@@ -119,30 +121,42 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
 
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-              2. Transport — fixed per lorry (this bill)
+              2. Transport credit — per ton (this bill)
             </p>
             <div>
               <label className="mb-1 block text-xs font-medium">
-                Transport {currencySymbol} / lorry (once on this bill)
+                Transport {currencySymbol} / ton
               </label>
               <input
                 type="number"
                 min={0}
                 step="0.01"
                 className="erp-field"
-                placeholder="Fixed amount for this truck / lorry"
-                value={form.transport_per_truck}
-                onChange={(e) => setForm({ ...form, transport_per_truck: e.target.value })}
+                placeholder="e.g. 950"
+                value={form.transport_per_ton}
+                onChange={(e) => setForm({ ...form, transport_per_ton: e.target.value })}
               />
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                One fixed amount for the whole load — not a %. Change per bill when the lorry charge differs.
+                Ordered tons × this rate (example: 10 t × 950 = {currencySymbol}9,500). Not a fixed lorry
+                fee. Item sack weight (kg) or qty in kg is required.
               </p>
             </div>
             <details className="mt-2">
               <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
-                Optional extras (per unit / kg / % of MRP)
+                Optional extras (fixed / bill, % / unit / kg)
               </summary>
               <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium">Fixed {currencySymbol} / bill</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="erp-field"
+                    value={form.transport_per_truck}
+                    onChange={(e) => setForm({ ...form, transport_per_truck: e.target.value })}
+                  />
+                </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium">Transport % of MRP</label>
                   <input
@@ -165,7 +179,7 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
                     onChange={(e) => setForm({ ...form, transport_per_unit: e.target.value })}
                   />
                 </div>
-                <div className="col-span-2">
+                <div>
                   <label className="mb-1 block text-xs font-medium">Transport {currencySymbol} / kg</label>
                   <input
                     type="number"
@@ -183,13 +197,13 @@ export function BillMillTermsDialog({ open, currencySymbol = '৳', initial, onC
           <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900/80 mb-1">
-                3. Monthly &amp; yearly commission (scheme — not on this bill total)
+                3. Monthly &amp; yearly commission (after mill approval)
               </p>
               <p className="text-[11px] text-muted-foreground">
-                Example: <span className="font-medium text-foreground">3% monthly</span> on total month MRP
-                purchase; <span className="font-medium text-foreground">2.5% yearly</span> when you reach e.g.{' '}
-                <span className="font-medium text-foreground">500 tons</span>. Saved with the mill; post to A/P
-                from Edit Vendor → Mill credit actions.
+                Example: <span className="font-medium text-foreground">3% monthly</span> on total month MRP;
+                <span className="font-medium text-foreground"> 2.5% yearly</span> when you reach e.g.{' '}
+                <span className="font-medium text-foreground">500 tons</span>. Tracked here; credited to your
+                mill A/P only after their official approval (Edit Vendor → Mill credit actions).
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">

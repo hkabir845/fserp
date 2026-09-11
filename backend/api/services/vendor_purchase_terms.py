@@ -242,6 +242,7 @@ def rate_card_to_json(card: Optional[VendorRateCard]) -> Optional[dict[str, Any]
         "transport_per_truck": str(_q(card.transport_per_truck)),
         "transport_per_unit": str(_q(card.transport_per_unit)),
         "transport_per_kg": str(_q(card.transport_per_kg)),
+        "transport_per_ton": str(_q(getattr(card, "transport_per_ton", 0))),
         "monthly_rebate_percent": str(_q(card.monthly_rebate_percent)),
         "yearly_rebate_percent": str(_q(card.yearly_rebate_percent)),
         "yearly_target_kg": str(_q(card.yearly_target_kg)),
@@ -275,10 +276,13 @@ def apply_rate_card_to_line(
     instant = _q(gross * _q(card.instant_discount_percent, _Q4) / Decimal("100"))
     instant += _q(qty * _q(card.instant_discount_per_unit, _Q4))
     kg = line_weight_kg(qty, item)
-    # Variable transport: % of MRP and/or fixed ৳. Per-truck is once on the bill, not × qty.
+    tons = _q(kg / Decimal("1000"), _Q4) if kg > 0 else Decimal("0")
+    # Feed mills credit transport per ton (e.g. 10 t × 950). Optional % / unit / kg still stack.
+    # Per-truck is bill-level (apply_bill_truck_transport), not × qty here.
     transport = _q(gross * _q(card.transport_percent, _Q4) / Decimal("100"))
     transport += _q(qty * _q(card.transport_per_unit, _Q4))
     transport += _q(kg * _q(card.transport_per_kg, _Q4))
+    transport += _q(tons * _q(getattr(card, "transport_per_ton", 0), _Q4))
     net = _q(gross - instant - transport)
     if net < 0:
         net = Decimal("0.00")
@@ -501,7 +505,7 @@ def apply_mill_bill_settlement(
     *,
     exclude_bill_id: Optional[int] = None,
 ) -> tuple[Decimal, str, Optional[JsonResponse]]:
-    """Discount and mill lorry always reduce the bill when feed arrives; lane only controls cash vs A/P."""
+    """Discount and mill transport credit always reduce the bill when feed arrives; lane only controls cash vs A/P."""
     truck, err = apply_bill_truck_transport(parsed_lines, vendor, bill_date, body)
     if err:
         return Decimal("0.00"), MILL_SETTLEMENT_CASH, err
@@ -670,6 +674,7 @@ def upsert_rate_card_from_body(vendor: Vendor, body: dict) -> tuple[Optional[Ven
         "transport_per_truck",
         "transport_per_unit",
         "transport_per_kg",
+        "transport_per_ton",
         "monthly_rebate_percent",
         "yearly_rebate_percent",
         "yearly_target_kg",
@@ -1232,12 +1237,12 @@ def apply_pending_discount_or_lorry(
     kind: str,
     body: Optional[dict] = None,
 ) -> tuple[list[VendorCredit], Optional[JsonResponse]]:
-    """Discount and mill lorry are applied on the feed bill; they are not later credit notes."""
+    """Discount and mill transport credit are applied on the feed bill; they are not later credit notes."""
     return [], JsonResponse(
         {
             "detail": (
-                "Discount and mill lorry are applied when the feed bill is recorded "
-                "(same day they send feed). Use monthly/yearly scheme when the mill approves those."
+                "Discount and mill transport credit (৳ per ton) are applied when the feed bill is recorded. "
+                "Use monthly/yearly scheme only after the mill officially approves those commissions."
             )
         },
         status=400,
@@ -1256,8 +1261,8 @@ def apply_mill_flags(
         return JsonResponse(
             {
                 "detail": (
-                    "Discount and mill lorry are applied on the feed bill when they send feed. "
-                    "Only monthly/yearly commissions are applied here when the mill approves."
+                    "Discount and mill transport credit are applied on the feed bill when they send feed. "
+                    "Only monthly/yearly commissions are applied here after the mill officially approves."
                 )
             },
             status=400,
@@ -1498,9 +1503,10 @@ def report_mill_dealer_terms(
         },
         "vendors": rows,
         "accounting_note": (
-            "Discount and mill lorry are taken when feed/medicine bills are posted (same day they send feed). "
+            "Discount and mill transport credit (৳ per ton) are taken when feed/medicine bills are posted. "
             "Monthly commission is % of period MRP from the mill rate card (counts automatically). "
             "Yearly commission shows only when the tonnage target is reached (or when no target is set). "
-            "Actual lorry fare is what you paid the driver; mill lorry is their fixed share from the rate card."
+            "Monthly/yearly amounts credit your mill A/P only after their official approval. "
+            "Actual lorry fare is what you paid the driver; mill transport credit is tons × ৳/ton from the rate card."
         ),
     }

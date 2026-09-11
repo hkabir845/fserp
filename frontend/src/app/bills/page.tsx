@@ -478,11 +478,17 @@ function applyMillTermsToLine(
   const tPct = Number(terms.rate_card.transport_percent) || 0
   const tUnit = Number(terms.rate_card.transport_per_unit) || 0
   const tKg = Number(terms.rate_card.transport_per_kg) || 0
+  const tTon = Number(terms.rate_card.transport_per_ton) || 0
   const sackKg = Number(item?.content_weight_kg) || 0
+  const unit = (item?.unit || '').trim().toLowerCase()
+  const lineKg =
+    sackKg > 0 ? qty * sackKg : ['kg', 'kgs', 'kilogram', 'kilograms'].includes(unit) ? qty : 0
+  const tons = lineKg > 0 ? lineKg / 1000 : 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
-  // Per-truck lorry is bill-level (truck_transport_amount), not per line.
-  const transport = (gross * tPct) / 100 + qty * tUnit + qty * sackKg * tKg
+  // Transport credit is primarily ৳/ton (e.g. 10 t × 950). Per-truck is bill-level separately.
+  const transport =
+    (gross * tPct) / 100 + qty * tUnit + lineKg * tKg + tons * tTon
   const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
     ...line,
@@ -493,6 +499,20 @@ function applyMillTermsToLine(
     unit_cost: roundBillMoney(amount / qty),
     amount_manual: true,
   }
+}
+
+/** Total ordered tons on mill bill lines (from sack kg or qty in kg). */
+function millBillTons(lines: BillLineItem[], items: Item[]): number {
+  return lines.reduce((sum, line) => {
+    const item = items.find((i) => i.id === line.item_id)
+    const qty = Number(line.quantity) || 0
+    if (!(qty > 0)) return sum
+    const sackKg = Number(item?.content_weight_kg) || 0
+    const unit = (item?.unit || '').trim().toLowerCase()
+    const lineKg =
+      sackKg > 0 ? qty * sackKg : ['kg', 'kgs', 'kilogram', 'kilograms'].includes(unit) ? qty : 0
+    return sum + lineKg / 1000
+  }, 0)
 }
 
 function millTermsBanner(
@@ -509,6 +529,8 @@ function millTermsBanner(
     millPayNow: number
     millMrpTotal: number
     millDiscountTotal: number
+    millTons: number
+    millTransportTotal: number
     onTermsChange: (values: BillMillTermsValues) => void
     onFacilityChange: (patch: {
       credit_facility_enabled?: boolean
@@ -535,6 +557,7 @@ function millTermsBanner(
     ),
     transport_per_unit: asTwoDecimals(card?.transport_per_unit, empty.transport_per_unit),
     transport_per_kg: asTwoDecimals(card?.transport_per_kg, empty.transport_per_kg),
+    transport_per_ton: asTwoDecimals(card?.transport_per_ton, empty.transport_per_ton),
     monthly_rebate_percent: asTwoDecimals(
       card?.monthly_rebate_percent,
       empty.monthly_rebate_percent
@@ -556,7 +579,11 @@ function millTermsBanner(
     }
     opts.onTermsChange(next)
   }
-  const millShare = parseFloat(opts.truckTransportAmount) || 0
+  const perTon = Number(termsForm.transport_per_ton) || 0
+  const tonCredit = roundBillMoney(opts.millTons * perTon)
+  const millShare = roundBillMoney(
+    opts.millTransportTotal + (parseFloat(opts.truckTransportAmount) || 0)
+  )
   const actual = parseFloat(opts.actualLorryFare) || 0
   const extra = actual > 0 && millShare > 0 ? Math.max(0, roundBillMoney(actual - millShare)) : 0
   const discPct = Number(termsForm.instant_discount_percent) || 0
@@ -570,9 +597,9 @@ function millTermsBanner(
         </p>
         <p className="text-muted-foreground mt-0.5">
           {opts.limitFull
-            ? 'Credit full — pay net now (MRP − discount − mill lorry). '
-            : 'Discount + mill lorry apply on this bill. '}
-          Monthly/yearly commissions wait until the mill approves.
+            ? 'Credit full — pay net now (MRP − discount − transport credit). '
+            : 'Instant discount and transport ৳/ton apply on this bill. '}
+          Monthly/yearly commissions are credited to your mill account only after their official approval.
         </p>
       </div>
 
@@ -666,8 +693,15 @@ function millTermsBanner(
             : null}
         </span>
         <span>
-          Mill lorry:{' '}
+          Transport credit
+          {perTon > 0
+            ? ` (${formatNumber(opts.millTons)} t × ${formatNumber(perTon)})`
+            : ''}
+          :{' '}
           <span className="font-semibold tabular-nums">−{formatNumber(millShare)}</span>
+          {perTon > 0 && opts.millTons <= 0
+            ? ' (set item sack kg or qty in kg)'
+            : null}
         </span>
       </div>
 
@@ -706,26 +740,23 @@ function millTermsBanner(
 
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-              Lorry / transport (this bill)
+              Transport credit — per ton (this bill)
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <label className="block text-xs font-medium">
-                Mill lorry share (fixed ৳)
+                Transport ৳ / ton
                 <input
                   type="number"
                   min={0}
                   step="0.01"
-                  value={opts.truckTransportAmount}
-                  onChange={(e) => {
-                    opts.setTruckTransportAmount(e.target.value)
-                    patchTerms({ transport_per_truck: e.target.value })
-                  }}
+                  value={termsForm.transport_per_ton}
+                  onChange={(e) => patchTerms({ transport_per_ton: e.target.value })}
                   className={`${opts.fieldClass} mt-1`}
                   placeholder="e.g. 950"
                 />
               </label>
               <label className="block text-xs font-medium">
-                Fare paid to driver
+                Fare paid to driver (ours)
                 <input
                   type="number"
                   min={0}
@@ -737,17 +768,40 @@ function millTermsBanner(
                 />
               </label>
             </div>
+            <p className="text-muted-foreground mt-1">
+              Ordered {formatNumber(opts.millTons)} t × {formatNumber(perTon)} = credit{' '}
+              <span className="font-semibold tabular-nums">{formatNumber(tonCredit)}</span>
+              {tonCredit > 0 && Math.abs(tonCredit - opts.millTransportTotal) > 0.02
+                ? ` (lines currently −${formatNumber(opts.millTransportTotal)})`
+                : null}
+              . Example: 10 t × 950 = 9,500.
+            </p>
             {extra > 0 ? (
               <p className="text-muted-foreground mt-1">
-                Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill{' '}
-                {formatNumber(millShare)})
+                Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill
+                credit {formatNumber(millShare)})
               </p>
             ) : null}
             <details className="mt-2">
               <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
-                Optional transport extras (% / unit / kg)
+                Optional extras (fixed / bill, % / unit / kg)
               </summary>
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <label className="block text-xs font-medium">
+                  Fixed ৳ / bill
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={opts.truckTransportAmount}
+                    onChange={(e) => {
+                      opts.setTruckTransportAmount(e.target.value)
+                      patchTerms({ transport_per_truck: e.target.value })
+                    }}
+                    className={`${opts.fieldClass} mt-1`}
+                    placeholder="Rare"
+                  />
+                </label>
                 <label className="block text-xs font-medium">
                   Transport % of MRP
                   <input
@@ -787,7 +841,7 @@ function millTermsBanner(
 
           <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-2.5 space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900/80">
-              Monthly & yearly commission (saved on mill — not on this bill total)
+              Monthly & yearly commission (after mill approval — not on this bill total)
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <label className="block text-xs font-medium">
@@ -837,7 +891,7 @@ function millTermsBanner(
 
       {opts.limitFull ? (
         <label className="block text-xs font-medium">
-          Pay mill now (MRP − discount − lorry)
+          Pay mill now (MRP − discount − transport)
           <input
             type="number"
             min={0}
@@ -1970,6 +2024,7 @@ export default function BillsPage() {
       transport_per_truck: values.transport_per_truck,
       transport_per_unit: values.transport_per_unit,
       transport_per_kg: values.transport_per_kg,
+      transport_per_ton: values.transport_per_ton,
       monthly_rebate_percent: values.monthly_rebate_percent,
       yearly_rebate_percent: values.yearly_rebate_percent,
       yearly_target_tons: values.yearly_target_tons,
@@ -2018,6 +2073,7 @@ export default function BillsPage() {
           transport_per_truck: parseFloat(toTwoDecimals(values.transport_per_truck)) || 0,
           transport_per_unit: parseFloat(toTwoDecimals(values.transport_per_unit)) || 0,
           transport_per_kg: parseFloat(toTwoDecimals(values.transport_per_kg)) || 0,
+          transport_per_ton: parseFloat(toTwoDecimals(values.transport_per_ton)) || 0,
           monthly_rebate_percent: parseFloat(toTwoDecimals(values.monthly_rebate_percent)) || 0,
           yearly_rebate_percent: parseFloat(toTwoDecimals(values.yearly_rebate_percent)) || 0,
           yearly_target_kg: (parseFloat(toTwoDecimals(values.yearly_target_tons)) || 0) * 1000,
@@ -2545,9 +2601,19 @@ export default function BillsPage() {
     (s, l) => s + (Number(l.instant_discount_amount) || 0),
     0
   )
+  const millTransportTotal = formData.lines.reduce(
+    (s, l) => s + (Number(l.transport_amount) || 0),
+    0
+  )
+  const millTons = millBillTons(formData.lines, items)
   const millPayNow = Math.max(
     0,
-    roundBillMoney(millMrpTotal - millDiscountTotal - (parseFloat(truckTransportAmount) || 0))
+    roundBillMoney(
+      millMrpTotal -
+        millDiscountTotal -
+        millTransportTotal -
+        (parseFloat(truckTransportAmount) || 0)
+    )
   )
   const millBannerOpts = {
     truckTransportAmount,
@@ -2561,6 +2627,8 @@ export default function BillsPage() {
     millPayNow,
     millMrpTotal,
     millDiscountTotal,
+    millTons,
+    millTransportTotal,
     onTermsChange: (values: BillMillTermsValues) => {
       void applyBillMillTermsValues(values, true)
     },

@@ -492,6 +492,10 @@ function millLineWeightKg(line: BillLineItem, item: Item | undefined): number {
   ) {
     return qty * 1000
   }
+  // Feed mills: sack/bag without kg/sack → assume 25 kg (240 × 25 kg = 6 t).
+  if (['sack', 'sacks', 'bag', 'bags', 'bag/sack', 'sack/bag'].includes(unit)) {
+    return qty * 25
+  }
   return 0
 }
 
@@ -686,7 +690,7 @@ function buildMillDeductionRows(opts: {
       key: 'tons-warn',
       kind: 'note',
       label:
-        'Transport ৳/ton is set but Ordered tons is 0 — type Ordered tons above (e.g. 10), or set Kg/sack on the feed item so Qty can convert to tons (240 sacks × 25 kg = 6 t).',
+        'Transport ৳/ton is set but Ordered tons is 0 — type Ordered tons above (e.g. 10), or use unit sack/bag (defaults to 25 kg/sack) / set Kg/sack on the item.',
       amount: null,
     })
   } else if (
@@ -4654,6 +4658,46 @@ export default function BillsPage() {
                     </tbody>
                   </table>
                   </div>
+                  {(() => {
+                    const viewLines = (viewingBill.lines || []) as BillLineItem[]
+                    const discPct =
+                      viewLines.reduce((s, l) => {
+                        const qty = Number(l.quantity) || 0
+                        const mrp = Number(l.mrp) || 0
+                        const gross = qty * mrp
+                        const disc = Number(l.instant_discount_amount) || 0
+                        return gross > 0 ? s + (disc / gross) * 100 : s
+                      }, 0) / Math.max(1, viewLines.filter((l) => Number(l.mrp) > 0).length || 1)
+                    const millTons = millBillTons(viewLines, items)
+                    const transportPerTon =
+                      millTons > 0
+                        ? roundBillMoney(
+                            viewLines.reduce((s, l) => s + (Number(l.transport_amount) || 0), 0) /
+                              millTons
+                          )
+                        : 0
+                    const rows = buildMillDeductionRows({
+                      lines: viewLines,
+                      items,
+                      millTons,
+                      transportPerTon,
+                      driverPerTon: 0,
+                      driverFareTotal: Number(viewingBill.actual_lorry_fare) || 0,
+                      truckTransport: Number(viewingBill.truck_transport_amount) || 0,
+                      discPct: Number(discPct.toFixed(2)),
+                    })
+                    if (!rows.length) return null
+                    return (
+                      <div className="mt-3 space-y-2">
+                        <MillBillDeductionLines currencySymbol={currencySymbol} rows={rows} />
+                        <p className="text-[11px] text-muted-foreground px-1">
+                          Monthly and yearly mill commissions are recorded on the vendor terms and
+                          posted only after Feed Mill approval — they are not deducted on this bill
+                          total.
+                        </p>
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* Totals */}

@@ -38,7 +38,7 @@ const FIELDS: {
 }[] = [
   { key: 'name', label: 'Item name', type: 'text' },
   { key: 'unit', label: 'Unit', type: 'text', placeholder: 'piece, kg, sack…' },
-  { key: 'content_weight_kg', label: 'Kg / sack', type: 'number', placeholder: 'e.g. 25' },
+  { key: 'content_weight_kg', label: 'Kg / sack', type: 'number', placeholder: '25 if blank for sack' },
   { key: 'category', label: 'Category', type: 'text', placeholder: 'General' },
   { key: 'unit_price', label: 'Sale price', type: 'number' },
   { key: 'description', label: 'Item description', type: 'text', wide: true },

@@ -299,6 +299,40 @@ def test_transport_credit_uses_ordered_tons_override(api_client, company_tenant,
 
 
 @pytest.mark.django_db
+def test_transport_credit_defaults_sack_to_25kg_when_weight_missing(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Unit sack without content_weight_kg still converts to tons (25 kg/sack)."""
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Default sack mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_ton": "950",
+        },
+    )
+    item = _item(company_tenant.id, mrp=Decimal("1950"), content_weight_kg=None, unit="sack")
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        {"item_id": item.id, "quantity": "240", "mrp": "1950"},
+        status="draft",
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    line = bill["lines"][0]
+    # 240 x 1950 = 468000; 5.5% = 25740; 6 t x 950 = 5700; net = 436560
+    assert Decimal(line["instant_discount_amount"]) == Decimal("25740.00")
+    assert Decimal(line["transport_amount"]) == Decimal("5700.00")
+    assert Decimal(bill["total"]) == Decimal("436560.00")
+
+
+@pytest.mark.django_db
 def test_truck_transport_is_once_per_bill_when_explicit(api_client, company_tenant, auth_admin_headers):
     """Fixed /bill is optional and only applies when the bill body sends it (not from rate card)."""
     h = auth_admin_headers

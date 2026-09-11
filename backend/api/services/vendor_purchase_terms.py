@@ -269,6 +269,20 @@ _TON_UNITS = frozenset(
 )
 
 
+_SACK_UNITS = frozenset(
+    {
+        "sack",
+        "sacks",
+        "bag",
+        "bags",
+        "bag/sack",
+        "sack/bag",
+    }
+)
+# Common feed-mill sack when content_weight_kg is not set on the item (e.g. 240 × 25 kg = 6 t).
+_DEFAULT_FEED_SACK_KG = Decimal("25")
+
+
 def line_weight_kg(qty: Decimal, item: Optional[Item], *, content_weight_kg=None) -> Decimal:
     """Ordered weight in kg for mill transport (÷1000 → tons)."""
     qty = _q(qty, Decimal("0.0001"))
@@ -286,6 +300,8 @@ def line_weight_kg(qty: Decimal, item: Optional[Item], *, content_weight_kg=None
         return qty
     if unit in _TON_UNITS:
         return _q(qty * Decimal("1000"), _Q4)
+    if unit in _SACK_UNITS:
+        return _q(qty * _DEFAULT_FEED_SACK_KG, _Q4)
     return Decimal("0")
 
 

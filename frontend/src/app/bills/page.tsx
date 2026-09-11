@@ -520,8 +520,8 @@ function millTermsBanner(
   opts: {
     truckTransportAmount: string
     setTruckTransportAmount: (v: string) => void
-    actualLorryFare: string
-    setActualLorryFare: (v: string) => void
+    actualLorryFarePerTon: string
+    setActualLorryFarePerTon: (v: string) => void
     cashWithBill: string
     setCashWithBill: (v: string) => void
     cashLane: boolean
@@ -584,7 +584,8 @@ function millTermsBanner(
   const millShare = roundBillMoney(
     opts.millTransportTotal + (parseFloat(opts.truckTransportAmount) || 0)
   )
-  const actual = parseFloat(opts.actualLorryFare) || 0
+  const driverPerTon = parseFloat(opts.actualLorryFarePerTon) || 0
+  const actual = roundBillMoney(opts.millTons * driverPerTon)
   const extra = actual > 0 && millShare > 0 ? Math.max(0, roundBillMoney(actual - millShare)) : 0
   const discPct = Number(termsForm.instant_discount_percent) || 0
   const discPerUnit = Number(termsForm.instant_discount_per_unit) || 0
@@ -756,25 +757,26 @@ function millTermsBanner(
                 />
               </label>
               <label className="block text-xs font-medium">
-                Fare paid to driver (ours)
+                Paid to driver ৳ / ton
                 <input
                   type="number"
                   min={0}
                   step="0.01"
-                  value={opts.actualLorryFare}
-                  onChange={(e) => opts.setActualLorryFare(e.target.value)}
+                  value={opts.actualLorryFarePerTon}
+                  onChange={(e) => opts.setActualLorryFarePerTon(e.target.value)}
                   className={`${opts.fieldClass} mt-1`}
-                  placeholder="e.g. 1500"
+                  placeholder="e.g. 1200"
                 />
               </label>
             </div>
             <p className="text-muted-foreground mt-1">
-              Ordered {formatNumber(opts.millTons)} t × {formatNumber(perTon)} = credit{' '}
+              Mill credit: {formatNumber(opts.millTons)} t × {formatNumber(perTon)} ={' '}
               <span className="font-semibold tabular-nums">{formatNumber(tonCredit)}</span>
               {tonCredit > 0 && Math.abs(tonCredit - opts.millTransportTotal) > 0.02
                 ? ` (lines currently −${formatNumber(opts.millTransportTotal)})`
                 : null}
-              . Example: 10 t × 950 = 9,500.
+              . Driver pay: {formatNumber(opts.millTons)} t × {formatNumber(driverPerTon)} ={' '}
+              <span className="font-semibold tabular-nums">{formatNumber(actual)}</span>.
             </p>
             {extra > 0 ? (
               <p className="text-muted-foreground mt-1">
@@ -1803,7 +1805,7 @@ export default function BillsPage() {
   const [showModal, setShowModal] = useState(false)
   const [vendorPurchaseTerms, setVendorPurchaseTerms] = useState<VendorPurchaseTerms | null>(null)
   const [truckTransportAmount, setTruckTransportAmount] = useState('')
-  const [actualLorryFare, setActualLorryFare] = useState('')
+  const [actualLorryFarePerTon, setActualLorryFarePerTon] = useState('')
   const [cashWithBill, setCashWithBill] = useState('')
   const [approveBill, setApproveBill] = useState(false)
   const [postDraftBillOnUpdate, setPostDraftBillOnUpdate] = useState(false)
@@ -2606,6 +2608,9 @@ export default function BillsPage() {
     0
   )
   const millTons = millBillTons(formData.lines, items)
+  const driverFareTotal = roundBillMoney(
+    millTons * (parseFloat(actualLorryFarePerTon) || 0)
+  )
   const millPayNow = Math.max(
     0,
     roundBillMoney(
@@ -2618,8 +2623,8 @@ export default function BillsPage() {
   const millBannerOpts = {
     truckTransportAmount,
     setTruckTransportAmount,
-    actualLorryFare,
-    setActualLorryFare,
+    actualLorryFarePerTon,
+    setActualLorryFarePerTon,
     cashWithBill,
     setCashWithBill,
     cashLane: millCashLane,
@@ -3125,7 +3130,7 @@ export default function BillsPage() {
             }
           : undefined,
       truck_transport_amount: parseFloat(truckTransportAmount) || 0,
-      actual_lorry_fare: parseFloat(actualLorryFare) || 0,
+      actual_lorry_fare: driverFareTotal,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -3215,8 +3220,6 @@ export default function BillsPage() {
         }
         const truckOnBill = Number(fullBill.truck_transport_amount) || 0
         setTruckTransportAmount(truckOnBill > 0 ? toTwoDecimals(truckOnBill) : '')
-        const fareOnBill = Number(fullBill.actual_lorry_fare) || 0
-        setActualLorryFare(fareOnBill > 0 ? String(fareOnBill) : '')
         const mappedLines = (fullBill.lines || []).map((line: BillLineItem) => ({
             id: line.id,
             line_number: line.line_number,
@@ -3281,13 +3284,19 @@ export default function BillsPage() {
               return undefined
             })(),
         }))
+        const linesForEdit = stripTruckFromLines(mappedLines, truckOnBill)
+        const fareOnBill = Number(fullBill.actual_lorry_fare) || 0
+        const editTons = millBillTons(linesForEdit, items)
+        setActualLorryFarePerTon(
+          fareOnBill > 0 && editTons > 0 ? toTwoDecimals(fareOnBill / editTons) : ''
+        )
         setFormData({
           vendor_id: fullBill.vendor_id,
           bill_date: fullBill.bill_date.split('T')[0],
           due_date: fullBill.due_date ? fullBill.due_date.split('T')[0] : '',
           vendor_reference: fullBill.vendor_reference || '',
           memo: fullBill.memo || '',
-          lines: stripTruckFromLines(mappedLines, truckOnBill),
+          lines: linesForEdit,
         })
         setShowEditModal(true)
         if (fullBill.vendor_id) {
@@ -3350,7 +3359,7 @@ export default function BillsPage() {
           ? { amount: parseFloat(cashWithBill), payment_method: 'cash' }
           : undefined,
       truck_transport_amount: parseFloat(truckTransportAmount) || 0,
-      actual_lorry_fare: parseFloat(actualLorryFare) || 0,
+      actual_lorry_fare: driverFareTotal,
       lines: linesToSave.map((line, idx) => ({
         line_number: idx + 1,
         ...serializeBillLineForApi(line, items, billExpenseCoaOptions),
@@ -3691,7 +3700,7 @@ export default function BillsPage() {
     setVendorPurchaseTerms(null)
     setCashWithBill('')
     setTruckTransportAmount('')
-    setActualLorryFare('')
+    setActualLorryFarePerTon('')
   }
 
   const handleCloseModal = () => {

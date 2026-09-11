@@ -1955,7 +1955,7 @@ class Bill(models.Model):
         max_digits=14,
         decimal_places=2,
         default=0,
-        help_text="What we paid the driver. Extra over mill share is our transport cost.",
+        help_text="What we paid the driver for this load (total = tons × ৳/ton entered on the bill).",
     )
     mill_settlement = models.CharField(
         max_length=16,

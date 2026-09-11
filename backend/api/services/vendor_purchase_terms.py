@@ -1507,6 +1507,6 @@ def report_mill_dealer_terms(
             "Monthly commission is % of period MRP from the mill rate card (counts automatically). "
             "Yearly commission shows only when the tonnage target is reached (or when no target is set). "
             "Monthly/yearly amounts credit your mill A/P only after their official approval. "
-            "Actual lorry fare is what you paid the driver; mill transport credit is tons × ৳/ton from the rate card."
+            "Actual driver pay is also ৳/ton × ordered tons; mill transport credit is tons × mill ৳/ton from the rate card."
         ),
     }

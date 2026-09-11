@@ -466,7 +466,21 @@ def report_by_id(request, report_id: str):
                 cid, start, end, st_id, business_segment=segment or "all"
             )
         elif report_id == "mill-dealer-terms":
-            payload = report_mill_dealer_terms(cid, start, end)
+            mill_vendor_id: int | None = None
+            raw_vid = (request.GET.get("vendor_id") or "").strip()
+            if raw_vid:
+                try:
+                    mill_vendor_id = int(raw_vid)
+                except (TypeError, ValueError):
+                    return JsonResponse(
+                        {"detail": "vendor_id must be an integer."},
+                        status=400,
+                    )
+                if mill_vendor_id <= 0:
+                    mill_vendor_id = None
+            payload = report_mill_dealer_terms(
+                cid, start, end, vendor_id=mill_vendor_id
+            )
         else:
             payload = report_daily_summary(
                 cid, start, end, st_id, business_segment=segment or "all"

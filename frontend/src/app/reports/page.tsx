@@ -1619,6 +1619,8 @@ function ReportsPageContent() {
   })
   const [salesPurchaseDatePreset, setSalesPurchaseDatePreset] =
     useState<SalesPurchasePeriodPreset>('today')
+  /** Mill dealer terms: '' = all feed/medicine mills. */
+  const [millDealerVendorId, setMillDealerVendorId] = useState('')
   const salesPurchaseDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reportDisplayRef = useRef<HTMLDivElement>(null)
   const reportListRef = useRef<HTMLElement>(null)
@@ -2181,6 +2183,8 @@ function ReportsPageContent() {
       siteScopeKey?: string
       /** Loans borrow/lent report: exclude company-wide loans when a site is selected. */
       strictSiteOnly?: boolean
+      /** Mill dealer terms: specific feed/medicine vendor id, or omit for all. */
+      millVendorId?: string
     }
   ) => {
     setLoading(true)
@@ -2336,6 +2340,13 @@ function ReportsPageContent() {
       }
     }
 
+    if (reportId === 'mill-dealer-terms') {
+      const vid = opts?.millVendorId ?? millDealerVendorId
+      if (vid && /^\d+$/.test(vid)) {
+        params.vendor_id = vid
+      }
+    }
+
     try {
       const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
       if (!token) {
@@ -2453,6 +2464,7 @@ function ReportsPageContent() {
     scrollReportPanelIntoView,
     loansStrictSiteOnly,
     pondLockedBySiteScope,
+    millDealerVendorId,
   ])
 
   const openEntityPlDetail = useCallback(
@@ -2919,8 +2931,16 @@ function ReportsPageContent() {
       const sum = reportData.summary || {}
       contentHTML += `<p><strong>Grand total:</strong> ${formatCurrency(sum.grand_total ?? 0)} (${sum.total_bills ?? 0} bill portions)</p>`
     } else if (selectedReport === 'mill-dealer-terms' && Array.isArray(reportData.vendors)) {
+      const millSum = reportData.summary || {}
+      const millScope =
+        reportData.selected_vendor?.display_name ||
+        (millDealerVendorId
+          ? `Vendor #${millDealerVendorId}`
+          : 'All feed mills')
+      contentHTML += `<h2>Mill dealer terms</h2><p><strong>Scope:</strong> ${escapeHtml(String(millScope))}</p>`
+      contentHTML += `<p><strong>Total feed:</strong> ${formatNumber(Number(millSum.period_feed_tons || 0), 3)} t (${formatNumber(Number(millSum.period_feed_kg || 0), 2)} kg) · <strong>Discount:</strong> ${formatCurrency(millSum.discount_total ?? 0)} · <strong>Transport:</strong> ${formatCurrency(millSum.lorry_total ?? 0)} · <strong>Monthly:</strong> ${formatCurrency(millSum.monthly_commission ?? 0)} · <strong>Yearly:</strong> ${formatCurrency(millSum.yearly_commission ?? 0)}</p>`
       contentHTML +=
-        '<h2>Mill dealer terms</h2><table><thead><tr><th>Vendor</th><th>Type</th><th style="text-align:right">Bills</th><th style="text-align:right">MRP</th><th style="text-align:right">Discount</th><th style="text-align:right">Lorry</th><th style="text-align:right">Driver fare</th><th style="text-align:right">Net</th><th style="text-align:right">Monthly</th><th style="text-align:right">Yearly</th><th>Target</th></tr></thead><tbody>'
+        '<table><thead><tr><th>Vendor</th><th>Type</th><th style="text-align:right">Bills</th><th style="text-align:right">Feed t</th><th style="text-align:right">Feed kg</th><th style="text-align:right">MRP</th><th style="text-align:right">Discount</th><th style="text-align:right">Transport</th><th style="text-align:right">Driver fare</th><th style="text-align:right">Net</th><th style="text-align:right">Monthly</th><th style="text-align:right">Yearly</th><th>Target</th></tr></thead><tbody>'
       reportData.vendors.forEach((r: any) => {
         const target =
           Number(r.yearly_target_tons || 0) > 0
@@ -2928,10 +2948,9 @@ function ReportsPageContent() {
             : r.yearly_target_reached
               ? 'No target'
               : ''
-        contentHTML += `<tr><td>${escapeHtml(String(r.display_name || ''))}</td><td>${escapeHtml(String(r.supplier_category_label || ''))}</td><td style="text-align:right">${r.bill_count ?? 0}</td><td style="text-align:right">${formatCurrency(r.gross_mrp_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.discount_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.lorry_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.actual_lorry_fare_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.net_bill_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.monthly_commission ?? 0)}</td><td style="text-align:right">${r.yearly_target_reached ? formatCurrency(r.yearly_commission ?? 0) : '—'}</td><td>${escapeHtml(target)}</td></tr>`
+        contentHTML += `<tr><td>${escapeHtml(String(r.display_name || ''))}</td><td>${escapeHtml(String(r.supplier_category_label || ''))}</td><td style="text-align:right">${r.bill_count ?? 0}</td><td style="text-align:right">${formatNumber(Number(r.period_feed_tons || 0), 3)}</td><td style="text-align:right">${formatNumber(Number(r.period_feed_kg || 0), 2)}</td><td style="text-align:right">${formatCurrency(r.gross_mrp_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.discount_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.lorry_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.actual_lorry_fare_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.net_bill_total ?? 0)}</td><td style="text-align:right">${formatCurrency(r.monthly_commission ?? 0)}</td><td style="text-align:right">${r.yearly_target_reached ? formatCurrency(r.yearly_commission ?? 0) : '—'}</td><td>${escapeHtml(target)}</td></tr>`
       })
-      const sum = reportData.summary || {}
-      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.gross_mrp_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.discount_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.lorry_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.actual_lorry_fare_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.net_bill_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.monthly_commission ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(sum.yearly_commission ?? 0)}</strong></td><td></td></tr></tfoot></tbody></table>`
+      contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${formatNumber(Number(millSum.period_feed_tons || 0), 3)}</strong></td><td style="text-align:right"><strong>${formatNumber(Number(millSum.period_feed_kg || 0), 2)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.gross_mrp_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.discount_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.lorry_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.actual_lorry_fare_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.net_bill_total ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.monthly_commission ?? 0)}</strong></td><td style="text-align:right"><strong>${formatCurrency(millSum.yearly_commission ?? 0)}</strong></td><td></td></tr></tfoot></tbody></table>`
       if (reportData.accounting_note) {
         contentHTML += `<p>${escapeHtml(String(reportData.accounting_note))}</p>`
       }
@@ -3309,13 +3328,17 @@ function ReportsPageContent() {
         exportPurchaseSection('Cash vendors', reportData.cash_vendors || [])
         exportPurchaseSection('Credit vendors', reportData.credit_vendors || [])
       } else if (selectedReport === 'mill-dealer-terms' && Array.isArray(reportData.vendors)) {
+        const millScope =
+          reportData.selected_vendor?.display_name ||
+          (millDealerVendorId ? `Vendor #${millDealerVendorId}` : 'All feed mills')
+        csvContent += `Scope,${escapeCsv(millScope)}\n`
         csvContent +=
-          'Vendor #,Vendor,Type,Bills,MRP,Discount,Lorry,Driver fare,Net,Monthly,Yearly,Year tons,Target tons,Target reached\n'
+          'Vendor #,Vendor,Type,Bills,Feed tons,Feed kg,MRP,Discount,Transport,Driver fare,Net,Monthly,Yearly,Year tons,Target tons,Target reached\n'
         reportData.vendors.forEach((r: any) => {
-          csvContent += `${escapeCsv(r.vendor_number)},${escapeCsv(r.display_name)},${escapeCsv(r.supplier_category_label)},${r.bill_count ?? 0},${r.gross_mrp_total ?? 0},${r.discount_total ?? 0},${r.lorry_total ?? 0},${r.actual_lorry_fare_total ?? 0},${r.net_bill_total ?? 0},${r.monthly_commission ?? 0},${r.yearly_commission ?? 0},${r.year_tons ?? 0},${r.yearly_target_tons ?? 0},${r.yearly_target_reached ? 'Yes' : 'No'}\n`
+          csvContent += `${escapeCsv(r.vendor_number)},${escapeCsv(r.display_name)},${escapeCsv(r.supplier_category_label)},${r.bill_count ?? 0},${r.period_feed_tons ?? 0},${r.period_feed_kg ?? 0},${r.gross_mrp_total ?? 0},${r.discount_total ?? 0},${r.lorry_total ?? 0},${r.actual_lorry_fare_total ?? 0},${r.net_bill_total ?? 0},${r.monthly_commission ?? 0},${r.yearly_commission ?? 0},${r.year_tons ?? 0},${r.yearly_target_tons ?? 0},${r.yearly_target_reached ? 'Yes' : 'No'}\n`
         })
         const sum = reportData.summary || {}
-        csvContent += `\nTotals,,,${sum.vendor_count ?? ''},${sum.gross_mrp_total ?? 0},${sum.discount_total ?? 0},${sum.lorry_total ?? 0},${sum.actual_lorry_fare_total ?? 0},${sum.net_bill_total ?? 0},${sum.monthly_commission ?? 0},${sum.yearly_commission ?? 0}\n`
+        csvContent += `\nTotals,,,${sum.vendor_count ?? ''},${sum.period_feed_tons ?? 0},${sum.period_feed_kg ?? 0},${sum.gross_mrp_total ?? 0},${sum.discount_total ?? 0},${sum.lorry_total ?? 0},${sum.actual_lorry_fare_total ?? 0},${sum.net_bill_total ?? 0},${sum.monthly_commission ?? 0},${sum.yearly_commission ?? 0}\n`
       } else if (selectedReport === 'tank-inventory' && reportData.inventory) {
         csvContent += 'Tank,Station,Product,Capacity (L),Current Stock (L),Fill %,Needs Refill\n'
         reportData.inventory.forEach((tank: any) => {
@@ -3970,14 +3993,14 @@ function ReportsPageContent() {
                     </div>
                   </div>
                 ) : selectedReport === 'analytics-kpi' && reportData && '_analytics' in reportData && reportData._analytics ? (
-                  <div className="w-full min-w-0 p-0">
+                  <div className="report-body w-full min-w-0 p-0">
                     <FinancialAnalyticsPanel embedInReports reportStationKey={reportStationId} />
                   </div>
                 ) : selectedReport === 'aquaculture-pl-management' &&
                   reportData &&
                   '_aquaculturePlManagement' in reportData &&
                   reportData._aquaculturePlManagement ? (
-                  <div className="w-full min-w-0 p-0">
+                  <div className="report-body w-full min-w-0 p-0">
                     <AquaculturePlManagementPanel
                       embedInReports
                       reportStationKey={reportStationId}
@@ -4005,7 +4028,7 @@ function ReportsPageContent() {
                     </div>
                   </div>
                 ) : selectedReport && reportData ? (
-                  <div className="p-4 sm:p-6">
+                  <div className="report-body p-4 sm:p-6">
                     {/* Report Header */}
                     <div className="mb-6 flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -4047,29 +4070,79 @@ function ReportsPageContent() {
                     {userRole != null &&
                     userRole !== 'operator' &&
                     userRole !== 'pump_attendant' &&
-                    (reportStationList.length > 0 || showPondsInSiteScope) &&
-                    !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
-                    !userHasHomeStation ? (
-                      <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border bg-muted/30 px-3 py-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
-                        <div className="min-w-0 flex-1">
-                          <label
-                            className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                            htmlFor="report-station-scope-inline"
-                          >
-                            Site
-                          </label>
-                          <ReportSiteScopeSelect
-                            id="report-station-scope-inline"
-                            value={reportStationId}
-                            onChange={applyReportSiteScopeChange}
-                            stations={reportStationList}
-                            ponds={aquaculturePonds}
-                            className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
-                          />
-                        </div>
-                        <p className="shrink-0 text-xs text-muted-foreground sm:pb-2 sm:text-right">
-                          Saved in this browser · refreshes the open report
-                        </p>
+                    (((reportStationList.length > 0 || showPondsInSiteScope) &&
+                      !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
+                      !userHasHomeStation) ||
+                      selectedReport === 'mill-dealer-terms') ? (
+                      <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
+                        {(reportStationList.length > 0 || showPondsInSiteScope) &&
+                        !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
+                        !userHasHomeStation ? (
+                          <div className="min-w-0 flex-1 sm:min-w-[14rem] sm:max-w-xs">
+                            <label
+                              className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                              htmlFor="report-station-scope-inline"
+                            >
+                              Site
+                            </label>
+                            <ReportSiteScopeSelect
+                              id="report-station-scope-inline"
+                              value={reportStationId}
+                              onChange={applyReportSiteScopeChange}
+                              stations={reportStationList}
+                              ponds={aquaculturePonds}
+                              className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
+                            />
+                          </div>
+                        ) : null}
+                        {selectedReport === 'mill-dealer-terms' ? (
+                          <div className="min-w-0 flex-1 sm:min-w-[16rem] sm:max-w-md">
+                            <label
+                              className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                              htmlFor="mill-dealer-vendor-scope"
+                            >
+                              Feed mill / vendor
+                            </label>
+                            <select
+                              id="mill-dealer-vendor-scope"
+                              className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
+                              value={millDealerVendorId}
+                              onChange={(e) => {
+                                const id = e.target.value
+                                setMillDealerVendorId(id)
+                                void fetchReport('mill-dealer-terms', { millVendorId: id })
+                              }}
+                            >
+                              <option value="">All feed &amp; medicine mills</option>
+                              {(Array.isArray(reportData?.available_vendors)
+                                ? reportData.available_vendors
+                                : []
+                              ).map(
+                                (v: {
+                                  vendor_id: number
+                                  display_name?: string
+                                  vendor_number?: string
+                                  supplier_category_label?: string
+                                }) => (
+                                  <option key={v.vendor_id} value={String(v.vendor_id)}>
+                                    {(v.display_name || `Vendor #${v.vendor_id}`) +
+                                      (v.vendor_number ? ` (${v.vendor_number})` : '') +
+                                      (v.supplier_category_label
+                                        ? ` · ${v.supplier_category_label}`
+                                        : '')}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </div>
+                        ) : null}
+                        {(reportStationList.length > 0 || showPondsInSiteScope) &&
+                        !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
+                        !userHasHomeStation ? (
+                          <p className="shrink-0 text-xs text-muted-foreground sm:pb-2 sm:ml-auto sm:text-right">
+                            Saved in this browser · refreshes the open report
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -8427,11 +8500,14 @@ function renderReportTable(
     )
   }
 
-  // Mill dealer terms (discount / lorry / monthly / yearly)
+  // Mill dealer terms (discount / transport / monthly / yearly)
   if (reportType === 'mill-dealer-terms' && data) {
     const summary = data.summary || {}
     const rows = Array.isArray(data.vendors) ? data.vendors : []
     const period = data.period || {}
+    const filteredVendor = Boolean(data.vendor_id) || Boolean(data.selected_vendor)
+    const fmtQty = (v: unknown, d = 2) =>
+      Number.isFinite(Number(v)) ? formatNumber(Number(v), d) : formatNumber(0, d)
     return (
       <div className="space-y-6">
         {salesPurchasePeriodProps ? (
@@ -8441,7 +8517,7 @@ function renderReportTable(
             onPresetChange={salesPurchasePeriodProps.onPresetChange}
             onDateChange={salesPurchasePeriodProps.onDateChange}
             period={period}
-            description="Discount and mill lorry from bills in this range. Monthly commission from period MRP × rate card %. Yearly shows when the tonnage target is reached."
+            description="Discount and mill transport from bills in this range. Monthly commission from period MRP × rate card %. Yearly shows when the tonnage target is reached."
           />
         ) : hasPeriod ? (
           pf(
@@ -8449,24 +8525,43 @@ function renderReportTable(
             dateRange,
             reportType,
             handleReportDateChange,
-            'Mill discount, lorry, and commission totals for bills in this date range.'
+            'Mill discount, transport, and commission totals for bills in this date range.'
           )
         ) : null}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {[
+            {
+              label: 'Total feed (tons)',
+              display: `${fmtQty(summary.period_feed_tons, 3)} t`,
+            },
+            {
+              label: 'Total feed (kg)',
+              display: `${fmtQty(summary.period_feed_kg, 2)} kg`,
+            },
             { label: 'Discount', amount: summary.discount_total },
-            { label: 'Mill lorry', amount: summary.lorry_total },
+            { label: 'Transport credit', amount: summary.lorry_total },
             { label: 'Monthly commission', amount: summary.monthly_commission },
             { label: 'Yearly (if target)', amount: summary.yearly_commission },
-          ].map((item) => (
-            <div key={item.label} className="rounded-lg border border-border bg-white p-4 shadow-sm">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
-                {Money(item.amount ?? 0)}
-              </p>
-            </div>
-          ))}
+          ].map((item) => {
+            const value =
+              'display' in item && item.display != null
+                ? String(item.display)
+                : Money(item.amount ?? 0)
+            return (
+              <div
+                key={item.label}
+                className="min-w-0 overflow-hidden rounded-lg border border-border bg-white p-3 shadow-sm sm:p-4"
+              >
+                <p className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {item.label}
+                </p>
+                <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-foreground" title={typeof value === 'string' ? value : undefined}>
+                  {value}
+                </p>
+              </div>
+            )
+          })}
         </div>
 
         <div className="overflow-x-auto border border-border rounded-lg">
@@ -8476,9 +8571,11 @@ function renderReportTable(
                 <th className="px-3 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Vendor</th>
                 <th className="px-3 py-3 text-left text-xs font-medium uppercase text-muted-foreground">Type</th>
                 <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Bills</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Feed t</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Feed kg</th>
                 <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">MRP</th>
                 <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Discount</th>
-                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Lorry</th>
+                <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Transport</th>
                 <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Driver fare</th>
                 <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Net bills</th>
                 <th className="px-3 py-3 text-right text-xs font-medium uppercase text-muted-foreground">Monthly</th>
@@ -8496,6 +8593,8 @@ function renderReportTable(
                     </td>
                     <td className="px-3 py-3 text-sm text-muted-foreground">{r.supplier_category_label || r.supplier_category || '—'}</td>
                     <td className="px-3 py-3 text-right text-sm tabular-nums">{r.bill_count ?? 0}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{fmtQty(r.period_feed_tons, 3)}</td>
+                    <td className="px-3 py-3 text-right text-sm tabular-nums">{fmtQty(r.period_feed_kg, 2)}</td>
                     <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.gross_mrp_total ?? 0)}</td>
                     <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.discount_total ?? 0)}</td>
                     <td className="px-3 py-3 text-right text-sm tabular-nums">{Money(r.lorry_total ?? 0)}</td>
@@ -8524,8 +8623,9 @@ function renderReportTable(
                 ))
               ) : (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
-                    No feed/medicine mill activity in this period.
+                  <td colSpan={13} className="px-4 py-8 text-center text-muted-foreground">
+                    No feed/medicine mill activity in this period
+                    {filteredVendor ? ' for the selected vendor' : ''}.
                   </td>
                 </tr>
               )}
@@ -8536,6 +8636,8 @@ function renderReportTable(
                   <td colSpan={3} className="px-3 py-3 text-right text-sm font-semibold">
                     Totals ({summary.vendor_count ?? rows.length} mills)
                   </td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{fmtQty(summary.period_feed_tons, 3)}</td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{fmtQty(summary.period_feed_kg, 2)}</td>
                   <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.gross_mrp_total ?? 0)}</td>
                   <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.discount_total ?? 0)}</td>
                   <td className="px-3 py-3 text-right text-sm font-semibold tabular-nums">{Money(summary.lorry_total ?? 0)}</td>

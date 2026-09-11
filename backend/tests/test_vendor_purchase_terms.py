@@ -703,8 +703,44 @@ def test_mill_dealer_terms_report(api_client, company_tenant, auth_admin_headers
     assert Decimal(report["summary"]["lorry_total"]) == Decimal("4750.00")
     assert Decimal(report["summary"]["monthly_commission"]) == Decimal("11400.00")
     assert Decimal(report["summary"]["yearly_commission"]) == Decimal("9500.00")
+    # 200 sacks × 25 kg = 5,000 kg = 5 t
+    assert Decimal(report["summary"]["period_feed_kg"]) == Decimal("5000.0000")
+    assert Decimal(report["summary"]["period_feed_tons"]) == Decimal("5.0000")
     row = next(x for x in report["vendors"] if x["vendor_id"] == v["id"])
     assert row["yearly_target_reached"] is True
+    assert Decimal(row["period_feed_tons"]) == Decimal("5.0000")
+    assert any(av["vendor_id"] == v["id"] for av in report["available_vendors"])
+
+    filtered = json.loads(
+        api_client.get(
+            "/api/reports/mill-dealer-terms/",
+            {
+                "start_date": bill["bill_date"],
+                "end_date": bill["bill_date"],
+                "vendor_id": str(v["id"]),
+            },
+            **h,
+        ).content
+    )
+    assert filtered["vendor_id"] == v["id"]
+    assert len(filtered["vendors"]) == 1
+    assert filtered["vendors"][0]["vendor_id"] == v["id"]
+    assert Decimal(filtered["summary"]["period_feed_tons"]) == Decimal("5.0000")
+
+    empty = json.loads(
+        api_client.get(
+            "/api/reports/mill-dealer-terms/",
+            {
+                "start_date": bill["bill_date"],
+                "end_date": bill["bill_date"],
+                "vendor_id": "999999",
+            },
+            **h,
+        ).content
+    )
+    assert empty["vendors"] == []
+    assert Decimal(empty["summary"]["period_feed_kg"]) == Decimal("0")
+    assert Decimal(empty["summary"]["period_feed_tons"]) == Decimal("0")
 
 
 @pytest.mark.django_db

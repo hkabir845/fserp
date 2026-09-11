@@ -823,6 +823,53 @@
   z-index: 50;
 }
 
+/*
+ * Report KPI / summary cards: keep large amounts inside the card.
+ * Uses container query units (cqi) so font size tracks card width.
+ */
+.report-body .grid > [class*='rounded'],
+.report-metric-grid > [class*='rounded'],
+.report-body .report-metric-inline,
+.report-metric-inline {
+  min-width: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.report-body .grid > [class*='rounded'] .flex > div:first-child,
+.report-metric-grid > [class*='rounded'] .flex > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.report-body .grid > [class*='rounded'] > :is(p, div)[class*='text-2xl'],
+.report-body .grid > [class*='rounded'] > :is(p, div)[class*='text-xl'],
+.report-body .grid > [class*='rounded'] > :is(p, div)[class*='text-lg'],
+.report-body .grid > [class*='rounded'] > :is(p, div)[class*='text-base'][class*='font-'],
+.report-body .grid > [class*='rounded'] .flex :is(p, div)[class*='text-2xl'],
+.report-body .grid > [class*='rounded'] .flex :is(p, div)[class*='text-xl'],
+.report-body .grid > [class*='rounded'] .flex :is(p, div)[class*='text-lg'],
+.report-metric-grid > [class*='rounded'] > :is(p, div)[class*='text-2xl'],
+.report-metric-grid > [class*='rounded'] > :is(p, div)[class*='text-xl'],
+.report-metric-grid > [class*='rounded'] > :is(p, div)[class*='text-lg'],
+.report-metric-grid > [class*='rounded'] > :is(p, div)[class*='text-base'][class*='font-'],
+.report-metric-grid > [class*='rounded'] .flex :is(p, div)[class*='text-2xl'],
+.report-metric-grid > [class*='rounded'] .flex :is(p, div)[class*='text-xl'],
+.report-metric-grid > [class*='rounded'] .flex :is(p, div)[class*='text-lg'],
+.report-body .report-metric-inline :is(p, div)[class*='text-2xl'],
+.report-body .report-metric-inline :is(p, div)[class*='text-xl'],
+.report-body .report-metric-inline :is(p, div)[class*='text-lg'],
+.report-metric-inline :is(p, div)[class*='text-2xl'],
+.report-metric-inline :is(p, div)[class*='text-xl'],
+.report-metric-inline :is(p, div)[class*='text-lg'] {
+  max-width: 100%;
+  min-width: 0;
+  font-size: clamp(0.8125rem, 11cqi, 1.5rem) !important;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media print {
   .loan-statement-modal-backdrop {
     position: fixed !important;

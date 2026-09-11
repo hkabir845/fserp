@@ -702,21 +702,21 @@ export function AquaculturePlNetSummary({
         Expenses include feed &amp; medicine consumption and all other operating costs.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
-        <div className="min-w-[7rem] text-center">
+        <div className="report-metric-inline min-w-[7rem] max-w-full text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
           <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">{MoneyBdt(income)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           −
         </span>
-        <div className="min-w-[7rem] text-center">
+        <div className="report-metric-inline min-w-[7rem] max-w-full text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Expenses</p>
           <div className="mt-1 text-2xl font-bold tabular-nums text-rose-900">{MoneyBdt(expenses)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           =
         </span>
-        <div className="min-w-[7rem] text-center">
+        <div className="report-metric-inline min-w-[7rem] max-w-full text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net profit</p>
           <div
             className={`mt-1 text-2xl font-bold tabular-nums ${
@@ -747,7 +747,7 @@ export function AquaculturePlExpenseKpiGrid({ totals }: { totals: PlTotalsLike }
     ['Net profit', totals.net_profit ?? totals.profit],
   ]
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+    <div className="report-metric-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
       {cards.map(([label, val]) => (
         <div key={label} className="rounded-xl border border-border bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>

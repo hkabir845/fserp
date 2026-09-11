@@ -1502,22 +1502,48 @@ def bill_line_purchase_term_kwargs(pl: dict) -> dict:
         "transport_amount": _q(pl.get("transport_amount")),
     }
 
+def bill_feed_weight_kg(bill: Bill) -> Decimal:
+    """Ordered feed/medicine weight on a bill (kg), using item sack kg / unit rules."""
+    total = Decimal("0")
+    qs = bill.lines.all() if hasattr(bill, "lines") else BillLine.objects.filter(bill_id=bill.id)
+    for ln in qs:
+        qty = _q(getattr(ln, "quantity", 0) or 0, Decimal("0.0001"))
+        if qty <= 0:
+            continue
+        total += line_weight_kg(qty, getattr(ln, "item", None))
+    return _q(total, _Q4)
+
+
 def report_mill_dealer_terms(
     company_id: int,
     start: date,
     end: date,
+    *,
+    vendor_id: Optional[int] = None,
 ) -> dict[str, Any]:
     """
-    Feed/medicine mill totals for a period: discount, mill lorry, monthly commission,
-    and yearly commission when the tonnage target is reached (or progress toward it).
+    Feed/medicine mill totals for a period: discount, mill transport, monthly commission,
+    yearly commission when the tonnage target is reached, and ordered feed kg/tons.
     """
-    vendors = list(
-        Vendor.objects.filter(
-            company_id=company_id,
-            supplier_category__in=Vendor.PURCHASE_TERMS_CATEGORIES,
-            is_active=True,
-        ).order_by("display_name", "company_name", "id")
-    )
+    mill_qs = Vendor.objects.filter(
+        company_id=company_id,
+        supplier_category__in=Vendor.PURCHASE_TERMS_CATEGORIES,
+        is_active=True,
+    ).order_by("display_name", "company_name", "id")
+    available = [
+        {
+            "vendor_id": v.id,
+            "vendor_number": v.vendor_number or "",
+            "display_name": (v.display_name or v.company_name or "").strip(),
+            "supplier_category": v.supplier_category or "",
+            "supplier_category_label": supplier_category_label(v.supplier_category),
+        }
+        for v in mill_qs
+    ]
+    vendors = list(mill_qs)
+    if vendor_id:
+        vendors = [v for v in vendors if int(v.id) == int(vendor_id)]
+
     rows: list[dict[str, Any]] = []
     tot_mrp = Decimal("0.00")
     tot_disc = Decimal("0.00")
@@ -1526,6 +1552,7 @@ def report_mill_dealer_terms(
     tot_net = Decimal("0.00")
     tot_monthly = Decimal("0.00")
     tot_yearly = Decimal("0.00")
+    tot_kg = Decimal("0.0000")
 
     for vendor in vendors:
         bills = list(
@@ -1536,19 +1563,22 @@ def report_mill_dealer_terms(
                 bill_date__lte=end,
             )
             .exclude(status__in=("draft", "void"))
-            .prefetch_related("lines")
+            .prefetch_related("lines", "lines__item")
         )
         mrp = Decimal("0.00")
         disc = Decimal("0.00")
         lorry = Decimal("0.00")
         fare = Decimal("0.00")
         net = Decimal("0.00")
+        feed_kg = Decimal("0.0000")
         for bill in bills:
             mrp += bill_gross_mrp(bill)
             disc += bill_instant_discount_total(bill)
             lorry += bill_transport_total(bill)
             fare += _q(getattr(bill, "actual_lorry_fare", 0))
             net += _q(bill.total)
+            feed_kg += bill_feed_weight_kg(bill)
+        feed_tons = _q(feed_kg / Decimal("1000"), _Q4) if feed_kg > 0 else Decimal("0")
         card = active_rate_card(vendor, end)
         monthly_pct = _q(card.monthly_rebate_percent, _Q4) if card else Decimal("0")
         yearly_pct = _q(card.yearly_rebate_percent, _Q4) if card else Decimal("0")
@@ -1575,6 +1605,8 @@ def report_mill_dealer_terms(
                 "lorry_total": str(lorry),
                 "actual_lorry_fare_total": str(fare),
                 "net_bill_total": str(net),
+                "period_feed_kg": str(feed_kg),
+                "period_feed_tons": str(feed_tons),
                 "monthly_rebate_percent": str(monthly_pct),
                 "monthly_commission": str(monthly_est),
                 "yearly_rebate_percent": str(yearly_pct),
@@ -1593,10 +1625,25 @@ def report_mill_dealer_terms(
         tot_net += net
         tot_monthly += monthly_est
         tot_yearly += yearly_est
+        tot_kg += feed_kg
+
+    tot_tons = _q(tot_kg / Decimal("1000"), _Q4) if tot_kg > 0 else Decimal("0")
+    selected = None
+    if vendor_id and rows:
+        selected = {
+            "vendor_id": rows[0]["vendor_id"],
+            "display_name": rows[0]["display_name"],
+            "vendor_number": rows[0]["vendor_number"],
+        }
+    elif vendor_id:
+        selected = {"vendor_id": int(vendor_id), "display_name": "", "vendor_number": ""}
 
     return {
         "report_id": "mill-dealer-terms",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "vendor_id": int(vendor_id) if vendor_id else None,
+        "selected_vendor": selected,
+        "available_vendors": available,
         "summary": {
             "vendor_count": len(rows),
             "gross_mrp_total": str(tot_mrp),
@@ -1606,10 +1653,13 @@ def report_mill_dealer_terms(
             "net_bill_total": str(tot_net),
             "monthly_commission": str(tot_monthly),
             "yearly_commission": str(tot_yearly),
+            "period_feed_kg": str(tot_kg),
+            "period_feed_tons": str(tot_tons),
         },
         "vendors": rows,
         "accounting_note": (
             "Discount and mill transport credit (৳ per ton) are taken when feed/medicine bills are posted. "
+            "Feed kg/tons are from bill quantities (sack kg, kg, or ton units). "
             "Monthly commission is % of period MRP from the mill rate card (counts automatically). "
             "Yearly commission shows only when the tonnage target is reached (or when no target is set). "
             "Monthly/yearly amounts credit your mill A/P only after their official approval. "

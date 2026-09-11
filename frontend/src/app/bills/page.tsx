@@ -436,6 +436,14 @@ function roundBillMoney(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** Rate input value: mill vendors edit MRP; everyone else edits unit cost. */
+function billLineRateFieldValue(line: BillLineItem, millTerms: boolean): number {
+  if (millTerms && line.mrp != null) {
+    return Number(line.mrp) || 0
+  }
+  return Number(line.unit_cost) || 0
+}
+
 function millBillMrp(lines: BillLineItem[], items: Item[]): number {
   return roundBillMoney(
     lines.reduce((sum, line) => {
@@ -2943,23 +2951,27 @@ export default function BillsPage() {
             field === 'quantity' ? 'quantity' : 'unit_cost'
           )
         } else {
-          // Typing Qty or Rate hands Amount back to Qty × Rate.
+          // Typing Qty or Rate hands Amount back to Qty × Rate (unless mill terms compute net).
           newLines[index].amount_manual = false
-          if (field === 'unit_cost' && vendorPurchaseTerms?.uses_purchase_terms) {
-            // Mill Rate column is MRP before discount.
+          const mill = Boolean(vendorPurchaseTerms?.uses_purchase_terms)
+          if (field === 'unit_cost' && mill) {
+            // Mill Rate column is MRP before discount — keep MRP and let applyMillTerms set net.
             const rate = Number(value) || 0
-            if (rate > 0) newLines[index].mrp = rate
+            newLines[index].mrp = rate
+            newLines[index].unit_cost = rate
+          } else if (field === 'mrp') {
+            const rate = Number(value) || 0
+            newLines[index].mrp = rate
+            if (mill) newLines[index].unit_cost = rate
           }
-          if (field === 'mrp') {
-            newLines[index].mrp = Number(value) || 0
-          }
-          newLines[index] = syncStandardBillLineAmount(newLines[index])
-          if (vendorPurchaseTerms?.uses_purchase_terms) {
+          if (mill && (field === 'unit_cost' || field === 'mrp' || field === 'quantity')) {
             newLines[index] = applyMillTermsToLine(
               newLines[index],
               lineItem,
               vendorPurchaseTerms
             )
+          } else {
+            newLines[index] = syncStandardBillLineAmount(newLines[index])
           }
         }
       } else if (
@@ -4352,6 +4364,7 @@ export default function BillsPage() {
                       const showFishDims = isFishTypeItem(lineItem)
                       const fishLineAuto =
                         showFishDims && effectiveLinePiecesPerKg(line, lineItem) != null
+                      const millRate = Boolean(vendorPurchaseTerms?.uses_purchase_terms)
                       return (
                         <div
                           key={index}
@@ -4478,23 +4491,33 @@ export default function BillsPage() {
                                 }
                               />
                             </div>
-                            <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
+                            <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
-                                {fishLineAuto ? 'Rate (per kg)' : 'Unit'}
+                                {fishLineAuto
+                                  ? 'Rate (per kg)'
+                                  : millRate
+                                    ? 'Rate (MRP)'
+                                    : 'Unit'}
                               </label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min={0}
-                                value={line.unit_cost}
+                                value={billLineRateFieldValue(line, millRate)}
                                 onChange={(e) =>
-                                  handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
+                                  handleLineChange(
+                                    index,
+                                    millRate ? 'mrp' : 'unit_cost',
+                                    e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                                  )
                                 }
                                 className={BILL_LINE_NUM}
                                 title={
                                   fishLineAuto
                                     ? 'Prefilled as Amount ÷ Qty (kg) - type a rate and Amount recalculates'
-                                    : undefined
+                                    : millRate
+                                      ? 'List / MRP before mill discount. Amount updates to the net after terms.'
+                                      : undefined
                                 }
                               />
                             </div>
@@ -4866,6 +4889,7 @@ export default function BillsPage() {
                       const showFishDims = isFishTypeItem(lineItem)
                       const fishLineAuto =
                         showFishDims && effectiveLinePiecesPerKg(line, lineItem) != null
+                      const millRate = Boolean(vendorPurchaseTerms?.uses_purchase_terms)
 
                       return (
                         <div
@@ -5000,23 +5024,33 @@ export default function BillsPage() {
                                 }
                               />
                             </div>
-                            <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
+                            <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
-                                {fishLineAuto ? 'Rate (per kg)' : 'Rate'}
+                                {fishLineAuto
+                                  ? 'Rate (per kg)'
+                                  : millRate
+                                    ? 'Rate (MRP)'
+                                    : 'Rate'}
                               </label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min={0}
-                                value={line.unit_cost}
+                                value={billLineRateFieldValue(line, millRate)}
                                 onChange={(e) =>
-                                  handleLineChange(index, 'unit_cost', parseFloat(e.target.value) || 0)
+                                  handleLineChange(
+                                    index,
+                                    millRate ? 'mrp' : 'unit_cost',
+                                    e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                                  )
                                 }
                                 className={BILL_LINE_NUM}
                                 title={
                                   fishLineAuto
                                     ? 'Prefilled as Amount ÷ Qty (kg) - type a rate and Amount recalculates'
-                                    : undefined
+                                    : millRate
+                                      ? 'List / MRP before mill discount. Amount updates to the net after terms.'
+                                      : undefined
                                 }
                               />
                             </div>

@@ -94,6 +94,7 @@ def test_refresh_token(api_client: Client, user_super):
     assert "access_token" in json.loads(r.content)
 
 
+@override_settings(CORS_ALLOWED_ORIGINS=["http://localhost:3000"], CORS_ALLOWED_ORIGIN_REGEXES=[])
 def test_refresh_uses_httponly_cookie_and_logout_clears_it(api_client: Client, user_super):
     login = api_client.post(
         "/api/auth/login/",

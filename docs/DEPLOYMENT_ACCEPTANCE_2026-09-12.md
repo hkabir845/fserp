@@ -1,5 +1,43 @@
 # Deployment acceptance and rollback
 
+## Production rollout completed
+
+On 12 September 2026, release **d976fe1** was deployed from GitHub to the VPS.
+
+- Active checkout: `/home/sas/fserp/releases/0853ef9` (directory named for the initial
+  audit commit; checked-out and running commit is `d976fe1`). Use this directory for
+  maintenance of the active release.
+- Previous release remains at `/home/sas/fserp/fserp`, commit `610edc6`, with its build
+  and virtual environment preserved. Media is shared from its `backend/media` directory;
+  do not delete that directory when retaining or cleaning up older releases.
+- GitHub CI run `34684269824`: **1,373 backend tests passed, zero skipped**;
+  frontend lint, tests and build, deployment checks, and migration drift checks passed.
+  The initial run exposed a test relying on local CORS settings; its fixture now
+  explicitly supplies its trusted origin without changing production restrictions.
+- A fresh production backup was restored into a private temporary PostgreSQL instance.
+  All **111 table counts** matched the snapshot, and migration 0194 succeeded against
+  the restored data. The temporary instance and its data were removed.
+- Final pre-migration backup, taken with FSERP stopped:
+  `/home/sas/fserp-backups/fserp-20260912-090043-0853ef9.sql.gz` (1,321,283 bytes).
+  Its adjacent `.counts.json` records verification counts. Backup files are private.
+- Migration 0194 applied successfully in production. Business-table row counts were
+  unchanged and the tax-rate column precision was verified as `(7, 4)`.
+- PM2 runs the new release as `fserp_backend` and `fserp_frontend`; the process list
+  was saved. Other applications on the shared server were left running.
+- Public HTTPS verification passed: correct commit/debug-disabled metadata, 13 page/PWA
+  endpoints, 20 report script assets, empty-login rejection and three protected APIs.
+- SMTP connection/authentication passed. No test messages were sent.
+
+For application-only rollback, stop/delete only the two FSERP PM2 processes, start
+`/home/sas/fserp/fserp/ecosystem.config.js`, then verify and save the PM2 process list.
+Keep the widened database column; do not blindly reverse migration 0194. A full database
+recovery is a separate operation described below and requires reconciling subsequent writes.
+The pre-cutover PM2 snapshot is `/home/sas/fserp-backups/pm2-before-0853ef9.json`.
+
+Interactive browser journeys, inbox delivery and Android device testing remain unverified.
+No browser connection was available. HTTP checks do not substitute for interactive tests.
+The sections below retain the preparation record and general operating guidance.
+
 ## Verified locally
 
 - Full backend audit: 1,360 passed, four skipped at that time. All four skips were
@@ -78,6 +116,5 @@ On staging, exercise login/logout, password reset with actual email receipt, rol
 restrictions, invoice and bill creation/posting, payments, aquaculture inputs/harvest,
 and both income-statement bases. Check displayed totals and browser errors. Use test
 tenants and records. No browser is currently connected to this agent, so these
-interactive checks have not been completed. A restore rehearsal of the actual server
-backup and applying the new release/migration remain outstanding. Nothing has been
-deployed by this preparation work.
+interactive checks have not been completed. The server backup rehearsal and production
+rollout were subsequently completed as recorded above.

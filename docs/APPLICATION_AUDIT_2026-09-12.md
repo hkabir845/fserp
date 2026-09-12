@@ -5,6 +5,12 @@ shell, deployment scripts, migrations, and automated checks. Existing uncommitte
 aquaculture changes were preserved. This is a verified engineering review, not a claim
 that every possible defect has been found or that the deployed service has been certified.
 
+**Deployment follow-up:** release `d976fe1` is now running on the VPS. GitHub CI passed
+all **1,373 backend tests with zero skips**, plus frontend and deployment checks.
+Production backup restoration, migration 0194, preserved business-table row counts,
+and public HTTP smoke checks passed. See `docs/DEPLOYMENT_ACCEPTANCE_2026-09-12.md`
+for the active checkout, final backup, rollback details and remaining interactive checks.
+
 ## Changes made
 
 | Problem | Result |
@@ -92,7 +98,8 @@ acceptance, required successful health/login checks, tightened backup permission
 and added gzip integrity checking. Ten deployment regression tests pass. A local
 fresh-database migration and SQL backup/restore rehearsal passed through migration
 0194. See `docs/DEPLOYMENT_ACCEPTANCE_2026-09-12.md` for server acceptance and rollback.
-Target-server configuration and interactive acceptance remain outstanding.
+Target-server configuration and deployment were subsequently verified; interactive
+acceptance remains outstanding.
 
 ### Follow-up on the four skipped tests
 
@@ -108,9 +115,9 @@ suite count above remains the historical result from before this test-setup fix.
   layout, and manual end-to-end user journeys remain unverified. HTTP page availability
   does not prove client-side behavior.
 - No physical Android device/emulator session was exercised and no APK was published.
-- No production deployment, production-data repair, or live tenant mutation was performed.
-  Migration 0194 must be applied during the normal backed-up deployment before accepting
-  100% tax rates. It has been exercised against isolated test databases.
+- The initial audit did not deploy or repair production records. The later authorized
+  rollout applied migration 0194 after a fresh backup and restore rehearsal. No business
+  data repair was performed; business-table row counts were preserved.
 - The existing management reporting default was preserved; changing the default across
   company and entity reports remains a product/accounting choice.
 - Large report-page size remains a maintainability concern: ESLint reports Babel's

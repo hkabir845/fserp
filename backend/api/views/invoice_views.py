@@ -81,7 +81,7 @@ def _derive_invoice_list_source(inv: Invoice) -> str:
 
 def _invoice_to_json(inv, company_id: int):
     lines = list(
-        inv.lines.all().select_related(
+        inv.lines.order_by("id").select_related(
             "item",
             "revenue_account",
             "receipt_station",

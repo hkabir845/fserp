@@ -273,3 +273,48 @@ def expense_account_for_pond_bill_line(
         company_id=company_id, account_code=code, is_active=True
     ).first()
     return acc or fallback
+
+
+def capitalized_register_expense_categories(company_id: int | None = None) -> frozenset[str]:
+    """
+    Aquaculture register expense categories whose cost is capitalized into 1581.
+
+    Derived from the same bucket policy the posting path uses (``_NO_BIO_CAPITALIZE_BUCKETS``
+    via :func:`pond_cost_bucket_capitalizes_to_bio`) rather than hand-listed, so a change to
+    what capitalizes moves the ledger and the P&L together instead of letting them drift.
+
+    A capitalized input is an **asset** in 1581 until the fish are sold — it is not a period
+    expense. It reaches the P&L as harvest COGS (5240) when the biological inventory is
+    relieved, which is what makes gross profit mean anything. Categories the policy does not
+    capitalize — fisherman, lease, shop supplies, mortality — stay period costs.
+    """
+    from api.services.aquaculture_bill_defaults import _COST_BUCKET_TO_EXPENSE_CATEGORY
+    from api.services.aquaculture_constants import EXPENSE_CATEGORY_CODES, EXPENSE_CATEGORY_LABELS
+
+    bucket_by_category: dict[str, list[str]] = {}
+    for bucket, category in _COST_BUCKET_TO_EXPENSE_CATEGORY:
+        bucket_by_category.setdefault(category, []).append(bucket)
+
+    out: set[str] = set()
+    for category in EXPENSE_CATEGORY_LABELS:
+        buckets = bucket_by_category.get(category)
+        if not buckets:
+            # No explicit bucket (feed_consumed, medicine_consumed, soilcut, vendor_bill_pond…).
+            # pond_cost_bucket_capitalizes_to_bio treats an unknown bucket as capitalizing, and
+            # these are all direct pond inputs, so follow that same default.
+            out.add(category)
+            continue
+        if all(pond_cost_bucket_capitalizes_to_bio(b) for b in buckets):
+            out.add(category)
+    if company_id is not None:
+        from api.models import TenantReportingCategory
+
+        # Historical transactions retain custom codes even after their category is
+        # deactivated. Apply the same built-in mapping used by the posting path.
+        out.update(
+            TenantReportingCategory.objects.filter(
+                company_id=company_id, application="aquaculture", kind="expense",
+                maps_to_code__in=out,
+            ).exclude(code__in=EXPENSE_CATEGORY_CODES).values_list("code", flat=True)
+        )
+    return frozenset(out)

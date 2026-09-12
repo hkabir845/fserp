@@ -2,7 +2,8 @@
 # Run from repo root:  pwsh -File scripts/dev-setup.ps1
 # After moving the project drive to another PC, run again (or use setup-this-pc.bat).
 #
-# Stack: Django 5 API (backend/) + Next.js UI (frontend/) + SQLite (dev)
+# Stack: Django 5 API (backend/) + Next.js UI (frontend/) + PostgreSQL
+# Set DATABASE_URL in backend/.env before running migrations.
 # After setup: backend/run-dev.bat + frontend/run-dev.bat
 
 param(
@@ -46,6 +47,7 @@ if (-not $venvPy) {
   }
   Write-Host "Creating .venv-local with $python ..." -ForegroundColor Cyan
   & $python -m venv (Join-Path $repoRoot ".venv-local")
+  if ($LASTEXITCODE -ne 0) { throw "Python virtual environment creation failed." }
   $venvPy = Get-FserpVenvPython -Root $repoRoot
   if (-not $venvPy) {
     Write-Host "ERROR: Failed to create a working venv." -ForegroundColor Red
@@ -53,7 +55,9 @@ if (-not $venvPy) {
   }
 }
 & $venvPy -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed." }
 & $venvPy -m pip install -r (Join-Path $repoRoot "requirements-django.txt")
+if ($LASTEXITCODE -ne 0) { throw "Backend dependency installation failed." }
 
 $backend = Join-Path $repoRoot "backend"
 if (-not (Test-Path "$backend\.env") -and (Test-Path "$backend\env.example")) {
@@ -74,12 +78,15 @@ Write-Host "Wrote backend/env/.env (local CORS + frontend URL)" -ForegroundColor
 
 Set-Location $backend
 & $venvPy manage.py migrate --noinput
+if ($LASTEXITCODE -ne 0) { throw "Database migration failed. Check PostgreSQL and DATABASE_URL in backend/.env." }
 & $venvPy manage.py check
+if ($LASTEXITCODE -ne 0) { throw "Django system checks failed." }
 
 # --- Next.js ---
 Set-Location (Join-Path $repoRoot "frontend")
-if (Test-Path $npm) {
+if ($npm -and (Test-Path $npm)) {
     & $npm install
+    if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
 } else {
     Write-Host "Skip npm install — npm.cmd not found." -ForegroundColor Yellow
 }

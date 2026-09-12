@@ -312,6 +312,14 @@ function harvestAdviceLines(
         : `${aquacultureT('removeAboutKg', lang)} ${kg} ${aquacultureT('removeAboutKgSuffix', lang)}`,
       valueClass: 'font-medium text-warning-foreground',
     })
+  } else if (r.owner_action === 'thin_by_count') {
+    // Biomass is inside the comfort band but the standing count is not, so there is no weight to
+    // harvest. Showing 'No thinning needed' here contradicted the red pond-load alert.
+    lines.push({
+      label: aquacultureT('harvest', lang),
+      value: aquacultureT('thinByCount', lang),
+      valueClass: 'font-medium text-warning-foreground',
+    })
   } else if (r.owner_action === 'monitor' || r.owner_action === 'grow') {
     lines.push({
       label: aquacultureT('harvest', lang),

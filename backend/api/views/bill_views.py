@@ -666,7 +666,7 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
 def _bill_receipt_pond_summary(b) -> tuple[int | None, str]:
     """When all tagged lines share one pond, surface it on list responses (lines omitted)."""
     pond_by_id: dict[int, str] = {}
-    for line in b.lines.all():
+    for line in b.lines.order_by("id"):
         pid = getattr(line, "aquaculture_pond_id", None)
         if not pid:
             continue
@@ -681,7 +681,7 @@ def _bill_receipt_pond_summary(b) -> tuple[int | None, str]:
 
 def _bill_line_term_sum(b, field: str) -> Decimal:
     total = Decimal("0")
-    for ln in b.lines.all():
+    for ln in b.lines.order_by("id"):
         if field == "gross_mrp":
             qty = ln.quantity if ln.quantity is not None else Decimal("0")
             mrp = getattr(ln, "mrp", None) or Decimal("0")
@@ -775,8 +775,12 @@ def _bill_to_json(
             payload["filtered_amount"] = str(filtered)
         payload["lines"] = []
         return payload
+    # Deterministic order: BillLine has no Meta.ordering, so an unordered queryset returns rows
+    # in Postgres physical order. Updating a line (truck transport rewriting amount, production
+    # cycle assignment writing a cycle id) rewrites the row and moves it, so a saved bill came
+    # back with its lines in a different order than they were entered.
     lines = list(
-        b.lines.all().select_related(
+        b.lines.order_by("id").select_related(
             "item",
             "tank",
             "aquaculture_pond",
@@ -1367,7 +1371,7 @@ def bill_detail(request, bill_id: int):
                     "fuel_station_expense_category": ln.fuel_station_expense_category,
                     "receipt_station_id": ln.receipt_station_id,
                 }
-                for ln in b.lines.all()
+                for ln in b.lines.order_by("id")
             ]
             line_purpose_err = validate_parsed_lines_for_bill_purpose(
                 bill_purpose, existing_lines, request.company_id

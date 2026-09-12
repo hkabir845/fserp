@@ -276,12 +276,16 @@ def pond_deep_analytics(
     fish_count = int(stock.get("implied_net_fish_count") or 0) if stock else 0
     water_dec = pond.water_area_decimal
 
+    # Keyword-only signature: the positional call here raised TypeError on every request, and
+    # _safe_block swallowed it, so Brain silently answered every pond question with no analytics.
     load_advice = compute_biomass_load_advice_dict(
-        biomass,
-        fish_count,
-        water_dec,
-        getattr(pond, "pond_role", None) or stock.get("pond_role"),
-        _d(stock.get("water_volume_cu_ft")) if stock.get("water_volume_cu_ft") else None,
+        biomass_kg=biomass,
+        fish_count=fish_count,
+        water_area_decimal=water_dec,
+        pond_role=getattr(pond, "pond_role", None) or stock.get("pond_role"),
+        water_volume_cu_ft=(
+            _d(stock.get("water_volume_cu_ft")) if stock.get("water_volume_cu_ft") else None
+        ),
         lang=lang,
     )
 

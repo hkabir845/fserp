@@ -376,7 +376,10 @@ def worldfish_daily_bw_percent(
     band = _band_for_mean_weight_g(mean_g)
     mid = (band.bw_high_pct + band.bw_low_pct) / Decimal("2")
     biased = mid + _load_bias(load_level)
-    # Stay within published band, expanded slightly for understocked ponds.
+    # Clamp to the published band in both directions — including the understocked +0.1 nudge,
+    # which therefore never pushes the ration above the band's upper end. (An earlier comment
+    # here claimed the band was "expanded slightly for understocked ponds"; it is not, and
+    # feeding above a published rate is not something to do by accident.)
     lo = min(band.bw_low_pct, band.bw_high_pct)
     hi = max(band.bw_low_pct, band.bw_high_pct)
     biased = max(lo, min(hi, biased))

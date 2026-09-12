@@ -1558,6 +1558,7 @@ function ReportsPageContent() {
   const [reportPrintBranding, setReportPrintBranding] = useState<PrintBranding | null>(null)
   const [selectedReport, setSelectedReport] = useState<ReportType | null>(null)
   const [reportData, setReportData] = useState<any>(null)
+  const [incomeStatementBasis, setIncomeStatementBasis] = useState<'management' | 'posted'>('management')
   const [loading, setLoading] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
   /** false until `user` is read in an effect — keeps report list in sync with SSR (no localStorage on server). */
@@ -2185,6 +2186,7 @@ function ReportsPageContent() {
       strictSiteOnly?: boolean
       /** Mill dealer terms: specific feed/medicine vendor id, or omit for all. */
       millVendorId?: string
+      incomeStatementBasis?: 'management' | 'posted'
     }
   ) => {
     setLoading(true)
@@ -2229,6 +2231,9 @@ function ReportsPageContent() {
     }
 
     const params: Record<string, string> = {}
+    if (reportId === 'income-statement') {
+      params.basis = opts?.incomeStatementBasis ?? incomeStatementBasis
+    }
     if (REPORTS_WITH_PERIOD.has(reportId)) {
       if (SALES_PURCHASE_REPORT_IDS.has(reportId)) {
         params.start_date = spRangeForFetch.startDate
@@ -2465,6 +2470,7 @@ function ReportsPageContent() {
     loansStrictSiteOnly,
     pondLockedBySiteScope,
     millDealerVendorId,
+    incomeStatementBasis,
   ])
 
   const openEntityPlDetail = useCallback(
@@ -4066,6 +4072,27 @@ function ReportsPageContent() {
                     </button>
                   </div>
                     </div>
+
+                    {selectedReport === 'income-statement' && !reportStationId && (
+                      <div className="mb-4 max-w-md">
+                        <label htmlFor="income-statement-basis" className="mb-1 block text-sm font-medium">
+                          {companyLang === 'bn' ? 'লাভ-ক্ষতির ভিত্তি' : 'Profit and loss basis'}
+                        </label>
+                        <select
+                          id="income-statement-basis"
+                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                          value={incomeStatementBasis}
+                          onChange={(event) => {
+                            const basis = event.target.value as 'management' | 'posted'
+                            setIncomeStatementBasis(basis)
+                            void fetchReport('income-statement', { incomeStatementBasis: basis })
+                          }}
+                        >
+                          <option value="management">{companyLang === 'bn' ? 'ব্যবস্থাপনা — পুকুরের চলতি খরচসহ' : 'Management — includes pond operating costs'}</option>
+                          <option value="posted">{companyLang === 'bn' ? 'হিসাবভিত্তিক — পোস্ট করা লেজার' : 'Accounting — posted ledger'}</option>
+                        </select>
+                      </div>
+                    )}
 
                     {userRole != null &&
                     userRole !== 'operator' &&
@@ -6169,9 +6196,13 @@ function renderReportTable(
           banner={
             data.includes_aquaculture_register ? (
               <p className="rounded-lg border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950">
-                All sites P&amp;L includes <span className="font-medium">every income and every expense</span>:
-                fuel/shop/head-office GL accounts plus every aquaculture category (AQ-INC-* / AQ-EXP-*).
-                Each amount is listed once, under the entity that earned or spent it.
+                Management view includes aquaculture register adjustments.
+                Use Accounting — posted ledger to review harvest cost of sales and posted profit.
+              </p>
+            ) : data.reporting_basis === 'posted' ? (
+              <p className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
+                Accounting view shows posted revenue, cost of sales, and expenses.
+                Pond operating totals are shown separately below.
               </p>
             ) : null
           }
@@ -6184,10 +6215,8 @@ function renderReportTable(
 
         {Number(data.net_income ?? 0) < 0 && (
           <p className="text-sm text-muted-foreground max-w-3xl">
-            Negative net usually means period COGS (fuel 5100, shrinkage 5200, shop 5120) or operating expenses
-            exceed income for the selected dates. Widen the range, or run{' '}
-            <code className="text-xs bg-muted px-1 rounded">python manage.py seed_master_full_demo --reset-demo-gl</code>{' '}
-            on the server for Master Filling Station to reload large demo profit journals.
+            A net loss means costs and expenses exceed income for the selected period.
+            Review the dates, reporting basis, and underlying transactions to understand the result.
           </p>
         )}
       </div>

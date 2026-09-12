@@ -14,8 +14,8 @@ Prefer the **Adib** APK for Adib Filling Station so Aquaculture cannot disappear
 ## Prerequisites
 
 - Node.js 20+ (Capacitor 7 — matches the main frontend; Capacitor 8 requires Node 22+)
-- [Android Studio](https://developer.android.com/studio) with SDK 34+
-- JDK 17
+- [Android Studio](https://developer.android.com/studio) with Android SDK 36 (the version configured in `android/variables.gradle`).
+- JDK 21. Capacitor 7 compiles with Java 21; JDK 17 fails with `invalid source release: 21`. Set `JAVA_HOME` to your JDK 21 directory before running Gradle. See the [Capacitor 7 upgrade guide](https://capacitorjs.com/docs/updating/7-0#upgrade-android-studio).
 
 ## Setup
 

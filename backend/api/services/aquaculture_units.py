@@ -18,6 +18,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from api.services.aquaculture_constants import POND_ROLE_CODES
 from api.services.aquaculture_i18n import (
     load_advice_summary,
+    load_count_driven_summary,
     load_reference_note,
     load_set_water_area_summary,
     load_unknown_reference_note,
@@ -240,6 +241,7 @@ def compute_stocking_load_advice(
             "load_level_label": load_level_density_label(kg_per_dec=None, lang=lang_n),
             "load_level_kg": "unknown",
             "load_level_pcs": "unknown",
+            "load_driver": "none",
             "advice_summary": load_set_water_area_summary(lang_n),
             "reference_note": load_unknown_reference_note(lang_n),
             "load_area_unit_warning": None,
@@ -257,13 +259,35 @@ def compute_stocking_load_advice(
         pcs_per_dec=pcs_per_dec,
         lang=lang_n,
     )
-    summary = load_advice_summary(level, kg_per_dec, lang_n)
-    if pcs_per_dec is not None:
-        summary = _pick(
+    # Which metric actually drove the level. The overall band is the worse of the two, so a pond
+    # can read "high_risk" on head count while its weight sits inside the comfort band — and the
+    # kg/decimal wording below would then blame biomass for a crowding problem.
+    rank_kg = _LEVEL_RANK.get(level_kg, -1)
+    rank_pcs = _LEVEL_RANK.get(level_pcs, -1)
+    if level_pcs == "unknown":
+        driver = "biomass"
+    elif rank_pcs > rank_kg:
+        driver = "count"
+    elif rank_kg > rank_pcs:
+        driver = "biomass"
+    else:
+        driver = "both"
+
+    if driver == "count" and level in ("full", "high_risk"):
+        summary = load_count_driven_summary(
+            level,
+            _fmt_density_num(pcs_per_dec) if pcs_per_dec is not None else "?",
+            _fmt_density_num(kg_per_dec),
             lang_n,
-            f"{summary} Standing {_fmt_density_num(pcs_per_dec)} pcs/dec.",
-            f"{summary} বর্তমান {_fmt_density_num(pcs_per_dec)} pcs/ডেসিমেল।",
         )
+    else:
+        summary = load_advice_summary(level, kg_per_dec, lang_n)
+        if pcs_per_dec is not None:
+            summary = _pick(
+                lang_n,
+                f"{summary} Standing {_fmt_density_num(pcs_per_dec)} pcs/dec.",
+                f"{summary} বর্তমান {_fmt_density_num(pcs_per_dec)} pcs/ডেসিমেল।",
+            )
 
     area_unit_warning: str | None = None
     role_n = (pond_role or "grow_out").strip() or "grow_out"
@@ -289,6 +313,7 @@ def compute_stocking_load_advice(
         "load_level_label": label,
         "load_level_kg": level_kg,
         "load_level_pcs": level_pcs,
+        "load_driver": driver,
         "advice_summary": summary + extra,
         "reference_note": load_reference_note(lang_n),
         "load_area_unit_warning": area_unit_warning,

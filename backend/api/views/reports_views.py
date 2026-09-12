@@ -500,8 +500,14 @@ def report_by_id(request, report_id: str):
         if scope_err:
             return scope_err
         if report_id in GL_POND_AWARE_REPORTS:
+            options = {}
+            if report_id == "income-statement":
+                basis = (request.GET.get("basis") or "management").strip().lower()
+                if basis not in {"management", "posted"}:
+                    return JsonResponse({"detail": "basis must be management or posted."}, status=400)
+                options["basis"] = basis
             payload = handler(
-                cid, start, end, st_id, pond_id=pond_id, unscoped_dims=unscoped_dims
+                cid, start, end, st_id, pond_id=pond_id, unscoped_dims=unscoped_dims, **options
             )
         elif report_id == "loans-borrow-and-lent":
             strict = (request.GET.get("strict_site") or "").strip().lower() in (

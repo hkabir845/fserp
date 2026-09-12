@@ -23,6 +23,10 @@ const strings: Dict = {
   removeAboutKgSuffix: { en: 'kg', bn: 'kg তুলুন' },
   fish: { en: 'fish', bn: 'মাছ' },
   noThinningNeeded: { en: 'No thinning needed at this biomass', bn: 'এই বায়োমাসে পাতলা করার দরকার নেই' },
+  thinByCount: {
+    en: 'Crowded by numbers, not weight — split the pond or transfer fish out',
+    bn: 'ভিড় সংখ্যার, ওজনের নয় — পুকুর ভাগ করুন বা মাছ স্থানান্তর করুন',
+  },
   shouldYouThin: { en: 'Should you thin?', bn: 'পাতলা করবেন?' },
   loadPerDecimalHarvest: { en: 'Load per decimal and harvest suggestion', bn: 'ডেসিমেল লোড ও ধরার পরামর্শ' },
   setWaterAreaDecimal: { en: 'Set water area (decimal) on pond', bn: 'পুকুরে জলের আয়তন (ডেসিমেল) দিন' },

@@ -9,6 +9,17 @@ from api.services.brain.intents import detect_intents
 from api.services.brain.tools import gather_context
 
 
+@pytest.fixture
+def analytics_pond(company_master):
+    """Keep pond checks independent of optional demo records."""
+    from api.models import AquaculturePond
+
+    return AquaculturePond.objects.create(
+        company=company_master, name="Analytics Test Pond", is_active=True,
+        water_area_decimal=100, pond_role="grow_out",
+    )
+
+
 def test_detect_intents_fcr_and_density():
     intents = detect_intents("পোন্ড ২ এর FCR এবং ঘনত্ব কত?")
     assert "fcr" in intents
@@ -28,13 +39,9 @@ def test_detect_intents_job_cut():
 
 
 @pytest.mark.django_db
-def test_gather_context_pond_fcr(company_master):
+def test_gather_context_pond_fcr(company_master, analytics_pond):
     cid = company_master.id
-    from api.models import AquaculturePond
-
-    pond = AquaculturePond.objects.filter(company_id=cid, is_active=True).first()
-    if not pond:
-        pytest.skip("No pond in test company")
+    pond = analytics_pond
     ctx, refs = gather_context(cid, f"পোন্ড {pond.name} FCR কত?", context_entity_type="pond", context_entity_id=pond.id)
     assert "pond_analytics" in ctx
     assert ctx["pond_analytics"].get("fcr")
@@ -42,13 +49,9 @@ def test_gather_context_pond_fcr(company_master):
 
 
 @pytest.mark.django_db
-def test_direct_answer_fcr_offline(company_master):
+def test_direct_answer_fcr_offline(company_master, analytics_pond):
     cid = company_master.id
-    from api.models import AquaculturePond
-
-    pond = AquaculturePond.objects.filter(company_id=cid, is_active=True).first()
-    if not pond:
-        pytest.skip("No pond")
+    pond = analytics_pond
     ctx, _ = gather_context(cid, f"FCR of pond {pond.id}", context_entity_type="pond", context_entity_id=pond.id)
     ans = compose_direct_answer(ctx)
     assert ans is not None
@@ -145,8 +148,10 @@ def test_employee_list_direct_answer(company_master):
     from api.services.brain.direct_answer import compose_direct_answer
 
     cid = company_master.id
-    if not Employee.objects.filter(company_id=cid, is_active=True).exists():
-        pytest.skip("No employees in test company")
+    Employee.objects.create(
+        company=company_master, first_name="Analytics", last_name="Employee",
+        employee_code="BRAIN-001", salary="25000.00", is_active=True,
+    )
     ctx, _ = gather_context(cid, "list my all employees their names and salary")
     ctx["user_question"] = "list my all employees their names and salary"
     ans = compose_direct_answer(ctx)
@@ -172,14 +177,10 @@ def test_gather_context_general_uses_light_snapshot(company_master):
 
 
 @pytest.mark.django_db
-def test_direct_answer_list_intents_with_pond(company_master):
+def test_direct_answer_list_intents_with_pond(company_master, analytics_pond):
     """intents are stored as list in context — must not crash set & list."""
     cid = company_master.id
-    from api.models import AquaculturePond
-
-    pond = AquaculturePond.objects.filter(company_id=cid, is_active=True).first()
-    if not pond:
-        pytest.skip("No pond")
+    pond = analytics_pond
     ctx, _ = gather_context(
         cid,
         f"পোন্ড {pond.name} FCR কত?",
@@ -521,3 +522,29 @@ def test_fish_species_triggers_worldfish_web_research():
     assert should_use_web_research("কাতলা মাছ সম্পর্কে বলো", plan="free")
     # Company fish sales totals should not force species research
     assert not wants_fish_species_research("আজকের মাছ বিক্রি কত?")
+
+
+@pytest.mark.django_db
+def test_pond_deep_analytics_returns_a_density_block(company_tenant):
+    """
+    ``compute_biomass_load_advice_dict`` is keyword-only. Calling it positionally raised
+    TypeError on every request, and ``_safe_block`` swallowed it — so Brain answered every pond
+    question with no analytics at all and nothing failed loudly enough to notice.
+    """
+    from decimal import Decimal
+
+    from api.models import AquaculturePond
+    from api.services.brain import analytics
+
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id,
+        name="LoadPond",
+        is_active=True,
+        water_area_decimal=Decimal("100"),
+        pond_role="grow_out",
+    )
+
+    out = analytics.pond_deep_analytics(company_tenant.id, pond.id, lang="en")
+    assert out is not None
+    assert "density" in out, "the load block must be present, not silently dropped"
+    assert "load_level" in out["density"]

@@ -16,7 +16,8 @@
     "build": "next build",
     "prestart": "node scripts/free-port-3000.mjs",
     "start": "node scripts/start-production.mjs",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node scripts/test-financial-helpers.cjs && node scripts/test-session-logout.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.12",

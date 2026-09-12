@@ -95,6 +95,18 @@ PINNED_COMPANY_FIGURES: tuple[tuple[str, str, str], ...] = (
     ("stations-financial-summary", "company_total.income", "no outside sale happened"),
     ("stations-financial-summary", "company_total.net_income", "no company profit was earned"),
     ("stations-financial-summary", "company_total.cost_of_goods_sold", "no outside cost was incurred"),
+    # The inter-pond contra entries (AQ-INC-inter_pond_fingerling_transfer against
+    # AQ-EXP-fish_transfer_cost_in/out) were folded into these company totals raw, so a transfer
+    # of zero economic substance added to income *and* to expenses and moved net income.
+    ("stations-financial-summary", "company_total.expenses", "an internal transfer is not a company cost"),
+    ("stations-financial-summary", "company_total.gross_profit", "no outside sale happened"),
+    ("fuel-stations-pl-summary", "company_total.income", "an internal transfer is not company income"),
+    ("fuel-stations-pl-summary", "company_total.expenses", "an internal transfer is not a company cost"),
+    ("fuel-stations-pl-summary", "company_total.net_income", "no company profit was earned"),
+    ("shop-hubs-pl-summary", "company_total.income", "an internal transfer is not company income"),
+    ("shop-hubs-pl-summary", "company_total.expenses", "an internal transfer is not a company cost"),
+    ("shop-hubs-pl-summary", "company_total.net_income", "no company profit was earned"),
+    ("expense-detail", "total_expenses", "an internal transfer is not a company cost"),
     ("sales-report", "summary.grand_total", "an internal invoice is not a sale"),
     ("sales-report", "summary.total_invoices", "an internal invoice is not a sale"),
     ("purchase-report", "summary.grand_total", "an internal bill is not a purchase"),
@@ -196,8 +208,16 @@ def _do_transfer(api_client, headers, nursing, grow):
 _FCR_ONLY_MOVES = frozenset({"transfer_in_kg", "transfer_out_kg"})
 
 
+# The aquaculture register block embedded in company reports is a **pond-management** view:
+# per-pond categories, per-pond cost/kg, per-pond profit. An inter-pond transfer is exactly what
+# it exists to show — the selling pond earns, the buying pond capitalises — so it moves by design.
+# It is split out of the payload comparison; what must stay still is the company P&L those reports
+# wrap around it (income, expenses, total_expenses, company_total), which the sweep still checks.
+_POND_LEVEL_BLOCKS = ("fcr", "aquaculture_management")
+
+
 def _split_fcr(blob: str) -> tuple[str, dict]:
-    """Return (payload without the fcr envelope, the fcr envelope)."""
+    """Return (payload without the pond-level blocks, the fcr envelope)."""
     try:
         d = json.loads(blob)
     except Exception:
@@ -205,6 +225,8 @@ def _split_fcr(blob: str) -> tuple[str, dict]:
     if not isinstance(d, dict):
         return blob, {}
     fcr = d.pop("fcr", None)
+    for key in _POND_LEVEL_BLOCKS:
+        d.pop(key, None)
     return json.dumps(d, sort_keys=True), fcr if isinstance(fcr, dict) else {}
 
 

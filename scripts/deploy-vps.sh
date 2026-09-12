@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # Deploy FSERP to a Linux VPS (run from repo root after git pull).
 set -euo pipefail
+umask 077
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 echo "==> Validating backend environment"
 bash scripts/setup-vps-env.sh
+
+# Match run-gunicorn.sh: the server file must win over inherited shell values.
+set -a
+# shellcheck disable=SC1091
+source "$REPO_ROOT/backend/.env"
+set +a
 
 echo "==> Backend: venv + dependencies"
 cd "$REPO_ROOT/backend"
@@ -17,6 +24,11 @@ fi
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements-prod.txt
+
+echo "==> Backend: production preflight (no email sent)"
+python manage.py deployment_preflight
+python manage.py makemigrations --check --dry-run
+python manage.py migrate --plan
 
 # Release stamp so /health/ and /api/version/ report what is actually running instead of
 # 0.0.0-dev. run-gunicorn.sh sources .env.release after .env.
@@ -33,20 +45,19 @@ echo "==> Release: ${RELEASE_VERSION} (${RELEASE_COMMIT}) on ${RELEASE_BRANCH}"
 echo "==> Backend: database backup"
 # DATABASE_URL lives in backend/.env, not in the shell. Running pg_dump without it fails with
 # `role "<login user>" does not exist`, which is how a deploy once went out with no backup.
-set -a
-# shellcheck disable=SC1091
-[[ -f "$REPO_ROOT/backend/.env" ]] && source "$REPO_ROOT/backend/.env"
-set +a
 BACKUP_DIR="${FSERP_BACKUP_DIR:-$HOME/fserp-backups}"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/fserp-$(date -u +%Y%m%d-%H%M%S).sql.gz"
 if [[ "${FSERP_SKIP_BACKUP:-0}" == "1" ]]; then
   echo "SKIPPED (FSERP_SKIP_BACKUP=1)"
 elif [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "WARN: DATABASE_URL is not set in backend/.env - no backup taken." >&2
+  echo "ERROR: DATABASE_URL is not set - refusing to migrate without a backup." >&2
+  exit 1
 elif ! command -v pg_dump >/dev/null 2>&1; then
-  echo "WARN: pg_dump not installed - no backup taken. Install postgresql-client." >&2
+  echo "ERROR: pg_dump not installed - refusing to migrate. Install postgresql-client or explicitly set FSERP_SKIP_BACKUP=1." >&2
+  exit 1
 elif pg_dump "$DATABASE_URL" | gzip > "$BACKUP_FILE"; then
+  gzip -t "$BACKUP_FILE"
   echo "Backup: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
   # Keep the last 10 so the disk does not fill silently. Never let pruning abort a deploy:
   # under `set -euo pipefail` an unmatched glob makes ls exit 2 and kills the script.
@@ -76,7 +87,7 @@ echo "==> Backend: database sanity check"
 bash "$REPO_ROOT/scripts/diagnose-vps-db.sh" || true
 
 echo "==> Backend: deployment check"
-python manage.py check --deploy || true
+python manage.py check --deploy --fail-level WARNING
 
 echo "==> Frontend: install + build"
 cd "$REPO_ROOT/frontend"
@@ -99,18 +110,19 @@ echo "==> Smoke tests"
 cd "$REPO_ROOT/backend"
 sleep 2
 # X-Forwarded-Proto mirrors nginx so SECURE_SSL_REDIRECT does not 301 the loopback check.
-curl -sf -H "X-Forwarded-Proto: https" "http://127.0.0.1:8001/health/" | head -c 200 \
-  || echo "WARN: backend health check failed"
+curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -H "X-Forwarded-Proto: https" "http://127.0.0.1:8001/health/" \
+  || { echo "ERROR: backend health check failed" >&2; exit 1; }
 echo
-curl -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3001/" || echo "WARN: frontend check failed"
+curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3001/" || { echo "ERROR: frontend check failed" >&2; exit 1; }
 
 # Login must answer 400 (missing credentials), not 500 — 500 means cache/DB is broken.
-login_code="$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+login_code="$(curl --max-time 15 -s -o /dev/null -w "%{http_code}" -X POST \
   -H "Content-Type: application/json" -H "X-Forwarded-Proto: https" \
   -d '{}' "http://127.0.0.1:8001/api/auth/login/json/" || echo "000")"
 echo "login endpoint HTTP $login_code"
-if [[ "$login_code" == "5"* || "$login_code" == "000" ]]; then
-  echo "ERROR: login endpoint is failing (HTTP $login_code). Check backend logs: pm2 logs fserp-backend" >&2
+if [[ "$login_code" != "400" ]]; then
+  echo "ERROR: login endpoint returned unexpected HTTP $login_code. Check backend logs: pm2 logs fserp_backend" >&2
+  exit 1
 fi
 
 # The FastAPI/Alembic stack was removed; if its bookkeeping table ever appears, something

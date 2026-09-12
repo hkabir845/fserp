@@ -15,6 +15,25 @@ jobs:
   backend:
     name: Backend (pytest)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fserp_ci
+          POSTGRES_USER: fserp_ci
+          POSTGRES_PASSWORD: fserp_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fserp_ci -d fserp_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://fserp_ci:fserp_ci@127.0.0.1:5432/fserp_ci
+      DJANGO_SECRET_KEY: ci-not-for-production-use-50chars-minimum-abcdefgh-123456
+      FSERP_SKIP_MASTER_BOOTSTRAP: "1"
+      FSERP_ALLOW_CONSOLE_EMAIL: "1"
     defaults:
       run:
         working-directory: backend
@@ -38,9 +57,10 @@ jobs:
         run: python -m pytest tests/ -q --tb=short
 
       - name: Django deployment system check
-        env:
-          DJANGO_SECRET_KEY: ci-not-for-production-use-50chars-minimum-abcdefgh
-        run: python manage.py check --deploy
+        run: python manage.py check --deploy --fail-level WARNING
+
+      - name: Check for missing migrations
+        run: python manage.py makemigrations --check --dry-run
 
   frontend:
     name: Frontend (lint & build)
@@ -64,6 +84,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Regression checks
+        run: npm test
 
       - name: Build
         run: npm run build

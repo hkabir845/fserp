@@ -36,7 +36,7 @@ secret="$(get_var DJANGO_SECRET_KEY)"
 secret="${secret// /}"
 
 needs_key=0
-if [[ -z "$secret" || "$secret" == "CHANGE_ME_generate_with_secrets_token_urlsafe_50" || ${#secret} -lt 32 ]]; then
+if [[ -z "$secret" || "$secret" == "CHANGE_ME_generate_with_secrets_token_urlsafe_50" || ${#secret} -lt 50 ]]; then
   needs_key=1
 fi
 
@@ -113,9 +113,8 @@ fi
 
 email_host="$(get_var EMAIL_HOST)"
 if [[ -z "$email_host" ]]; then
-  ensure_default_var "FSERP_ALLOW_CONSOLE_EMAIL" "1"
-  echo "WARNING: EMAIL_HOST is unset — password-reset emails go to the server console only." >&2
-  echo "  Add SMTP settings in $ENV_FILE when ready, then remove FSERP_ALLOW_CONSOLE_EMAIL." >&2
+  echo "ERROR: EMAIL_HOST is unset. Configure SMTP before production deployment." >&2
+  exit 1
 fi
 
 echo "backend/.env OK for deployment."

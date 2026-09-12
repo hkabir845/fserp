@@ -15,6 +15,7 @@ from api.services.aquaculture_i18n import (
     owner_decision_monitor,
     owner_decision_partial_harvest,
     owner_decision_set_pond_area_fallback,
+    owner_decision_thin_by_count,
     partial_harvest_no_thin_rationale,
     partial_harvest_rationale,
 )
@@ -132,7 +133,16 @@ def compute_partial_harvest_suggestion(
     target_bio = (comfort * water_area_decimal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     remove_kg = (bio - target_bio).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if remove_kg <= 0:
-        return empty
+        # Reached when the band was breached by head count, not weight: there is nothing to
+        # remove by kg. Keep the comfort target visible — the "no thinning needed" branch above
+        # reports it, and dropping it here left the *more* alarming case with less information.
+        return {
+            **empty,
+            "partial_harvest_target_kg_per_decimal": str(comfort),
+            "partial_harvest_rationale": partial_harvest_no_thin_rationale(
+                kg_per_dec, level, comfort, lang_n
+            ),
+        }
 
     remove_heads: int | None = None
     if current_fish_per_kg is not None and current_fish_per_kg > 0:
@@ -144,6 +154,13 @@ def compute_partial_harvest_suggestion(
     elif fish_count > 0 and bio > 0:
         frac = remove_kg / bio
         remove_heads = max(1, int((Decimal(fish_count) * frac).quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+
+    # ``current_fish_per_kg`` comes from the latest size sample while ``bio``/``fish_count`` come
+    # from the stock position, so the two can disagree — a sample taken at fingerling size against
+    # a grown-out pond yielded "remove 20,000 fish" from a pond holding 12,000. A pond cannot give
+    # up more fish than it holds, and the advice is acted on in the field.
+    if remove_heads is not None and fish_count > 0 and remove_heads > fish_count:
+        remove_heads = fish_count
 
     post_kpd = (target_bio / water_area_decimal).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     rationale = partial_harvest_rationale(
@@ -218,6 +235,10 @@ def pond_biomass_alert_summary(row: dict | None) -> dict:
 
     load_level = str(row.get("load_level") or "").strip().lower()
     density = row.get("stock_density_kg_per_decimal")
+    # The overall level is the worse of the kg and pcs bands, so quoting kg/decimal as the thing
+    # that breached is only true when biomass is what breached.
+    count_driven = str(row.get("load_driver") or "").strip().lower() == "count"
+    pcs_density = row.get("stock_density_pcs_per_decimal")
     water_area_decimal = row.get("water_area_decimal")
     suggested_kg = row.get("partial_harvest_suggested_kg")
     reduction = str(suggested_kg) if suggested_kg not in (None, "") else None
@@ -233,6 +254,17 @@ def pond_biomass_alert_summary(row: dict | None) -> dict:
         }
 
     if load_level == "high_risk":
+        if count_driven:
+            return {
+                "severity": "red",
+                "action": "Split the pond or transfer fish out to reduce standing numbers.",
+                "reason": (
+                    f"Standing count is {pcs_density} pcs/decimal, above the safe band, while "
+                    f"biomass is {density} kg/decimal and still inside the comfort band. "
+                    "The crowding is by numbers, not weight."
+                ),
+                "suggested_reduction_kg": None,
+            }
         return {
             "severity": "red",
             "action": "Reduce fish biomass with transfer or partial harvest before the pond exceeds safe capacity.",
@@ -244,6 +276,16 @@ def pond_biomass_alert_summary(row: dict | None) -> dict:
         }
 
     if load_level == "full" or (not load_level and row.get("partial_harvest_applicable") is True):
+        if count_driven:
+            return {
+                "severity": "yellow",
+                "action": "Plan a split or transfer; do not add more fish to this pond.",
+                "reason": (
+                    f"Standing count is {pcs_density} pcs/decimal, at the top of the safe band, "
+                    f"while biomass is {density} kg/decimal. The pond is full by numbers, not weight."
+                ),
+                "suggested_reduction_kg": None,
+            }
         return {
             "severity": "yellow",
             "action": "Increase aeration and prepare a partial harvest or transfer to lower biomass.",
@@ -338,6 +380,16 @@ def compute_biomass_load_advice_dict(
     elif level == "moderate":
         summary = owner_decision_monitor(advice.get("stock_density_kg_per_decimal"), lang_n)
         action = "monitor"
+    elif decision and advice.get("load_driver") == "count":
+        # Crowded by numbers with biomass inside the comfort band: there is no weight to harvest,
+        # so "monitor" was both wrong and reassuring — the sampling screen renders it as
+        # "No thinning needed" while the pond alert goes red.
+        summary = owner_decision_thin_by_count(
+            advice.get("stock_density_pcs_per_decimal"),
+            advice.get("stock_density_kg_per_decimal"),
+            lang_n,
+        )
+        action = "thin_by_count"
     else:
         summary = advice.get("advice_summary") or ""
         action = "monitor"
@@ -446,6 +498,7 @@ def enrich_position_row_with_fish_metrics(row: dict, *, water_area_decimal, lang
         "load_level_label",
         "load_level_kg",
         "load_level_pcs",
+        "load_driver",
         "advice_summary",
         "partial_harvest_applicable",
         "partial_harvest_suggested_kg",

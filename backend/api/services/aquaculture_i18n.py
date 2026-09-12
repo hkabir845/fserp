@@ -356,3 +356,43 @@ def stock_ledger_coa_note(lang: str | None = "en") -> str:
     )
     return _pick(lang, STOCK_LEDGER_COA_NOTE, bn)
 
+
+
+def load_count_driven_summary(
+    level: str, pcs_per_dec: str, kpd: str, lang: str | None = "en"
+) -> str:
+    """
+    Wording for a pond whose load band was breached by **head count**, not by weight.
+
+    ``load_advice_summary`` above quotes kg/decimal, which is only honest when biomass is what
+    breached. A nursery holding 4,500 fry per decimal at 9 kg/decimal is crowded by numbers while
+    its weight sits below the comfort band, and telling the manager to reduce biomass sends them
+    to the wrong lever: the fix is to split or thin by count, not to harvest weight.
+    """
+    lv = (level or "").strip()
+    severity_en = "above the safe standing count" if lv == "high_risk" else "at the top of the safe standing count"
+    severity_bn = "নিরাপদ সংখ্যার উপরে" if lv == "high_risk" else "নিরাপদ সংখ্যার উপরের সীমায়"
+    return _pick(
+        lang,
+        f"Standing count is {pcs_per_dec} pcs per decimal — {severity_en} for this pond role, "
+        f"while biomass is only {kpd} kg per decimal. Crowding here is by numbers, not weight: "
+        "split the pond or thin by transfer rather than harvesting weight.",
+        f"বর্তমান সংখ্যা {pcs_per_dec} pcs/ডেসিমেল — এই পুকুরের জন্য {severity_bn}, "
+        f"যদিও বায়োমাস মাত্র {kpd} kg/ডেসিমেল। ভিড় ওজনের নয়, সংখ্যার: "
+        "ওজন ধরার বদলে পুকুর ভাগ করুন বা স্থানান্তরে পাতলা করুন।",
+    )
+
+
+def owner_decision_thin_by_count(
+    pcs_per_dec: str | None, kpd: str | None, lang: str | None = "en"
+) -> str:
+    """Owner-facing line for a count-driven breach (no weight to harvest)."""
+    return _pick(
+        lang,
+        f"Standing count ({pcs_per_dec} pcs/decimal) is above the safe band while biomass "
+        f"({kpd} kg/decimal) is not. Split the pond or transfer fish out to reduce numbers; "
+        "a partial harvest by weight would not fix the crowding.",
+        f"সংখ্যা ({pcs_per_dec} pcs/ডেসিমেল) নিরাপদ সীমার উপরে, কিন্তু বায়োমাস "
+        f"({kpd} kg/ডেসিমেল) নয়। পুকুর ভাগ করুন বা মাছ স্থানান্তর করে সংখ্যা কমান; "
+        "ওজন ধরে আংশিক হারভেস্ট এই ভিড় কমাবে না।",
+    )

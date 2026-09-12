@@ -22,9 +22,11 @@ def parse_json_body(request):
     """Parse request body as JSON; return (data, None) or (None, error_response)."""
     try:
         body = json.loads(request.body) if request.body else {}
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return None, JsonResponse({"detail": "Invalid JSON"}, status=400)
-    return (body if isinstance(body, dict) else {}), None
+    if not isinstance(body, dict):
+        return None, JsonResponse({"detail": "JSON body must be an object"}, status=400)
+    return body, None
 
 
 def _serialize_date(d):

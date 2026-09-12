@@ -2319,7 +2319,7 @@ class Tax(models.Model):
 
 class TaxRate(models.Model):
     tax = models.ForeignKey(Tax, on_delete=models.CASCADE, related_name="rates")
-    rate = models.DecimalField(max_digits=6, decimal_places=4)  # e.g. 15.0000 for 15%
+    rate = models.DecimalField(max_digits=7, decimal_places=4)  # 0 through 100.0000 percent
     effective_from = models.DateField(null=True, blank=True)
     effective_to = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

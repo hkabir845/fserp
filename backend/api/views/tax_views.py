@@ -1,6 +1,8 @@
 """Taxes API: list, create, get, update, delete, rates CRUD, init-bangladesh (company-scoped)."""
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from django.core.exceptions import ValidationError
+from django.core.validators import DecimalValidator
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -41,15 +43,6 @@ def _parse_date(val):
         return date.fromisoformat(str(val).split("T")[0])
     except Exception:
         return None
-
-
-def _decimal(val, default=0):
-    if val is None:
-        return default
-    try:
-        return Decimal(str(val))
-    except Exception:
-        return default
 
 
 @csrf_exempt
@@ -132,14 +125,40 @@ def tax_rates_create(request):
     body, err = parse_json_body(request)
     if err:
         return err
-    tax_id = body.get("tax_id")
-    if not tax_id or not Tax.objects.filter(id=tax_id, company_id=request.company_id).exists():
+    raw_tax_id = body.get("tax_id")
+    try:
+        if isinstance(raw_tax_id, bool) or not isinstance(raw_tax_id, (int, str)):
+            raise ValueError
+        tax_id = int(raw_tax_id)
+        if not 0 < tax_id <= 9223372036854775807:
+            raise ValueError
+    except (TypeError, ValueError):
         return JsonResponse({"detail": "Valid tax_id required"}, status=400)
+    if not Tax.objects.filter(id=tax_id, company_id=request.company_id).exists():
+        return JsonResponse({"detail": "Valid tax_id required"}, status=400)
+
+    try:
+        rate = Decimal(str(body.get("rate")))
+        if not rate.is_finite() or not Decimal("0") <= rate <= Decimal("100"):
+            raise ValueError
+        DecimalValidator(max_digits=7, decimal_places=4)(rate)
+    except (InvalidOperation, ValueError, ValidationError):
+        return JsonResponse(
+            {"detail": "Rate must be between 0 and 100 with at most 4 decimal places."}, status=400,
+        )
+
+    dates = {}
+    for field in ("effective_from", "effective_to"):
+        value = body.get(field)
+        dates[field] = _parse_date(value)
+        if value not in (None, "") and dates[field] is None:
+            return JsonResponse({"detail": f"{field} must be a valid date."}, status=400)
+    if dates["effective_from"] and dates["effective_to"] and dates["effective_to"] < dates["effective_from"]:
+        return JsonResponse({"detail": "effective_to must not precede effective_from."}, status=400)
     r = TaxRate(
         tax_id=tax_id,
-        rate=_decimal(body.get("rate")),
-        effective_from=_parse_date(body.get("effective_from")),
-        effective_to=_parse_date(body.get("effective_to")),
+        rate=rate,
+        **dates,
     )
     r.save()
     return JsonResponse({"id": r.id, "rate": str(r.rate), "effective_from": _serialize_date(r.effective_from), "effective_to": _serialize_date(r.effective_to)}, status=201)

@@ -1730,7 +1730,10 @@ def report_income_statement(
     pond_id: int | None = None,
     *,
     unscoped_dims: bool = False,
+    basis: str = "management",
 ) -> dict[str, Any]:
+    if basis not in {"management", "posted"}:
+        raise ValueError("basis must be management or posted")
     income_rows: list[dict[str, Any]] = []
     cogs_rows: list[dict[str, Any]] = []
     exp_rows: list[dict[str, Any]] = []
@@ -1885,6 +1888,7 @@ def report_income_statement(
         )
     out_is: dict[str, Any] = {
         "report_id": "income-statement",
+        "reporting_basis": "posted",
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "income": {"accounts": income_rows, "total": _f(ti)},
         "cost_of_goods_sold": {"accounts": cogs_rows, "total": _f(tcogs)},
@@ -1914,7 +1918,13 @@ def report_income_statement(
         out_is["aquaculture_management"] = _aquaculture_management_snapshot(
             company_id, start, end
         )
-        _fold_aquaculture_register_into_pl_sections(out_is, company_id, start, end)
+        if basis == "management":
+            _fold_aquaculture_register_into_pl_sections(out_is, company_id, start, end)
+            out_is["reporting_basis"] = "management"
+            # Folding changes the totals: recompute the reconciliation against the GL.
+            difference = cumulative_change - _d(out_is["net_income"])
+            out_is["cumulative_vs_period_difference"] = _f(difference)
+            out_is["period_matches_cumulative_change"] = abs(difference) <= Decimal("0.02")
     if unscoped_dims:
         out_is["filter_head_office"] = True
     return out_is
@@ -4468,18 +4478,17 @@ def _fold_aquaculture_register_into_pl_sections(
     include_expenses: bool = True,
 ) -> None:
     """
-    All sites P&L must list every income and every expense.
+    Combine register detail with GL without counting the same pond cost twice.
 
-    GL alone hides capitalized pond costs (1581 → harvest COGS later). The aquaculture
-    register has the full period income/expense catalog — fold every non-zero category
-    into Income/Expenses, and drop overlapping aquaculture GL accounts so the same
-    fisherman / feed / harvest lines are not counted twice.
+    Capitalized inputs remain in biological inventory until harvest COGS is posted.
+    Period-cost categories replace their overlapping GL rows in this management view.
     """
     from api.services.aquaculture_constants import (
         EXPENSE_CATEGORY_LABELS,
         INCOME_TYPE_LABELS,
     )
     from api.services.aquaculture_pond_bio_capitalization import (
+        capitalized_register_expense_categories,
         company_capitalizes_pond_production,
     )
 
@@ -4505,8 +4514,16 @@ def _fold_aquaculture_register_into_pl_sections(
             "6726",
         }
     )
-    # When register period costs are shown as Expenses, harvest bio COGS would double-count.
-    _AQ_GL_COGS_CODES = frozenset({"5240", "5245"})
+    # Inter-pond transfers are contra entries between pond profit centres: the nursing pond books
+    # transfer income, the grow-out pond books the matching cost. They must net to nothing at
+    # company level — nothing entered or left the business. Folded in raw they inflated *both*
+    # sides of a company P&L (income +3,333.33, expenses +6,666.66 for the two legs) and moved
+    # company net income on a transaction with no economic substance. Pond-level P&L reports
+    # still show them; that is what they are for.
+    _AQ_INTERNAL_TRANSFER_INCOME_CATS = frozenset({"inter_pond_fingerling_transfer"})
+    _AQ_INTERNAL_TRANSFER_EXPENSE_CATS = frozenset(
+        {"fish_transfer_cost_in", "fish_transfer_cost_out"}
+    )
 
     mgmt = out.get("aquaculture_management")
     if not isinstance(mgmt, dict) or not mgmt.get("totals"):
@@ -4514,21 +4531,28 @@ def _fold_aquaculture_register_into_pl_sections(
         out["aquaculture_management"] = mgmt
 
     capitalize = company_capitalizes_pond_production(company_id)
+    # Inputs the company capitalized into biological inventory (1581). They are an asset until
+    # the fish are sold, so they are not period expenses; they reach the P&L as harvest COGS.
+    _capitalized_cats = (
+        capitalized_register_expense_categories(company_id) if capitalize else frozenset()
+    )
     changed = False
 
     def _strip_gl_codes(block: dict[str, Any], codes: frozenset[str]) -> Decimal:
+        nonlocal changed
         accounts = [a for a in (block.get("accounts") or []) if isinstance(a, dict)]
         kept: list[dict[str, Any]] = []
         removed = Decimal("0")
         for a in accounts:
             code = str(a.get("account_code") or "").strip()
             if code in codes:
+                changed = True
                 removed += _d(a.get("balance"))
                 continue
             kept.append(a)
         block["accounts"] = kept
         if removed:
-            block["total"] = _f(max(Decimal("0"), _d(block.get("total")) - removed))
+            block["total"] = _f(_d(block.get("total")) - removed)
         return removed
 
     if include_income:
@@ -4561,6 +4585,8 @@ def _fold_aquaculture_register_into_pl_sections(
                     amt = _d(row.get("amount"))
                     if not cat or amt <= 0:
                         continue
+                    if cat in _AQ_INTERNAL_TRANSFER_INCOME_CATS:
+                        continue
                     code = f"AQ-INC-{cat}"
                     key = (code, "pond", pid)
                     if key in existing:
@@ -4591,6 +4617,8 @@ def _fold_aquaculture_register_into_pl_sections(
                 cat = str(row.get("category") or "").strip()
                 amt = _d(row.get("amount"))
                 if not cat or amt <= 0:
+                    continue
+                if cat in _AQ_INTERNAL_TRANSFER_INCOME_CATS:
                     continue
                 code = f"AQ-INC-{cat}"
                 key = (code, "", None)
@@ -4655,6 +4683,10 @@ def _fold_aquaculture_register_into_pl_sections(
                     amt = _d(row.get("amount"))
                     if not cat or amt <= 0:
                         continue
+                    if cat in _AQ_INTERNAL_TRANSFER_EXPENSE_CATS:
+                        continue
+                    if cat in _capitalized_cats:
+                        continue
                     code = f"AQ-EXP-{cat}"
                     key = (code, "pond", pid)
                     if key in existing:
@@ -4686,6 +4718,10 @@ def _fold_aquaculture_register_into_pl_sections(
                 amt = _d(row.get("amount"))
                 if not cat or amt <= 0:
                     continue
+                if cat in _AQ_INTERNAL_TRANSFER_EXPENSE_CATS:
+                    continue
+                if cat in _capitalized_cats:
+                    continue
                 code = f"AQ-EXP-{cat}"
                 if any(str(a.get("account_code") or "").strip() == code for a in accounts):
                     continue
@@ -4715,15 +4751,18 @@ def _fold_aquaculture_register_into_pl_sections(
         if added_expense > 0:
             expense_block["total"] = _f(_d(expense_block.get("total")) + added_expense)
 
-        # Register already includes grow-out costs as period expenses — drop harvest
-        # bio COGS so feed is not counted once as expense and again as COGS.
-        if capitalize and "cost_of_goods_sold" in out:
-            cogs_block = out.setdefault(
-                "cost_of_goods_sold", {"accounts": [], "total": "0.00"}
-            )
-            if _strip_gl_codes(cogs_block, _AQ_GL_COGS_CODES):
-                changed = True
+        # Harvest COGS stays. Stripping it while listing the capitalized inputs as period costs
+        # expensed an asset still sitting in 1581, and left gross profit equal to revenue on a
+        # harvest that cost real money. The capitalized inputs are excluded from Expenses above
+        # instead, so each cost appears exactly once: an asset until the fish are sold, then
+        # COGS against that sale.
 
+    # Keep a stable numeric total even when every register category is excluded
+    # (for example, a period containing only capitalized production inputs).
+    out["total_expenses"] = _f(
+        _d((out.get("cost_of_goods_sold") or {}).get("total"))
+        + _d((out.get("expenses") or {}).get("total"))
+    )
     if changed or out.get("includes_aquaculture_register"):
         ti = _d((out.get("income") or {}).get("total"))
         tcogs = _d((out.get("cost_of_goods_sold") or {}).get("total"))
@@ -4739,8 +4778,11 @@ def _fold_aquaculture_register_into_pl_sections(
             " All sites P&L includes every income and expense: non-aquaculture GL accounts "
             "plus every aquaculture register category (AQ-INC-* / AQ-EXP-*). Overlapping "
             "aquaculture GL lines (424x / 671x) are replaced by the register so each amount "
-            "appears once. When pond inputs are capitalized, harvest COGS (5240) is omitted "
-            "here because those costs are already listed under Expenses."
+            "appears once. When pond inputs are capitalized to biological inventory (1581), "
+            "those inputs are not period expenses — they are held as an asset and charged to "
+            "harvest COGS (5240) when the fish are sold, so gross profit reflects the cost of "
+            "the fish sold. Pond costs the policy does not capitalize (fisherman, lease, shop "
+            "supplies, mortality) remain period expenses."
         )
         if extra.strip() not in note:
             out["accounting_note"] = (note + extra).strip()

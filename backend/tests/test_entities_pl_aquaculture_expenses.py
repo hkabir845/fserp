@@ -139,8 +139,9 @@ def test_income_statement_all_entities_includes_aquaculture_register_categories(
 
 
 @pytest.mark.django_db
-def test_all_sites_pl_folds_capitalized_feed_into_expenses(company_tenant):
-    """When bio capitalization is on, All-sites P&L Expenses include register feed."""
+@pytest.mark.parametrize("category", ["feed_purchase", "medicine_purchase", "equipment"])
+def test_all_sites_pl_excludes_capitalized_inputs_from_expenses(company_tenant, category):
+    """Capitalized inputs stay out of period costs; fisherman costs remain expenses."""
     from api.models import Company
     from api.services.reporting import report_income_statement
 
@@ -158,7 +159,7 @@ def test_all_sites_pl_folds_capitalized_feed_into_expenses(company_tenant):
         company_id=cid,
         pond=pond,
         expense_date=date(2026, 6, 4),
-        expense_category="feed",
+        expense_category=category,
         amount=Decimal("9000.00"),
         memo="sacks",
     )
@@ -176,11 +177,11 @@ def test_all_sites_pl_folds_capitalized_feed_into_expenses(company_tenant):
     assert pl.get("includes_aquaculture_register") is True
     exp_codes = {a.get("account_code") for a in (pl.get("expenses") or {}).get("accounts") or []}
     inc_codes = {a.get("account_code") for a in (pl.get("income") or {}).get("accounts") or []}
-    assert "AQ-EXP-feed" in exp_codes
+    assert f"AQ-EXP-{category}" not in exp_codes
     assert "AQ-INC-fish_harvest_sale" in inc_codes
-    assert Decimal(str(pl["expenses"]["total"])) >= Decimal("9000.00")
+    assert Decimal(str(pl["expenses"]["total"])) == Decimal("0.00")
     assert Decimal(str(pl["income"]["total"])) >= Decimal("7500.00")
-    # Every register expense category with activity is in the Expenses total (not only capitalized).
+    # Non-capitalized period costs still belong in the Expenses total.
     AquacultureExpense.objects.create(
         company_id=cid,
         pond=pond,
@@ -192,7 +193,7 @@ def test_all_sites_pl_folds_capitalized_feed_into_expenses(company_tenant):
     assert "AQ-EXP-fisherman" in {
         a.get("account_code") for a in (pl2.get("expenses") or {}).get("accounts") or []
     }
-    assert Decimal(str(pl2["expenses"]["total"])) >= Decimal("9500.00")
+    assert Decimal(str(pl2["expenses"]["total"])) == Decimal("500.00")
 
 
 @pytest.mark.django_db
@@ -399,4 +400,3 @@ def test_all_entities_register_includes_unallocated_fisherman_bill(
         for r in ((entities.get("aquaculture_management") or {}).get("expenses_by_category") or [])
     }
     assert ent_cats.get("fisherman", 0) == Decimal("11670.00")
-

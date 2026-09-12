@@ -32,7 +32,7 @@ Browsers send a **preflight** `OPTIONS` request before cross-origin `POST`/`PATC
 - **API docs (simple):** http://localhost:8000/api/docs/
 - **Auth:** POST `/api/auth/login/form/` (JSON or form). Create user: `python manage.py create_superuser`
 
-Endpoints: auth (login, refresh), companies/current, admin/stats, admin/companies, admin/users, dashboard/stats, broadcasts, and stub lists for customers, tanks, items, nozzles (empty until you add full CRUD).
+Endpoints: auth (login, refresh), companies/current, admin/stats, admin/companies, admin/users, dashboard/stats, broadcasts, and full CRUD for customers, tanks, items, and nozzles. See api/urls.py for the complete route list.
 
 **Built-in demo tenant (FS-000001):** After `python manage.py migrate`, the backend ensures **Master Filling Station** exists with company code **FS-000001** (not `FS-FS-000001` — the human-facing code is exactly `FS-000001`). It loads the fuel-station chart of accounts (if empty), convenience **products and services** for Cashier → General, and the **fuel station / nozzle** demo graph. Re-run or repair anytime: `python manage.py ensure_master_template`. For a richer sandbox (posted GL, vendors, sample P&amp;L), run `python manage.py seed_master_full_demo`. To disable auto-bootstrap (tests, or an empty staging DB), set **`FSERP_SKIP_MASTER_BOOTSTRAP=1`**.
 
@@ -92,9 +92,9 @@ venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 ```
 
-Optional: copy **`backend/.env.example`** to **`backend/.env`** for `FRONTEND_BASE_URL=http://localhost:3000` and other overrides. You can also use **`backend/env/.env`** (loaded after `.env`).
+Copy **`backend/env.example`** to **`backend/.env`** for `FRONTEND_BASE_URL=http://localhost:3000` and other overrides. You can also use **`backend/env/.env`** (loaded after `.env`).
 
-Use **`DATABASE_URL`** for PostgreSQL (see `env.example`), or omit it to use the default SQLite file `backend/db.sqlite3`. Run `python manage.py migrate` to apply Django migrations.
+Set **`DATABASE_URL`** to PostgreSQL for development and production (see `env.example`). SQLite is not supported. Run `python manage.py migrate` to apply Django migrations. Tests create a separate PostgreSQL database; the test database user needs permission to create databases.
 
 **Process manager (VPS):** Use **`ecosystem.config.js`** at the repo root with PM2 (`pm2 start ecosystem.config.js`). Backend **`:8001`**, frontend **`:3001`** (VIPTAP uses 8000/3000 on the shared host). Or run **`bash scripts/run-gunicorn.sh`** manually. Set **`DJANGO_SECRET_KEY`** and **`DATABASE_URL`** in **`backend/.env`** (copy from [`env.production.example`](env.production.example)). Full flow: **`bash scripts/deploy-vps.sh`** from repo root after **`bash scripts/setup-vps-env.sh --generate-key`**.
 
@@ -114,7 +114,7 @@ python manage.py runserver 8000
 
 ## What’s included
 
-- **Models:** All domain models as Django models (same `db_table`), unmanaged.
+- **Models:** Domain models are managed by Django migrations, preserving their explicit `db_table` names.
 - **Auth:** JWT login/refresh/me/register (bcrypt).
 - **Companies & users:** List, get, create, update, delete with role-based access.
 - **Other resources:** List/create and retrieve/update/delete for customers, vendors, employees, items, chart of accounts, bank accounts, journal entries, fund transfers, invoices, bills, payments, taxes, stations, islands, tanks, dispensers, meters, nozzles, shifts, tank dips, payroll, loans, inventory, subscriptions, contracts, broadcasts, audit logs. Dashboard, reports, backup/restore, cashier, admin, and subscription flows are implemented against the Django API; see `api/urls.py` for the live route list.

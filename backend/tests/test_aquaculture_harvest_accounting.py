@@ -153,6 +153,26 @@ def test_a_harvest_cost_of_sales_account_exists(farm):
 
 
 @pytest.mark.django_db
+def test_management_costs_do_not_claim_to_reconcile_to_posted_profit(farm):
+    from api.models import AquacultureExpense
+
+    cid = farm["cid"]
+    # A register-only period expense differs from the posted ledger independently
+    # of how production inputs are capitalized.
+    AquacultureExpense.objects.create(
+        company_id=cid, pond=farm["pond"], expense_date=PERIOD_START,
+        expense_category="fisherman", amount=Decimal("123.00"),
+    )
+    posted = report_income_statement(cid, PERIOD_START, PERIOD_END, basis="posted")
+    management = report_income_statement(cid, PERIOD_START, PERIOD_END, basis="management")
+    assert report_decimal(posted["net_income"]) == Decimal("0.00")
+    assert report_decimal(management["net_income"]) == Decimal("-123.00")
+    assert report_decimal(management["cumulative_vs_period_difference"]) == Decimal("123.00")
+    assert management["period_matches_cumulative_change"] is False
+    assert posted["period_matches_cumulative_change"] is True
+
+
+@pytest.mark.django_db
 def test_finalizing_a_harvest_books_revenue_and_relieves_biological_inventory(api_client, farm):
     cid, h, pond = farm["cid"], farm["headers"], farm["pond"]
     sale = _make_sale(cid, pond)
@@ -192,13 +212,30 @@ def test_harvest_gross_profit_is_revenue_less_the_cost_of_the_fish(api_client, f
     sale = _make_sale(cid, pond)
     assert _finalize(api_client, h, sale.id).status_code in (200, 201)
 
-    inc = report_income_statement(cid, PERIOD_START, PERIOD_END)
+    inc = report_income_statement(cid, PERIOD_START, PERIOD_END, basis="posted")
     income = inc["income"]["total"]
     cogs = report_decimal(inc["cost_of_goods_sold"]["total"])
     assert report_decimal(income) == Decimal("180000.00")
     assert cogs > 0, "harvest revenue with no cost of goods sold overstates gross profit"
     assert abs(report_decimal(inc["gross_profit"]) - (report_decimal(income) - cogs)) <= CENT
     assert report_decimal(inc["gross_profit"]) < report_decimal(income), "gross profit should be below revenue once cost is booked"
+
+    # Management totals remain available, but must not claim to reconcile to posted profit.
+    management = report_income_statement(cid, PERIOD_START, PERIOD_END)
+    difference = report_decimal(management["cumulative_net_income_change"]) - report_decimal(management["net_income"])
+    assert management["reporting_basis"] == "management"
+    assert report_decimal(management["cumulative_vs_period_difference"]) == difference
+    assert management["period_matches_cumulative_change"] == (abs(difference) <= Decimal("0.02"))
+
+    response = api_client.get(
+        "/api/reports/income-statement/",
+        {"start_date": PERIOD_START.isoformat(), "end_date": PERIOD_END.isoformat(), "basis": "posted"},
+        **h,
+    )
+    assert response.status_code == 200
+    assert response.json()["reporting_basis"] == "posted"
+    assert report_decimal(response.json()["cost_of_goods_sold"]["total"]) == cogs
+    assert api_client.get("/api/reports/income-statement/", {"basis": "invalid"}, **h).status_code == 400
 
 
 @pytest.mark.django_db

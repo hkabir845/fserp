@@ -123,7 +123,15 @@ class Command(BaseCommand):
                 fish = r.get("implied_net_fish_count")
                 cy = r.get("production_cycle_name") or r.get("production_cycle_id")
                 role = (r.get("pond_role") or p.pond_role or "grow_out").strip()
-                suspect = dens >= high and (role in ("grow_out", "other", "") or dens >= high * 2)
+                # Match the in-app warning in aquaculture_units (_GROW_AREA_UNIT_WARN_KG_DEC),
+                # which fires at this threshold for grow_out / other / broodstock. Broodstock was
+                # missing here, so it needed twice the density before this command flagged it —
+                # backwards, since broodstock bands are the tightest of the three (stress 20
+                # kg/dec against grow-out's 55). The UI warned on ponds this audit stayed quiet
+                # about. Nursing keeps the doubled bar: it legitimately runs dense on fry.
+                suspect = dens >= high and (
+                    role in ("grow_out", "other", "broodstock", "") or dens >= high * 2
+                )
                 if suspect:
                     flagged += 1
                     flagged_pond_ids.add(p.id)

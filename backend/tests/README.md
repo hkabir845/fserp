@@ -10,6 +10,12 @@ pytest
 
 Uses **Django** + **pytest-django** (`DJANGO_SETTINGS_MODULE=fsms.settings`). A separate test database is created automatically.
 
+Set `DATABASE_URL` to PostgreSQL in `backend/.env` or the environment. The database user
+must be allowed to create test databases. SQLite is not supported. CI provisions a
+temporary PostgreSQL service automatically.
+
+For frontend financial rounding and logout regressions, run `npm test` in `frontend`.
+
 ## Scope
 
 `test_api_production_audit.py` covers:

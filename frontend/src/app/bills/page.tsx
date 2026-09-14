@@ -438,6 +438,20 @@ function roundBillMoney(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+function billLineRowAmount(quantity: number, unitCost: number): number {
+  const qty = Number(quantity)
+  const uc = Number(unitCost)
+  if (!Number.isFinite(qty) || !Number.isFinite(uc)) return 0
+  return roundBillMoney(qty * uc)
+}
+
+/** Recompute line amount from qty × unit cost (standard item/expense lines). */
+function syncStandardBillLineAmount(line: BillLineItem): BillLineItem {
+  const qty = Number(line.quantity ?? 0)
+  const uc = Number(line.unit_cost ?? 0)
+  return { ...line, amount: billLineRowAmount(qty, uc) }
+}
+
 /** Rate input value: mill vendors edit MRP; everyone else edits unit cost. */
 function billLineRateFieldValue(line: BillLineItem, millTerms: boolean): number {
   if (millTerms && line.mrp != null) {
@@ -505,11 +519,12 @@ function applyMillTermsToLine(
   item: Item | undefined,
   terms: VendorPurchaseTerms | null
 ): BillLineItem {
-  if (!terms?.rate_card) return line
+  // No rate card yet — still keep Amount = Qty × Rate so the line isn't stuck at 0.
+  if (!terms?.rate_card) return syncStandardBillLineAmount(line)
   const qty = Number(line.quantity) || 1
   // Mill rate card is % of MRP. Item master may lack MRP — use entered Rate as MRP once.
   const mrp = Number(line.mrp || item?.mrp || line.unit_cost || 0)
-  if (!(mrp > 0) || !(qty > 0)) return line
+  if (!(mrp > 0) || !(qty > 0)) return syncStandardBillLineAmount(line)
   const pct = Number(terms.rate_card.instant_discount_percent) || 0
   const perUnit = Number(terms.rate_card.instant_discount_per_unit) || 0
   const tPct = Number(terms.rate_card.transport_percent) || 0
@@ -542,7 +557,9 @@ function applyMillTonTransportToLines(
   terms: VendorPurchaseTerms | null,
   orderedTons: number
 ): BillLineItem[] {
-  if (!terms?.rate_card) return lines
+  if (!terms?.rate_card) {
+    return lines.map((line) => syncStandardBillLineAmount(line))
+  }
   const perTon = Number(terms.rate_card.transport_per_ton) || 0
   // First apply discount + any line-weight tonnage.
   const priced = lines.map((line) => {
@@ -1192,26 +1209,12 @@ function roundFishWeightKg(n: number): number {
   return Math.round(n * 10000) / 10000
 }
 
-function billLineRowAmount(quantity: number, unitCost: number): number {
-  const qty = Number(quantity)
-  const uc = Number(unitCost)
-  if (!Number.isFinite(qty) || !Number.isFinite(uc)) return 0
-  return roundBillMoney(qty * uc)
-}
-
 /** Fish fry lines with pcs/kg: amount comes from vendor total + heads, not qty × rate. */
 function isFishBillLineAutoMode(line: BillLineItem, itemList: Item[]): boolean {
   if (!line.item_id) return false
   const item = itemList.find((i) => i.id === line.item_id)
   if (!isFishTypeItem(item)) return false
   return effectiveLinePiecesPerKg(line, item) != null
-}
-
-/** Recompute line amount from qty × unit cost (standard item/expense lines). */
-function syncStandardBillLineAmount(line: BillLineItem): BillLineItem {
-  const qty = Number(line.quantity ?? 0)
-  const uc = Number(line.unit_cost ?? 0)
-  return { ...line, amount: billLineRowAmount(qty, uc) }
 }
 
 function finalizeBillLinesForSave(lines: BillLineItem[], itemList: Item[]): BillLineItem[] {
@@ -3384,7 +3387,8 @@ export default function BillsPage() {
             field === 'quantity' ? 'quantity' : 'unit_cost'
           )
         } else {
-          // Typing Qty or Rate hands Amount back to Qty × Rate (unless mill terms compute net).
+          // Typing Qty or Rate always recalculates Amount = Qty × Rate first.
+          // Mill terms (if any) then adjust Amount to the net after discount/transport.
           newLines[index].amount_manual = false
           const mill = Boolean(vendorPurchaseTerms?.uses_purchase_terms)
           if (field === 'unit_cost' && mill) {
@@ -3397,7 +3401,8 @@ export default function BillsPage() {
             newLines[index].mrp = rate
             if (mill) newLines[index].unit_cost = rate
           }
-          if (mill && (field === 'unit_cost' || field === 'mrp' || field === 'quantity')) {
+          newLines[index] = syncStandardBillLineAmount(newLines[index])
+          if (mill) {
             const tons = orderedTonsManual
               ? parseFloat(orderedTonsInput) || 0
               : millBillTons(newLines, items)
@@ -3410,8 +3415,6 @@ export default function BillsPage() {
             redistributed.forEach((ln, i) => {
               newLines[i] = ln
             })
-          } else {
-            newLines[index] = syncStandardBillLineAmount(newLines[index])
           }
         }
       } else if (

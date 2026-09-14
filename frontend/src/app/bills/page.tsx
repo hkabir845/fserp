@@ -462,11 +462,9 @@ function syncStandardBillLineAmount(line: BillLineItem): BillLineItem {
 }
 
 /**
- * Amount shown in the line row.
- * - Fish auto: stored vendor total
- * - Manual amount: stored value
- * - Mill with discount/transport applied: stored net
- * - Otherwise: always Qty × Rate (so the field cannot get stuck at 0)
+ * Amount column = Qty × Rate (always), except fish auto-lines and a manual Amount edit.
+ * Mill discount/transport are tracked separately and subtracted in bill totals — they must
+ * not leave Amount stuck at an old Rate when Qty changes (e.g. 250 × 1819 showing 1819).
  */
 function resolveBillLineAmountDisplay(
   line: BillLineItem,
@@ -474,20 +472,11 @@ function resolveBillLineAmountDisplay(
   fishAuto: boolean
 ): number {
   if (fishAuto) return Number(line.amount) || 0
-  const product = billLineRowAmount(
+  if (line.amount_manual && !millTerms) return Number(line.amount) || 0
+  return billLineRowAmount(
     Number(line.quantity) || 0,
     billLineRateForProduct(line, millTerms)
   )
-  if (millTerms) {
-    const stored = Number(line.amount) || 0
-    const hasTerms =
-      Number(line.instant_discount_amount) > 0.005 || Number(line.transport_amount) > 0.005
-    if (hasTerms) return stored
-    // Terms not applied yet (or failed) — never leave Amount blank when Qty×Rate is known.
-    return stored > 0 ? stored : product
-  }
-  if (line.amount_manual) return Number(line.amount) || 0
-  return product
 }
 
 /** Rate input value: mill vendors edit MRP; everyone else edits unit cost. */
@@ -557,34 +546,37 @@ function applyMillTermsToLine(
   item: Item | undefined,
   terms: VendorPurchaseTerms | null
 ): BillLineItem {
-  // No rate card yet — still keep Amount = Qty × Rate so the line isn't stuck at 0.
-  if (!terms?.rate_card) return syncStandardBillLineAmount(line)
+  // Always keep Amount = Qty × Rate (MRP). Discount/transport are separate fields.
   const qty = Number(line.quantity) || 0
-  // Mill rate card is % of MRP. Item master may lack MRP — use entered Rate as MRP once.
   const mrp = Number(line.mrp || item?.mrp || line.unit_cost || 0)
-  if (!(mrp > 0) || !(qty > 0)) return syncStandardBillLineAmount(line)
+  const withGross =
+    mrp > 0 && qty > 0
+      ? {
+          ...line,
+          mrp,
+          unit_cost: mrp,
+          amount: billLineRowAmount(qty, mrp),
+          amount_manual: false,
+        }
+      : syncStandardBillLineAmount(line)
+  if (!terms?.rate_card || !(mrp > 0) || !(qty > 0)) return withGross
+
   const pct = Number(terms.rate_card.instant_discount_percent) || 0
   const perUnit = Number(terms.rate_card.instant_discount_per_unit) || 0
   const tPct = Number(terms.rate_card.transport_percent) || 0
   const tUnit = Number(terms.rate_card.transport_per_unit) || 0
   const tKg = Number(terms.rate_card.transport_per_kg) || 0
   const tTon = Number(terms.rate_card.transport_per_ton) || 0
-  const lineKg = millLineWeightKg(line, item)
+  const lineKg = millLineWeightKg(withGross, item)
   const lineTons = lineKg > 0 ? lineKg / 1000 : 0
   const gross = qty * mrp
   const instant = (gross * pct) / 100 + qty * perUnit
-  // Line-level ৳/ton when weight is known; bill Ordered tons can override via applyMillTonTransportToLines.
   const transport =
     (gross * tPct) / 100 + qty * tUnit + lineKg * tKg + lineTons * tTon
-  const amount = Math.max(0, roundBillMoney(gross - instant - transport))
   return {
-    ...line,
-    mrp,
+    ...withGross,
     instant_discount_amount: roundBillMoney(instant),
     transport_amount: roundBillMoney(transport),
-    amount,
-    unit_cost: roundBillMoney(amount / qty),
-    amount_manual: true,
   }
 }
 
@@ -642,18 +634,17 @@ function applyMillTonTransportToLines(
         ? remaining
         : roundBillMoney((tonCredit * weights[slot]) / totalW)
     remaining = roundBillMoney(remaining - share)
-    const qty = Number(line.quantity) || 1
+    const qty = Number(line.quantity) || 0
     const mrp = Number(line.mrp) || 0
-    const gross = qty * mrp
-    const instant = Number(line.instant_discount_amount) || 0
     const transport = roundBillMoney(baseWithoutTon[slot] + share)
-    const amount = Math.max(0, roundBillMoney(gross - instant - transport))
+    // Amount stays Qty × Rate; only transport share is redistributed.
     return {
       ...line,
+      mrp,
+      unit_cost: mrp > 0 ? mrp : line.unit_cost,
       transport_amount: transport,
-      amount,
-      unit_cost: roundBillMoney(amount / qty),
-      amount_manual: true,
+      amount: billLineRowAmount(qty, mrp > 0 ? mrp : Number(line.unit_cost) || 0),
+      amount_manual: false,
     }
   })
 }
@@ -1258,10 +1249,7 @@ function isFishBillLineAutoMode(line: BillLineItem, itemList: Item[]): boolean {
 function finalizeBillLinesForSave(lines: BillLineItem[], itemList: Item[]): BillLineItem[] {
   return lines.map((line) => {
     if (isFishBillLineAutoMode(line, itemList) || line.amount_manual) return line
-    // Mill lines keep net amount already computed from MRP + terms.
-    if (Number(line.mrp) > 0 && Number(line.instant_discount_amount) > 0) return line
-    if (Number(line.mrp) > 0 && Number(line.transport_amount) > 0) return line
-    // Ensure Qty × Rate is persisted even if the UI only showed a derived amount.
+    // Mill UI Amount is Qty × Rate (gross). Backend nets via MRP − discount − transport.
     const rate = billLineRateForProduct(line, Number(line.mrp) > 0)
     if (Number(line.mrp) > 0) {
       return {
@@ -2918,7 +2906,17 @@ export default function BillsPage() {
     const taxAmount = lines.reduce((sum, line) => sum + (Number(line.tax_amount) || 0), 0)
     const perTon = Number(vendorPurchaseTerms?.rate_card?.transport_per_ton) || 0
     const truck = perTon > 0 ? 0 : parseFloat(truckTransportAmount) || 0
-    const subtotal = Math.max(0, roundBillMoney(lineSum - truck))
+    // Line Amount is Qty × Rate (gross). Mill discount/transport reduce the bill total only.
+    const millDisc = mill
+      ? lines.reduce((s, l) => s + (Number(l.instant_discount_amount) || 0), 0)
+      : 0
+    const millTransport = mill
+      ? lines.reduce((s, l) => s + (Number(l.transport_amount) || 0), 0)
+      : 0
+    const subtotal = Math.max(
+      0,
+      roundBillMoney(lineSum - millDisc - millTransport - truck)
+    )
     const total = subtotal + taxAmount
     return { subtotal, taxAmount, total }
   }
@@ -3422,6 +3420,16 @@ export default function BillsPage() {
         newLines[index].fish_cost_per_head_input = undefined
         if (fishLineAuto) {
           newLines[index] = applyFishBillLineAutoCalc(newLines[index], lineItem, 'amount')
+        } else if (vendorPurchaseTerms?.uses_purchase_terms) {
+          // Mill Amount is always Qty × Rate — ignore manual Amount edits.
+          const qty = Number(newLines[index].quantity) || 0
+          const rate = billLineRateForProduct(newLines[index], true)
+          newLines[index].amount_manual = false
+          newLines[index].amount = billLineRowAmount(qty, rate)
+          if (rate > 0) {
+            newLines[index].mrp = rate
+            newLines[index].unit_cost = rate
+          }
         } else {
           const quantity = Number(newLines[index].quantity ?? 0)
           const amount = parseFloat(value) || 0
@@ -3439,8 +3447,8 @@ export default function BillsPage() {
             field === 'quantity' ? 'quantity' : 'unit_cost'
           )
         } else {
-          // Typing Qty or Rate always recalculates Amount = Qty × Rate first.
-          // Mill terms (if any) then adjust Amount to the net after discount/transport.
+          // Typing Qty or Rate always recalculates Amount = Qty × Rate.
+          // Mill terms update discount/transport side fields only — not Amount.
           newLines[index].amount_manual = false
           const mill = Boolean(vendorPurchaseTerms?.uses_purchase_terms)
           const rate = Number(value) || 0
@@ -5121,14 +5129,14 @@ export default function BillsPage() {
                                   fishLineAuto
                                     ? 'Prefilled as Amount ÷ Qty (kg) - type a rate and Amount recalculates'
                                     : millRate
-                                      ? 'List / MRP before mill discount. Amount updates to the net after terms.'
+                                      ? 'List / MRP. Amount = Qty × Rate; mill discount/transport are below.'
                                       : undefined
                                 }
                               />
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
-                                {millRate ? 'Amount (net)' : 'Amount'}
+                                Amount
                               </label>
                               <input
                                 type="number"
@@ -5143,7 +5151,7 @@ export default function BillsPage() {
                                   fishLineAuto
                                     ? 'Vendor line total - enter with total fish (heads)'
                                     : millRate
-                                      ? 'Net after mill discount/transport. Gross is Qty × Rate (MRP).'
+                                      ? 'Qty × Rate (MRP). Discount and transport are deducted in bill totals.'
                                       : 'Qty × Rate — type a total and Rate recalculates'
                                 }
                               />
@@ -5662,7 +5670,7 @@ export default function BillsPage() {
                                   fishLineAuto
                                     ? 'Prefilled as Amount ÷ Qty (kg) - type a rate and Amount recalculates'
                                     : millRate
-                                      ? 'List / MRP before mill discount. Amount updates to the net after terms.'
+                                      ? 'List / MRP. Amount = Qty × Rate; mill discount/transport are below.'
                                       : undefined
                                 }
                               />
@@ -5680,7 +5688,7 @@ export default function BillsPage() {
                             </div>
                             <div className="col-span-6 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
-                                {millRate ? 'Amount (net)' : 'Amount'}
+                                Amount
                               </label>
                               <input
                                 type="number"
@@ -5696,7 +5704,7 @@ export default function BillsPage() {
                                   fishLineAuto
                                     ? 'Vendor line total - enter with total fish (heads)'
                                     : millRate
-                                      ? 'Net after mill discount/transport. Gross is Qty × Rate (MRP).'
+                                      ? 'Qty × Rate (MRP). Discount and transport are deducted in bill totals.'
                                       : 'Qty × Rate — type a total and Rate recalculates'
                                 }
                               />

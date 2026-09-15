@@ -8,7 +8,7 @@ export function RememberMeField({
   onChange: (next: boolean) => void
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-muted/50 px-3 py-2.5">
+    <label className="flex cursor-pointer items-start gap-3 rounded-md border-2 border-primary/40 bg-primary/5 px-3 py-3">
       <input
         type="checkbox"
         name="remember"

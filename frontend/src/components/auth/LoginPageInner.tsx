@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff } from 'lucide-react'
 import { getApiBaseUrl, getBackendOrigin, getApiDocsUrl, setAuthApiOriginStamp } from '@/lib/api'
@@ -21,9 +21,8 @@ import {
 
 export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 'brain' }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const isBrain = variant === 'brain'
-  const nextPath = isBrain ? '/brain-app' : searchParams.get('next')
+  const [nextPath, setNextPath] = useState<string | null>(isBrain ? '/brain-app' : null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [rememberLogin, setRememberLogin] = useState(true)
@@ -40,6 +39,9 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
 
   useEffect(() => {
     setMounted(true)
+    if (!isBrain && typeof window !== 'undefined') {
+      setNextPath(new URLSearchParams(window.location.search).get('next'))
+    }
     const remembered = readRememberedUsername()
     if (remembered) {
       setUsername(remembered)

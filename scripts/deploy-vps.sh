@@ -103,18 +103,15 @@ if ! command -v pm2 >/dev/null 2>&1; then
   exit 1
 fi
 
-# reload keeps the old Gunicorn master (and its env). Health then stays on the
-# previous SHA (e.g. d976fe1) even after git pull + frontend build.
-if pm2 describe fserp_backend >/dev/null 2>&1; then
-  pm2 restart fserp_backend fserp_frontend --update-env
-else
-  pm2 start ecosystem.config.js
-fi
+# delete + start re-runs run-gunicorn.sh (sources .env.release). restart/reload
+# only signals the already-exec'd Gunicorn master, so /health stays on an old SHA.
+pm2 delete fserp_backend fserp_frontend >/dev/null 2>&1 || true
+pm2 start ecosystem.config.js
 pm2 save
 
 echo "==> Smoke tests"
 cd "$REPO_ROOT/backend"
-sleep 2
+sleep 8
 # X-Forwarded-Proto mirrors nginx so SECURE_SSL_REDIRECT does not 301 the loopback check.
 health_json="$(curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -H "X-Forwarded-Proto: https" "http://127.0.0.1:8001/health/" \
   || { echo "ERROR: backend health check failed" >&2; exit 1; })"
@@ -124,7 +121,13 @@ if [[ "$health_version" != "$RELEASE_VERSION" && "$health_version" != "$RELEASE_
   echo "ERROR: health version ${health_version:-empty} does not match this deploy (${RELEASE_VERSION} / ${RELEASE_COMMIT}). Gunicorn is still the old process — use pm2 restart, not reload." >&2
   exit 1
 fi
-curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3001/" || { echo "ERROR: frontend check failed" >&2; exit 1; }
+curl --retry 8 --retry-connrefused --retry-delay 2 --max-time 20 -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3001/" || { echo "ERROR: frontend check failed" >&2; exit 1; }
+login_html="$(curl --retry 8 --retry-connrefused --retry-delay 2 --max-time 20 -sf "http://127.0.0.1:3001/login" || true)"
+if ! printf '%s' "$login_html" | grep -q "Remember me"; then
+  echo "ERROR: /login HTML does not contain Remember me — frontend is still the old build." >&2
+  exit 1
+fi
+echo "login page: Remember me present"
 
 # Login must answer 400 (missing credentials), not 500 — 500 means cache/DB is broken.
 login_code="$(curl --max-time 15 -s -o /dev/null -w "%{http_code}" -X POST \

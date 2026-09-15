@@ -1,12 +1,7 @@
 'use client'
 
-import { Suspense } from 'react'
 import { LoginPageInner } from '@/components/auth/LoginPageInner'
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginPageInner />
-    </Suspense>
-  )
+  return <LoginPageInner />
 }

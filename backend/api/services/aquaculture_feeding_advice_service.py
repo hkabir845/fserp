@@ -83,6 +83,19 @@ def _mean_fish_weight_g_from_stock_row(stock_row: dict) -> tuple[Decimal | None,
     """
     Returns (mean_weight_g, provenance) for tilapia cohort; None if unknown.
     """
+    combined = stock_row.get("species_combined_biomass_kg")
+    if combined not in (None, ""):
+        try:
+            bio = _d(combined)
+            n = int(stock_row.get("implied_net_fish_count") or 0)
+            if bio > 0 and n > 0:
+                kg_each = bio / Decimal(n)
+                return (
+                    (kg_each * Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    "sum of species sample × heads",
+                )
+        except (TypeError, ValueError):
+            pass
     samp = sample_mean_weight_kg_from_fields(
         fish_count=stock_row.get("latest_sample_estimated_fish_count"),
         total_weight_kg=stock_row.get("latest_sample_estimated_total_weight_kg"),

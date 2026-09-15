@@ -84,13 +84,45 @@ def sum_feed_kg_for_period(
 
 def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
     if sample.extrapolated_biomass_kg is not None and sample.extrapolated_biomass_kg > 0:
+        # #region agent log
+        try:
+            import json, time
+            with open(r"I:\ITProjects\FSERP\debug-d461c9.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"sessionId":"d461c9","runId":"post-fix","hypothesisId":"H4","location":"aquaculture_fcr_service.py:_sample_biomass","message":"FCR used extrapolated biomass","data":{"sample_id":getattr(sample,"id",None),"extrapolated":str(sample.extrapolated_biomass_kg),"seine_kg":str(sample.estimated_total_weight_kg),"heads":sample.estimated_fish_count},"timestamp":int(time.time()*1000)})+"\n")
+        except Exception:
+            pass
+        # #endregion
         return _d(sample.extrapolated_biomass_kg)
-    if sample.estimated_total_weight_kg is not None and sample.estimated_total_weight_kg > 0:
-        return _d(sample.estimated_total_weight_kg)
-    fc = sample.estimated_fish_count
+    # Combine sample mean × book heads when extrapolation was not stored.
+    ref_n = getattr(sample, "stock_reference_fish_count", None)
+    try:
+        ref_n_i = int(ref_n) if ref_n is not None else 0
+    except (TypeError, ValueError):
+        ref_n_i = 0
     avg = sample.avg_weight_kg
-    if fc is not None and fc > 0 and avg is not None and avg > 0:
-        return _q4(_d(fc) * _d(avg))
+    fc = sample.estimated_fish_count
+    etw = sample.estimated_total_weight_kg
+    if (avg is None or avg <= 0) and fc and fc > 0 and etw is not None and etw > 0:
+        avg = _d(etw) / Decimal(int(fc))
+    if avg is not None and avg > 0 and ref_n_i > 0:
+        combined = _q4(_d(avg) * Decimal(ref_n_i))
+        # #region agent log
+        try:
+            import json, time
+            with open(r"I:\ITProjects\FSERP\debug-d461c9.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"sessionId":"d461c9","runId":"post-fix","hypothesisId":"H4","location":"aquaculture_fcr_service.py:_sample_biomass","message":"FCR used avg x book heads (combined)","data":{"sample_id":getattr(sample,"id",None),"combined":str(combined),"seine_kg":str(etw),"book_heads":ref_n_i},"timestamp":int(time.time()*1000)})+"\n")
+        except Exception:
+            pass
+        # #endregion
+        return combined
+    # #region agent log
+    try:
+        import json, time
+        with open(r"I:\ITProjects\FSERP\debug-d461c9.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId":"d461c9","runId":"post-fix","hypothesisId":"H4","location":"aquaculture_fcr_service.py:_sample_biomass","message":"FCR refused seine-only biomass (no combined figure)","data":{"sample_id":getattr(sample,"id",None),"seine_kg":str(etw),"heads":fc,"book_heads":ref_n_i},"timestamp":int(time.time()*1000)})+"\n")
+    except Exception:
+        pass
+    # #endregion
     return None
 
 

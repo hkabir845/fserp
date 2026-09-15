@@ -28,20 +28,26 @@ from api.services.aquaculture_feeding_advice_service import (
 )
 
 
-def test_select_biomass_prefers_sample_total_when_positive():
+def test_select_biomass_prefers_combined_avg_x_book_heads_over_seine_total():
+    """Seine kg must not be used as pond biomass when mean × book heads is available."""
     row = {
-        "latest_sample_estimated_total_weight_kg": "3060",
-        "implied_net_weight_kg": "1500",
+        "latest_sample_estimated_total_weight_kg": "12.5",
+        "latest_sample_estimated_fish_count": 50,
+        "latest_sample_avg_weight_kg": "0.250000",
+        "implied_net_fish_count": 80000,
+        "implied_net_weight_kg": "5000",
     }
     kg, src = _select_biomass_for_feeding_kg(row)
-    assert kg == Decimal("3060.00")
-    assert "biomass sample" in src
+    assert kg == Decimal("20000.00")
+    assert "book head count" in src or "combined" in src
 
 
-def test_select_biomass_falls_back_to_implied_when_no_sample_total():
+def test_select_biomass_falls_back_to_implied_when_no_sample_mean():
     row = {
         "latest_sample_estimated_total_weight_kg": None,
+        "latest_sample_avg_weight_kg": None,
         "implied_net_weight_kg": "1500",
+        "implied_net_fish_count": 0,
     }
     kg, src = _select_biomass_for_feeding_kg(row)
     assert kg == Decimal("1500.00")
@@ -50,7 +56,7 @@ def test_select_biomass_falls_back_to_implied_when_no_sample_total():
 
 def test_select_biomass_recovers_with_avg_weight_x_count_when_implied_negative():
     row = {
-        "latest_sample_estimated_total_weight_kg": None,
+        "latest_sample_estimated_total_weight_kg": "14.25",
         "implied_net_weight_kg": "-692.857",
         "implied_net_fish_count": 75850,
         "latest_sample_avg_weight_kg": "0.250000",
@@ -141,9 +147,9 @@ def test_build_feeding_advice_uses_sample_when_implied_biomass_negative(company_
         production_cycle=cycle,
         sample_date=date(2026, 5, 6),
         fish_species="tilapia",
-        estimated_fish_count=10050,
-        estimated_total_weight_kg=Decimal("3060"),
-        avg_weight_kg=Decimal("0.350000"),
+        estimated_fish_count=50,
+        estimated_total_weight_kg=Decimal("12.5"),
+        avg_weight_kg=Decimal("0.250000"),
     )
 
     payload, msg = build_feeding_advice_payload(
@@ -162,7 +168,9 @@ def test_build_feeding_advice_uses_sample_when_implied_biomass_negative(company_
     snap = payload["pond_status_snapshot"]
     fh = snap["feeding_heuristic"]
     assert fh["biomass_basis_kg"] is not None
-    assert "biomass sample" in (fh["biomass_basis_source"] or "")
+    assert "mean weight" in (fh["biomass_basis_source"] or "") or "combined" in (
+        fh["biomass_basis_source"] or ""
+    )
 
     stock_pos = snap["stock_position"]
     assert Decimal(stock_pos["implied_net_weight_kg"]) <= 0

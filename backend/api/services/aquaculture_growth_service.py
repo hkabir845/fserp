@@ -30,12 +30,15 @@ def _money_q(d: Decimal) -> Decimal:
 def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
     if sample.extrapolated_biomass_kg is not None and sample.extrapolated_biomass_kg > 0:
         return _d(sample.extrapolated_biomass_kg)
-    if sample.estimated_total_weight_kg is not None and sample.estimated_total_weight_kg > 0:
-        return _d(sample.estimated_total_weight_kg)
-    fc = sample.estimated_fish_count
-    aw = sample.avg_weight_kg
-    if fc and fc > 0 and aw and aw > 0:
-        return _d(fc) * _d(aw)
+    # Prefer sample mean × book heads — never treat seine total kg as pond biomass.
+    ref_n = getattr(sample, "stock_reference_fish_count", None)
+    try:
+        ref_n_i = int(ref_n) if ref_n is not None else 0
+    except (TypeError, ValueError):
+        ref_n_i = 0
+    avg = _sample_mean_weight_kg(sample)
+    if avg is not None and avg > 0 and ref_n_i > 0:
+        return _d(avg) * Decimal(ref_n_i)
     return None
 
 

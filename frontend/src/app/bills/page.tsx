@@ -488,13 +488,14 @@ function billLineRateFieldValue(line: BillLineItem, millTerms: boolean): number 
 }
 
 function millBillMrp(lines: BillLineItem[], items: Item[]): number {
+  // Always Qty × Rate (MRP) — never fall back to a stale stored Amount.
   return roundBillMoney(
     lines.reduce((sum, line) => {
       const item = items.find((i) => i.id === line.item_id)
       const qty = Number(line.quantity) || 0
       const mrp = Number(line.mrp || item?.mrp || line.unit_cost || 0)
       if (mrp > 0 && qty > 0) return sum + qty * mrp
-      return sum + (Number(line.amount) || 0)
+      return sum
     }, 0)
   )
 }
@@ -536,6 +537,13 @@ function millLineWeightKg(line: BillLineItem, item: Item | undefined): number {
   }
   // Feed mills: sack/bag without kg/sack → assume 25 kg (240 × 25 kg = 6 t).
   if (['sack', 'sacks', 'bag', 'bags', 'bag/sack', 'sack/bag'].includes(unit)) {
+    return qty * 25
+  }
+  // Blank unit on a feed item → treat as sack (25 kg default).
+  const cat = String(item?.pos_category || item?.category || '')
+    .trim()
+    .toLowerCase()
+  if (!unit && (cat.includes('feed') || cat === '')) {
     return qty * 25
   }
   return 0
@@ -761,8 +769,8 @@ function buildMillDeductionRows(opts: {
   rows.push({
     key: 'net',
     kind: 'net',
-    label: 'Net bill (after discount & transport)',
-    detail: 'Matches product line amounts + fixed transport if any',
+    label: 'Pay mill now',
+    detail: 'MRP − discount − transport',
     amount: net,
   })
 
@@ -791,6 +799,8 @@ function millTermsBanner(
     setActualLorryFarePerTon: (v: string) => void
     orderedTonsInput: string
     onOrderedTonsChange: (v: string) => void
+    tonsFromLines: number
+    tonsManual: boolean
     cashWithBill: string
     setCashWithBill: (v: string) => void
     cashLane: boolean
@@ -840,31 +850,43 @@ function millTermsBanner(
     ),
     yearly_target_tons: asTwoDecimals(
       card?.yearly_target_tons ??
-        (Number(card?.yearly_target_kg) ? Number(card?.yearly_target_kg) / 1000 : empty.yearly_target_tons),
+        (Number(card?.yearly_target_kg)
+          ? Number(card?.yearly_target_kg) / 1000
+          : empty.yearly_target_tons),
       empty.yearly_target_tons
     ),
   }
   const patchTerms = (patch: Partial<BillMillTermsValues>) => {
-    const next = { ...termsForm, ...patch }
-    if (patch.transport_per_truck != null) {
-      opts.setTruckTransportAmount(patch.transport_per_truck)
-    }
-    opts.onTermsChange(next)
+    opts.onTermsChange({ ...termsForm, ...patch })
   }
   const perTon = Number(termsForm.transport_per_ton) || 0
+  const discPct = Number(termsForm.instant_discount_percent) || 0
   const tonCredit = roundBillMoney(opts.millTons * perTon)
-  // Prefer the per-ton formula for display; fall back to line sum / rare fixed truck.
-  const millShare = roundBillMoney(
+  const displayDiscount =
+    opts.millDiscountTotal > 0.005
+      ? opts.millDiscountTotal
+      : discPct > 0 && opts.millMrpTotal > 0
+        ? roundBillMoney((opts.millMrpTotal * discPct) / 100)
+        : 0
+  const displayTransport =
     tonCredit > 0
       ? Math.max(tonCredit, opts.millTransportTotal)
-      : opts.millTransportTotal + (parseFloat(opts.truckTransportAmount) || 0)
+      : opts.millTransportTotal
+  const displayPayNow = Math.max(
+    0,
+    roundBillMoney(opts.millMrpTotal - displayDiscount - displayTransport)
   )
-  const driverPerTon = parseFloat(opts.actualLorryFarePerTon) || 0
-  const actual = roundBillMoney(opts.millTons * driverPerTon)
-  const extra = actual > 0 && millShare > 0 ? Math.max(0, roundBillMoney(actual - millShare)) : 0
-  const discPct = Number(termsForm.instant_discount_percent) || 0
-  const discPerUnit = Number(termsForm.instant_discount_per_unit) || 0
+  const tonsNeedManual = perTon > 0 && opts.tonsFromLines <= 0
+  const available = Number(
+    vendorPurchaseTerms.available ??
+      Math.max(
+        0,
+        (Number(vendorPurchaseTerms.credit_limit) || 0) -
+          (Number(vendorPurchaseTerms.used) || 0)
+      )
+  )
   const creditOn = Boolean(vendorPurchaseTerms.credit_facility_enabled)
+
   return (
     <div className="mt-0 w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-foreground space-y-3">
       <div>
@@ -872,122 +894,59 @@ function millTermsBanner(
           {vendorPurchaseTerms.supplier_category_label} mill terms
         </p>
         <p className="text-muted-foreground mt-0.5">
-          {opts.limitFull
-            ? 'Credit full — pay net now (MRP − discount − transport credit). '
-            : 'Instant discount and transport ৳/ton apply on this bill. '}
-          Monthly/yearly commissions are credited to your mill account only after their official approval.
+          Line Amount = sacks × sack price (MRP). This bill deducts Discount % and Transport ৳/ton
+          only. Monthly and yearly commissions are tracked separately and credited after mill
+          approval (Vendors → mill credits).
         </p>
       </div>
 
-      <div className="rounded-md border border-amber-200/80 bg-white/80 p-2.5 space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Credit facility
-        </p>
-        <label className="flex items-center gap-2 text-xs font-medium">
-          <input
-            type="checkbox"
-            checked={creditOn}
-            onChange={(e) =>
-              opts.onFacilityChange({ credit_facility_enabled: e.target.checked })
-            }
-          />
-          Buy on account up to the credit limit
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
-          <label className="block text-xs font-medium">
-            Credit limit
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={asTwoDecimals(vendorPurchaseTerms.credit_limit ?? '', '')}
-              onChange={(e) => {
-                const v = e.target.value
-                const n = parseFloat(v) || 0
-                opts.onFacilityChange({
-                  credit_limit: v,
-                  credit_facility_enabled: n > 0 ? true : creditOn,
-                })
-              }}
-              onBlur={(e) => {
-                const v = e.target.value.trim()
-                if (v === '') return
-                opts.onFacilityChange({
-                  credit_limit: toTwoDecimals(v),
-                  credit_facility_enabled:
-                    (parseFloat(v) || 0) > 0 ? true : creditOn,
-                })
-              }}
-              className={`${opts.fieldClass} mt-1`}
-              placeholder="e.g. 5000000"
-            />
-          </label>
-          <div className="text-xs text-muted-foreground pb-1">
-            {creditOn || Number(vendorPurchaseTerms.credit_limit) > 0 ? (
-              <>
-                <span>
-                  Used {formatNumber(Number(vendorPurchaseTerms.used))} · Available{' '}
-                  {formatNumber(
-                    Number(
-                      vendorPurchaseTerms.available ??
-                        Math.max(
-                          0,
-                          (Number(vendorPurchaseTerms.credit_limit) || 0) -
-                            (Number(vendorPurchaseTerms.used) || 0)
-                        )
-                    )
-                  )}
-                </span>
-                {opts.limitFull ? (
-                  <span className="block text-amber-800 font-medium">
-                    Limit full for this load — cash/bank required
-                  </span>
-                ) : null}
-              </>
-            ) : (
-              <span>Enter a credit limit (and tick the box) to buy feed on account.</span>
-            )}
-          </div>
+      {(creditOn || Number(vendorPurchaseTerms.credit_limit) > 0) && (
+        <div className="rounded border border-amber-200/80 bg-white/70 px-2.5 py-1.5 text-xs text-muted-foreground">
+          Credit facility: used {formatNumber(Number(vendorPurchaseTerms.used))} · available{' '}
+          {formatNumber(available)}
+          {opts.limitFull ? (
+            <span className="ml-1 font-medium text-amber-900">
+              — limit full; pay net now
+            </span>
+          ) : null}
         </div>
-      </div>
+      )}
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 rounded border border-amber-200/80 bg-white/70 px-2 py-1.5">
-        <span>
-          MRP this bill:{' '}
-          <span className="font-semibold tabular-nums">{formatNumber(opts.millMrpTotal)}</span>
-        </span>
-        <span>
-          Instant discount
-          {discPct > 0 ? ` (${discPct}%)` : ''}
-          {discPerUnit > 0 ? ` + ${formatNumber(discPerUnit)}/unit` : ''}
-          :{' '}
-          <span className="font-semibold tabular-nums text-emerald-800">
-            −{formatNumber(opts.millDiscountTotal)}
-          </span>
-          {opts.millMrpTotal <= 0 && (discPct > 0 || discPerUnit > 0)
-            ? ' (enter Rate / set item MRP so discount can calculate)'
-            : null}
-        </span>
-        <span>
-          Transport credit
-          {perTon > 0
-            ? ` (${formatNumber(opts.millTons)} t × ${formatNumber(perTon)})`
-            : ''}
-          :{' '}
-          <span className="font-semibold tabular-nums">−{formatNumber(millShare)}</span>
-          {perTon > 0 && opts.millTons <= 0
-            ? ' (enter Ordered tons below)'
-            : null}
-        </span>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded border border-amber-200/80 bg-white/80 px-2.5 py-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">MRP (Qty × Rate)</p>
+          <p className="font-semibold tabular-nums text-sm">{formatNumber(opts.millMrpTotal)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Discount{discPct > 0 ? ` ${discPct}%` : ''}
+          </p>
+          <p className="font-semibold tabular-nums text-sm text-emerald-800">
+            −{formatNumber(displayDiscount)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Transport
+            {perTon > 0 ? ` ${formatNumber(opts.millTons)} t × ${formatNumber(perTon)}` : ''}
+          </p>
+          <p className="font-semibold tabular-nums text-sm">−{formatNumber(displayTransport)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Pay mill now</p>
+          <p className="font-semibold tabular-nums text-sm text-foreground">
+            {formatNumber(opts.millPayNow > 0 ? opts.millPayNow : displayPayNow)}
+          </p>
+        </div>
       </div>
 
       {vendorPurchaseTerms.uses_purchase_terms ? (
         <>
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-              Instant discount (this bill)
+              This bill
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <label className="block text-xs font-medium">
                 Discount % of MRP
                 <input
@@ -998,39 +957,6 @@ function millTermsBanner(
                   onChange={(e) => patchTerms({ instant_discount_percent: e.target.value })}
                   className={`${opts.fieldClass} mt-1`}
                   placeholder="e.g. 5.5"
-                />
-              </label>
-              <label className="block text-xs font-medium">
-                Discount ৳ / unit (optional)
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={termsForm.instant_discount_per_unit}
-                  onChange={(e) => patchTerms({ instant_discount_per_unit: e.target.value })}
-                  className={`${opts.fieldClass} mt-1`}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
-              Transport credit — per ton (this bill)
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <label className="block text-xs font-medium">
-                Ordered tons
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={opts.orderedTonsInput}
-                  onChange={(e) => opts.onOrderedTonsChange(e.target.value)}
-                  className={`${opts.fieldClass} mt-1${
-                    perTon > 0 && opts.millTons <= 0 ? ' border-amber-500 ring-1 ring-amber-300' : ''
-                  }`}
-                  placeholder="e.g. 10"
                 />
               </label>
               <label className="block text-xs font-medium">
@@ -1046,97 +972,40 @@ function millTermsBanner(
                 />
               </label>
               <label className="block text-xs font-medium">
-                Paid to driver ৳ / ton
+                Ordered tons
                 <input
                   type="number"
                   min={0}
                   step="0.01"
-                  value={opts.actualLorryFarePerTon}
-                  onChange={(e) => opts.setActualLorryFarePerTon(e.target.value)}
-                  className={`${opts.fieldClass} mt-1`}
-                  placeholder="e.g. 1200"
+                  value={opts.orderedTonsInput}
+                  onChange={(e) => opts.onOrderedTonsChange(e.target.value)}
+                  readOnly={!tonsNeedManual && !opts.tonsManual && opts.tonsFromLines > 0}
+                  className={`${opts.fieldClass} mt-1${
+                    tonsNeedManual ? ' border-amber-500 ring-1 ring-amber-300' : ''
+                  }${!tonsNeedManual && !opts.tonsManual && opts.tonsFromLines > 0 ? ' bg-muted/40' : ''}`}
+                  placeholder={tonsNeedManual ? 'Required' : 'From sacks × kg/sack'}
+                  title={
+                    tonsNeedManual
+                      ? 'Set Kg/sack on the feed line (25 / 20 / 10), or enter tons here'
+                      : opts.tonsManual
+                        ? 'Manual override — clear and re-enter Qty to use line weight again'
+                        : 'Calculated from Qty × kg/sack (default 25 kg for sack/bag)'
+                  }
                 />
               </label>
             </div>
-            <p className="text-muted-foreground mt-1">
-              Mill credit: {formatNumber(opts.millTons)} t × {formatNumber(perTon)} ={' '}
-              <span className="font-semibold tabular-nums">{formatNumber(tonCredit)}</span>
-              {tonCredit > 0 && Math.abs(tonCredit - opts.millTransportTotal) > 0.02
-                ? ` (lines currently −${formatNumber(opts.millTransportTotal)})`
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Tons = Qty (sacks) × kg/sack ÷ 1,000. Default sack weight is 25 kg; set 20 or 10 on the
+              feed item when needed.
+              {tonsNeedManual
+                ? ' Transport ৳/ton is set but tons are 0 — enter Ordered tons or set Kg/sack on the line.'
                 : null}
-              . Driver pay: {formatNumber(opts.millTons)} t × {formatNumber(driverPerTon)} ={' '}
-              <span className="font-semibold tabular-nums">{formatNumber(actual)}</span>.
             </p>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              Example: 10 tons × 950 = 9,500. Enter ordered tons here (or set Kg/sack on the item /
-              use unit ton/kg so tons calculate from Qty).
-            </p>
-            {extra > 0 ? (
-              <p className="text-muted-foreground mt-1">
-                Extra transport cost (ours): {formatNumber(extra)} (driver {formatNumber(actual)} − mill
-                credit {formatNumber(millShare)})
-              </p>
-            ) : null}
-            <details className="mt-2">
-              <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
-                Optional extras (fixed / bill, % / unit / kg)
-              </summary>
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                <label className="block text-xs font-medium">
-                  Fixed ৳ / bill
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={opts.truckTransportAmount}
-                    onChange={(e) => {
-                      opts.setTruckTransportAmount(e.target.value)
-                      patchTerms({ transport_per_truck: e.target.value })
-                    }}
-                    className={`${opts.fieldClass} mt-1`}
-                    placeholder="Rare"
-                  />
-                </label>
-                <label className="block text-xs font-medium">
-                  Transport % of MRP
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={termsForm.transport_percent}
-                    onChange={(e) => patchTerms({ transport_percent: e.target.value })}
-                    className={`${opts.fieldClass} mt-1`}
-                  />
-                </label>
-                <label className="block text-xs font-medium">
-                  Transport ৳ / unit
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={termsForm.transport_per_unit}
-                    onChange={(e) => patchTerms({ transport_per_unit: e.target.value })}
-                    className={`${opts.fieldClass} mt-1`}
-                  />
-                </label>
-                <label className="block text-xs font-medium">
-                  Transport ৳ / kg
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={termsForm.transport_per_kg}
-                    onChange={(e) => patchTerms({ transport_per_kg: e.target.value })}
-                    className={`${opts.fieldClass} mt-1`}
-                  />
-                </label>
-              </div>
-            </details>
           </div>
 
           <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-2.5 space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900/80">
-              Monthly & yearly commission (after mill approval — not on this bill total)
+              Commissions (tracked — credit after mill approval)
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <label className="block text-xs font-medium">
@@ -1177,8 +1046,8 @@ function millTermsBanner(
               </label>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Counts automatically; apply when the mill approves (Payments / vendor mill credits). 0 tons = no
-              tonnage gate.
+              These do not reduce this bill. When the mill approves, post the credit on the vendor
+              (Post monthly / yearly scheme). 0 target tons = no tonnage gate.
             </p>
           </div>
         </>
@@ -1194,7 +1063,11 @@ function millTermsBanner(
             value={opts.cashWithBill}
             onChange={(e) => opts.setCashWithBill(e.target.value)}
             className={`${opts.fieldClass} mt-1`}
-            placeholder={opts.millPayNow > 0 ? String(opts.millPayNow) : 'Required'}
+            placeholder={
+              (opts.millPayNow > 0 ? opts.millPayNow : displayPayNow) > 0
+                ? String(opts.millPayNow > 0 ? opts.millPayNow : displayPayNow)
+                : 'Required'
+            }
           />
         </label>
       ) : null}
@@ -2936,19 +2809,26 @@ export default function BillsPage() {
     (s, l) => s + (Number(l.transport_amount) || 0),
     0
   )
+  const millPerTon = Number(vendorPurchaseTerms?.rate_card?.transport_per_ton) || 0
+  const millDiscPct = Number(vendorPurchaseTerms?.rate_card?.instant_discount_percent) || 0
+  const effectiveMillDiscount =
+    millDiscountTotal > 0.005
+      ? millDiscountTotal
+      : millDiscPct > 0 && millMrpTotal > 0
+        ? roundBillMoney((millMrpTotal * millDiscPct) / 100)
+        : 0
+  const tonFormulaTransport = millPerTon > 0 && millTons > 0 ? roundBillMoney(millTons * millPerTon) : 0
+  const effectiveMillTransport =
+    tonFormulaTransport > 0
+      ? Math.max(tonFormulaTransport, millTransportTotal)
+      : millTransportTotal +
+        (millPerTon > 0 ? 0 : parseFloat(truckTransportAmount) || 0)
   const driverFareTotal = roundBillMoney(
     millTons * (parseFloat(actualLorryFarePerTon) || 0)
   )
   const millPayNow = Math.max(
     0,
-    roundBillMoney(
-      millMrpTotal -
-        millDiscountTotal -
-        millTransportTotal -
-        ((Number(vendorPurchaseTerms?.rate_card?.transport_per_ton) || 0) > 0
-          ? 0
-          : parseFloat(truckTransportAmount) || 0)
-    )
+    roundBillMoney(millMrpTotal - effectiveMillDiscount - effectiveMillTransport)
   )
   const millBannerOpts = {
     truckTransportAmount,
@@ -2962,6 +2842,20 @@ export default function BillsPage() {
           ? String(Number(computedMillTons.toFixed(4)))
           : '',
     onOrderedTonsChange: (v: string) => {
+      if (v.trim() === '') {
+        setOrderedTonsManual(false)
+        setOrderedTonsInput('')
+        setFormData((prev) => ({
+          ...prev,
+          lines: applyMillTonTransportToLines(
+            prev.lines,
+            items,
+            vendorPurchaseTerms,
+            millBillTons(prev.lines, items)
+          ),
+        }))
+        return
+      }
       setOrderedTonsManual(true)
       setOrderedTonsInput(v)
       const tons = parseFloat(v) || 0
@@ -2975,15 +2869,17 @@ export default function BillsPage() {
         ),
       }))
     },
+    tonsFromLines: computedMillTons,
+    tonsManual: orderedTonsManual,
     cashWithBill,
     setCashWithBill,
     cashLane: millCashLane,
     limitFull: Boolean(vendorPurchaseTerms?.credit_facility_enabled && millCashLane),
     millPayNow,
     millMrpTotal,
-    millDiscountTotal,
+    millDiscountTotal: effectiveMillDiscount,
     millTons,
-    millTransportTotal,
+    millTransportTotal: effectiveMillTransport,
     onTermsChange: (values: BillMillTermsValues) => {
       void applyBillMillTermsValues(values, true)
     },
@@ -2998,23 +2894,21 @@ export default function BillsPage() {
         lines: formData.lines,
         items,
         millTons,
-        transportPerTon: Number(vendorPurchaseTerms.rate_card?.transport_per_ton) || 0,
+        transportPerTon: millPerTon,
         driverPerTon: parseFloat(actualLorryFarePerTon) || 0,
         driverFareTotal,
-        truckTransport:
-          (Number(vendorPurchaseTerms.rate_card?.transport_per_ton) || 0) > 0
-            ? 0
-            : parseFloat(truckTransportAmount) || 0,
-        discPct: Number(vendorPurchaseTerms.rate_card?.instant_discount_percent) || 0,
+        truckTransport: millPerTon > 0 ? 0 : parseFloat(truckTransportAmount) || 0,
+        discPct: millDiscPct,
       })
     : []
 
-  // Keep line amounts in sync with Ordered tons × ৳/ton (and kg/sack-derived tons).
+  // Keep line discount/transport in sync with Qty × Rate, kg/sack tons, and rate card.
   useEffect(() => {
     if (!vendorPurchaseTerms?.uses_purchase_terms) return
     if (!formData.lines.length) return
     const perTon = Number(vendorPurchaseTerms.rate_card?.transport_per_ton) || 0
-    if (!(perTon > 0) && millTons <= 0) return
+    const discPct = Number(vendorPurchaseTerms.rate_card?.instant_discount_percent) || 0
+    if (!(perTon > 0) && !(discPct > 0) && millTons <= 0) return
     setFormData((prev) => {
       const nextLines = applyMillTonTransportToLines(
         prev.lines,
@@ -3028,8 +2922,13 @@ export default function BillsPage() {
         const b = nextLines[i]
         if (!b) continue
         if (
-          Math.abs((Number(a.transport_amount) || 0) - (Number(b.transport_amount) || 0)) > 0.005 ||
-          Math.abs((Number(a.amount) || 0) - (Number(b.amount) || 0)) > 0.005
+          Math.abs((Number(a.transport_amount) || 0) - (Number(b.transport_amount) || 0)) >
+            0.005 ||
+          Math.abs(
+            (Number(a.instant_discount_amount) || 0) - (Number(b.instant_discount_amount) || 0)
+          ) > 0.005 ||
+          Math.abs((Number(a.amount) || 0) - (Number(b.amount) || 0)) > 0.005 ||
+          Math.abs((Number(a.mrp) || 0) - (Number(b.mrp) || 0)) > 0.005
         ) {
           changed = true
           break
@@ -3042,7 +2941,7 @@ export default function BillsPage() {
     millTons,
     items,
     formData.lines.length,
-    // Re-run when rate card transport/discount fields change
+    millMrpTotal,
     vendorPurchaseTerms?.rate_card?.transport_per_ton,
     vendorPurchaseTerms?.rate_card?.instant_discount_percent,
   ])
@@ -3460,6 +3359,8 @@ export default function BillsPage() {
             newLines[index].unit_cost = rate
           } else if (field === 'quantity') {
             newLines[index].quantity = Number(value) || 0
+            // Line weight changed — prefer computed tons over a stale manual Ordered tons.
+            setOrderedTonsManual(false)
             // Keep unit_cost aligned with the Rate the user sees (MRP on mill bills).
             if (mill) {
               const shown = billLineRateForProduct(newLines[index], true)
@@ -3479,9 +3380,10 @@ export default function BillsPage() {
           newLines[index] = syncStandardBillLineAmount(newLines[index])
           if (mill) {
             try {
-              const tons = orderedTonsManual
-                ? parseFloat(orderedTonsInput) || 0
-                : millBillTons(newLines, items)
+              const tons =
+                field === 'quantity' || !orderedTonsManual
+                  ? millBillTons(newLines, items)
+                  : parseFloat(orderedTonsInput) || 0
               const redistributed = applyMillTonTransportToLines(
                 newLines,
                 items,
@@ -3535,10 +3437,9 @@ export default function BillsPage() {
           })
         }
       } else if (field === 'item_catalog' && vendorPurchaseTerms?.uses_purchase_terms) {
-        // Kg/sack (or unit) edits change tonnage — recompute mill discount/transport.
-        const tons = orderedTonsManual
-          ? parseFloat(orderedTonsInput) || 0
-          : millBillTons(newLines, items)
+        // Kg/sack (or unit) edits change tonnage — prefer line weight over manual tons.
+        setOrderedTonsManual(false)
+        const tons = millBillTons(newLines, items)
         const redistributed = applyMillTonTransportToLines(
           newLines,
           items,
@@ -5178,6 +5079,7 @@ export default function BillsPage() {
                             item={lineItem}
                             edits={line.item_catalog}
                             onFieldChange={handleLineChange}
+                            millFeedLine={millRate}
                           />
                           {showFishDims ? (
                             <FishBillLineDimensionRow
@@ -5726,6 +5628,7 @@ export default function BillsPage() {
                             item={lineItem}
                             edits={line.item_catalog}
                             onFieldChange={handleLineChange}
+                            millFeedLine={millRate}
                           />
                           {showFishDims ? (
                             <FishBillLineDimensionRow

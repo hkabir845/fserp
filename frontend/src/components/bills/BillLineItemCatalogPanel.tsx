@@ -44,6 +44,8 @@ const FIELDS: {
   { key: 'description', label: 'Item description', type: 'text', wide: true },
 ]
 
+const SACK_KG_PRESETS = [25, 20, 10] as const
+
 const CTL =
   'w-full min-w-0 h-9 px-2 text-sm border border-border rounded-md focus:ring-1 focus:ring-ring focus:border-blue-500'
 
@@ -66,6 +68,14 @@ function isChanged(item: BillLineCatalogItem, edits: BillLineItemCatalogEdits, k
   return String(next) !== current
 }
 
+function resolveSackKg(item: BillLineCatalogItem, edits?: BillLineItemCatalogEdits): number {
+  const fromEdits = Number(edits?.content_weight_kg)
+  if (Number.isFinite(fromEdits) && fromEdits > 0) return fromEdits
+  const fromItem = Number(item.content_weight_kg)
+  if (Number.isFinite(fromItem) && fromItem > 0) return fromItem
+  return 0
+}
+
 /**
  * Item-level fields on a bill line. Editing here changes the Item catalog — saving the bill
  * writes the values onto the Item, so the next bill that picks the item sees them.
@@ -77,6 +87,7 @@ export function BillLineItemCatalogPanel({
   item,
   edits,
   onFieldChange,
+  millFeedLine = false,
   className,
 }: {
   index: number
@@ -84,6 +95,8 @@ export function BillLineItemCatalogPanel({
   item?: BillLineCatalogItem
   edits?: BillLineItemCatalogEdits
   onFieldChange: (index: number, field: string, value: unknown) => void
+  /** When true, show kg/sack presets for feed mill tonnage (25 / 20 / 10). */
+  millFeedLine?: boolean
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -92,13 +105,65 @@ export function BillLineItemCatalogPanel({
   const current = edits || {}
   const changedKeys = FIELDS.filter((f) => isChanged(item, current, f.key)).map((f) => f.key)
   const dirty = changedKeys.length > 0
+  const sackKg = resolveSackKg(item, current)
+  const unit = String(current.unit !== undefined ? current.unit : item.unit || '')
+    .trim()
+    .toLowerCase()
+  const looksLikeSack =
+    millFeedLine ||
+    ['sack', 'sacks', 'bag', 'bags', 'bag/sack', 'sack/bag'].includes(unit) ||
+    String(item.pos_category || item.category || '')
+      .toLowerCase()
+      .includes('feed')
 
   const setField = (key: FieldKey, value: string) => {
     onFieldChange(index, 'item_catalog', { ...current, [key]: value })
   }
 
+  const setSackKg = (kg: number) => {
+    onFieldChange(index, 'item_catalog', {
+      ...current,
+      content_weight_kg: kg,
+      ...(unit === '' || unit === 'piece' || unit === 'pcs' ? { unit: 'sack' } : {}),
+    })
+  }
+
   return (
     <div className={`mt-2 rounded-md border border-dashed border-border ${className || ''}`}>
+      {looksLikeSack ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-dashed border-border px-2 py-1.5">
+          <span className="text-[11px] font-medium text-foreground/85">Kg / sack</span>
+          <div className="flex items-center gap-1">
+            {SACK_KG_PRESETS.map((kg) => {
+              const active = sackKg === kg || (sackKg <= 0 && kg === 25)
+              return (
+                <button
+                  key={kg}
+                  type="button"
+                  onClick={() => setSackKg(kg)}
+                  className={`h-7 min-w-[2.75rem] rounded-md border px-2 text-xs font-medium tabular-nums ${
+                    active
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900'
+                      : 'border-border bg-background text-foreground/80 hover:bg-muted/50'
+                  }`}
+                  title={
+                    kg === 25 && sackKg <= 0
+                      ? 'Default 25 kg when unit is sack/bag'
+                      : `${kg} kg per sack`
+                  }
+                >
+                  {kg}
+                </button>
+              )
+            })}
+          </div>
+          <span className="text-[11px] text-muted-foreground">
+            {sackKg > 0
+              ? `Using ${sackKg} kg · tons = Qty × ${sackKg} ÷ 1000`
+              : 'Default 25 kg for sack/bag if left blank'}
+          </span>
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -119,8 +184,17 @@ export function BillLineItemCatalogPanel({
         <div className="border-t border-dashed border-border px-2 py-2">
           <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
             {FIELDS.map((f) => (
-              <div key={f.key} className={f.wide ? 'col-span-12 min-w-0' : 'col-span-12 sm:col-span-6 lg:col-span-3 min-w-0'}>
-                <label className="block text-xs font-medium text-foreground/85 mb-0.5">{f.label}</label>
+              <div
+                key={f.key}
+                className={
+                  f.wide
+                    ? 'col-span-12 min-w-0'
+                    : 'col-span-12 sm:col-span-6 lg:col-span-3 min-w-0'
+                }
+              >
+                <label className="block text-xs font-medium text-foreground/85 mb-0.5">
+                  {f.label}
+                </label>
                 <input
                   type={f.type}
                   {...(f.type === 'number' ? { step: '0.01', min: 0 } : {})}

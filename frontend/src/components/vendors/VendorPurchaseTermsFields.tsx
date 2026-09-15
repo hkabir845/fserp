@@ -78,8 +78,8 @@ export function VendorPurchaseTermsFields({
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
           {showRateCard
-            ? 'Credit limit = buy on account up to the ceiling (or pay cash). Instant % of MRP and transport ৳/ton are taken on the feed bill. Monthly % and yearly % commissions are credited to your mill account only after their official approval.'
-            : 'Set the credit ceiling here. Instant discount, transport ৳/ton and scheme commissions are applied when you receive a bill (Apply mill terms) or post a mill credit — not when creating the vendor.'}
+            ? 'Set defaults once. On each feed bill the clerk confirms Discount %, Transport ৳/ton, and commission rates. Payables = MRP − discount − transport. Monthly/yearly commissions credit the mill only after approval.'
+            : 'Set the credit ceiling here. Commercial terms are applied when you receive a bill or post a mill credit — not when creating the vendor.'}
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">
@@ -134,15 +134,16 @@ export function VendorPurchaseTermsFields({
         </label>
       </div>
       {showRateCard ? (
-        <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-            Commercial terms (defaults for bills)
-          </h4>
-          <p className="text-[11px] text-muted-foreground mb-2">
-            Examples: 5.5% instant on MRP; transport credit ৳950 / ton (10 t → ৳9,500); 3% monthly and
-            2.5% yearly commissions credited to your mill account after their official approval. Leave
-            unused fields at 0. Override per bill with <span className="font-medium text-foreground">Mill terms</span>.
-          </p>
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+              Commercial defaults (five fields)
+            </h4>
+            <p className="text-[11px] text-muted-foreground mb-2">
+              Example: 5.5% discount on MRP; ৳950 / ton transport; 3% monthly and 2.5% yearly
+              commissions after mill approval when the yearly target is met.
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 sm:col-span-1">
               <label className="mb-1 block text-xs font-medium">Effective from</label>
@@ -153,7 +154,7 @@ export function VendorPurchaseTermsFields({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium">Instant discount % of MRP</label>
+              <label className="mb-1 block text-xs font-medium">Discount % of MRP</label>
               <input
                 type="number"
                 min={0}
@@ -165,19 +166,7 @@ export function VendorPurchaseTermsFields({
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium">Instant discount Tk / unit</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={rateCard.instant_discount_per_unit}
-                onChange={(e) => onRateCardChange({ instant_discount_per_unit: e.target.value })}
-                className="erp-field"
-                placeholder="0 = skip"
-              />
-            </div>
-            <div className="col-span-2 sm:col-span-1">
-              <label className="mb-1 block text-xs font-medium">Transport credit Tk / ton</label>
+              <label className="mb-1 block text-xs font-medium">Transport ৳ / ton</label>
               <input
                 type="number"
                 min={0}
@@ -188,57 +177,8 @@ export function VendorPurchaseTermsFields({
                 placeholder="e.g. 950"
               />
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Primary mill transport: ordered tons × this rate (10 t × 950 = 9,500). Needs item sack kg
-                or qty in kg.
+                Ordered tons × this rate. Tons come from Qty × kg/sack on the bill.
               </p>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Transport % of MRP (optional)</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={rateCard.transport_percent}
-                onChange={(e) => onRateCardChange({ transport_percent: e.target.value })}
-                className="erp-field"
-                placeholder="0 = skip"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Fixed Tk / bill (optional)</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={rateCard.transport_per_truck}
-                onChange={(e) => onRateCardChange({ transport_per_truck: e.target.value })}
-                className="erp-field"
-                placeholder="Rare — prefer per ton"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Transport Tk / unit (optional)</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={rateCard.transport_per_unit}
-                onChange={(e) => onRateCardChange({ transport_per_unit: e.target.value })}
-                className="erp-field"
-                placeholder="0 = skip"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium">Transport Tk / kg (optional)</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={rateCard.transport_per_kg}
-                onChange={(e) => onRateCardChange({ transport_per_kg: e.target.value })}
-                className="erp-field"
-                placeholder="0 = skip"
-              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium">Monthly commission % of MRP</label>
@@ -251,10 +191,6 @@ export function VendorPurchaseTermsFields({
                 className="erp-field"
                 placeholder="e.g. 3"
               />
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Tracked automatically. Credited to your mill A/P only after their official approval
-                (Post monthly scheme).
-              </p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium">Yearly commission % of MRP</label>
@@ -267,9 +203,6 @@ export function VendorPurchaseTermsFields({
                 className="erp-field"
                 placeholder="e.g. 2.5"
               />
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Same — posts after mill approval when the tonnage target is met.
-              </p>
             </div>
             <div className="col-span-2 sm:col-span-1">
               <label className="mb-1 block text-xs font-medium">Yearly target (tons)</label>
@@ -283,7 +216,7 @@ export function VendorPurchaseTermsFields({
                 placeholder="e.g. 500"
               />
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                0 = no tonnage gate. Credit posts at square-off when target is met.
+                0 = no tonnage gate. Post via Vendors → mill credits after approval.
               </p>
             </div>
           </div>
@@ -291,8 +224,8 @@ export function VendorPurchaseTermsFields({
       ) : (
         <p className="text-xs text-muted-foreground rounded-md border border-dashed border-amber-300/80 bg-white/60 px-3 py-2">
           After creating this feed/medicine vendor, open <strong>Edit</strong> to save commercial term
-          defaults, or use <strong>Apply mill terms</strong> on each bill. Mill commissions post via{' '}
-          <strong>Record mill credit</strong> / <strong>Post yearly scheme</strong>.
+          defaults. Mill commissions post via <strong>Record mill credit</strong> /{' '}
+          <strong>Post monthly / yearly scheme</strong>.
         </p>
       )}
     </div>

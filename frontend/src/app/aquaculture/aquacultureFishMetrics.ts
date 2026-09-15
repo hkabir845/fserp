@@ -34,7 +34,7 @@ export type StockMetricsRow = {
 export function displayBiomassKg(row: StockMetricsRow | null | undefined): number {
   if (!row) return 0
   const eff = Number(row.effective_net_weight_kg)
-  if (Number.isFinite(eff)) return eff
+  if (Number.isFinite(eff) && eff > 0) return eff
   const book = Number(row.book_net_weight_kg ?? row.implied_net_weight_kg)
   return Number.isFinite(book) ? book : 0
 }

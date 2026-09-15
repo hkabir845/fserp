@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from api.models import (
     AquacultureBiomassSample,
@@ -37,6 +37,27 @@ def _d(v) -> Decimal:
     if v is None:
         return Decimal("0")
     return Decimal(str(v))
+
+
+def _latest_sample_avg_kg_str(smp: AquacultureBiomassSample | None) -> str | None:
+    """Mean kg/fish from seine heads+kg, else stored avg. Used for pond combine math."""
+    if smp is None:
+        return None
+    fc = smp.estimated_fish_count
+    tw = smp.estimated_total_weight_kg
+    if fc and fc > 0 and tw is not None and tw > 0:
+        return str((Decimal(str(tw)) / Decimal(int(fc))).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
+    if smp.avg_weight_kg is not None:
+        return str(smp.avg_weight_kg)
+    return None
+
+
+def _is_incoming_lot_sample(s: AquacultureBiomassSample) -> bool:
+    return (
+        getattr(s, "source_bill_line_id", None) is not None
+        or getattr(s, "source_fish_pond_transfer_line_id", None) is not None
+        or getattr(s, "source_fish_pond_transfer_id", None) is not None
+    )
 
 
 StockBucketKey = tuple[int, int | None, str]
@@ -258,7 +279,13 @@ def compute_fish_stock_position_rows(
             qs = qs.filter(fish_species=species_filter_code)
         if entries_after_date is not None:
             qs = qs.filter(sample_date__gt=entries_after_date)
-        s = qs.order_by("-sample_date", "-id").first()
+        # Incoming lot rows (purchase / transfer-in) measure the batch that arrived, not
+        # the standing crop. Prefer a seine or harvest-sale sample for size.
+        standing = qs.filter(
+            source_bill_line__isnull=True,
+            source_fish_pond_transfer_line__isnull=True,
+        )
+        s = standing.order_by("-sample_date", "-id").first() or qs.order_by("-sample_date", "-id").first()
         if s:
             latest_sample[p.id] = s
 
@@ -326,9 +353,7 @@ def compute_fish_stock_position_rows(
             "latest_sample_estimated_total_weight_kg": (
                 str(smp.estimated_total_weight_kg) if smp and smp.estimated_total_weight_kg is not None else None
             ),
-            "latest_sample_avg_weight_kg": (
-                str(smp.avg_weight_kg) if smp and smp.avg_weight_kg is not None else None
-            ),
+            "latest_sample_avg_weight_kg": _latest_sample_avg_kg_str(smp),
             "latest_sample_fish_species": (getattr(smp, "fish_species", None) or "tilapia") if smp else None,
             "latest_sample_fish_species_label": (
                 fish_species_display_label(smp.fish_species, smp.fish_species_other) if smp else None
@@ -422,9 +447,7 @@ def _position_row_from_bucket(
         "latest_sample_estimated_total_weight_kg": (
             str(smp.estimated_total_weight_kg) if smp and smp.estimated_total_weight_kg is not None else None
         ),
-        "latest_sample_avg_weight_kg": (
-            str(smp.avg_weight_kg) if smp and smp.avg_weight_kg is not None else None
-        ),
+        "latest_sample_avg_weight_kg": _latest_sample_avg_kg_str(smp),
         "latest_sample_fish_species": (getattr(smp, "fish_species", None) or "tilapia") if smp else None,
         "latest_sample_fish_species_label": (
             fish_species_display_label(smp.fish_species, smp.fish_species_other) if smp else None
@@ -650,20 +673,27 @@ def compute_fish_stock_position_breakdown_rows(
         smp_q = smp_q.filter(sample_date__lte=as_of_date)
     if entries_after_date is not None:
         smp_q = smp_q.filter(sample_date__gt=entries_after_date)
-    for s in smp_q.order_by("pond_id", "production_cycle_id", "fish_species", "-sample_date", "-id"):
-        sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
-        if not _species_ok(sp):
-            continue
-        ps_key = (s.pond_id, sp)
-        if ps_key not in pond_species_sample:
-            pond_species_sample[ps_key] = s
-        cyc = s.production_cycle_id
-        if not _cycle_ok(cyc):
-            continue
-        key = _stock_bucket_key(s.pond_id, cyc, sp)
-        if key not in latest_sample:
-            latest_sample[key] = s
-            _track(key)
+    # First pass: standing-crop size (manual / harvest sale). Second pass fills gaps
+    # from incoming-lot auto samples so a newly stocked pond still has a size.
+    for prefer_standing in (True, False):
+        for s in smp_q.order_by("pond_id", "production_cycle_id", "fish_species", "-sample_date", "-id"):
+            if prefer_standing and _is_incoming_lot_sample(s):
+                continue
+            if not prefer_standing and not _is_incoming_lot_sample(s):
+                continue
+            sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
+            if not _species_ok(sp):
+                continue
+            ps_key = (s.pond_id, sp)
+            if ps_key not in pond_species_sample:
+                pond_species_sample[ps_key] = s
+            cyc = s.production_cycle_id
+            if not _cycle_ok(cyc):
+                continue
+            key = _stock_bucket_key(s.pond_id, cyc, sp)
+            if key not in latest_sample:
+                latest_sample[key] = s
+                _track(key)
 
     cycle_ids = {k[1] for k in seen if k[1] is not None}
     cycle_names: dict[int, str] = {}
@@ -750,11 +780,30 @@ def _enrich_stock_row_with_sample_reference(
     out["latest_sample_date"] = ref.get("sample_date")
     out["latest_sample_estimated_fish_count"] = ref.get("estimated_fish_count")
     out["latest_sample_estimated_total_weight_kg"] = ref.get("estimated_total_weight_kg")
-    if ref.get("avg_weight_kg"):
-        out["latest_sample_avg_weight_kg"] = ref["avg_weight_kg"]
+    fc = ref.get("estimated_fish_count")
+    tw = ref.get("estimated_total_weight_kg")
+    avg = None
+    try:
+        fc_i = int(fc) if fc is not None else 0
+        tw_d = Decimal(str(tw)) if tw not in (None, "") else Decimal("0")
+        if fc_i > 0 and tw_d > 0:
+            avg = str((tw_d / Decimal(fc_i)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
+    except (TypeError, ValueError, Exception):
+        avg = None
+    if avg is None and ref.get("avg_weight_kg"):
+        avg = ref["avg_weight_kg"]
+    if avg:
+        out["latest_sample_avg_weight_kg"] = avg
     if ref.get("fish_per_kg"):
         out["current_fish_per_kg"] = ref["fish_per_kg"]
-    return out
+    wa = out.get("water_area_decimal")
+    try:
+        wa_d = Decimal(str(wa)) if wa not in (None, "") else None
+    except Exception:
+        wa_d = None
+    return enrich_position_row_with_fish_metrics(
+        out, water_area_decimal=wa_d, lang=company_language(company_id)
+    )
 
 
 def implied_fish_stock_for_outbound_scope(

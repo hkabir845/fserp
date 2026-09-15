@@ -21,7 +21,9 @@ from api.services.aquaculture_partial_harvest import (
     compute_biomass_load_advice_dict,
     compute_partial_harvest_suggestion,
     current_fish_per_kg_from_position_row,
+    effective_biomass_kg_from_position_row,
     enrich_position_row_with_fish_metrics,
+    sample_mean_weight_kg_from_fields,
 )
 from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
 
@@ -173,6 +175,26 @@ def test_ashari1_c03_load_at_400_decimal_water():
     assert bad["stock_density_kg_per_decimal"] == "110.54"
 
 
+def test_sample_mean_prefers_heads_and_weight_over_stale_avg():
+    mean = sample_mean_weight_kg_from_fields(
+        fish_count=50,
+        total_weight_kg="12.5",
+        avg_weight_kg="12.5",
+    )
+    assert mean == Decimal("0.250000")
+
+
+def test_effective_biomass_ignores_stale_avg_when_seine_fields_present():
+    row = {
+        "implied_net_weight_kg": "5000",
+        "implied_net_fish_count": 80000,
+        "latest_sample_estimated_fish_count": 50,
+        "latest_sample_estimated_total_weight_kg": "12.5",
+        "latest_sample_avg_weight_kg": "12.5",
+    }
+    assert effective_biomass_kg_from_position_row(row) == Decimal("20000.0000")
+
+
 def test_ashari1_tilapia_c03_live_prefers_sample_over_inflated_book():
     """Live Ashari-1: water 750, book 82924, sample 8.76 pcs/kg → load 9.87 not 110.57."""
     from api.services.aquaculture_partial_harvest import effective_biomass_kg_from_position_row
@@ -274,6 +296,8 @@ def test_fcr_from_feed_and_sampling(company_tenant):
         estimated_total_weight_kg=Decimal("200"),
         avg_weight_kg=Decimal("0.002"),
         fish_species="tilapia",
+        stock_reference_fish_count=100_000,
+        extrapolated_biomass_kg=Decimal("200"),
     )
     AquacultureBiomassSample.objects.create(
         company_id=cid,

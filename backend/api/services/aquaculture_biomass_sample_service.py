@@ -64,6 +64,9 @@ def apply_aquaculture_biomass_sample_extrapolation(sample) -> None:
         return
 
     sample_avg = (etw / Decimal(fc)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    # Persist the combine mean from the two entered fields so load/FCR/feed never
+    # inherit a stale or inverted avg_weight_kg from the client.
+    sample.avg_weight_kg = fit_decimal(sample_avg, max_digits=14, decimal_places=6)
     if tc <= 0:
         return
 

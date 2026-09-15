@@ -42,6 +42,20 @@ def test_select_biomass_prefers_combined_avg_x_book_heads_over_seine_total():
     assert "book head count" in src or "combined" in src
 
 
+def test_select_biomass_ignores_stale_avg_when_heads_and_weight_present():
+    """A wrong stored avg must not poison combine when seine heads + kg are present."""
+    row = {
+        "latest_sample_estimated_total_weight_kg": "12.5",
+        "latest_sample_estimated_fish_count": 50,
+        "latest_sample_avg_weight_kg": "12.5",  # net total wrongly stored as avg
+        "implied_net_fish_count": 80000,
+        "implied_net_weight_kg": "5000",
+    }
+    kg, src = _select_biomass_for_feeding_kg(row)
+    assert kg == Decimal("20000.00")
+    assert "combined" in src or "book head" in src
+
+
 def test_select_biomass_falls_back_to_implied_when_no_sample_mean():
     row = {
         "latest_sample_estimated_total_weight_kg": None,

@@ -57,6 +57,7 @@ def test_sample_saves_extrapolation_from_fish_stock_position(api_client, company
     data = json.loads(r.content.decode())
     assert data["stock_reference_fish_count"] == 70000
     assert float(data["stock_reference_avg_weight_kg"]) == pytest.approx(0.2)
+    assert float(data["avg_weight_kg"]) == pytest.approx(0.25)
     assert float(data["extrapolated_biomass_kg"]) == pytest.approx(17500.0, rel=0.001)
     assert float(data["biomass_gain_kg"]) == pytest.approx(3500.0, rel=0.001)
 

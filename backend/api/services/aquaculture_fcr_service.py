@@ -91,14 +91,20 @@ def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
         ref_n_i = int(ref_n) if ref_n is not None else 0
     except (TypeError, ValueError):
         ref_n_i = 0
-    avg = sample.avg_weight_kg
     fc = sample.estimated_fish_count
     etw = sample.estimated_total_weight_kg
-    if (avg is None or avg <= 0) and fc and fc > 0 and etw is not None and etw > 0:
+    avg = None
+    if fc and fc > 0 and etw is not None and etw > 0:
         avg = _d(etw) / Decimal(int(fc))
+    elif sample.avg_weight_kg is not None and sample.avg_weight_kg > 0:
+        avg = _d(sample.avg_weight_kg)
     if avg is not None and avg > 0 and ref_n_i > 0:
         return _q4(_d(avg) * Decimal(ref_n_i))
-    # Never treat seine total kg alone as pond biomass.
+    # Legacy rows stored pond biomass in estimated_total_weight_kg with no seine
+    # head count and no book-head snapshot. A net sample (heads + kg, no ref heads)
+    # must not use seine kg as pond biomass.
+    if (fc is None or fc <= 0) and etw is not None and etw > 0:
+        return _d(etw)
     return None
 
 

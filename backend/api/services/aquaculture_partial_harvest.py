@@ -31,6 +31,37 @@ def _d(val) -> Decimal:
         return Decimal("0")
 
 
+def sample_mean_weight_kg_from_fields(
+    *,
+    fish_count=None,
+    total_weight_kg=None,
+    avg_weight_kg=None,
+) -> Decimal | None:
+    """
+    Mean kg/fish for combine math (load, FCR, feed).
+
+    Always prefer seine heads + seine kg when both are present. A stored avg can be a
+    stale JS float, an inverted pcs/kg, or the net total saved into the avg column —
+    those look fine when heads and weight are shown separately, then explode when
+    multiplied by book head count.
+    """
+    try:
+        fc = int(fish_count) if fish_count is not None and str(fish_count).strip() != "" else 0
+    except (TypeError, ValueError):
+        fc = 0
+    tw = _d(total_weight_kg)
+    if fc > 0 and tw > 0:
+        return (tw / Decimal(fc)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    if avg_weight_kg not in (None, ""):
+        try:
+            avg = _d(avg_weight_kg)
+            if avg > 0:
+                return avg
+        except Exception:
+            return None
+    return None
+
+
 def current_fish_per_kg_from_position_row(row: dict) -> tuple[Decimal | None, str]:
     """
     Best available pcs/kg for a stock position row.
@@ -200,16 +231,17 @@ def effective_biomass_kg_from_position_row(row: dict) -> Decimal:
     if fish_n <= 0:
         return implied_w
 
-    avg_kg = Decimal("0")
-    raw_avg = row.get("latest_sample_avg_weight_kg")
-    if raw_avg not in (None, ""):
-        avg_kg = _d(raw_avg)
-    if avg_kg <= 0:
+    avg_kg = sample_mean_weight_kg_from_fields(
+        fish_count=row.get("latest_sample_estimated_fish_count"),
+        total_weight_kg=row.get("latest_sample_estimated_total_weight_kg"),
+        avg_weight_kg=row.get("latest_sample_avg_weight_kg"),
+    )
+    if avg_kg is None or avg_kg <= 0:
         pcs, _ = current_fish_per_kg_from_position_row(row)
         if pcs is not None and pcs > 0:
             avg_kg = (Decimal("1") / pcs).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
-    if avg_kg > 0:
+    if avg_kg is not None and avg_kg > 0:
         return (avg_kg * Decimal(fish_n)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
     return implied_w
 

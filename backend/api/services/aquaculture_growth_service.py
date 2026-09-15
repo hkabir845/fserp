@@ -39,16 +39,20 @@ def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
     avg = _sample_mean_weight_kg(sample)
     if avg is not None and avg > 0 and ref_n_i > 0:
         return _d(avg) * Decimal(ref_n_i)
+    fc = sample.estimated_fish_count
+    tw = sample.estimated_total_weight_kg
+    if (fc is None or fc <= 0) and tw is not None and tw > 0:
+        return _d(tw)
     return None
 
 
 def _sample_mean_weight_kg(sample: AquacultureBiomassSample) -> Decimal | None:
-    if sample.avg_weight_kg is not None and sample.avg_weight_kg > 0:
-        return _d(sample.avg_weight_kg)
     fc = sample.estimated_fish_count
     tw = sample.estimated_total_weight_kg
     if fc and fc > 0 and tw and tw > 0:
         return _d(tw) / Decimal(fc)
+    if sample.avg_weight_kg is not None and sample.avg_weight_kg > 0:
+        return _d(sample.avg_weight_kg)
     return None
 
 

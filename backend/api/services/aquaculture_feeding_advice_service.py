@@ -23,6 +23,7 @@ from api.services.aquaculture_stock_service import (
     compute_fish_stock_position_breakdown_rows,
     compute_fish_stock_position_rows,
 )
+from api.services.aquaculture_partial_harvest import sample_mean_weight_kg_from_fields
 from api.services.aquaculture_constants import POND_ROLE_LABELS
 from api.services.aquaculture_i18n import company_language, normalize_lang, temp_factor_note, weather_tier_label, _pick
 from api.services.aquaculture_units import format_pond_area_decimal_for_api, format_two_decimal_places_for_api
@@ -82,14 +83,13 @@ def _mean_fish_weight_g_from_stock_row(stock_row: dict) -> tuple[Decimal | None,
     """
     Returns (mean_weight_g, provenance) for tilapia cohort; None if unknown.
     """
-    samp = stock_row.get("latest_sample_avg_weight_kg")
-    if samp is not None and samp != "":
-        try:
-            kg = _d(samp)
-            if kg > 0:
-                return (kg * Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "latest biomass sample (avg weight)"
-        except Exception:
-            pass
+    samp = sample_mean_weight_kg_from_fields(
+        fish_count=stock_row.get("latest_sample_estimated_fish_count"),
+        total_weight_kg=stock_row.get("latest_sample_estimated_total_weight_kg"),
+        avg_weight_kg=stock_row.get("latest_sample_avg_weight_kg"),
+    )
+    if samp is not None and samp > 0:
+        return (samp * Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "latest biomass sample (avg weight)"
     bio = _d(stock_row.get("implied_net_weight_kg"))
     cnt = stock_row.get("implied_net_fish_count")
     try:
@@ -254,29 +254,19 @@ def _select_biomass_for_feeding_kg(
     3. ``avg × max(implied_net_fish_count, latest_sample_estimated_fish_count)`` when book kg
        is non-positive (e.g. cycle-filtered ledger inconsistency)
 
-    When ``honor_harvests`` is True (as-of a feeding/medicine date), prefer transaction-implied
-    biomass first so sales/harvests that day reduce the batch's share.
+    When ``honor_harvests`` is True (as-of a feeding/medicine date), remaining book
+    heads already exclude sales that day. Still combine sample mean × those heads —
+    never switch to fry-book kg, which understates grown biomass.
 
     Returns (kg, source_label). Empty source label when no usable biomass.
     """
     def _avg_kg() -> Decimal:
-        avg_kg_raw = stock_row.get("latest_sample_avg_weight_kg")
-        if avg_kg_raw is None or str(avg_kg_raw).strip() == "":
-            # Derive mean from seine heads ÷ seine kg when avg column is empty.
-            samp_fc = stock_row.get("latest_sample_estimated_fish_count")
-            samp_tw = stock_row.get("latest_sample_estimated_total_weight_kg")
-            try:
-                fc = int(samp_fc) if samp_fc is not None else 0
-                tw = _d(samp_tw)
-                if fc > 0 and tw > 0:
-                    return (tw / Decimal(fc)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
-            except Exception:
-                return Decimal("0")
-            return Decimal("0")
-        try:
-            return _d(avg_kg_raw)
-        except Exception:
-            return Decimal("0")
+        mean = sample_mean_weight_kg_from_fields(
+            fish_count=stock_row.get("latest_sample_estimated_fish_count"),
+            total_weight_kg=stock_row.get("latest_sample_estimated_total_weight_kg"),
+            avg_weight_kg=stock_row.get("latest_sample_avg_weight_kg"),
+        )
+        return mean if mean is not None and mean > 0 else Decimal("0")
 
     def _book_heads() -> int:
         try:
@@ -284,23 +274,13 @@ def _select_biomass_for_feeding_kg(
         except (TypeError, ValueError):
             return 0
 
-    if honor_harvests:
-        implied_kg = _d(stock_row.get("implied_net_weight_kg"))
-        if implied_kg > 0:
-            chosen = implied_kg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            return chosen, "implied net biomass as-of date (after sales/harvests)"
-        avg_kg = _avg_kg()
-        implied_n = _book_heads()
-        if avg_kg > 0 and implied_n > 0:
-            est = (avg_kg * Decimal(implied_n)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            if est > 0:
-                return est, "sampled mean weight × fish count as-of date (after harvests)"
-
     avg_kg = _avg_kg()
     implied_n = _book_heads()
     if avg_kg > 0 and implied_n > 0:
         est = (avg_kg * Decimal(implied_n)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if est > 0:
+            if honor_harvests:
+                return est, "sampled mean weight × fish count as-of date (after harvests)"
             return est, "sampled mean weight × book head count (combined)"
 
     implied_kg = _d(stock_row.get("implied_net_weight_kg"))
@@ -717,6 +697,8 @@ def _build_narrative(
     pname = (pond.name or "").strip() or f"Pond #{pond.id}"
     role_lbl = POND_ROLE_LABELS.get(getattr(pond, "pond_role", None) or "grow_out", "Grow-out")
     bio = _d(stock_row.get("implied_net_weight_kg"))
+    if biomass_basis_kg is not None and biomass_basis_kg > 0:
+        bio = biomass_basis_kg
     load_lbl = stock_row.get("load_level_label") or "Unknown"
     density = stock_row.get("stock_density_kg_per_decimal")
     samp_date = stock_row.get("latest_sample_date") or "—"

@@ -6,8 +6,8 @@ from decimal import Decimal
 from api.services.aquaculture_feeding_advice_service import _select_biomass_for_feeding_kg
 
 
-def test_honor_harvests_prefers_implied_over_stale_sample():
-    """After a sale, as-of allocation must use implied net; live uses mean × book heads."""
+def test_honor_harvests_uses_combined_mean_x_remaining_heads():
+    """After a sale, as-of heads are already reduced; still combine mean × those heads."""
     row = {
         "latest_sample_estimated_total_weight_kg": "12.5",
         "latest_sample_estimated_fish_count": 50,
@@ -20,8 +20,8 @@ def test_honor_harvests_prefers_implied_over_stale_sample():
     assert "combined" in src_live or "book head" in src_live
 
     kg_asof, src_asof = _select_biomass_for_feeding_kg(row, honor_harvests=True)
-    assert kg_asof == Decimal("1800.00")
-    assert "after sales" in src_asof or "implied" in src_asof
+    assert kg_asof == Decimal("2250.00")
+    assert "as-of" in src_asof or "combined" in src_asof or "harvest" in src_asof
 
 
 def test_honor_harvests_uses_avg_times_remaining_count():

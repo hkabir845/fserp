@@ -152,7 +152,7 @@ function autoSourceLabel(r: SampleRow, lang: AdviceLanguage): string | null {
 
 function computeAvgWeightKg(fishCountStr: string, totalKgStr: string): number | null {
   const countStr = fishCountStr.trim()
-  const wStr = totalKgStr.trim()
+  const wStr = String(totalKgStr).replace(/,/g, '').trim()
   if (!countStr || !wStr) return null
   const count = parseInt(countStr, 10)
   const total = Number(wStr)

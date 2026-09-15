@@ -284,55 +284,16 @@ def _select_biomass_for_feeding_kg(
         except (TypeError, ValueError):
             return 0
 
-    def _log_choice(message: str, chosen: Decimal, **extra) -> None:
-        # #region agent log
-        try:
-            import json, time
-            with open(r"I:\ITProjects\FSERP\debug-d461c9.log", "a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "d461c9",
-                            "runId": "post-fix",
-                            "hypothesisId": "H1",
-                            "location": "aquaculture_feeding_advice_service.py:_select_biomass",
-                            "message": message,
-                            "data": {
-                                "chosen_kg": str(chosen),
-                                "sample_total_kg": str(
-                                    stock_row.get("latest_sample_estimated_total_weight_kg")
-                                ),
-                                "sample_heads": stock_row.get("latest_sample_estimated_fish_count"),
-                                "sample_avg_kg": str(stock_row.get("latest_sample_avg_weight_kg")),
-                                "book_heads": stock_row.get("implied_net_fish_count"),
-                                "implied_net_kg": str(stock_row.get("implied_net_weight_kg")),
-                                **{k: str(v) for k, v in extra.items()},
-                            },
-                            "timestamp": int(time.time() * 1000),
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
-
     if honor_harvests:
         implied_kg = _d(stock_row.get("implied_net_weight_kg"))
         if implied_kg > 0:
             chosen = implied_kg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            _log_choice("feeding biomass chose implied net kg (honor_harvests)", chosen)
             return chosen, "implied net biomass as-of date (after sales/harvests)"
         avg_kg = _avg_kg()
         implied_n = _book_heads()
         if avg_kg > 0 and implied_n > 0:
             est = (avg_kg * Decimal(implied_n)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             if est > 0:
-                _log_choice(
-                    "feeding biomass chose avg x book heads (honor_harvests)",
-                    est,
-                    avg_x_book_heads=est,
-                )
                 return est, "sampled mean weight × fish count as-of date (after harvests)"
 
     avg_kg = _avg_kg()
@@ -340,17 +301,11 @@ def _select_biomass_for_feeding_kg(
     if avg_kg > 0 and implied_n > 0:
         est = (avg_kg * Decimal(implied_n)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if est > 0:
-            _log_choice(
-                "feeding biomass chose avg x book heads (combined)",
-                est,
-                avg_x_book_heads=est,
-            )
             return est, "sampled mean weight × book head count (combined)"
 
     implied_kg = _d(stock_row.get("implied_net_weight_kg"))
     if implied_kg > 0:
         chosen = implied_kg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        _log_choice("feeding biomass chose implied net kg", chosen)
         return chosen, "implied net biomass from transfers / sales / ledger"
 
     if avg_kg > 0:
@@ -362,14 +317,8 @@ def _select_biomass_for_feeding_kg(
         if n > 0:
             est = (avg_kg * Decimal(n)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             if est > 0:
-                _log_choice(
-                    "feeding biomass chose avg x max(book,sample) heads",
-                    est,
-                    avg_x_book_heads=est,
-                )
                 return est, "sampled mean weight × fish count (transactions inconsistent)"
 
-    _log_choice("feeding biomass unavailable", Decimal("0"))
     return Decimal("0"), ""
 
 

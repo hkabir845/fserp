@@ -520,13 +520,11 @@ function millLineSackKg(line: BillLineItem, item: Item | undefined): number {
 function millLineWeightKg(line: BillLineItem, item: Item | undefined): number {
   const qty = Number(line.quantity) || 0
   if (!(qty > 0)) return 0
-  const sackKg = millLineSackKg(line, item)
   const unit = String(
     (line.item_catalog as { unit?: string } | undefined)?.unit || item?.unit || ''
   )
     .trim()
     .toLowerCase()
-  if (sackKg > 0) return qty * sackKg
   if (['kg', 'kgs', 'kilogram', 'kilograms'].includes(unit)) return qty
   if (
     ['t', 'ton', 'tons', 'tonne', 'tonnes', 'mt', 'm.t', 'm.t.', 'metric ton', 'metric tons'].includes(
@@ -535,18 +533,9 @@ function millLineWeightKg(line: BillLineItem, item: Item | undefined): number {
   ) {
     return qty * 1000
   }
-  // Feed mills: sack/bag without kg/sack → assume 25 kg (240 × 25 kg = 6 t).
-  if (['sack', 'sacks', 'bag', 'bags', 'bag/sack', 'sack/bag'].includes(unit)) {
-    return qty * 25
-  }
-  // Blank unit on a feed item → treat as sack (25 kg default).
-  const cat = String(item?.pos_category || item?.category || '')
-    .trim()
-    .toLowerCase()
-  if (!unit && (cat.includes('feed') || cat === '')) {
-    return qty * 25
-  }
-  return 0
+  // Mill Qty is sacks. Use item kg/sack, or 25 kg (240 × 25 kg = 6 t).
+  const sackKg = millLineSackKg(line, item)
+  return qty * (sackKg > 0 ? sackKg : 25)
 }
 
 function applyMillTermsToLine(
@@ -972,33 +961,31 @@ function millTermsBanner(
                 />
               </label>
               <label className="block text-xs font-medium">
-                Ordered tons
+                Tons (auto from sacks)
                 <input
                   type="number"
                   min={0}
                   step="0.01"
-                  value={opts.orderedTonsInput}
+                  value={
+                    opts.tonsFromLines > 0
+                      ? String(Number(opts.tonsFromLines.toFixed(4)))
+                      : opts.orderedTonsInput
+                  }
                   onChange={(e) => opts.onOrderedTonsChange(e.target.value)}
-                  readOnly={!tonsNeedManual && !opts.tonsManual && opts.tonsFromLines > 0}
+                  readOnly={opts.tonsFromLines > 0 && !opts.tonsManual}
                   className={`${opts.fieldClass} mt-1${
                     tonsNeedManual ? ' border-amber-500 ring-1 ring-amber-300' : ''
-                  }${!tonsNeedManual && !opts.tonsManual && opts.tonsFromLines > 0 ? ' bg-muted/40' : ''}`}
-                  placeholder={tonsNeedManual ? 'Required' : 'From sacks × kg/sack'}
-                  title={
-                    tonsNeedManual
-                      ? 'Set Kg/sack on the feed line (25 / 20 / 10), or enter tons here'
-                      : opts.tonsManual
-                        ? 'Manual override — clear and re-enter Qty to use line weight again'
-                        : 'Calculated from Qty × kg/sack (default 25 kg for sack/bag)'
-                  }
+                  }${opts.tonsFromLines > 0 && !opts.tonsManual ? ' bg-muted/40' : ''}`}
+                  placeholder={tonsNeedManual ? 'Add sacks on the line' : 'Qty × kg/sack ÷ 1000'}
+                  title="Filled from Qty (sacks) × kg/sack ÷ 1000. Default 25 kg/sack."
                 />
               </label>
             </div>
             <p className="text-[11px] text-muted-foreground mt-1.5">
-              Tons = Qty (sacks) × kg/sack ÷ 1,000. Default sack weight is 25 kg; set 20 or 10 on the
-              feed item when needed.
+              Type sacks on the line. Tons = sacks × kg/sack ÷ 1,000 (default 25 kg), then transport
+              is deducted as tons × ৳/ton.
               {tonsNeedManual
-                ? ' Transport ৳/ton is set but tons are 0 — enter Ordered tons or set Kg/sack on the line.'
+                ? ' Add a feed line with sack qty to calculate tons.'
                 : null}
             </p>
           </div>
@@ -3043,6 +3030,24 @@ export default function BillsPage() {
         if (!isFishBillLineAutoMode(newLines[index], items)) {
           newLines[index] = syncStandardBillLineAmount(newLines[index])
         }
+        if (vendorPurchaseTerms?.uses_purchase_terms) {
+          const picked = items.find((it) => it.id === pick.id)
+          newLines[index] = applyMillTermsToLine(
+            newLines[index],
+            picked,
+            vendorPurchaseTerms
+          )
+          const tons = millBillTons(newLines, items)
+          const redistributed = applyMillTonTransportToLines(
+            newLines,
+            items,
+            vendorPurchaseTerms,
+            tons
+          )
+          redistributed.forEach((ln, i) => {
+            newLines[i] = ln
+          })
+        }
       } else {
         billLineExpenseTouchedRef.current.add(newLines[index].line_number)
         const account = expenseAccounts.find((a) => a.id === pick.id)
@@ -4987,7 +4992,7 @@ export default function BillsPage() {
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[5.25rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
-                                {fishLineAuto ? 'Qty (kg)' : 'Qty'}
+                                {fishLineAuto ? 'Qty (kg)' : millRate ? 'Qty (sacks)' : 'Qty'}
                               </label>
                               <input
                                 type="number"
@@ -5001,9 +5006,16 @@ export default function BillsPage() {
                                 title={
                                   fishLineAuto
                                     ? 'Prefilled as heads ÷ Line (pcs/kg) - type your own kg to override it'
-                                    : undefined
+                                    : millRate
+                                      ? 'Sacks. Tons = qty × kg/sack ÷ 1000 (default 25 kg)'
+                                      : undefined
                                 }
                               />
+                              {millRate && !fishLineAuto && Number(line.quantity) > 0 ? (
+                                <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
+                                  {formatNumber(millLineWeightKg(line, lineItem) / 1000)} t
+                                </p>
+                              ) : null}
                             </div>
                             <div className="col-span-4 sm:col-span-3 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
@@ -5529,7 +5541,7 @@ export default function BillsPage() {
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[5.25rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">
-                                {fishLineAuto ? 'Qty (kg)' : 'Qty'}
+                                {fishLineAuto ? 'Qty (kg)' : millRate ? 'Qty (sacks)' : 'Qty'}
                               </label>
                               <input
                                 type="number"
@@ -5543,9 +5555,16 @@ export default function BillsPage() {
                                 title={
                                   fishLineAuto
                                     ? 'Prefilled as heads ÷ Line (pcs/kg) - type your own kg to override it'
-                                    : undefined
+                                    : millRate
+                                      ? 'Sacks. Tons = qty × kg/sack ÷ 1000 (default 25 kg)'
+                                      : undefined
                                 }
                               />
+                              {millRate && !fishLineAuto && Number(line.quantity) > 0 ? (
+                                <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
+                                  {formatNumber(millLineWeightKg(line, lineItem) / 1000)} t
+                                </p>
+                              ) : null}
                             </div>
                             <div className="col-span-4 sm:col-span-2 lg:col-span-1 min-w-[6.5rem]">
                               <label className="block text-xs font-medium text-foreground/85 mb-0.5">

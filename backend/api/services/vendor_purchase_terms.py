@@ -269,30 +269,19 @@ _TON_UNITS = frozenset(
 )
 
 
-_SACK_UNITS = frozenset(
-    {
-        "sack",
-        "sacks",
-        "bag",
-        "bags",
-        "bag/sack",
-        "sack/bag",
-    }
-)
 # Common feed-mill sack when content_weight_kg is not set on the item (e.g. 240 × 25 kg = 6 t).
 _DEFAULT_FEED_SACK_KG = Decimal("25")
 
 
 def line_weight_kg(qty: Decimal, item: Optional[Item], *, content_weight_kg=None) -> Decimal:
-    """Ordered weight in kg for mill transport (÷1000 → tons)."""
+    """Ordered weight in kg for mill transport (÷1000 → tons).
+
+    Mill bill Qty is sacks unless the item unit is explicitly kg or ton.
+    Missing kg/sack defaults to 25 kg (e.g. 240 × 25 kg = 6 t).
+    """
     qty = _q(qty, Decimal("0.0001"))
     if qty <= 0:
         return Decimal("0")
-    sack = content_weight_kg
-    if sack is None and item is not None:
-        sack = getattr(item, "content_weight_kg", None)
-    if sack is not None and _q(sack, _Q4) > 0:
-        return _q(qty * _q(sack, _Q4), _Q4)
     unit = ""
     if item is not None:
         unit = (item.unit or "").strip().lower()
@@ -300,9 +289,11 @@ def line_weight_kg(qty: Decimal, item: Optional[Item], *, content_weight_kg=None
         return qty
     if unit in _TON_UNITS:
         return _q(qty * Decimal("1000"), _Q4)
-    if unit in _SACK_UNITS:
-        return _q(qty * _DEFAULT_FEED_SACK_KG, _Q4)
-    return Decimal("0")
+    sack = content_weight_kg
+    if sack is None and item is not None:
+        sack = getattr(item, "content_weight_kg", None)
+    kg_each = _q(sack, _Q4) if sack is not None and _q(sack, _Q4) > 0 else _DEFAULT_FEED_SACK_KG
+    return _q(qty * kg_each, _Q4)
 
 
 def apply_rate_card_to_line(

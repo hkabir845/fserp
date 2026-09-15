@@ -333,6 +333,45 @@ def test_transport_credit_defaults_sack_to_25kg_when_weight_missing(
 
 
 @pytest.mark.django_db
+def test_transport_credit_treats_piece_qty_as_sacks(
+    api_client, company_tenant, auth_admin_headers
+):
+    """Mill Qty is sacks even when the item unit is pcs / piece (not labeled sack)."""
+    h = auth_admin_headers
+    v = _vendor(
+        api_client,
+        h,
+        company_name="Pcs unit mill",
+        supplier_category="feed",
+        rate_card={
+            "effective_from": "2026-01-01",
+            "instant_discount_percent": "5.5",
+            "transport_per_ton": "950",
+        },
+    )
+    item = _item(
+        company_tenant.id,
+        mrp=Decimal("1950"),
+        content_weight_kg=None,
+        unit="pcs",
+        pos_category="general",
+    )
+    r = _post_bill(
+        api_client,
+        h,
+        v["id"],
+        {"item_id": item.id, "quantity": "240", "mrp": "1950"},
+        status="draft",
+    )
+    assert r.status_code == 201, r.content.decode()
+    bill = json.loads(r.content)
+    line = bill["lines"][0]
+    # 240 sacks × 25 kg = 6 t × 950
+    assert Decimal(line["transport_amount"]) == Decimal("5700.00")
+    assert Decimal(bill["total"]) == Decimal("436560.00")
+
+
+@pytest.mark.django_db
 def test_truck_transport_is_once_per_bill_when_explicit(api_client, company_tenant, auth_admin_headers):
     """Fixed /bill is optional and only applies when the bill body sends it (not from rate card)."""
     h = auth_admin_headers

@@ -1632,7 +1632,7 @@ class JournalEntryLine(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=models.Q(debit__gte=0) & models.Q(credit__gte=0),
+                condition=models.Q(debit__gte=0) & models.Q(credit__gte=0),
                 name="jel_nonneg_debit_credit",
             ),
         ]
@@ -1839,7 +1839,7 @@ class Invoice(models.Model):
                 name="invoice_company_idempotency_key_uniq",
             ),
             models.CheckConstraint(
-                check=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
+                condition=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
                 name="invoice_nonneg_amounts",
             ),
         ]
@@ -2001,7 +2001,7 @@ class Bill(models.Model):
         base_manager_name = "all_objects"
         constraints = [
             models.CheckConstraint(
-                check=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
+                condition=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
                 name="bill_nonneg_amounts",
             ),
         ]
@@ -2202,7 +2202,7 @@ class Payment(models.Model):
                 name="payment_company_idempotency_key_uniq",
             ),
             models.CheckConstraint(
-                check=models.Q(amount__gte=0),
+                condition=models.Q(amount__gte=0),
                 name="payment_nonneg_amount",
             ),
         ]

@@ -67,6 +67,19 @@ def current_fish_per_kg_from_position_row(row: dict) -> tuple[Decimal | None, st
     Best available pcs/kg for a stock position row.
     Returns (pcs_per_kg, source_key for i18n).
     """
+    combined = row.get("species_combined_biomass_kg")
+    if combined not in (None, ""):
+        try:
+            bio = _d(combined)
+            n = int(row.get("implied_net_fish_count") or 0)
+            if n > 0 and bio > 0:
+                return (
+                    (Decimal(n) / bio).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP),
+                    "species_combined",
+                )
+        except (TypeError, ValueError):
+            pass
+
     samp_fc = row.get("latest_sample_estimated_fish_count")
     samp_tw = row.get("latest_sample_estimated_total_weight_kg")
     if samp_fc is not None and samp_tw:
@@ -222,7 +235,19 @@ def effective_biomass_kg_from_position_row(row: dict) -> Decimal:
     wrong both ways: fry transfers understate growth, and bad transfer kg can overstate mass.
     Ashari-1 Tilapia C03 live example: book 82924 kg vs sample 7406 kg @ 8.76 pcs/kg — load must
     use the sample figure (÷ water 750 dec → 9.87 kg/dec), not max(book, sample).
+
+    All-species pond rows set ``species_combined_biomass_kg`` (sum of per-species mean × heads).
+    Never apply one species' latest sample — e.g. a 2.2 kg silver carp — to every fish in the pond.
     """
+    combined = row.get("species_combined_biomass_kg")
+    if combined not in (None, ""):
+        try:
+            bio = _d(combined)
+            if bio > 0:
+                return bio.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        except Exception:
+            pass
+
     implied_w = _d(row.get("implied_net_weight_kg"))
     try:
         fish_n = int(row.get("implied_net_fish_count") or 0)

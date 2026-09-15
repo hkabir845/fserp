@@ -274,6 +274,18 @@ def _select_biomass_for_feeding_kg(
         except (TypeError, ValueError):
             return 0
 
+    combined = stock_row.get("species_combined_biomass_kg")
+    if combined not in (None, ""):
+        try:
+            combined_kg = _d(combined)
+        except Exception:
+            combined_kg = Decimal("0")
+        if combined_kg > 0:
+            return (
+                combined_kg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "sum of species sample × heads",
+            )
+
     avg_kg = _avg_kg()
     implied_n = _book_heads()
     if avg_kg > 0 and implied_n > 0:

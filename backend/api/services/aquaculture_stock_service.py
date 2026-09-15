@@ -362,7 +362,73 @@ def compute_fish_stock_position_rows(
             **advice,
         }
         out_rows.append(enrich_position_row_with_fish_metrics(row, water_area_decimal=wa_dec, lang=lang))
+    if species_filter_code is None:
+        return _apply_all_species_combined_biomass(
+            cid,
+            out_rows,
+            pond_id=pond_id,
+            production_cycle_id=cy_id,
+            include_inactive_ponds=include_inactive_ponds,
+            entries_after_date=entries_after_date,
+        )
     return out_rows
+
+
+def _apply_all_species_combined_biomass(
+    company_id: int,
+    rows: list[dict],
+    *,
+    pond_id: int | None,
+    production_cycle_id: int | None,
+    include_inactive_ponds: bool,
+    entries_after_date: date | None,
+) -> list[dict]:
+    """
+    Replace pond-wide avg × all-heads with the sum of each species' own sample × heads.
+
+    Latest-sample on an all-species pond row is one species (often the most recent seine).
+    Applying that mean to every fish is how Ashari-2 showed 540k kg from one 2.2 kg silver carp.
+    """
+    if not rows:
+        return rows
+    breakdown = compute_fish_stock_position_breakdown_rows(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        include_inactive_ponds=include_inactive_ponds,
+        entries_after_date=entries_after_date,
+    )
+    by_pond: dict[int, list[dict]] = defaultdict(list)
+    for bucket in breakdown:
+        pid = bucket.get("pond_id")
+        if pid is None:
+            continue
+        by_pond[int(pid)].append(bucket)
+
+    lang = company_language(company_id)
+    out: list[dict] = []
+    for row in rows:
+        pid = int(row["pond_id"])
+        combined = Decimal("0")
+        for bucket in by_pond.get(pid, []):
+            try:
+                heads = int(bucket.get("implied_net_fish_count") or 0)
+            except (TypeError, ValueError):
+                heads = 0
+            if heads <= 0:
+                continue
+            combined += effective_biomass_kg_from_position_row(bucket)
+        combined = combined.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        patched = dict(row)
+        if combined > 0:
+            patched["species_combined_biomass_kg"] = str(combined)
+        wa = patched.get("water_area_decimal")
+        try:
+            wa_d = Decimal(str(wa)) if wa not in (None, "") else None
+        except Exception:
+            wa_d = None
+        out.append(enrich_position_row_with_fish_metrics(patched, water_area_decimal=wa_d, lang=lang))
+    return out
 
 
 def _position_row_from_bucket(

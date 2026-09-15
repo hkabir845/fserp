@@ -222,6 +222,7 @@ def fish_per_kg_source(source_key: str, lang: str | None = "en") -> str:
         "latest_biomass_sample": ("latest biomass sample", "সর্বশেষ বায়োমাস নমুনা"),
         "latest_sample_avg_weight": ("latest sample avg weight", "নমুনার গড় ওজন"),
         "implied_net_stock": ("implied net stock", "বইয়ের নিট স্টক"),
+        "species_combined": ("sum of species sample × heads", "প্রজাতি অনুযায়ী নমুনা × মাথার যোগফল"),
     }
     en, bn = keys.get(source_key, (source_key, source_key))
     return _pick(lang, en, bn)
@@ -234,6 +235,8 @@ def fish_per_kg_source_key_from_label(label: str) -> str:
         return "latest_sample_avg_weight"
     if label == "implied net stock":
         return "implied_net_stock"
+    if label == "sum of species sample × heads":
+        return "species_combined"
     return label
 
 

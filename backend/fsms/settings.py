@@ -14,6 +14,8 @@ try:
 
     load_dotenv(BASE_DIR / ".env")
     load_dotenv(BASE_DIR / "env" / ".env", override=False)
+    # Deploy stamp must win over a stale FSERP_APP_VERSION left in the PM2 process env.
+    load_dotenv(BASE_DIR / ".env.release", override=True)
 except ImportError:
     pass
 

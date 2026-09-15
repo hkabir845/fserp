@@ -96,23 +96,34 @@ rm -rf node_modules
 npm ci
 npm run build
 
-echo "==> PM2: reload processes"
+echo "==> PM2: restart processes"
 cd "$REPO_ROOT"
 if ! command -v pm2 >/dev/null 2>&1; then
   echo "ERROR: pm2 not found. Install: npm install -g pm2" >&2
   exit 1
 fi
 
-pm2 startOrReload ecosystem.config.js --update-env
+# reload keeps the old Gunicorn master (and its env). Health then stays on the
+# previous SHA (e.g. d976fe1) even after git pull + frontend build.
+if pm2 describe fserp_backend >/dev/null 2>&1; then
+  pm2 restart fserp_backend fserp_frontend --update-env
+else
+  pm2 start ecosystem.config.js
+fi
 pm2 save
 
 echo "==> Smoke tests"
 cd "$REPO_ROOT/backend"
 sleep 2
 # X-Forwarded-Proto mirrors nginx so SECURE_SSL_REDIRECT does not 301 the loopback check.
-curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -H "X-Forwarded-Proto: https" "http://127.0.0.1:8001/health/" \
-  || { echo "ERROR: backend health check failed" >&2; exit 1; }
-echo
+health_json="$(curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -H "X-Forwarded-Proto: https" "http://127.0.0.1:8001/health/" \
+  || { echo "ERROR: backend health check failed" >&2; exit 1; })"
+echo "$health_json"
+health_version="$(printf '%s' "$health_json" | python -c 'import json,sys; print((json.load(sys.stdin).get("version") or "").strip())')"
+if [[ "$health_version" != "$RELEASE_VERSION" && "$health_version" != "$RELEASE_COMMIT" ]]; then
+  echo "ERROR: health version ${health_version:-empty} does not match this deploy (${RELEASE_VERSION} / ${RELEASE_COMMIT}). Gunicorn is still the old process — use pm2 restart, not reload." >&2
+  exit 1
+fi
 curl --retry 5 --retry-connrefused --retry-delay 2 --max-time 15 -sf -o /dev/null -w "frontend HTTP %{http_code}\n" "http://127.0.0.1:3001/" || { echo "ERROR: frontend check failed" >&2; exit 1; }
 
 # Login must answer 400 (missing credentials), not 500 — 500 means cache/DB is broken.

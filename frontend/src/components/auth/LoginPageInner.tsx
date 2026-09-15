@@ -11,6 +11,12 @@ import { AndroidAppDownload } from '@/components/AndroidAppDownload'
 import { BrainAppInstallPrompt } from '@/components/brain/BrainAppInstallPrompt'
 import { isCapacitorNativeApp } from '@/lib/androidApp'
 import { readStoredAccessToken, writeStoredAccessToken } from '@/lib/authSession'
+import {
+  persistRememberedUsername,
+  readPasswordFromBrowserManager,
+  readRememberedUsername,
+  storePasswordInBrowserManager,
+} from '@/lib/loginCredentials'
 
 export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 'brain' }) {
   const router = useRouter()
@@ -19,6 +25,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
   const nextPath = isBrain ? '/brain-app' : searchParams.get('next')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberLogin, setRememberLogin] = useState(true)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null)
@@ -32,6 +39,16 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
 
   useEffect(() => {
     setMounted(true)
+    const remembered = readRememberedUsername()
+    if (remembered) {
+      setUsername(remembered)
+      setRememberLogin(true)
+    }
+    void readPasswordFromBrowserManager().then((saved) => {
+      if (!saved) return
+      setUsername((prev) => prev || saved.username)
+      setPassword((prev) => prev || saved.password)
+    })
   }, [])
 
   useEffect(() => {
@@ -305,6 +322,10 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
       writeStoredAccessToken(String(access_token).trim())
       localStorage.removeItem('refresh_token')
       localStorage.setItem('user', JSON.stringify(user))
+      persistRememberedUsername(username, rememberLogin)
+      if (rememberLogin) {
+        void storePasswordInBrowserManager(username, password)
+      }
       setAuthApiOriginStamp()
       // Tenant sessions always use FSMS ERP nav (Aquaculture + ERP). SaaS tab is super-admin only.
       try {
@@ -402,7 +423,13 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
 
           {isBrain ? <BrainAppInstallPrompt language="bn" defaultExpanded /> : null}
 
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form
+            method="post"
+            action={isBrain ? '/brain-app/login' : '/login'}
+            autoComplete="on"
+            onSubmit={handleLogin}
+            className="space-y-6"
+          >
             {backendConnected === false && showConnectionError && !error && (
               <div className="rounded border border-destructive/25 bg-destructive/5 px-4 py-3 text-destructive">
                 <p className="font-semibold">Cannot connect to backend server</p>
@@ -446,12 +473,16 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
               </label>
               <input
                 id="username"
+                name="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full rounded-md border border-border px-4 py-3 text-base focus:border-ring focus:ring-2 focus:ring-ring sm:py-2"
                 placeholder="Your login name or email"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 required
               />
             </div>
@@ -463,6 +494,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
               <div className="relative">
                 <input
                   id="password"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -480,8 +512,18 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
-              <div className="mt-2 text-right">
-                <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    name="remember"
+                    checked={rememberLogin}
+                    onChange={(e) => setRememberLogin(e.target.checked)}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                  />
+                  Save my login on this device
+                </label>
+                <Link href="/forgot-password" className="shrink-0 text-sm text-primary hover:underline">
                   Forgot password?
                 </Link>
               </div>

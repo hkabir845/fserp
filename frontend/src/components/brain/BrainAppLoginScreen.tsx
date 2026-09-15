@@ -10,10 +10,17 @@ import {
   redirectBrainLoginIfNeeded,
 } from '@/lib/brainAppSession'
 import { BrainSimpleInstall } from '@/components/brain/BrainSimpleInstall'
+import {
+  persistRememberedUsername,
+  readPasswordFromBrowserManager,
+  readRememberedUsername,
+  storePasswordInBrowserManager,
+} from '@/lib/loginCredentials'
 
 export function BrainAppLoginScreen() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberLogin, setRememberLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -24,6 +31,16 @@ export function BrainAppLoginScreen() {
       enterBrainAppAfterLogin()
       return
     }
+    const remembered = readRememberedUsername()
+    if (remembered) {
+      setUsername(remembered)
+      setRememberLogin(true)
+    }
+    void readPasswordFromBrowserManager().then((saved) => {
+      if (!saved) return
+      setUsername((prev) => prev || saved.username)
+      setPassword((prev) => prev || saved.password)
+    })
     setChecking(false)
   }, [])
 
@@ -33,6 +50,10 @@ export function BrainAppLoginScreen() {
     setLoading(true)
     try {
       await performLogin(username, password)
+      persistRememberedUsername(username, rememberLogin)
+      if (rememberLogin) {
+        void storePasswordInBrowserManager(username, password)
+      }
       try {
         const data = await fetchCurrentCompany({ force: true })
         const id = data?.id
@@ -86,7 +107,13 @@ export function BrainAppLoginScreen() {
 
           <p className="mb-3 text-center text-sm font-semibold text-indigo-950">ধাপ ২: লগইন</p>
 
-          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+          <form
+            method="post"
+            action="/brain-app/login"
+            autoComplete="on"
+            onSubmit={(e) => void handleSubmit(e)}
+            className="space-y-4"
+          >
             {error ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
                 {error}
@@ -99,8 +126,12 @@ export function BrainAppLoginScreen() {
               </label>
               <input
                 id="brain-user"
+                name="username"
                 type="text"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -116,6 +147,7 @@ export function BrainAppLoginScreen() {
               <div className="relative">
                 <input
                   id="brain-pass"
+                  name="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   required
@@ -134,6 +166,17 @@ export function BrainAppLoginScreen() {
                 </button>
               </div>
             </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                name="remember"
+                checked={rememberLogin}
+                onChange={(e) => setRememberLogin(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-indigo-600 focus:ring-indigo-500"
+              />
+              Save my login on this device
+            </label>
 
             <button
               type="submit"

@@ -11,6 +11,7 @@ import { AndroidAppDownload } from '@/components/AndroidAppDownload'
 import { BrainAppInstallPrompt } from '@/components/brain/BrainAppInstallPrompt'
 import { isCapacitorNativeApp } from '@/lib/androidApp'
 import { readStoredAccessToken, writeStoredAccessToken } from '@/lib/authSession'
+import { RememberMeField } from '@/components/auth/RememberMeField'
 import {
   persistRememberedUsername,
   readPasswordFromBrowserManager,
@@ -512,20 +513,13 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    name="remember"
-                    checked={rememberLogin}
-                    onChange={(e) => setRememberLogin(e.target.checked)}
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                  />
-                  Save my login on this device
-                </label>
-                <Link href="/forgot-password" className="shrink-0 text-sm text-primary hover:underline">
-                  Forgot password?
-                </Link>
+              <div className="mt-3 space-y-2">
+                <RememberMeField checked={rememberLogin} onChange={setRememberLogin} />
+                <div className="text-right">
+                  <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
             </div>
 

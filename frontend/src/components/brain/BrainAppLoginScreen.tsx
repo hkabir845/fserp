@@ -9,6 +9,7 @@ import {
   hasValidBrainSession,
   redirectBrainLoginIfNeeded,
 } from '@/lib/brainAppSession'
+import { RememberMeField } from '@/components/auth/RememberMeField'
 import { BrainSimpleInstall } from '@/components/brain/BrainSimpleInstall'
 import {
   persistRememberedUsername,
@@ -167,16 +168,7 @@ export function BrainAppLoginScreen() {
               </div>
             </div>
 
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                name="remember"
-                checked={rememberLogin}
-                onChange={(e) => setRememberLogin(e.target.checked)}
-                className="h-4 w-4 rounded border-border text-indigo-600 focus:ring-indigo-500"
-              />
-              Save my login on this device
-            </label>
+            <RememberMeField checked={rememberLogin} onChange={setRememberLogin} />
 
             <button
               type="submit"

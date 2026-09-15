@@ -33,8 +33,8 @@ POND_PROFILES: tuple[dict, ...] = (
         "physical_site_name": "Digonta",
         "linked_grow_out_name": "Digonta-Grow Out",
         "code_stem": "DIGONTA",
-        "water_area_decimal": Decimal("65.00"),
-        "leasing_area_decimal": Decimal("80.00"),
+        "water_area_decimal": Decimal("400.00"),
+        "leasing_area_decimal": Decimal("481.00"),
         "pond_depth_ft": Decimal("4.20"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
@@ -42,7 +42,7 @@ POND_PROFILES: tuple[dict, ...] = (
         "lease_paid_to_landlord": Decimal("95000.00"),
         "notes": (
             "Nursing unit beside the hatchery channel. 40-mesh hapas; daily grading. "
-            "Water ~65 dec effective surface; lease measured on 80 dec including bank strip."
+            "Water 400 dec effective surface; lease measured on 481 dec including bank strip."
         ),
         "demo_fish_count": 52000,
         "demo_weight_kg": Decimal("1040.0000"),
@@ -53,8 +53,8 @@ POND_PROFILES: tuple[dict, ...] = (
         "physical_site_name": "Mynuddin",
         "site_pair": True,
         "code_stem": "MYNUDDIN",
-        "water_area_decimal": Decimal("240.00"),
-        "leasing_area_decimal": Decimal("265.00"),
+        "water_area_decimal": Decimal("750.00"),
+        "leasing_area_decimal": Decimal("845.00"),
         "pond_depth_ft": Decimal("5.80"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
@@ -62,7 +62,7 @@ POND_PROFILES: tuple[dict, ...] = (
         "lease_paid_to_landlord": Decimal("310000.00"),
         "notes": (
             "Main grow-out: paddlewheel aeration on south corner; monosex tilapia from spring nursing transfer. "
-            "Leasing area includes access path on north bund (~265 dec leased / ~240 dec water)."
+            "Leasing area includes access path on north bund (~845 dec leased / ~750 dec water)."
         ),
         "demo_fish_count": 11800,
         "demo_weight_kg": Decimal("3540.0000"),
@@ -89,15 +89,15 @@ POND_PROFILES: tuple[dict, ...] = (
         "name": "Ashari-2",
         "role": "grow_out",
         "code_stem": "ASHARI2",
-        "water_area_decimal": Decimal("185.00"),
-        "leasing_area_decimal": Decimal("205.00"),
+        "water_area_decimal": Decimal("1320.00"),
+        "leasing_area_decimal": Decimal("1406.50"),
         "pond_depth_ft": Decimal("5.00"),
         "lease_contract_start": date(2019, 6, 1),
         "lease_contract_end": date(2029, 5, 31),
         "lease_price_per_decimal_per_year": Decimal("18500.0000"),
         "lease_paid_to_landlord": Decimal("379250.00"),
         "notes": (
-            "Earthen pond with inlet from shared canal (~185 dec water); slightly shallower — watch afternoon DO "
+            "Earthen pond with inlet from shared canal (~1320 dec water); slightly shallower — watch afternoon DO "
             "in April–May. Lease prepaid through contract term (balance zero in demo)."
         ),
         "demo_fish_count": 9600,
@@ -151,7 +151,8 @@ def _apply_profile(p: AquaculturePond, spec: dict, *, force_areas: bool = False)
 
     Water / leasing / depth are only overwritten when the pond is new, areas are missing,
     or ``force_areas`` is True. This prevents ``--backfill-existing`` from shrinking real
-    production water areas (e.g. 800 dec) down to an old demo typo and inflating kg/dec ~10–100×.
+    production water areas (e.g. Digonta 400, Mynuddin Nursing 800, Ashari-2 1320) down to an
+    old demo typo and inflating kg/dec ~10–100×.
     """
     p.pond_role = spec["role"]
     site = (spec.get("physical_site_name") or "").strip()
@@ -397,7 +398,7 @@ class Command(BaseCommand):
                 pond_role="nursing",
                 physical_site_name=site,
                 linked_grow_out_pond=grow,
-                water_area_decimal=grow.water_area_decimal,
+                water_area_decimal=Decimal("800.00"),
                 leasing_area_decimal=grow.leasing_area_decimal,
             )
             nursing.save()

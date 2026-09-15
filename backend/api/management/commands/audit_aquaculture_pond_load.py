@@ -193,8 +193,21 @@ class Command(BaseCommand):
                     )
                     continue
                 old_w = p.water_area_decimal
-                new_w = quantize_pond_area_decimal(old_w * scale)
                 old_l = p.leasing_area_decimal
+                # Scale-up on a pond whose water already exceeds leased land is how Digonta /
+                # Ashari-2 / Mynuddin Nursing picked up an extra trailing zero (4000/13200/8000).
+                if (
+                    scale > 1
+                    and old_l is not None
+                    and old_l > 0
+                    and old_w > old_l
+                ):
+                    self.stdout.write(
+                        f"  skip id={p.id} {p.name!r} - water {old_w} already > lease {old_l} "
+                        f"(extra zero more likely than a missing ×{scale})"
+                    )
+                    continue
+                new_w = quantize_pond_area_decimal(old_w * scale)
                 new_l = old_l
                 fields = ["water_area_decimal", "updated_at"]
                 p.water_area_decimal = new_w

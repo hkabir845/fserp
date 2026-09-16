@@ -14,7 +14,9 @@ from api.models import (
     AquacultureFishStockLedger,
     AquaculturePond,
 )
+from api.services.aquaculture_biomass_book_revaluation_service import REVAL_MEMO_PREFIX
 from api.services.aquaculture_fcr_service import compute_fcr_for_scope
+from api.services.aquaculture_growth_service import build_fish_growth_report
 
 pytestmark = pytest.mark.django_db
 
@@ -131,3 +133,59 @@ def test_fcr_counts_transfer_out_and_in(company_tenant_with_gl):
     # net sample +20 - transfer in 12 = 8
     assert Decimal(dst_out["biomass_gain_kg"]) == Decimal("8.0000")
     assert Decimal(dst_out["transfer_in_kg"]) == Decimal("12.0000")
+
+
+def test_fcr_ignores_auto_biomass_reval_adjustment(company_tenant_with_gl):
+    """
+    Live Ashari-1 (Aug–Sep 2026): sample 13,738 → 20,263 kg (gain ~6,525) but FCR
+    subtracted AUTO-AQ-BIOMASS-REVAL +82,041.5282 and showed −69,165 kg.
+    Reval only rewrites book kg to the sample; it is not fish arriving.
+    """
+    company = company_tenant_with_gl
+    cid = company.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Ashari - 1 Pond", pond_role="grow_out", is_active=True
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        sample_date=date(2026, 8, 16),
+        estimated_total_weight_kg=Decimal("13738.0000"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        sample_date=date(2026, 9, 12),
+        estimated_total_weight_kg=Decimal("20263.0000"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=pond,
+        entry_date=date(2026, 9, 12),
+        entry_kind="adjustment",
+        fish_count_delta=0,
+        weight_kg_delta=Decimal("82041.5282"),
+        post_to_books=False,
+        memo=f"{REVAL_MEMO_PREFIX}:pond={pond.id}:sample=390:target_kg=20263.0000",
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=pond,
+        entry_date=date(2026, 9, 10),
+        entry_kind="adjustment",
+        fish_count_delta=500,
+        weight_kg_delta=Decimal("80.0000"),
+        memo="Manual opening add — real inbound biomass",
+    )
+
+    out = compute_fcr_for_scope(cid, date(2026, 8, 1), date(2026, 9, 16), pond_id=pond.id)
+    # 20263 − 13738 = 6525, minus real inbound 80, reval ignored
+    assert Decimal(out["biomass_first_kg"]) == Decimal("13738.0000")
+    assert Decimal(out["biomass_last_kg"]) == Decimal("20263.0000")
+    assert Decimal(out["manual_biomass_in_kg"]) == Decimal("80.0000")
+    assert Decimal(out["biomass_gain_kg"]) == Decimal("6445.0000")
+
+    growth = build_fish_growth_report(
+        cid, date(2026, 8, 1), date(2026, 9, 16), pond_id=pond.id
+    )
+    assert Decimal(growth["summary"]["biomass_gain_kg"]) == Decimal("6445.0000")

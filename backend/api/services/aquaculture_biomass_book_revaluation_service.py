@@ -22,6 +22,12 @@ from api.services.aquaculture_stock_service import (
 REVAL_MEMO_PREFIX = "AUTO-AQ-BIOMASS-REVAL"
 
 
+def is_book_revaluation_ledger_row(row) -> bool:
+    """True for weight-only AUTO-AQ-BIOMASS-REVAL rows (book kg rewrite, not fish in/out)."""
+    memo = getattr(row, "memo", None) or ""
+    return memo.startswith(REVAL_MEMO_PREFIX)
+
+
 def _money_kg(d: Decimal) -> Decimal:
     return d.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 

@@ -210,16 +210,18 @@ def build_fish_growth_report(
             }
         )
 
-    portfolio = fcr_block.get("portfolio") or {}
+    headline = (fcr_block.get("scoped") if pond_id is not None else None) or fcr_block.get(
+        "portfolio"
+    ) or {}
     return {
         "summary": {
             "sample_count": qs.count(),
             "interval_count": len(all_intervals),
             "pond_count": len(pond_groups),
-            "feed_kg": portfolio.get("feed_kg"),
-            "biomass_gain_kg": portfolio.get("biomass_gain_kg"),
-            "fcr_biomass": portfolio.get("fcr_biomass"),
-            "harvest_kg": portfolio.get("harvest_kg"),
+            "feed_kg": headline.get("feed_kg"),
+            "biomass_gain_kg": headline.get("biomass_gain_kg"),
+            "fcr_biomass": headline.get("fcr_biomass"),
+            "harvest_kg": headline.get("harvest_kg"),
         },
         "fcr": fcr_block,
         "pond_groups": pond_groups,

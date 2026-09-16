@@ -23,6 +23,7 @@ from api.models import (
     AquacultureFishStockLedger,
     AquaculturePond,
 )
+from api.services.aquaculture_biomass_book_revaluation_service import is_book_revaluation_ledger_row
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 
 
@@ -187,6 +188,11 @@ def _sum_stock_ledger_adjustments_kg(
 
     Losses and negative adjustments are outflows (grown biomass that left).
     Positive adjustments are inflows (biomass that did not come from feed).
+
+    AUTO-AQ-BIOMASS-REVAL rows are book kg rewrites so the ledger matches the
+    latest sample. They are not fish arriving or leaving — counting them as
+    inflow (Ashari-1 live: +82,041 kg on 2026-09-12) turns a ~6 t sample-to-sample
+    gain into −69,165 kg.
     """
     qs = AquacultureFishStockLedger.objects.filter(
         company_id=company_id,
@@ -199,7 +205,9 @@ def _sum_stock_ledger_adjustments_kg(
         qs = qs.filter(production_cycle_id=production_cycle_id)
     outflow = Decimal("0")
     inflow = Decimal("0")
-    for row in qs.only("entry_kind", "weight_kg_delta"):
+    for row in qs.only("entry_kind", "weight_kg_delta", "memo"):
+        if is_book_revaluation_ledger_row(row):
+            continue
         dw = _d(row.weight_kg_delta)
         kind = (row.entry_kind or "").strip()
         if kind == "loss":
@@ -420,6 +428,8 @@ def fcr_period_summary_block(
             "FCR (biomass) = feed kg ÷ production biomass gain, where production = "
             "(last sample − first sample) + harvest + mortality/losses + transfer-out "
             "− transfer-in − stocking − positive manual adjustments. "
+            "Book biomass revaluations (AUTO-AQ-BIOMASS-REVAL) are excluded — they only "
+            "align ledger kg with the sample and are not fish in or out. "
             "FCR (harvest) = same feed kg ÷ fish_harvest_sale weight in the period."
         ),
     }

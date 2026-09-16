@@ -57,6 +57,7 @@ def test_growth_report_intervals(company_tenant):
         estimated_fish_count=100_000,
         estimated_total_weight_kg=Decimal("2000"),
         avg_weight_kg=Decimal("0.02"),
+        extrapolated_biomass_kg=Decimal("2000"),
         fish_species="tilapia",
     )
     AquacultureBiomassSample.objects.create(
@@ -66,6 +67,7 @@ def test_growth_report_intervals(company_tenant):
         estimated_fish_count=100_000,
         estimated_total_weight_kg=Decimal("3000"),
         avg_weight_kg=Decimal("0.03"),
+        extrapolated_biomass_kg=Decimal("3000"),
         fish_species="tilapia",
     )
     AquacultureExpense.objects.create(

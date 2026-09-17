@@ -61,62 +61,71 @@ def _days_between(start: date, end: date) -> int:
 
 
 def _interval_rows_for_samples(samples: list[AquacultureBiomassSample], company_id: int) -> list[dict[str, Any]]:
-    ordered = sorted(samples, key=lambda s: (s.sample_date, s.id))
+    # Consecutive samples must stay within the same cycle + species. Chaining a
+    # multi-species vertical day (tilapia → rui → carp…) invents fake ±t gains.
+    by_key: dict[tuple[int | None, str], list[AquacultureBiomassSample]] = {}
+    for s in samples:
+        cy = getattr(s, "production_cycle_id", None)
+        sp = (getattr(s, "fish_species", None) or "tilapia").strip() or "tilapia"
+        by_key.setdefault((cy, sp), []).append(s)
+
     rows: list[dict[str, Any]] = []
-    for i in range(1, len(ordered)):
-        prev = ordered[i - 1]
-        cur = ordered[i]
-        days = _days_between(prev.sample_date, cur.sample_date)
-        prev_mean = _sample_mean_weight_kg(prev)
-        cur_mean = _sample_mean_weight_kg(cur)
-        prev_bio = _sample_biomass_kg(prev)
-        cur_bio = _sample_biomass_kg(cur)
+    for key in sorted(by_key.keys(), key=lambda k: (k[0] is None, k[0] or 0, k[1])):
+        ordered = sorted(by_key[key], key=lambda s: (s.sample_date, s.id))
+        for i in range(1, len(ordered)):
+            prev = ordered[i - 1]
+            cur = ordered[i]
+            days = _days_between(prev.sample_date, cur.sample_date)
+            prev_mean = _sample_mean_weight_kg(prev)
+            cur_mean = _sample_mean_weight_kg(cur)
+            prev_bio = _sample_biomass_kg(prev)
+            cur_bio = _sample_biomass_kg(cur)
 
-        adg_g: str | None = None
-        if prev_mean is not None and cur_mean is not None and prev_mean > 0:
-            adg = ((cur_mean - prev_mean) * Decimal("1000")) / Decimal(days)
-            adg_g = str(adg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+            adg_g: str | None = None
+            if prev_mean is not None and cur_mean is not None and prev_mean > 0:
+                adg = ((cur_mean - prev_mean) * Decimal("1000")) / Decimal(days)
+                adg_g = str(adg.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-        biomass_gain: str | None = None
-        if prev_bio is not None and cur_bio is not None:
-            biomass_gain = str(_money_q(cur_bio - prev_bio))
+            biomass_gain: str | None = None
+            if prev_bio is not None and cur_bio is not None:
+                biomass_gain = str(_money_q(cur_bio - prev_bio))
 
-        feed_start = prev.sample_date + timedelta(days=1)
-        feed_end = cur.sample_date
-        if feed_start > feed_end:
-            feed_start = prev.sample_date
-        feed_kg = sum_feed_kg_for_period(
-            company_id,
-            feed_start,
-            feed_end,
-            pond_id=cur.pond_id,
-            production_cycle_id=cur.production_cycle_id,
-        )
-        interval_fcr: str | None = None
-        if biomass_gain is not None and Decimal(biomass_gain) > 0 and feed_kg > 0:
-            interval_fcr = str(_money_q(feed_kg / Decimal(biomass_gain)))
+            feed_start = prev.sample_date + timedelta(days=1)
+            feed_end = cur.sample_date
+            if feed_start > feed_end:
+                feed_start = prev.sample_date
+            feed_kg = sum_feed_kg_for_period(
+                company_id,
+                feed_start,
+                feed_end,
+                pond_id=cur.pond_id,
+                production_cycle_id=cur.production_cycle_id,
+            )
+            interval_fcr: str | None = None
+            if biomass_gain is not None and Decimal(biomass_gain) > 0 and feed_kg > 0:
+                interval_fcr = str(_money_q(feed_kg / Decimal(biomass_gain)))
 
-        sp = getattr(cur, "fish_species", None) or "tilapia"
-        spo = getattr(cur, "fish_species_other", None) or ""
-        rows.append(
-            {
-                "from_sample_id": prev.id,
-                "to_sample_id": cur.id,
-                "from_date": prev.sample_date.isoformat(),
-                "to_date": cur.sample_date.isoformat(),
-                "days": days,
-                "fish_species": sp,
-                "fish_species_label": fish_species_display_label(sp, spo),
-                "from_mean_weight_g": str((prev_mean * 1000).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if prev_mean else None,
-                "to_mean_weight_g": str((cur_mean * 1000).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if cur_mean else None,
-                "adg_g_per_fish_per_day": adg_g,
-                "from_biomass_kg": str(prev_bio) if prev_bio is not None else None,
-                "to_biomass_kg": str(cur_bio) if cur_bio is not None else None,
-                "biomass_gain_kg": biomass_gain,
-                "feed_kg": str(feed_kg) if feed_kg > 0 else "0",
-                "interval_fcr": interval_fcr,
-            }
-        )
+            sp = getattr(cur, "fish_species", None) or "tilapia"
+            spo = getattr(cur, "fish_species_other", None) or ""
+            rows.append(
+                {
+                    "from_sample_id": prev.id,
+                    "to_sample_id": cur.id,
+                    "from_date": prev.sample_date.isoformat(),
+                    "to_date": cur.sample_date.isoformat(),
+                    "days": days,
+                    "fish_species": sp,
+                    "fish_species_label": fish_species_display_label(sp, spo),
+                    "from_mean_weight_g": str((prev_mean * 1000).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if prev_mean else None,
+                    "to_mean_weight_g": str((cur_mean * 1000).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if cur_mean else None,
+                    "adg_g_per_fish_per_day": adg_g,
+                    "from_biomass_kg": str(prev_bio) if prev_bio is not None else None,
+                    "to_biomass_kg": str(cur_bio) if cur_bio is not None else None,
+                    "biomass_gain_kg": biomass_gain,
+                    "feed_kg": str(feed_kg) if feed_kg > 0 else "0",
+                    "interval_fcr": interval_fcr,
+                }
+            )
     return rows
 
 

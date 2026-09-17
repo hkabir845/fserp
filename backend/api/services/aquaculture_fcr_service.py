@@ -242,6 +242,57 @@ def _standing_sample_on_day(
     return best
 
 
+def _standing_biomass_on_day(
+    company_id: int,
+    pond_id: int,
+    day: date,
+    *,
+    production_cycle_id: int | None = None,
+    fish_species: str | None = None,
+) -> Decimal | None:
+    """
+    Standing biomass on ``day`` from non-derived samples.
+
+    When ``fish_species`` is set, returns that species only. Otherwise sums the
+    best extrapolated kg per species so a multi-species vertical sample
+    (Ashari-2 C01 ~50 t) is not collapsed to the single heaviest line (tilapia).
+    """
+    if fish_species:
+        standing = _standing_sample_on_day(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        kg = _sample_biomass_kg(standing) if standing is not None else None
+        return _q4(kg) if kg is not None and kg > 0 else None
+
+    qs = AquacultureBiomassSample.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        sample_date=day,
+        source_fish_sale__isnull=True,
+        source_bill_line__isnull=True,
+        source_fish_pond_transfer_line__isnull=True,
+    )
+    if production_cycle_id is not None:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+
+    best_by_species: dict[str, Decimal] = {}
+    for s in qs.order_by("-id"):
+        kg = _sample_biomass_kg(s)
+        if kg is None or kg <= 0:
+            continue
+        sp = (getattr(s, "fish_species", None) or "tilapia").strip() or "tilapia"
+        prev = best_by_species.get(sp)
+        if prev is None or kg > prev:
+            best_by_species[sp] = kg
+    if not best_by_species:
+        return None
+    return _q4(sum(best_by_species.values(), Decimal("0")))
+
+
 def _opening_closing_live_standing(
     company_id: int,
     pond_id: int,
@@ -273,6 +324,17 @@ def _opening_closing_live_standing(
     )
     if close_kg <= 0 or close_heads <= 0:
         return None
+    # Prefer summed standing samples on the end date (multi-species vertical)
+    # over live snapshot so open/close use the same basis.
+    close_sample_kg = _standing_biomass_on_day(
+        company_id,
+        pond_id,
+        end,
+        production_cycle_id=production_cycle_id,
+        fish_species=fish_species,
+    )
+    if close_sample_kg is not None and close_sample_kg > 0:
+        close_kg = close_sample_kg
     need_heads = int((Decimal(close_heads) * _LIVE_CROP_HEAD_FRACTION).to_integral_value(rounding=ROUND_HALF_UP))
     qs = AquacultureBiomassSample.objects.filter(
         company_id=company_id,
@@ -318,16 +380,15 @@ def _opening_closing_live_standing(
         )
         if heads < need_heads or kg <= 0:
             continue
-        standing = _standing_sample_on_day(
+        sample_kg = _standing_biomass_on_day(
             company_id,
             pond_id,
             day,
             production_cycle_id=production_cycle_id,
             fish_species=fish_species,
         )
-        sample_kg = _sample_biomass_kg(standing) if standing is not None else None
         if sample_kg is not None and sample_kg > 0:
-            opening_kg = _q4(sample_kg)
+            opening_kg = sample_kg
             opening_from_sample = True
         else:
             opening_kg = kg

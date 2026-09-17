@@ -45,12 +45,13 @@ def _prior_standing_sample_avg_kg(sample) -> Decimal | None:
     prev = qs.order_by("-sample_date", "-id").first()
     if prev is None:
         return None
+    # Prefer stored mean — seine kg ÷ seine heads matches avg when both are set.
+    if prev.avg_weight_kg is not None and prev.avg_weight_kg > 0:
+        return Decimal(str(prev.avg_weight_kg)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     fc = prev.estimated_fish_count
     etw = prev.estimated_total_weight_kg
     if fc and fc > 0 and etw is not None and Decimal(str(etw)) > 0:
         return (Decimal(str(etw)) / Decimal(int(fc))).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
-    if prev.avg_weight_kg is not None and prev.avg_weight_kg > 0:
-        return Decimal(str(prev.avg_weight_kg)).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
     return None
 
 

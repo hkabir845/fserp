@@ -424,3 +424,71 @@ def test_digonto_gain_is_sample_after_harvest_not_stale_carp(company_tenant_with
 
     pond_row = compute_fish_stock_position_rows(cid, pond_id=pond.id)[0]
     assert effective_biomass_kg_from_position_row(pond_row) == Decimal("7860.6826")
+
+
+def test_fcr_sums_multi_species_standing_samples_on_opening_day(company_tenant_with_gl):
+    """Vertical sample day: opening is sum of species lines, not max(tilapia)."""
+    company = company_tenant_with_gl
+    cid = company.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Multi Sp Pond", pond_role="grow_out", is_active=True
+    )
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, code="C01", name="First", start_date=date(2026, 1, 1), is_active=True
+    )
+    # Heads via stocking ledgers so live snapshot accepts the crop.
+    for sp, heads, avg_open, avg_close in (
+        ("tilapia", 1000, Decimal("1.0000"), Decimal("1.1000")),
+        ("rui", 500, Decimal("0.8000"), Decimal("1.0000")),
+    ):
+        AquacultureFishStockLedger.objects.create(
+            company_id=cid,
+            pond=pond,
+            production_cycle=cy,
+            entry_date=date(2026, 3, 1),
+            entry_kind="adjustment",
+            fish_species=sp,
+            fish_count_delta=heads,
+            weight_kg_delta=Decimal(heads) * avg_open,
+            memo="seed stock",
+        )
+        AquacultureBiomassSample.objects.create(
+            company_id=cid,
+            pond=pond,
+            production_cycle=cy,
+            sample_date=date(2026, 4, 1),
+            fish_species=sp,
+            estimated_fish_count=10,
+            estimated_total_weight_kg=avg_open * 10,
+            stock_reference_fish_count=heads,
+            extrapolated_biomass_kg=Decimal(heads) * avg_open,
+            avg_weight_kg=avg_open,
+        )
+        AquacultureBiomassSample.objects.create(
+            company_id=cid,
+            pond=pond,
+            production_cycle=cy,
+            sample_date=date(2026, 5, 1),
+            fish_species=sp,
+            estimated_fish_count=10,
+            estimated_total_weight_kg=avg_close * 10,
+            stock_reference_fish_count=heads,
+            extrapolated_biomass_kg=Decimal(heads) * avg_close,
+            avg_weight_kg=avg_close,
+        )
+
+    out = compute_fcr_for_scope(
+        cid, date(2026, 4, 1), date(2026, 5, 1), pond_id=pond.id, production_cycle_id=cy.id
+    )
+    # Open 1000+400=1400; close 1100+500=1600; gain 200 (no harvest).
+    assert Decimal(out["biomass_first_kg"]) == Decimal("1400.0000")
+    assert Decimal(out["biomass_last_kg"]) == Decimal("1600.0000")
+    assert Decimal(out["biomass_gain_kg"]) == Decimal("200.0000")
+
+    growth = build_fish_growth_report(
+        cid, date(2026, 4, 1), date(2026, 5, 1), pond_id=pond.id, production_cycle_id=cy.id
+    )
+    # Two species intervals — not one chain across tilapia→rui on the same day.
+    assert growth["summary"]["interval_count"] == 2
+    gains = sorted(Decimal(i["biomass_gain_kg"]) for i in growth["intervals"])
+    assert gains == [Decimal("100.00"), Decimal("100.00")]

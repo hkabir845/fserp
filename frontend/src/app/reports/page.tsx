@@ -257,7 +257,10 @@ type ReportType =
   | 'aquaculture-pond-total-inventory'
   | 'aquaculture-pl-management'
 
-/** Aquaculture reports that honour production-cycle (batch) scope for accurate fish metrics. */
+/**
+ * Aquaculture reports that honour Cycle + Batch (production-cycle) scope.
+ * Excludes warehouse/shop/equipment snapshots — those are not stocking-batch tagged.
+ */
 const AQUACULTURE_BATCH_FILTER_REPORT_IDS = new Set<ReportType>([
   'aquaculture-pond-pl',
   'aquaculture-fcr-biomass',
@@ -274,6 +277,8 @@ const AQUACULTURE_BATCH_FILTER_REPORT_IDS = new Set<ReportType>([
   'aquaculture-feed-consumption',
   'aquaculture-medicine-consumption',
   'aquaculture-expenses',
+  'aquaculture-production-cycles',
+  'aquaculture-profit-transfers',
 ])
 
 const ITEM_SCOPED_REPORT_IDS: readonly ReportType[] = [
@@ -4225,9 +4230,7 @@ function ReportsPageContent() {
                           <p className="mt-1 text-cyan-800/90">
                             Amounts in BDT — refresh after changing filters.
                             {pondLockedBySiteScope
-                              ? selectedReport === 'aquaculture-fcr-biomass'
-                                ? ' Cycle (C01…) and Batch appear when Site is a pond — narrow FCR, feed, and pond load to one stocking cohort.'
-                                : ' Cycle and Batch appear when Site is a pond — choose All or one cohort for accurate load, FCR, growth, biomass, and bio-asset.'
+                              ? ' Cycle (C01…) and Batch appear when Site is a pond — choose All or one stocking cohort.'
                               : ' Select a pond in Site (above) to filter by Cycle and Batch.'}
                           </p>
                           <div className="mt-3 flex flex-wrap items-end gap-3">

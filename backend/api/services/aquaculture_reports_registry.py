@@ -2479,11 +2479,19 @@ def _report_production_cycles(company_id: int, start: date, end: date, request: 
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     qs = AquacultureProductionCycle.objects.filter(company_id=company_id).select_related("pond").order_by(
         "pond_id", "sort_order", "-start_date", "id"
     )
     if pond_filter_id is not None:
         qs = qs.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        qs = qs.filter(pk=cycle_filter_id)
 
     lines: list[dict[str, Any]] = []
     by_pond: dict[int, list[dict]] = defaultdict(list)
@@ -2533,6 +2541,12 @@ def _report_profit_transfers(company_id: int, start: date, end: date, request: H
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
+    cycle_filter_id, scoped_cycle, cerr = _cycle_filter(company_id, request.GET.get("cycle_id"))
+    if cerr:
+        return cerr
+    pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
+    if rerr:
+        return rerr
     qs = (
         AquaculturePondProfitTransfer.objects.filter(
             company_id=company_id,
@@ -2544,6 +2558,8 @@ def _report_profit_transfers(company_id: int, start: date, end: date, request: H
     )
     if pond_filter_id is not None:
         qs = qs.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        qs = qs.filter(production_cycle_id=cycle_filter_id)
 
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}

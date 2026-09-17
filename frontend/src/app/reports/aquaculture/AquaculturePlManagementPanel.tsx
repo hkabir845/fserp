@@ -45,6 +45,7 @@ interface Pond {
 interface CycleOpt {
   id: number
   name: string
+  code?: string
 }
 interface IncomeSlice {
   income_type: string
@@ -264,6 +265,7 @@ export function AquaculturePlManagementPanel({
   )
   const [pondId, setPondId] = useState(archiveFromUrl?.pondId ?? embeddedPondId ?? '')
   const [cycleId, setCycleId] = useState('')
+  const [cycleCode, setCycleCode] = useState('')
   const [includeCycleBreakdown, setIncludeCycleBreakdown] = useState(false)
   const [cycles, setCycles] = useState<CycleOpt[]>([])
   const [ponds, setPonds] = useState<Pond[]>([])
@@ -364,6 +366,7 @@ export function AquaculturePlManagementPanel({
     if (!pondId) {
       setCycles([])
       setCycleId('')
+      setCycleCode('')
       return
     }
     void (async () => {
@@ -371,18 +374,52 @@ export function AquaculturePlManagementPanel({
         const { data } = await api.get<CycleOpt[]>('/aquaculture/production-cycles/', {
           params: { pond_id: pondId },
         })
-        setCycles(Array.isArray(data) ? data : [])
+        const rows = Array.isArray(data) ? data : []
+        setCycles(
+          rows.map((c) => ({
+            id: c.id,
+            name: c.name,
+            code: (c.code || '').trim(),
+          }))
+        )
       } catch {
         setCycles([])
       }
     })()
   }, [pondId])
 
+  const cycleCodeOptions = useMemo(() => {
+    const codes = new Set<string>()
+    for (const c of cycles) {
+      const code = (c.code || '').trim()
+      if (code) codes.add(code)
+    }
+    return Array.from(codes).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }, [cycles])
+
+  const batchesForFilter = useMemo(() => {
+    const code = cycleCode.trim()
+    if (!code) return cycles
+    return cycles.filter((c) => (c.code || '').trim() === code)
+  }, [cycles, cycleCode])
+
   useEffect(() => {
     if (cycleId && !cycles.some((c) => String(c.id) === cycleId)) {
       setCycleId('')
     }
   }, [cycles, cycleId])
+
+  useEffect(() => {
+    if (!cycleCode.trim()) return
+    if (cycleCodeOptions.includes(cycleCode.trim())) return
+    setCycleCode('')
+  }, [cycleCodeOptions, cycleCode])
+
+  useEffect(() => {
+    if (!cycleId) return
+    if (batchesForFilter.some((c) => String(c.id) === cycleId)) return
+    setCycleId('')
+  }, [batchesForFilter, cycleId])
 
   useEffect(() => {
     if (!xferForm.pond_id) {
@@ -394,7 +431,13 @@ export function AquaculturePlManagementPanel({
         const { data } = await api.get<CycleOpt[]>('/aquaculture/production-cycles/', {
           params: { pond_id: xferForm.pond_id },
         })
-        setXferCycles(Array.isArray(data) ? data : [])
+        setXferCycles(
+          (Array.isArray(data) ? data : []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            code: (c.code || '').trim(),
+          }))
+        )
       } catch {
         setXferCycles([])
       }
@@ -908,6 +951,7 @@ export function AquaculturePlManagementPanel({
             onChange={(e) => {
               setPondId(e.target.value)
               setCycleId('')
+              setCycleCode('')
             }}
             aria-label="Limit report to a single active pond"
           >
@@ -921,18 +965,53 @@ export function AquaculturePlManagementPanel({
           </select>
         </label>
         <label className="text-sm text-foreground/85">
-          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Production cycle</span>
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Cycle</span>
+          <select
+            className="mt-1 min-w-[8rem] rounded-lg border border-border px-2 py-1.5 disabled:opacity-50"
+            value={cycleCode}
+            disabled={!pondId || cycleCodeOptions.length === 0}
+            onChange={(e) => {
+              const next = e.target.value
+              setCycleCode(next)
+              const matched = next.trim()
+                ? cycles.filter((c) => (c.code || '').trim() === next.trim())
+                : cycles
+              if (matched.length === 1) {
+                setCycleId(String(matched[0].id))
+              } else if (cycleId && !matched.some((c) => String(c.id) === cycleId)) {
+                setCycleId('')
+              }
+            }}
+            aria-label="Limit report to one cycle code for the selected pond"
+          >
+            <option value="">All cycles</option>
+            {cycleCodeOptions.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm text-foreground/85">
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">Batch</span>
           <select
             className="mt-1 min-w-[11rem] rounded-lg border border-border px-2 py-1.5 disabled:opacity-50"
             value={cycleId}
             disabled={!pondId || cycles.length === 0}
-            onChange={(e) => setCycleId(e.target.value)}
-            aria-label="Limit report to one production cycle for the selected pond"
+            onChange={(e) => {
+              const next = e.target.value
+              setCycleId(next)
+              if (!next) return
+              const row = cycles.find((c) => String(c.id) === next)
+              const code = (row?.code || '').trim()
+              if (code) setCycleCode(code)
+            }}
+            aria-label="Limit report to one stocking batch for the selected pond"
           >
-            <option value="">Full pond (all cycles)</option>
-            {cycles.map((c) => (
+            <option value="">All batches</option>
+            {batchesForFilter.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.code ? `${c.code} — ${c.name}` : c.name}
               </option>
             ))}
           </select>
@@ -996,7 +1075,7 @@ export function AquaculturePlManagementPanel({
               </select>
             </label>
             <label className="block text-sm font-medium text-foreground/85">
-              Production cycle (optional)
+              Batch (optional)
               <select
                 className="mt-1 w-full rounded-lg border border-border px-2 py-2 text-sm disabled:opacity-50"
                 value={xferForm.production_cycle_id}
@@ -1006,7 +1085,7 @@ export function AquaculturePlManagementPanel({
                 <option value="">None</option>
                 {xferCycles.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {c.code ? `${c.code} — ${c.name}` : c.name}
                   </option>
                 ))}
               </select>

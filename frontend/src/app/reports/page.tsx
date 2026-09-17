@@ -1566,6 +1566,8 @@ function ReportsPageContent() {
   const [aquacultureFeedItems, setAquacultureFeedItems] = useState<{ id: number; name: string }[]>([])
   const [aquacultureMedicineItems, setAquacultureMedicineItems] = useState<{ id: number; name: string }[]>([])
   const [aquacultureCycleId, setAquacultureCycleId] = useState('')
+  /** Cycle code filter (C01, C02, …) — narrows Batch options; API still uses cycle_id. */
+  const [aquacultureCycleCode, setAquacultureCycleCode] = useState('')
   const [aquacultureIncludeCycleBreakdown, setAquacultureIncludeCycleBreakdown] = useState(false)
   const [fingerlingSearch, setFingerlingSearch] = useState('')
   const [fingerlingSpecies, setFingerlingSpecies] = useState('')
@@ -1576,7 +1578,7 @@ function ReportsPageContent() {
   const [fingerlingBalance, setFingerlingBalance] = useState<'all' | 'balanced' | 'unbalanced'>('all')
   const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; pond_role?: string }[]>([])
   const [aquacultureCycles, setAquacultureCycles] = useState<
-    { id: number; name: string; pond_id?: number; pond_name?: string }[]
+    { id: number; name: string; code?: string; pond_id?: number; pond_name?: string }[]
   >([])
   /** null = not loaded yet; false = company setting off */
   const [companyAquacultureEnabled, setCompanyAquacultureEnabled] = useState<boolean | null>(null)
@@ -1987,7 +1989,7 @@ function ReportsPageContent() {
     }
     let cancelled = false
     api
-      .get<{ id: number; name: string; pond_id?: number; pond_name?: string }[]>(
+      .get<{ id: number; name: string; code?: string; pond_id?: number; pond_name?: string }[]>(
         '/aquaculture/production-cycles/',
         { params: { pond_id: effectiveAquaculturePondId } }
       )
@@ -1998,6 +2000,7 @@ function ReportsPageContent() {
           rows.map((c) => ({
             id: c.id,
             name: c.name,
+            code: (c.code || '').trim(),
             pond_id: c.pond_id,
             pond_name: c.pond_name,
           }))
@@ -2016,11 +2019,38 @@ function ReportsPageContent() {
     selectedCompany?.id,
   ])
 
+  const aquacultureCycleCodeOptions = useMemo(() => {
+    const codes = new Set<string>()
+    for (const c of aquacultureCycles) {
+      const code = (c.code || '').trim()
+      if (code) codes.add(code)
+    }
+    return Array.from(codes).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  }, [aquacultureCycles])
+
+  const aquacultureBatchesForFilter = useMemo(() => {
+    const code = aquacultureCycleCode.trim()
+    if (!code) return aquacultureCycles
+    return aquacultureCycles.filter((c) => (c.code || '').trim() === code)
+  }, [aquacultureCycles, aquacultureCycleCode])
+
   useEffect(() => {
     if (!aquacultureCycleId) return
     if (aquacultureCycles.some((c) => String(c.id) === aquacultureCycleId)) return
     setAquacultureCycleId('')
   }, [aquacultureCycles, aquacultureCycleId])
+
+  useEffect(() => {
+    if (!aquacultureCycleCode.trim()) return
+    if (aquacultureCycleCodeOptions.includes(aquacultureCycleCode.trim())) return
+    setAquacultureCycleCode('')
+  }, [aquacultureCycleCodeOptions, aquacultureCycleCode])
+
+  useEffect(() => {
+    if (!aquacultureCycleId) return
+    if (aquacultureBatchesForFilter.some((c) => String(c.id) === aquacultureCycleId)) return
+    setAquacultureCycleId('')
+  }, [aquacultureBatchesForFilter, aquacultureCycleId])
 
   const reportSiteScope = useMemo(() => {
     if (selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) {
@@ -2624,9 +2654,11 @@ function ReportsPageContent() {
       if (scope.kind === 'pond') {
         setAquaculturePondId(String(scope.id))
         setAquacultureCycleId('')
+        setAquacultureCycleCode('')
       } else {
         setAquaculturePondId('')
         setAquacultureCycleId('')
+        setAquacultureCycleCode('')
       }
       if (!selectedReport) return
       if (selectedReport === 'analytics-kpi') {
@@ -4193,8 +4225,10 @@ function ReportsPageContent() {
                           <p className="mt-1 text-cyan-800/90">
                             Amounts in BDT — refresh after changing filters.
                             {pondLockedBySiteScope
-                              ? ' Fish / Tilapia Batch appears when Site is a pond — choose All Batch or one cycle for accurate load, FCR, growth, biomass, and bio-asset.'
-                              : ' Select a pond in Site (above) to filter by Fish / Tilapia Batch.'}
+                              ? selectedReport === 'aquaculture-fcr-biomass'
+                                ? ' Cycle (C01…) and Batch appear when Site is a pond — narrow FCR, feed, and pond load to one stocking cohort.'
+                                : ' Cycle and Batch appear when Site is a pond — choose All or one cohort for accurate load, FCR, growth, biomass, and bio-asset.'
+                              : ' Select a pond in Site (above) to filter by Cycle and Batch.'}
                           </p>
                           <div className="mt-3 flex flex-wrap items-end gap-3">
                             {selectedReport &&
@@ -4202,19 +4236,58 @@ function ReportsPageContent() {
                               pondLockedBySiteScope && (
                               <>
                                 <div className="flex flex-col gap-1">
-                                  <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle">
-                                    Fish / Tilapia Batch
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle-code">
+                                    Cycle
                                   </label>
                                   <select
-                                    id="aq-report-cycle"
+                                    id="aq-report-cycle-code"
+                                    value={aquacultureCycleCode}
+                                    onChange={(e) => {
+                                      const next = e.target.value
+                                      setAquacultureCycleCode(next)
+                                      const matched = next.trim()
+                                        ? aquacultureCycles.filter((c) => (c.code || '').trim() === next.trim())
+                                        : aquacultureCycles
+                                      if (matched.length === 1) {
+                                        setAquacultureCycleId(String(matched[0].id))
+                                      } else if (
+                                        aquacultureCycleId &&
+                                        !matched.some((c) => String(c.id) === aquacultureCycleId)
+                                      ) {
+                                        setAquacultureCycleId('')
+                                      }
+                                    }}
+                                    className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[10rem]"
+                                  >
+                                    <option value="">All cycles</option>
+                                    {aquacultureCycleCodeOptions.map((code) => (
+                                      <option key={code} value={code}>
+                                        {code}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-batch">
+                                    Batch
+                                  </label>
+                                  <select
+                                    id="aq-report-batch"
                                     value={aquacultureCycleId}
-                                    onChange={(e) => setAquacultureCycleId(e.target.value)}
+                                    onChange={(e) => {
+                                      const next = e.target.value
+                                      setAquacultureCycleId(next)
+                                      if (!next) return
+                                      const row = aquacultureCycles.find((c) => String(c.id) === next)
+                                      const code = (row?.code || '').trim()
+                                      if (code) setAquacultureCycleCode(code)
+                                    }}
                                     className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[14rem]"
                                   >
-                                    <option value="">All Batch</option>
-                                    {aquacultureCycles.map((c) => (
+                                    <option value="">All batches</option>
+                                    {aquacultureBatchesForFilter.map((c) => (
                                       <option key={c.id} value={String(c.id)}>
-                                        {c.name}
+                                        {c.code ? `${c.code} — ${c.name}` : c.name}
                                       </option>
                                     ))}
                                   </select>

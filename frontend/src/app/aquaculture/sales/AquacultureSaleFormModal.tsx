@@ -258,6 +258,29 @@ export function AquacultureSaleFormModal({
     return Math.round(sum * 100) / 100
   }, [lines])
 
+  const sellingPondId = header.pond_id
+  const otherPondBuyers = useMemo(() => {
+    return ponds
+      .filter((p) => String(p.id) !== sellingPondId && p.pos_customer_id != null)
+      .map((p) => ({
+        pondId: p.id,
+        pondName: p.name,
+        customerId: p.pos_customer_id as number,
+        label:
+          (p.pos_customer_display || '').trim() ||
+          customerPickLabel(
+            customers.find((c) => c.id === p.pos_customer_id) || {
+              id: p.pos_customer_id as number,
+              display_name: p.name,
+            },
+          ),
+      }))
+  }, [ponds, sellingPondId, customers])
+
+  const pickPondBuyer = (label: string) => {
+    setHeader((h) => ({ ...h, buyer_name: label }))
+  }
+
   const resetForm = useCallback(() => {
     const today = new Date().toISOString().slice(0, 10)
     const pond =
@@ -588,10 +611,36 @@ export function AquacultureSaleFormModal({
                   className={`${inputCls} mt-1.5`}
                   list="aq-sale-customer-suggestions"
                   autoComplete="off"
-                  placeholder="Wholesaler, market, or walk-in"
+                  placeholder="Other pond, wholesaler, market, or walk-in"
                   value={header.buyer_name}
                   onChange={(e) => setHeader((h) => ({ ...h, buyer_name: e.target.value }))}
                 />
+                {otherPondBuyers.length > 0 ? (
+                  <div className="mt-2">
+                    <p className="text-[11px] text-muted-foreground">
+                      Sell to another pond (each pond keeps its own cost, income, and net profit; settle dues on the
+                      pond ledgers):
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {otherPondBuyers.map((b) => (
+                        <button
+                          key={b.pondId}
+                          type="button"
+                          onClick={() => pickPondBuyer(b.label)}
+                          className="rounded-md border border-primary/30 bg-accent/40 px-2 py-1 text-[11px] font-medium text-primary hover:bg-accent"
+                          title={`Invoice ${b.pondName}'s pond customer`}
+                        >
+                          {b.pondName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    To sell to another pond, that pond needs its POS customer (auto-created on Ponds). Outside buyers
+                    still work as usual.
+                  </p>
+                )}
               </label>
               <label className="block sm:col-span-2 lg:col-span-4">
                 <span className={labelCls}>Memo / delivery notes</span>

@@ -738,7 +738,7 @@ export default function AquacultureOverviewPage() {
         </p>
       ) : null}
 
-      {/* Fry nursing → fingerling transfer workflow */}
+      {/* Fry nursing → sell fingerlings workflow */}
       <section className="mt-10 rounded-xl border border-sky-200 bg-sky-50/60 p-5">
         <h2 className="text-sm font-semibold text-sky-950">
           {aquacultureT('dashboardNursingWorkflowTitle', lang)}
@@ -763,7 +763,7 @@ export default function AquacultureOverviewPage() {
             {aquacultureT('dashboardStockFryBill', lang)}
           </Link>
           <Link
-            href="/aquaculture/transfers"
+            href="/aquaculture/sales"
             className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-sm font-medium text-sky-900 hover:bg-sky-100"
           >
             {aquacultureT('dashboardTransferFingerlings', lang)}
@@ -965,7 +965,7 @@ export default function AquacultureOverviewPage() {
           <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <Fish className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold text-foreground">Fish on hand (transfers − sales ± ledger)</h2>
+              <h2 className="text-sm font-semibold text-foreground">Fish on hand (sales ± ledger)</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link

@@ -981,6 +981,11 @@ def _pond_to_json(
     pc = getattr(p, "pos_customer", None)
     if pc:
         pc_disp = (pc.company_name or pc.display_name or "").strip() or f"Customer #{pc.id}"
+    ivid = getattr(p, "internal_vendor_id", None)
+    iv_disp = ""
+    iv = getattr(p, "internal_vendor", None)
+    if iv:
+        iv_disp = (getattr(iv, "name", None) or "").strip() or f"Vendor #{iv.id}"
     wa = p.water_area_decimal
     d_ft = getattr(p, "pond_depth_ft", None)
     sq_ft = compute_water_surface_sq_ft(wa)
@@ -1013,6 +1018,9 @@ def _pond_to_json(
         "pos_customer_opening_balance_date": (
             pc.opening_balance_date.isoformat() if pc and pc.opening_balance_date else None
         ),
+        "internal_vendor_id": ivid,
+        "internal_vendor_display": iv_disp,
+        "internal_vendor_auto_managed": bool(getattr(p, "auto_internal_vendor", False)),
         "default_feed_item_id": getattr(p, "default_feed_item_id", None),
         "default_feed_item_name": (
             (p.default_feed_item.name or "").strip()
@@ -1302,6 +1310,7 @@ def aquaculture_ponds_list_or_create(request):
             AquaculturePond.objects.filter(company_id=cid)
             .select_related(
                 "pos_customer",
+                "internal_vendor",
                 "default_feed_item",
                 "default_medicine_item",
                 "warehouse_group",
@@ -1395,6 +1404,7 @@ def aquaculture_ponds_list_or_create(request):
         AquaculturePond.objects.filter(pk=p.pk)
         .select_related(
             "pos_customer",
+            "internal_vendor",
             "default_feed_item",
             "default_medicine_item",
             "warehouse_group",
@@ -1918,6 +1928,7 @@ def aquaculture_pond_detail(request, pond_id: int):
             AquaculturePond.objects.filter(pk=p.pk)
             .select_related(
                 "pos_customer",
+                "internal_vendor",
                 "default_feed_item",
                 "default_medicine_item",
                 "warehouse_group",
@@ -2010,6 +2021,7 @@ def aquaculture_pond_detail(request, pond_id: int):
             AquaculturePond.objects.filter(pk=p.pk)
             .select_related(
                 "pos_customer",
+                "internal_vendor",
                 "default_feed_item",
                 "default_medicine_item",
                 "warehouse_group",

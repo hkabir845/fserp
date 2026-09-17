@@ -1624,7 +1624,7 @@ export default function AquaculturePondsPage() {
               </label>
               {form.pond_role === 'nursing' ? (
                 <label className="block text-sm font-medium text-foreground/85">
-                  Grow-out pond on same site (remainder after transfers)
+                  Grow-out pond on same site (buyer for remainder sales)
                   <select
                     className="mt-1 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm"
                     value={form.linked_grow_out_pond_id}
@@ -1638,8 +1638,9 @@ export default function AquaculturePondsPage() {
                     ))}
                   </select>
                   <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                    When fingerlings are ready (pcs/kg from your latest sample), transfer most to production ponds and the
-                    remainder here (e.g. Mynuddin Nursing → Mynuddin Pond).
+                    When fingerlings are ready (pcs/kg from your latest sample), sell most to production ponds and sell
+                    the remainder here (e.g. Mynuddin Nursing → Mynuddin Pond). Each pond keeps its own cost, income, and
+                    net profit.
                   </span>
                 </label>
               ) : null}
@@ -1904,8 +1905,8 @@ export default function AquaculturePondsPage() {
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-bold text-foreground">Create physical site pair</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              One water body, two profit centers: nursing phase (fry → fingerling) and grow-out phase (remainder +
-              production).
+              One water body, two profit centers: nursing phase (fry → fingerling) and grow-out phase. Fish that move
+              between them are sold so each pond shows cost, income, dues, and net profit.
             </p>
             <div className="mt-4 flex gap-2 rounded-lg border border-border bg-muted/40 p-1">
               <button

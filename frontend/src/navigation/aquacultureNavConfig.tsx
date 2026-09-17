@@ -66,7 +66,7 @@ export const AQUACULTURE_NAV_GROUPS: AquacultureNavGroup[] = [
         sidebarLabel: 'Stocking batches',
         icon: Layers,
       },
-      { href: '/aquaculture/transfers', label: 'Pond transfers', sidebarLabel: 'Fish pond transfers', icon: ArrowRightLeft },
+      { href: '/aquaculture/transfers', label: 'Past fish transfers', sidebarLabel: 'Past fish transfers', icon: ArrowRightLeft },
       { href: '/aquaculture/stock', label: 'Pond stock', sidebarLabel: 'Pond stock', icon: Fish },
       { href: '/aquaculture/sampling', label: 'Biomass sampling', icon: Gauge },
       { href: '/aquaculture/feeding', label: 'Feeding advice', icon: Sparkles },

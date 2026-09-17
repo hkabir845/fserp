@@ -433,8 +433,8 @@ const strings: Dict = {
   billToCustomer: { en: 'Bill-to customer', bn: 'বিল-টু গ্রাহক' },
   selectCustomer: { en: 'Select customer…', bn: 'গ্রাহক নির্বাচন…' },
   pondCustomerHint: {
-    en: 'Or link the pond to a POS customer under Ponds — it will be used if you leave this empty (on account only).',
-    bn: 'অথবা Ponds-এ POS গ্রাহক লিঙ্ক করুন — খালি রাখলে (শুধু on account) সেটি ব্যবহার হবে।',
+    en: 'For a sale to another pond, pick that pond’s POS customer (on account). Settle dues later on the pond customer / vendor ledgers. Each pond’s P&L shows its own net profit.',
+    bn: 'অন্য পুকুরে বিক্রির জন্য সেই পুকুরের POS গ্রাহক বেছে নিন (on account)। পাওনা পরে পুকুর কাস্টমার/ভেন্ডর লেজারে নিষ্পত্তি করুন। প্রতি পুকুরের P&L-এ নিজ নিজ নিট মুনাফা দেখা যাবে।',
   },
   dueDate: { en: 'Due date', bn: 'পরিশোধের তারিখ' },
   invoiceCustomerOptional: { en: 'Invoice customer (optional)', bn: 'ইনভয়েস গ্রাহক (ঐচ্ছিক)' },
@@ -444,8 +444,8 @@ const strings: Dict = {
     bn: 'ইনভয়েস {invRef} তৈরি, আয়ের ধরন অনুযায়ী অ্যাকোয়াকালচার আয় অ্যাকাউন্টে revenue পোস্ট, নগদ বা A/R ডেবিট। পুকুর রিপোর্টিংয়ের জন্য সারি এখানে থাকবে; ইনভয়েস সরানো পর্যন্ত পরিমাণ লক।',
   },
   salesIntro: {
-    en: 'Record one buyer visit with multiple lines — different species, or the same species from different production cycles (size and price). Plus pond-side income such as empty feed sacks and sales of used or scrap materials. Use Cashier for packaged retail over the counter—this screen is the operational record for fish leaving ponds (kg, head) and aquaculture revenue. Use income type to classify each line; feed purchases stay on Expenses. Use Record to books on a row to create the invoice and GL entry (aquaculture revenue 4240–4244, cash or A/R).',
-    bn: 'এক ক্রেতার এক ভিজিটে একাধিক লাইন — বিভিন্ন প্রজাতি, বা এক প্রজাতির বিভিন্ন ব্যাচ (আকার ও দাম)। খালি ফিড ব্যাগ, ব্যবহৃত/স্ক্র্যাপ বিক্রি সহ পুকুর-পাশের আয়। কাউন্টার রিটেইলের জন্য Cashier — এখানে পুকুর থেকে মাছ (kg, head) ও অ্যাকোয়াকালচার আয়ের অপারেশনাল রেকর্ড। প্রতি লাইনে income type; ফিড কেনা Expenses-এ। সারিতে Record to books দিয়ে ইনভয়েস ও GL (4240–4244, নগদ বা A/R)।',
+    en: 'Each pond is its own profit centre. Sell fish to an outside buyer or to another pond’s POS customer (on account) — the buyer pond records the matching bill. Record costs and expenses on the pond, settle dues on customer/vendor ledgers, and read net profit on pond P&L. Multiple lines per visit are fine (species, cycles, empty sacks). Use Cashier for packaged retail; use Record to books for the invoice and GL.',
+    bn: 'প্রতি পুকুর আলাদা profit centre। বাইরের ক্রেতা বা অন্য পুকুরের POS গ্রাহকের কাছে (on account) মাছ বিক্রি করুন — ক্রেতা পুকুর মিলিয়ে বিল রেকর্ড করে। পুকুরে খরচ/ব্যয়, লেজারে পাওনা নিষ্পত্তি, P&L-এ নিট মুনাফা। এক ভিজিটে একাধিক লাইন ঠিক আছে। রিটেইলে Cashier; ইনভয়েস/GL-এর জন্য Record to books।',
   },
   cashier: { en: 'Cashier', bn: 'Cashier' },
 
@@ -457,8 +457,8 @@ const strings: Dict = {
   cyclesWorkflowTitle: { en: 'Stocking batches — tilapia vs other species', bn: 'স্টকিং ব্যাচ — tilapia বনাম অন্য প্রজাতি' },
   cyclesWorkflowTilapiaPhase: { en: 'Tilapia (main crop)', bn: 'Tilapia (প্রধান ফসল)' },
   cyclesWorkflowTilapiaDetail: {
-    en: 'Three fry purchases per season → three nursing batches (C01, C02, C03). Each new fry bill to the nursing pond opens a new batch unless you pick one manually. Transfer fingerlings with the source batch selected; grow-out ponds get linked batches.',
-    bn: 'মৌসুমে তিন ফ্রাই কেনা → তিন নার্সিং ব্যাচ (C01, C02, C03)। নার্সিং পুকুরে নতুন ফ্রাই বিলে নতুন ব্যাচ (ম্যানুয়াল নির্বাচন ছাড়া)। উৎস ব্যাচ নির্বাচন করে আঙুলlings স্থানান্তর; grow-out-এ লিঙ্কড ব্যাচ।',
+    en: 'Three fry purchases per season → three nursing batches (C01, C02, C03). Each new fry bill to the nursing pond opens a new batch unless you pick one manually. Sell fingerlings from the source batch; grow-out ponds get linked batches on purchase.',
+    bn: 'মৌসুমে তিন ফ্রাই কেনা → তিন নার্সিং ব্যাচ (C01, C02, C03)। নার্সিং পুকুরে নতুন ফ্রাই বিলে নতুন ব্যাচ (ম্যানুয়াল নির্বাচন ছাড়া)। উৎস ব্যাচ থেকে আঙুলlings বিক্রি; grow-out ক্রয়ে লিঙ্কড ব্যাচ।',
   },
   cyclesWorkflowOtherPhase: { en: 'Other species', bn: 'অন্য প্রজাতি' },
   cyclesWorkflowOtherDetail: {
@@ -549,7 +549,7 @@ const strings: Dict = {
     en: 'Remove this fish transfer? Pond stock and management P&L will be recalculated as if it never happened (same as rolling back the transfer).',
     bn: 'এই মাছ স্থানান্তর সরাবেন? পুকুর স্টক ও ব্যবস্থাপনা P&L পুনঃহিসাব — যেন স্থানান্তর হয়নি (রোলব্যাক)।',
   },
-  nursingFingerlingTransfer: { en: 'Nursing → fingerling transfer', bn: 'নার্সিং → fingerling স্থানান্তর' },
+  nursingFingerlingTransfer: { en: 'Nursing → sell fingerlings', bn: 'নার্সিং → fingerling বিক্রি' },
   nursingWarehouseMoved: {
     en: 'Remaining feed/medicine warehouse stock moved to grow-out pond(s).',
     bn: 'অবশিষ্ট ফিড/ঔষধ গুদাম স্টক grow-out পুকুরে স্থানান্তর হয়েছে।',
@@ -652,8 +652,8 @@ const strings: Dict = {
     bn: 'fingerling আকার পর্যন্ত বায়োমাস নমুনা (pcs/kg রেকর্ড — ব্যাচভেদে)।',
   },
   nursingStep4: {
-    en: 'Transfer fingerlings to production ponds — and transfer remainder to the grow-out pond on the same site.',
-    bn: 'fingerlings উৎপাদন পুকুরে স্থানান্তর — অবশিষ্ট একই সাইটের grow-out-এ।',
+    en: 'Sell fingerlings to other ponds (each pond is its own P&L). Sell any remainder to the grow-out pond on the same site.',
+    bn: 'অন্য পুকুরে fingerlings বিক্রি করুন (প্রতি পুকুর আলাদা P&L)। অবশিষ্ট একই সাইটের grow-out পুকুরে বিক্রি করুন।',
   },
 
   // —— Pond costs / expenses page ——
@@ -752,16 +752,16 @@ const strings: Dict = {
   dashboardFcrNoteFishHarvest: { en: 'fish harvest sale', bn: 'মাছ ধরা বিক্রি' },
   dashboardFcrNotePart2: { en: ' weight only.', bn: ' ওজন ব্যবহার করে।' },
   dashboardNursingWorkflowTitle: {
-    en: 'Physical site: fry nursing → fingerling transfers',
-    bn: 'ভৌত সাইট: ফ্রাই নার্সিং → আঙুল (fingerling) স্থানান্তর',
+    en: 'Physical site: fry nursing → sell fingerlings',
+    bn: 'ভৌত সাইট: ফ্রাই নার্সিং → আঙুল (fingerling) বিক্রি',
   },
   dashboardNursingWorkflowIntro: {
-    en: 'Each physical pond can have two profit centers — nursing phase (e.g. Mynuddin Nursing Pond at 3,000 pcs/kg) and grow-out phase (Mynuddin Pond). After sampling records the current pcs/kg for that batch, transfer to production ponds and move remainder to the grow-out pond on the same site.',
-    bn: 'প্রতি ভৌত পুকুরে দুটি profit center — নার্সিং ফেজ (যেমন Mynuddin Nursing Pond, 3,000 pcs/kg) ও grow-out ফেজ (Mynuddin Pond)। নমুনায় ব্যাচের বর্তমান pcs/kg রেকর্ডের পর উৎপাদন পুকুরে স্থানান্তর করুন এবং অবশিষ্ট একই সাইটের grow-out পুকুরে সরান।',
+    en: 'Each pond is its own profit centre — nursing and grow-out keep separate costs, expenses, and income. After sampling records pcs/kg, sell fingerlings to other ponds (including the same-site grow-out). Settle dues on pond customer/vendor ledgers and read net profit on each pond P&L.',
+    bn: 'প্রতি পুকুর আলাদা profit centre — নার্সিং ও grow-out-এ আলাদা খরচ, ব্যয় ও আয়। নমুনায় pcs/kg রেকর্ডের পর অন্য পুকুরে (একই সাইটের grow-out সহ) fingerlings বিক্রি করুন। পাওনা পুকুর কাস্টমার/ভেন্ডর লেজারে নিষ্পত্তি করুন এবং প্রতি পুকুরের P&L-এ নিট মুনাফা দেখুন।',
   },
   dashboardPondsSitePair: { en: 'Ponds · create site pair', bn: 'পুকুর · সাইট পেয়ার তৈরি' },
   dashboardStockFryBill: { en: 'Stock fry (vendor bill)', bn: 'ফ্রাই স্টক (vendor bill)' },
-  dashboardTransferFingerlings: { en: 'Transfer fingerlings', bn: 'আঙুলlings স্থানান্তর' },
+  dashboardTransferFingerlings: { en: 'Sell fingerlings', bn: 'আঙুলlings বিক্রি' },
 
   // —— Pond go-live fleet banner ——
   goLiveSetupInProgress: { en: 'Go-live setup in progress', bn: 'গো-লাইভ সেটআপ চলছে' },

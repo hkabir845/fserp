@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-# Inter-pond fish transfers (nursing phase → grow-out): documented on P&L API and transfers UI.
+# Legacy income type retained for historical transfer rows still shown on P&L.
 INTER_POND_FINGERLING_TRANSFER_INCOME = "inter_pond_fingerling_transfer"
 
 INTER_POND_FISH_TRANSFER_PL_NOTE = (
-    "Inter-pond fish transfers: each line carries cost_amount (fully loaded nursing cost moved with the fish). "
-    "Nursing → grow-out: fry + feed + medicine + lease + electricity + equipment + all other nursing-period costs "
-    "are spread across survivor fingerlings (fish already moved + still in the nursing pond). Each line's share "
-    "uses the average of its head-count % and weight % within the batch. When all live fish have left the nursing "
-    "pond, transfer income on nursing equals gross nursing expenses (net ≈ zero) and grow-out shows the same total "
-    "as inter-pond transfer-in expense. Remaining feed/medicine warehouse stock moves automatically to grow-out. "
-    "GL AUTO-AQ-FISH-XFER-{id} moves account 1581 between pond tags when seeded. "
-    "Each line requires weight_kg and fish_count (heads), both greater than zero."
+    "Each pond is its own profit centre: costs, expenses, and income stay on that pond. "
+    "Fish that move to another pond are sold — the selling pond records a sale (revenue and margin), "
+    "and the buying pond records the matching purchase bill into its biological asset. "
+    "Settle dues on the pond customer (A/R) and vendor (A/P) ledgers; each pond's P&L shows its net profit. "
+    "Company consolidation eliminates inter-pond sales so group profit is not double-counted. "
+    "Feed, medicine, and other supplies still move pond-to-pond under Stock (warehouse transfer, not a fish sale). "
+    "Past fish-transfer documents remain for history only."
 )
 
 # Pond role (management / UX; not GL).

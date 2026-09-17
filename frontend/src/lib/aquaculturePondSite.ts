@@ -91,5 +91,5 @@ export const NURSING_WORKFLOW_STEPS = [
   'Stock fry on a vendor bill to the nursing-phase pond (e.g. 500,000 fry @ 3,000 pcs/kg).',
   'Record mortality and feeding while nursing on that pond.',
   'Sample biomass until fingerling size (record measured pcs/kg — varies by batch).',
-  'Transfer fingerlings to production ponds — and transfer remainder to the grow-out pond on the same site.',
+  'Sell fingerlings to other ponds (each pond is its own P&L). Sell any remainder to the grow-out pond on the same site.',
 ] as const

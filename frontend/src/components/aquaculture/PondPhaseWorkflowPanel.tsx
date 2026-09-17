@@ -57,10 +57,10 @@ export function PondPhaseWorkflowPanel(props: {
               Stock fry (bill)
             </Link>
             <Link
-              href="/aquaculture/transfers"
+              href={`/aquaculture/sales?pond_id=${pond.id}`}
               className="rounded-md border border-sky-300 bg-white px-2.5 py-1 text-xs font-medium text-sky-900 hover:bg-sky-100"
             >
-              Transfer fingerlings
+              Sell fingerlings
             </Link>
             <Link
               href="/aquaculture/sampling"

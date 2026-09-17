@@ -268,10 +268,10 @@ const P: Record<string, PageMetaRow> = {
     },
   },
   '/aquaculture/transfers': {
-    title: { en: 'Pond transfers', bn: 'পুকুর স্থানান্তর' },
+    title: { en: 'Past fish transfers', bn: 'পুরনো মাছ স্থানান্তর' },
     description: {
-      en: 'Move fingerlings between nursing and production ponds.',
-      bn: 'নার্সিং ও উৎপাদন পুকুরে ফিঙ্গারলিং স্থানান্তর।',
+      en: 'History only. New fish moves are sales: each pond keeps its own costs, income, and net profit.',
+      bn: 'শুধু ইতিহাস। নতুন মাছ সরানো এখন বিক্রয় — প্রতি পুকুরে আলাদা খরচ, আয় ও নিট মুনাফা।',
     },
   },
   '/aquaculture/stock': {
@@ -314,8 +314,8 @@ const P: Record<string, PageMetaRow> = {
   '/aquaculture/sales': {
     title: { en: 'Pond & fish sales', bn: 'পুকুর ও মাছ বিক্রি' },
     description: {
-      en: 'Record one buyer visit with multiple lines — different species or cycles. Pond-side income (empty sacks, scrap). Use Cashier for packaged retail; this screen is for fish leaving ponds (kg, head) and aquaculture revenue. Use income type per line; use Record to books for invoice and GL (revenue 4240–4244, cash or A/R).',
-      bn: 'এক গ্রাহক ভিজিটে বহু লাইন — বিভিন্ন প্রজাতি বা ব্যাচ। পুকুর-পার্শ্ব আয় (খালি ব্যাগ, স্ক্র্যাপ)। প্যাকেজড রিটেইলের জন্য Cashier; এই পৃষ্ঠা পুকুর থেকে মাছ (kg, টি) ও অ্যাকোয়াকালচার আয়ের জন্য। লাইনে income type; ইনভয়েস ও GL-এর জন্য Record to books (আয় 4240–4244, নগদ বা A/R)।',
+      en: 'Each pond is a profit centre. Sell to an outside buyer or another pond’s POS customer (on account); settle dues on pond ledgers and read net profit on pond P&L. Multiple lines per visit OK. Use Cashier for packaged retail; Record to books for invoice and GL.',
+      bn: 'প্রতি পুকুর profit centre। বাইরের ক্রেতা বা অন্য পুকুরের POS গ্রাহকের কাছে (on account) বিক্রি; লেজারে পাওনা নিষ্পত্তি ও P&L-এ নিট মুনাফা। এক ভিজিটে একাধিক লাইন ঠিক। রিটেইলে Cashier; ইনভয়েস/GL-এ Record to books।',
     },
   },
   '/aquaculture/expenses': {

@@ -148,12 +148,41 @@ export default function AquacultureSalesPage() {
   const openFinalize = (r: SaleRow) => {
     if (r.accounting_posted) return
     setFinalizeRow(r)
-    setFinalizeRecordAs('cash_paid')
-    setFinalizeCustomerId('')
     setFinalizePaymentMethod('cash')
     const d = new Date()
     d.setDate(d.getDate() + 30)
     setFinalizeDueDate(d.toISOString().slice(0, 10))
+
+    const buyer = (r.buyer_name || '').trim().toLowerCase()
+    let matchedPondCustomerId = ''
+    if (buyer) {
+      for (const p of ponds) {
+        if (p.pos_customer_id == null || p.id === r.pond_id) continue
+        const labels = [
+          (p.pos_customer_display || '').trim(),
+          p.name,
+          customerPickLabel(
+            customers.find((c) => c.id === p.pos_customer_id) || {
+              id: p.pos_customer_id,
+              display_name: p.pos_customer_display || p.name,
+            },
+          ),
+        ]
+          .map((s) => s.toLowerCase())
+          .filter(Boolean)
+        if (labels.includes(buyer) || labels.some((l) => l && buyer.includes(l))) {
+          matchedPondCustomerId = String(p.pos_customer_id)
+          break
+        }
+      }
+    }
+    if (matchedPondCustomerId) {
+      setFinalizeRecordAs('on_account')
+      setFinalizeCustomerId(matchedPondCustomerId)
+    } else {
+      setFinalizeRecordAs('cash_paid')
+      setFinalizeCustomerId('')
+    }
   }
 
   const submitFinalize = async () => {
@@ -190,10 +219,15 @@ export default function AquacultureSalesPage() {
     }
   }
 
+  const pondCustomerIds = new Set(
+    ponds.filter((p) => p.pos_customer_id != null).map((p) => p.pos_customer_id as number),
+  )
   const creditCustomerOptions = customers.filter((c) => {
     const n = customerPickLabel(c).trim().toLowerCase()
     return n !== 'walk-in' && n !== 'walk in'
   })
+  const pondCreditCustomers = creditCustomerOptions.filter((c) => pondCustomerIds.has(c.id))
+  const otherCreditCustomers = creditCustomerOptions.filter((c) => !pondCustomerIds.has(c.id))
 
   return (
     <AquaculturePageShell
@@ -515,11 +549,24 @@ export default function AquacultureSalesPage() {
                     required
                   >
                     <option value="">{aquacultureT('selectCustomer', lang)}</option>
-                    {creditCustomerOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {customerPickLabel(c)}
-                      </option>
-                    ))}
+                    {pondCreditCustomers.length > 0 ? (
+                      <optgroup label="Other ponds (settle dues)">
+                        {pondCreditCustomers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {customerPickLabel(c)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {otherCreditCustomers.length > 0 ? (
+                      <optgroup label="External customers">
+                        {otherCreditCustomers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {customerPickLabel(c)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
                   </select>
                   <span className="mt-1 block text-xs text-muted-foreground">
                     {aquacultureT('pondCustomerHint', lang)}

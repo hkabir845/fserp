@@ -679,7 +679,7 @@ export default function CompanyPage() {
                         {aquacultureEnabled && canEditAquacultureSettings ? (
                           <div className="mt-4 rounded-xl border border-primary/25 bg-accent/40 p-4">
                             <label className="block font-medium text-foreground" htmlFor="aq-internal-margin">
-                              Inter-pond transfer margin (per kg)
+                              Inter-pond sale margin (per kg)
                             </label>
                             <input
                               id="aq-internal-margin"
@@ -691,11 +691,11 @@ export default function CompanyPage() {
                               className="mt-2 w-40 rounded-lg border border-border px-3 py-2 text-right tabular-nums text-foreground shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring/20"
                             />
                             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                              When fish move from one pond to another, the selling pond charges its cost per kg plus
-                              this margin — cost {'৳'}100/kg at a margin of 20 sells at {'৳'}120/kg — so the
-                              nursing pond earns the value it created. Applies to inter-pond transfers only: a genuine
-                              sale to an outside customer keeps the price that customer paid. Company profit excludes
-                              this margin until the fish are actually sold outside. Set 0 to move fish at cost.
+                              When one pond sells fish to another, the selling pond charges its cost per kg plus this
+                              margin — cost {'৳'}100/kg at a margin of 20 sells at {'৳'}120/kg — so the nursing pond
+                              earns the value it created. Applies to pond-to-pond sales only: a genuine sale to an
+                              outside customer keeps the price that customer paid. Company profit excludes this margin
+                              until the fish are actually sold outside. Set 0 to sell between ponds at cost.
                             </p>
                           </div>
                         ) : null}

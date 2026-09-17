@@ -1,6 +1,8 @@
 export interface Pond {
   id: number
   name: string
+  pos_customer_id?: number | null
+  pos_customer_display?: string | null
 }
 
 export interface IncomeTypeOpt {

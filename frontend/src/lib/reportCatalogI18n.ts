@@ -506,22 +506,22 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
   },
   'aquaculture-fish-transfers': {
     title: {
-      en: 'Aquaculture — Inter-pond fish transfers',
-      bn: 'অ্যাকোয়াকালচার — পুকুরের মধ্যে মাছ স্থানান্তর',
+      en: 'Aquaculture — Inter-pond fish sales',
+      bn: 'অ্যাকোয়াকালচার — আন্তঃপুকুর মাছ বিক্রয়',
     },
     description: {
-      en: 'Fish moves between ponds with weight, head count, and cost allocation (BDT)',
-      bn: 'পুকুরের মধ্যে মাছ স্থানান্তর — ওজন, মাথা সংখ্যা ও খরচ বরাদ্দ (BDT)',
+      en: 'Pond-to-pond fish sales with invoice/bill evidence, book cost vs sale price (BDT)',
+      bn: 'পুকুর-থেকে-পুকুর মাছ বিক্রয় — ইনভয়েস/বিল, বইয়ের খরচ ও বিক্রয় মূল্য (BDT)',
     },
   },
   'aquaculture-fingerling-transfers': {
     title: {
-      en: 'Aquaculture — Fingerling transfers (nursing → grow-out)',
-      bn: 'অ্যাকোয়াকালচার — ফিঙ্গারলিং স্থানান্তর (নার্সিং → গ্রো-আউট)',
+      en: 'Aquaculture — Past fingerling transfers (history)',
+      bn: 'অ্যাকোয়াকালচার — পুরনো ফিঙ্গারলিং স্থানান্তর (ইতিহাস)',
     },
     description: {
-      en: 'Nursing pond fingerling moves with purchase vs other costs and receiving pond liability reconciliation (BDT)',
-      bn: 'নার্সিং পুকুর থেকে ফিঙ্গারলিং — ক্রয় ও অন্যান্য খরচ, গ্রহণকারী পুকুরের দায় ও মিল (BDT)',
+      en: 'Historical nursing → grow-out transfer lines. New fingerling moves are pond-to-pond sales (BDT)',
+      bn: 'পুরনো নার্সিং → গ্রো-আউট স্থানান্তর। নতুন fingerling সরানো এখন পুকুর-থেকে-পুকুর বিক্রয় (BDT)',
     },
   },
   'aquaculture-pond-total-inventory': {

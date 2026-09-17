@@ -44,7 +44,7 @@ export const STOCKING_BATCH_WORKFLOW = {
     {
       phase: 'Tilapia (main crop)',
       detail:
-        'Three fry purchases per season → three nursing batches (C01, C02, C03). Each new fry bill to the nursing pond opens a new batch unless you pick one manually. Transfer fingerlings with the source batch selected; grow-out ponds get linked batches.',
+        'Three fry purchases per season → three nursing batches (C01, C02, C03). Each new fry bill to the nursing pond opens a new batch unless you pick one manually. Sell fingerlings from the source batch; grow-out ponds get linked batches on purchase.',
     },
     {
       phase: 'Other species',

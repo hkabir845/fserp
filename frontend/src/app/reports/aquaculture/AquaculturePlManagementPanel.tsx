@@ -1175,7 +1175,7 @@ export function AquaculturePlManagementPanel({
           )}
           {data.inter_pond_fish_transfer_note && (
             <div className="rounded-xl border border-primary/25 bg-accent/80 px-4 py-3 text-sm text-teal-950">
-              <span className="font-semibold text-teal-950">Fish pond transfers: </span>
+              <span className="font-semibold text-teal-950">Inter-pond fish sales: </span>
               {data.inter_pond_fish_transfer_note}
             </div>
           )}

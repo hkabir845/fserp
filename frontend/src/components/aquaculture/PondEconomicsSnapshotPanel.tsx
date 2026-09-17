@@ -114,10 +114,10 @@ export function PondEconomicsSnapshotPanel({
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           <Link
-            href={`/aquaculture/transfers?from_pond_id=${pondId}`}
+            href={`/aquaculture/sales?pond_id=${pondId}`}
             className="rounded-lg border border-primary/25 bg-white px-2.5 py-1 font-medium text-primary hover:bg-accent"
           >
-            Transfer fish
+            Sell fish
           </Link>
           <Link
             href={`/aquaculture/feeding?pond_id=${pondId}`}
@@ -189,9 +189,9 @@ export function PondEconomicsSnapshotPanel({
         {!compact && isNursing && transferPerHead > 0 ? (
           <Metric
             icon={ArrowRight}
-            label="Transfer cost / head"
+            label="Cost / head (book)"
             value={`${sym}${fmtMoney(transferPerHead, 2)}`}
-            sub="Fry + expenses ÷ live fingerlings"
+            sub="Fry + expenses ÷ live fingerlings — use when pricing a sale to another pond"
           />
         ) : null}
       </div>

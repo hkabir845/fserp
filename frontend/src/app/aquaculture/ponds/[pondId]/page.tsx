@@ -130,6 +130,9 @@ interface PondDetail {
   pos_customer_id?: number | null
   pos_customer_display?: string | null
   pos_customer_auto_managed?: boolean
+  internal_vendor_id?: number | null
+  internal_vendor_display?: string | null
+  internal_vendor_auto_managed?: boolean
   default_feed_item_id?: number | null
   default_feed_item_name?: string
   default_medicine_item_id?: number | null
@@ -893,7 +896,7 @@ export default function PondDetailViewPage() {
                   : '—'}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Fry + feed + medicine + labour + direct pond costs ± transfers − harvest relief (as of {end}).
+                Fry + feed + medicine + labour + direct pond costs − harvest/sale relief (as of {end}).
                 {bioAsset?.gl_reconciliation_note ? ` ${bioAsset.gl_reconciliation_note}` : ''}
               </p>
             </div>
@@ -1015,11 +1018,45 @@ export default function PondDetailViewPage() {
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 border-b border-border/50 py-1">
-                  <dt className="text-muted-foreground">POS customer</dt>
+                  <dt className="text-muted-foreground">POS customer (buys from other ponds)</dt>
                   <dd className="text-right text-foreground">
-                    {pond.pos_customer_id
-                      ? `${pond.pos_customer_display?.trim() || `Customer #${pond.pos_customer_id}`}${pond.pos_customer_auto_managed ? ' (auto)' : ''}`
-                      : '—'}
+                    {pond.pos_customer_id ? (
+                      <span className="inline-flex flex-col items-end gap-0.5">
+                        <span>
+                          {pond.pos_customer_display?.trim() || `Customer #${pond.pos_customer_id}`}
+                          {pond.pos_customer_auto_managed ? ' (auto)' : ''}
+                        </span>
+                        <Link
+                          href={`/customers/${pond.pos_customer_id}/ledger`}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Settle dues (A/R ledger)
+                        </Link>
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-2 border-b border-border/50 py-1">
+                  <dt className="text-muted-foreground">Internal vendor (sells to other ponds)</dt>
+                  <dd className="text-right text-foreground">
+                    {pond.internal_vendor_id ? (
+                      <span className="inline-flex flex-col items-end gap-0.5">
+                        <span>
+                          {pond.internal_vendor_display?.trim() || `Vendor #${pond.internal_vendor_id}`}
+                          {pond.internal_vendor_auto_managed ? ' (auto)' : ''}
+                        </span>
+                        <Link
+                          href={`/vendors/${pond.internal_vendor_id}/ledger`}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Settle dues (A/P ledger)
+                        </Link>
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-2 border-b border-border/50 py-1">
@@ -1403,7 +1440,10 @@ export default function PondDetailViewPage() {
             <section className="mb-6 overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <div className="border-b border-border/70 px-4 py-3">
                 <h2 className="text-sm font-semibold text-foreground">P&amp;L (selected period, this pond)</h2>
-                <p className="text-xs text-muted-foreground">Matches Aquaculture report when filtered to this pond.</p>
+                <p className="text-xs text-muted-foreground">
+                  This pond is a separate profit centre — revenue, costs, and net profit below. Fish sold to another pond
+                  count as income here; fish bought from another pond sit in cost/biological asset on the buyer.
+                </p>
               </div>
               <table className="w-full min-w-[640px] text-left text-sm">
                 <tbody className="divide-y divide-border/70">
@@ -1436,7 +1476,7 @@ export default function PondDetailViewPage() {
                     </td>
                   </tr>
                   <tr className="bg-muted/50">
-                    <th className="px-4 py-2 font-semibold text-foreground">Profit</th>
+                    <th className="px-4 py-2 font-semibold text-foreground">Net profit</th>
                     <td className="px-4 py-2 text-right text-base font-semibold tabular-nums text-primary">
                       {sym}
                       {formatNumber(parseNum(plRow.profit), 2)}
@@ -1444,6 +1484,26 @@ export default function PondDetailViewPage() {
                   </tr>
                 </tbody>
               </table>
+              <div className="flex flex-wrap gap-2 border-t border-border/70 px-4 py-3 text-xs">
+                <Link
+                  href={`/aquaculture/sales?pond_id=${pondIdNum}`}
+                  className="rounded-md border border-primary/30 bg-accent/50 px-2.5 py-1 font-medium text-primary hover:bg-accent"
+                >
+                  Record fish sale
+                </Link>
+                <Link
+                  href={`/aquaculture/expenses?pond_id=${pondIdNum}`}
+                  className="rounded-md border border-border bg-white px-2.5 py-1 font-medium text-foreground/85 hover:bg-muted/40"
+                >
+                  Pond costs
+                </Link>
+                <Link
+                  href="/reports?report=aquaculture-pl-management&category=aquaculture"
+                  className="rounded-md border border-border bg-white px-2.5 py-1 font-medium text-foreground/85 hover:bg-muted/40"
+                >
+                  Full P&amp;L report
+                </Link>
+              </div>
             </section>
           ) : (
             <p className="mb-6 rounded-lg border border-amber-100 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
@@ -1662,7 +1722,20 @@ export default function PondDetailViewPage() {
           </section>
 
           <section className="mb-6">
-            <h2 className="mb-2 text-sm font-semibold text-foreground">Inter-pond transfers in period</h2>
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Past inter-pond fish transfers</h2>
+                <p className="text-xs text-muted-foreground">
+                  History only. New fish moves are sales under Pond &amp; fish sales.
+                </p>
+              </div>
+              <Link
+                href={`/aquaculture/sales?pond_id=${pondIdNum}`}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                Record fish sale →
+              </Link>
+            </div>
             <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
@@ -1678,7 +1751,7 @@ export default function PondDetailViewPage() {
                   {transfersInPeriod.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
-                        None
+                        None in this period — use Sales to move fish to another pond.
                       </td>
                     </tr>
                   ) : (

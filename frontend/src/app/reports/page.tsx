@@ -1986,7 +1986,6 @@ function ReportsPageContent() {
     if (
       !selectedReport ||
       !AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport) ||
-      !pondLockedBySiteScope ||
       !effectiveAquaculturePondId
     ) {
       setAquacultureCycles([])
@@ -2019,7 +2018,6 @@ function ReportsPageContent() {
     }
   }, [
     effectiveAquaculturePondId,
-    pondLockedBySiteScope,
     selectedReport,
     selectedCompany?.id,
   ])
@@ -2290,7 +2288,6 @@ function ReportsPageContent() {
       }
       if (
         AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(reportId) &&
-        pondLockedBySiteScope &&
         aquacultureCycleId &&
         /^\d+$/.test(aquacultureCycleId)
       ) {
@@ -2298,8 +2295,8 @@ function ReportsPageContent() {
       }
       if (
         reportId === 'aquaculture-pond-pl' &&
-        pondLockedBySiteScope &&
-        aquacultureIncludeCycleBreakdown
+        aquacultureIncludeCycleBreakdown &&
+        !aquacultureCycleId
       ) {
         params.include_cycle_breakdown = 'true'
       }
@@ -4229,72 +4226,101 @@ function ReportsPageContent() {
                           <p className="font-semibold text-cyan-900">Aquaculture filters</p>
                           <p className="mt-1 text-cyan-800/90">
                             Amounts in BDT — refresh after changing filters.
-                            {pondLockedBySiteScope
-                              ? ' Cycle (C01…) and Batch appear when Site is a pond — choose All or one stocking cohort.'
-                              : ' Select a pond in Site (above) to filter by Cycle and Batch.'}
+                            {AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport)
+                              ? effectiveAquaculturePondId
+                                ? ' Use Cycle (C01…) and Batch to narrow to one stocking cohort.'
+                                : ' Choose a pond (Site above, or Pond below) to enable Cycle and Batch.'
+                              : null}
                           </p>
                           <div className="mt-3 flex flex-wrap items-end gap-3">
                             {selectedReport &&
-                              AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport) &&
-                              pondLockedBySiteScope && (
+                              AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport) && (
                               <>
-                                <div className="flex flex-col gap-1">
-                                  <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle-code">
-                                    Cycle
-                                  </label>
-                                  <select
-                                    id="aq-report-cycle-code"
-                                    value={aquacultureCycleCode}
-                                    onChange={(e) => {
-                                      const next = e.target.value
-                                      setAquacultureCycleCode(next)
-                                      const matched = next.trim()
-                                        ? aquacultureCycles.filter((c) => (c.code || '').trim() === next.trim())
-                                        : aquacultureCycles
-                                      if (matched.length === 1) {
-                                        setAquacultureCycleId(String(matched[0].id))
-                                      } else if (
-                                        aquacultureCycleId &&
-                                        !matched.some((c) => String(c.id) === aquacultureCycleId)
-                                      ) {
+                                {!pondLockedBySiteScope && showPondsInSiteScope ? (
+                                  <div className="flex flex-col gap-1">
+                                    <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-pond">
+                                      Pond
+                                    </label>
+                                    <select
+                                      id="aq-report-pond"
+                                      value={aquaculturePondId}
+                                      onChange={(e) => {
+                                        setAquaculturePondId(e.target.value)
                                         setAquacultureCycleId('')
-                                      }
-                                    }}
-                                    className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[10rem]"
-                                  >
-                                    <option value="">All cycles</option>
-                                    {aquacultureCycleCodeOptions.map((code) => (
-                                      <option key={code} value={code}>
-                                        {code}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-batch">
-                                    Batch
-                                  </label>
-                                  <select
-                                    id="aq-report-batch"
-                                    value={aquacultureCycleId}
-                                    onChange={(e) => {
-                                      const next = e.target.value
-                                      setAquacultureCycleId(next)
-                                      if (!next) return
-                                      const row = aquacultureCycles.find((c) => String(c.id) === next)
-                                      const code = (row?.code || '').trim()
-                                      if (code) setAquacultureCycleCode(code)
-                                    }}
-                                    className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[14rem]"
-                                  >
-                                    <option value="">All batches</option>
-                                    {aquacultureBatchesForFilter.map((c) => (
-                                      <option key={c.id} value={String(c.id)}>
-                                        {c.code ? `${c.code} — ${c.name}` : c.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
+                                        setAquacultureCycleCode('')
+                                      }}
+                                      className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[14rem]"
+                                    >
+                                      <option value="">All ponds</option>
+                                      {aquaculturePonds.map((p) => (
+                                        <option key={p.id} value={String(p.id)}>
+                                          {p.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ) : null}
+                                {effectiveAquaculturePondId ? (
+                                  <>
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle-code">
+                                        Cycle
+                                      </label>
+                                      <select
+                                        id="aq-report-cycle-code"
+                                        value={aquacultureCycleCode}
+                                        onChange={(e) => {
+                                          const next = e.target.value
+                                          setAquacultureCycleCode(next)
+                                          const matched = next.trim()
+                                            ? aquacultureCycles.filter((c) => (c.code || '').trim() === next.trim())
+                                            : aquacultureCycles
+                                          if (matched.length === 1) {
+                                            setAquacultureCycleId(String(matched[0].id))
+                                          } else if (
+                                            aquacultureCycleId &&
+                                            !matched.some((c) => String(c.id) === aquacultureCycleId)
+                                          ) {
+                                            setAquacultureCycleId('')
+                                          }
+                                        }}
+                                        className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[10rem]"
+                                      >
+                                        <option value="">All cycles</option>
+                                        {aquacultureCycleCodeOptions.map((code) => (
+                                          <option key={code} value={code}>
+                                            {code}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-batch">
+                                        Batch
+                                      </label>
+                                      <select
+                                        id="aq-report-batch"
+                                        value={aquacultureCycleId}
+                                        onChange={(e) => {
+                                          const next = e.target.value
+                                          setAquacultureCycleId(next)
+                                          if (!next) return
+                                          const row = aquacultureCycles.find((c) => String(c.id) === next)
+                                          const code = (row?.code || '').trim()
+                                          if (code) setAquacultureCycleCode(code)
+                                        }}
+                                        className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[14rem]"
+                                      >
+                                        <option value="">All batches</option>
+                                        {aquacultureBatchesForFilter.map((c) => (
+                                          <option key={c.id} value={String(c.id)}>
+                                            {c.code ? `${c.code} — ${c.name}` : c.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </>
+                                ) : null}
                                 {selectedReport === 'aquaculture-pond-pl' && (
                                   <label className="flex items-center gap-2 text-xs font-medium text-cyan-900">
                                     <input

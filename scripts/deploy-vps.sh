@@ -109,6 +109,45 @@ pm2 delete fserp_backend fserp_frontend >/dev/null 2>&1 || true
 pm2 start ecosystem.config.js
 pm2 save
 
+# Survive reboot: require a saved dump + systemd/rc startup hook when possible.
+if ! pm2 startup systemd -u "$(whoami)" --hp "$HOME" >/tmp/fserp-pm2-startup.out 2>&1; then
+  echo "NOTE: pm2 startup could not install automatically (often needs sudo once)."
+  echo "      On the VPS run the command PM2 prints, then: pm2 save"
+  cat /tmp/fserp-pm2-startup.out 2>/dev/null || true
+else
+  # Prefer installing the printed sudo line when we have passwordless sudo.
+  if grep -q "sudo env" /tmp/fserp-pm2-startup.out 2>/dev/null; then
+    startup_cmd="$(grep -E 'sudo env .+pm2' /tmp/fserp-pm2-startup.out | tail -n1 || true)"
+    if [[ -n "${startup_cmd}" ]]; then
+      if sudo -n true 2>/dev/null; then
+        # shellcheck disable=SC2086
+        eval ${startup_cmd} || true
+        pm2 save
+        echo "==> PM2 startup installed for reboot survival"
+      else
+        echo "NOTE: run this once on the VPS so FSERP comes back after reboot:"
+        echo "      ${startup_cmd}"
+        echo "      then: pm2 save"
+      fi
+    fi
+  fi
+fi
+
+# Cron keep-alive (idempotent): every minute ensure both apps answer.
+ENSURE="$REPO_ROOT/scripts/ensure-fserp-up.sh"
+chmod +x "$ENSURE" 2>/dev/null || true
+CRON_LINE="* * * * * $ENSURE >>${HOME}/fserp-backups/ensure-fserp.log 2>&1"
+mkdir -p "${HOME}/fserp-backups"
+if command -v crontab >/dev/null 2>&1; then
+  existing="$(crontab -l 2>/dev/null || true)"
+  if ! printf '%s\n' "$existing" | grep -F "$ENSURE" >/dev/null 2>&1; then
+    printf '%s\n%s\n' "$existing" "$CRON_LINE" | crontab -
+    echo "==> Installed cron: ensure-fserp-up.sh every minute"
+  else
+    echo "==> Cron keep-alive already installed"
+  fi
+fi
+
 echo "==> Smoke tests"
 cd "$REPO_ROOT/backend"
 sleep 8
@@ -136,6 +175,25 @@ login_code="$(curl --max-time 15 -s -o /dev/null -w "%{http_code}" -X POST \
 echo "login endpoint HTTP $login_code"
 if [[ "$login_code" != "400" ]]; then
   echo "ERROR: login endpoint returned unexpected HTTP $login_code. Check backend logs: pm2 logs fserp_backend" >&2
+  exit 1
+fi
+
+# Confirm PM2 still shows both apps online after smoke tests.
+pm2_status="$(pm2 jlist 2>/dev/null | python3 -c '
+import json,sys
+apps={p.get("name"): (p.get("pm2_env") or {}).get("status") for p in json.load(sys.stdin)}
+for n in ("fserp_backend","fserp_frontend"):
+    print(f"{n}={apps.get(n) or \"missing\"}")
+    if apps.get(n) != "online":
+        raise SystemExit(1)
+' || true)"
+echo "$pm2_status"
+if ! printf '%s\n' "$pm2_status" | grep -q 'fserp_backend=online'; then
+  echo "ERROR: fserp_backend is not online" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$pm2_status" | grep -q 'fserp_frontend=online'; then
+  echo "ERROR: fserp_frontend is not online" >&2
   exit 1
 fi
 

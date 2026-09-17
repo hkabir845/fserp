@@ -11,8 +11,10 @@ from api.models import (
     AquacultureExpense,
     AquacultureFishPondTransfer,
     AquacultureFishPondTransferLine,
+    AquacultureFishSale,
     AquacultureFishStockLedger,
     AquaculturePond,
+    AquacultureProductionCycle,
 )
 from api.services.aquaculture_biomass_book_revaluation_service import REVAL_MEMO_PREFIX
 from api.services.aquaculture_fcr_service import compute_fcr_for_scope
@@ -262,3 +264,160 @@ def test_ashari1_live_crop_gain_uses_august_book_not_mid_stocking_sample(company
     assert Decimal(out["biomass_gain_kg"]) == Decimal("6524.8582")
     # Aug 11 / 16 stocking built the opening crop; not period inbound.
     assert Decimal(out["manual_biomass_in_kg"]) == Decimal("0.0000")
+
+
+def test_digonto_gain_is_sample_after_harvest_not_stale_carp(company_tenant_with_gl):
+    """
+    Live Digonto: 19 Aug standing 8,555 kg, harvest 2,042 kg same day, 12 Sep
+    sample 7,860 kg → gain ~1,347 kg (7,860 − remaining 6,514).
+
+    Bugs this guards: (1) leftover Mirka × Feb 0.77 kg added 2,218 kg so present
+    showed 10,079; (2) opening used 1 Aug book 4,691; (3) gain became
+    (10,079 − 4,691) + harvest = 7,430.
+    """
+    company = company_tenant_with_gl
+    cid = company.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Digonto Pond", pond_role="grow_out", is_active=True
+    )
+    closed = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, name="C01", code="C01", start_date=date(2025, 11, 1)
+    )
+    c03 = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, name="Tilapia C03", code="C03", start_date=date(2026, 7, 1)
+    )
+    leftover = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, name="Mirka leftover", code="C118", start_date=date(2025, 6, 1)
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=closed,
+        sample_date=date(2026, 2, 15),
+        fish_species="tilapia",
+        estimated_fish_count=10,
+        estimated_total_weight_kg=Decimal("12.4928"),
+        avg_weight_kg=Decimal("1.249284"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=leftover,
+        entry_date=date(2026, 2, 11),
+        entry_kind="adjustment",
+        fish_species="other",
+        fish_count_delta=2884,
+        weight_kg_delta=Decimal("240.3333"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=closed,
+        sample_date=date(2026, 2, 11),
+        fish_species="other",
+        estimated_fish_count=13,
+        estimated_total_weight_kg=Decimal("10.0000"),
+        avg_weight_kg=Decimal("0.769231"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        entry_date=date(2026, 7, 15),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=77003,
+        weight_kg_delta=Decimal("4451.0400"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        sample_date=date(2026, 8, 19),
+        fish_species="tilapia",
+        estimated_fish_count=9,
+        estimated_total_weight_kg=Decimal("1.0000"),
+        stock_reference_fish_count=77003,
+        extrapolated_biomass_kg=Decimal("8555.8803"),
+        avg_weight_kg=Decimal("0.111111"),
+    )
+    h1 = AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        income_type="fish_harvest_sale",
+        sale_date=date(2026, 8, 19),
+        fish_species="tilapia",
+        weight_kg=Decimal("1220.4000"),
+        fish_count=10984,
+        total_amount=Decimal("122040"),
+    )
+    h2 = AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        income_type="fish_harvest_sale",
+        sale_date=date(2026, 8, 19),
+        fish_species="tilapia",
+        weight_kg=Decimal("821.9000"),
+        fish_count=7397,
+        total_amount=Decimal("82190"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        sample_date=date(2026, 8, 19),
+        fish_species="tilapia",
+        source_fish_sale=h1,
+        estimated_fish_count=10984,
+        estimated_total_weight_kg=Decimal("1220.4000"),
+        stock_reference_fish_count=66019,
+        extrapolated_biomass_kg=Decimal("7335.1730"),
+        avg_weight_kg=Decimal("0.111107"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        sample_date=date(2026, 8, 19),
+        fish_species="tilapia",
+        source_fish_sale=h2,
+        estimated_fish_count=7397,
+        estimated_total_weight_kg=Decimal("821.9000"),
+        stock_reference_fish_count=69606,
+        extrapolated_biomass_kg=Decimal("7734.1315"),
+        avg_weight_kg=Decimal("0.111113"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=c03,
+        sample_date=date(2026, 9, 12),
+        fish_species="tilapia",
+        estimated_fish_count=22,
+        estimated_total_weight_kg=Decimal("2.9500"),
+        stock_reference_fish_count=58622,
+        extrapolated_biomass_kg=Decimal("7860.6826"),
+        avg_weight_kg=Decimal("0.134091"),
+    )
+
+    out = compute_fcr_for_scope(cid, date(2026, 8, 1), date(2026, 9, 16), pond_id=pond.id)
+    # Remaining after 19 Aug harvest: 0.111111 × 58,622 = 6,513.55 kg
+    first = Decimal(out["biomass_first_kg"])
+    last = Decimal(out["biomass_last_kg"])
+    gain = Decimal(out["biomass_gain_kg"])
+    # Remaining after harvest ≈ 6,514 kg; 12 Sep sample 7,860.68 → ~1,347 kg.
+    assert Decimal("6513.50") <= first <= Decimal("6514.00")
+    assert last == Decimal("7860.6826")
+    assert gain == last - first
+    assert Decimal("1346.00") <= gain <= Decimal("1348.00")
+    # Same-day harvest is already out of the 19 Aug remaining kg — do not add it again.
+    assert Decimal(out["harvest_kg"]) == Decimal("0.0000")
+    assert Decimal(out["biomass_production_kg"]) == gain
+
+    from api.services.aquaculture_partial_harvest import effective_biomass_kg_from_position_row
+    from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+
+    pond_row = compute_fish_stock_position_rows(cid, pond_id=pond.id)[0]
+    assert effective_biomass_kg_from_position_row(pond_row) == Decimal("7860.6826")

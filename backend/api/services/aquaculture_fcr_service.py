@@ -24,7 +24,10 @@ from api.models import (
     AquaculturePond,
 )
 from api.services.aquaculture_biomass_book_revaluation_service import is_book_revaluation_ledger_row
-from api.services.aquaculture_partial_harvest import effective_biomass_kg_from_position_row
+from api.services.aquaculture_partial_harvest import (
+    effective_biomass_kg_from_position_row,
+    position_row_has_fresh_sample,
+)
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 
 # Live crop is "in place" once heads reach this share of period-end heads.
@@ -34,6 +37,9 @@ _LIVE_CROP_HEAD_FRACTION = Decimal("0.90")
 # Use book kg as opening present when it matches sample mass (pre-reval). After
 # AUTO-AQ-BIOMASS-REVAL, book can be 4× the sample (91 t vs 20 t) — never use that.
 _BOOK_SANE_VS_SAMPLE = Decimal("1.25")
+# Book that is far below the sample (Digonto after harvest: 2,409 vs 6,514)
+# is leftover fry cost, not standing crop.
+_BOOK_FLOOR_VS_SAMPLE = Decimal("0.80")
 
 
 def _d(val) -> Decimal:
@@ -131,7 +137,11 @@ def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
 
 def _choose_live_present_kg(effective_kg: Decimal, book_kg: Decimal) -> Decimal:
     """Stock 'present' for a live crop: book when it still matches the sample, else sample."""
-    if book_kg > 0 and effective_kg > 0 and book_kg <= effective_kg * _BOOK_SANE_VS_SAMPLE:
+    if (
+        book_kg > 0
+        and effective_kg > 0
+        and effective_kg * _BOOK_FLOOR_VS_SAMPLE <= book_kg <= effective_kg * _BOOK_SANE_VS_SAMPLE
+    ):
         return _q4(book_kg)
     if effective_kg > 0:
         return _q4(effective_kg)
@@ -172,6 +182,10 @@ def _live_standing_snapshot(
         except (TypeError, ValueError):
             n = 0
         if n <= 0:
+            continue
+        # Leftover species with only a months-old sample (Digonto Mirka, Feb)
+        # must not enter pond present / gain.
+        if not position_row_has_fresh_sample(row, as_of):
             continue
         heads += n
         b = _d(row.get("implied_net_weight_kg"))
@@ -215,7 +229,8 @@ def _opening_closing_live_standing(
     if close_kg <= 0 or close_heads <= 0:
         return None
     need_heads = int((Decimal(close_heads) * _LIVE_CROP_HEAD_FRACTION).to_integral_value(rounding=ROUND_HALF_UP))
-    dates = {start}
+    # Do not seed the walk with period-start: Digonto already had heads on 1 Aug
+    # (book 4,691 kg) but the crop was first measured 19 Aug (8,555 kg).
     qs = AquacultureBiomassSample.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
@@ -226,7 +241,11 @@ def _opening_closing_live_standing(
         qs = qs.filter(production_cycle_id=production_cycle_id)
     if fish_species:
         qs = qs.filter(fish_species=fish_species)
-    dates.update(qs.values_list("sample_date", flat=True))
+    sample_dates: set[date] = set()
+    for s in qs.only("sample_date", "source_fish_sale_id", "source_bill_line_id"):
+        if getattr(s, "source_fish_sale_id", None) or getattr(s, "source_bill_line_id", None):
+            continue
+        sample_dates.add(s.sample_date)
     ledger_qs = AquacultureFishStockLedger.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
@@ -235,12 +254,14 @@ def _opening_closing_live_standing(
     )
     if production_cycle_id is not None:
         ledger_qs = ledger_qs.filter(production_cycle_id=production_cycle_id)
+    ledger_dates: set[date] = set()
     for row in ledger_qs.only("entry_date", "memo"):
         if is_book_revaluation_ledger_row(row):
             continue
-        dates.add(row.entry_date)
+        ledger_dates.add(row.entry_date)
     # Period-end is the closing snapshot. Using it as opening makes gain 0
     # when mid-stocking samples never reach the 90% head threshold.
+    dates = sample_dates | ledger_dates
     if start != end:
         dates.discard(end)
     opening_kg = Decimal("0")
@@ -288,6 +309,8 @@ def _sample_row_opening_closing(
         qs = qs.filter(fish_species=fish_species)
     usable: list[tuple[date, Decimal]] = []
     for s in qs.order_by("sample_date", "id"):
+        if getattr(s, "source_fish_sale_id", None):
+            continue
         bio = _sample_biomass_kg(s)
         if bio is not None and bio > 0:
             usable.append((s.sample_date, bio))

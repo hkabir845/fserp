@@ -24,6 +24,7 @@ from api.services.aquaculture_biomass_sample_reference_service import last_bioma
 from api.services.aquaculture_partial_harvest import (
     effective_biomass_kg_from_position_row,
     enrich_position_row_with_fish_metrics,
+    position_row_has_fresh_sample,
 )
 from api.services.aquaculture_units import (
     compute_stocking_load_advice,
@@ -406,6 +407,7 @@ def _apply_all_species_combined_biomass(
         by_pond[int(pid)].append(bucket)
 
     lang = company_language(company_id)
+    as_of = date.today()
     out: list[dict] = []
     for row in rows:
         pid = int(row["pond_id"])
@@ -416,6 +418,8 @@ def _apply_all_species_combined_biomass(
             except (TypeError, ValueError):
                 heads = 0
             if heads <= 0:
+                continue
+            if not position_row_has_fresh_sample(bucket, as_of):
                 continue
             combined += effective_biomass_kg_from_position_row(bucket)
         combined = combined.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
@@ -739,13 +743,18 @@ def compute_fish_stock_position_breakdown_rows(
         smp_q = smp_q.filter(sample_date__lte=as_of_date)
     if entries_after_date is not None:
         smp_q = smp_q.filter(sample_date__gt=entries_after_date)
-    # First pass: standing-crop size (manual / harvest sale). Second pass fills gaps
-    # from incoming-lot auto samples so a newly stocked pond still has a size.
+    # First pass: manual seine (not harvest-sale or incoming-lot rows). Harvest
+    # lots are the fish that left (Digonto 19 Aug 1,220 kg / 10,984 pcs) — they
+    # must not replace the pond standing sample (8,555 kg / 77,003). Second pass
+    # fills gaps from harvest size then incoming-lot auto samples.
+    def _is_derived_lot(s: AquacultureBiomassSample) -> bool:
+        return _is_incoming_lot_sample(s) or getattr(s, "source_fish_sale_id", None) is not None
+
     for prefer_standing in (True, False):
         for s in smp_q.order_by("pond_id", "production_cycle_id", "fish_species", "-sample_date", "-id"):
-            if prefer_standing and _is_incoming_lot_sample(s):
+            if prefer_standing and _is_derived_lot(s):
                 continue
-            if not prefer_standing and not _is_incoming_lot_sample(s):
+            if not prefer_standing and not _is_derived_lot(s):
                 continue
             sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
             if not _species_ok(sp):
@@ -783,7 +792,16 @@ def compute_fish_stock_position_breakdown_rows(
         mort_w, mort_c = mortality_map[key]
         adj_in_w, adj_in_c = adjustment_in_map[key]
         adj_out_w, adj_out_c = adjustment_out_map[key]
-        smp = latest_sample.get(key) or pond_species_sample.get((pid, sp))
+        smp = latest_sample.get(key)
+        if smp is None:
+            fb = pond_species_sample.get((pid, sp))
+            # Never apply a closed/other cycle's size to this bucket (Digonto C03
+            # inherited C01 Feb 1.25 kg/fish → 96 t on 77k fry).
+            if fb is not None and (fb.production_cycle_id is None or fb.production_cycle_id == cyc):
+                smp = fb
+        as_of_for_age = as_of_date or date.today()
+        if smp is not None and (as_of_for_age - smp.sample_date).days > 90:
+            smp = None
         cname = cycle_names.get(cyc) if cyc is not None else None
         out_rows.append(
             _position_row_from_bucket(

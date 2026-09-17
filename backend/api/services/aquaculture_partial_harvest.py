@@ -5,6 +5,7 @@ Suggestions are advisory — managers may harvest more or less than recommended.
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from api.services.aquaculture_i18n import (
@@ -225,6 +226,32 @@ def compute_partial_harvest_suggestion(
         "partial_harvest_post_load_kg_per_decimal": str(post_kpd),
         "partial_harvest_rationale": rationale,
     }
+
+
+# A February carp size must not still drive September present weight (Digonto
+# leftover Mirka: 2,884 fish × 0.77 kg from 11 Feb = 2,218 kg on top of the
+# 12 Sep tilapia sample 7,860 kg → fake 10,079 kg).
+_SAMPLE_FRESH_DAYS = 90
+
+
+def position_row_sample_date(row: dict) -> date | None:
+    raw = row.get("latest_sample_date")
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, date):
+        return raw
+    try:
+        return date.fromisoformat(str(raw)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def position_row_has_fresh_sample(row: dict, as_of: date, *, max_age_days: int = _SAMPLE_FRESH_DAYS) -> bool:
+    """True when the row's size sample is on or after ``as_of - max_age_days``."""
+    sampled = position_row_sample_date(row)
+    if sampled is None:
+        return False
+    return (as_of - sampled).days <= max_age_days
 
 
 def effective_biomass_kg_from_position_row(row: dict) -> Decimal:

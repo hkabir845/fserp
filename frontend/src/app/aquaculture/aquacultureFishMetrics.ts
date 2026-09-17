@@ -53,6 +53,7 @@ export type FcrBlock = {
     feed_kg?: string
     harvest_kg?: string
     biomass_gain_kg?: string
+    biomass_production_kg?: string
     fcr_biomass?: string | null
     fcr_harvest?: string | null
     biomass_gain_note?: string
@@ -64,6 +65,7 @@ export type FcrBlock = {
     feed_kg?: string
     harvest_kg?: string
     biomass_gain_kg?: string
+    biomass_production_kg?: string
     fcr_biomass?: string | null
     fcr_harvest?: string | null
   }>

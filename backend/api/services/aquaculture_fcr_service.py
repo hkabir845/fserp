@@ -121,6 +121,139 @@ def sum_feed_kg_for_period(
     return _q4(tagged + soft)
 
 
+def _sample_mean_weight_kg(sample: AquacultureBiomassSample) -> Decimal | None:
+    fc = sample.estimated_fish_count
+    etw = sample.estimated_total_weight_kg
+    if fc and fc > 0 and etw is not None and etw > 0:
+        return _d(etw) / Decimal(int(fc))
+    if sample.avg_weight_kg is not None and sample.avg_weight_kg > 0:
+        return _d(sample.avg_weight_kg)
+    return None
+
+
+def _same_day_harvest_fish_count(
+    company_id: int,
+    pond_id: int,
+    day: date,
+    *,
+    production_cycle_id: int | None = None,
+    fish_species: str | None = None,
+) -> int:
+    """Fish sold as harvest on ``day`` (for rebuilding pre-harvest heads)."""
+    qs = AquacultureFishSale.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        sale_date=day,
+        income_type="fish_harvest_sale",
+    )
+    if production_cycle_id is not None:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+    if fish_species:
+        qs = qs.filter(fish_species=fish_species)
+    total = 0
+    for s in qs.only("fish_count", "income_type"):
+        try:
+            n = int(s.fish_count or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n > 0:
+            total += n
+    return total
+
+
+def _reconciled_standing_opening_kg(
+    company_id: int,
+    pond_id: int,
+    day: date,
+    *,
+    production_cycle_id: int | None = None,
+    fish_species: str | None = None,
+) -> Decimal | None:
+    """
+    Opening standing kg on ``day`` from sample mean × pre-harvest live heads.
+
+    Frozen ``extrapolated_biomass_kg`` can keep a wrong stock_reference after a
+    cycle retag (Mynuddin C02 sample #169: 31,276 heads vs true 27,100). Rebuild
+    as seine mean × (end-of-day heads + same-day harvest heads) so opening matches
+    the live crop before that day's sales.
+    """
+    if fish_species:
+        standing = _standing_sample_on_day(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        if standing is None:
+            return None
+        mean = _sample_mean_weight_kg(standing)
+        if mean is None or mean <= 0:
+            return None
+        _kg_eod, heads_eod = _live_standing_snapshot(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        sold_n = _same_day_harvest_fish_count(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        heads_open = int(heads_eod) + int(sold_n)
+        if heads_open <= 0:
+            return None
+        return _q4(mean * Decimal(heads_open))
+
+    # Multi-species: rebuild each species line, then sum (Ashari-2 vertical day).
+    qs = AquacultureBiomassSample.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        sample_date=day,
+        source_fish_sale__isnull=True,
+        source_bill_line__isnull=True,
+        source_fish_pond_transfer_line__isnull=True,
+    )
+    if production_cycle_id is not None:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+    best: dict[str, tuple[int, Decimal]] = {}
+    for s in qs.order_by("-id"):
+        mean = _sample_mean_weight_kg(s)
+        if mean is None or mean <= 0:
+            continue
+        sp = (getattr(s, "fish_species", None) or "tilapia").strip() or "tilapia"
+        n = int(s.estimated_fish_count or 0)
+        prev = best.get(sp)
+        if prev is None or n > prev[0]:
+            best[sp] = (n, mean)
+    if not best:
+        return None
+    total = Decimal("0")
+    for sp, (_n, mean) in best.items():
+        _kg_eod, heads_eod = _live_standing_snapshot(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=sp,
+        )
+        sold_n = _same_day_harvest_fish_count(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=sp,
+        )
+        heads_open = int(heads_eod) + int(sold_n)
+        if heads_open > 0:
+            total += mean * Decimal(heads_open)
+    return _q4(total) if total > 0 else None
+
+
 def _sample_biomass_kg(sample: AquacultureBiomassSample) -> Decimal | None:
     if sample.extrapolated_biomass_kg is not None and sample.extrapolated_biomass_kg > 0:
         return _d(sample.extrapolated_biomass_kg)
@@ -387,7 +520,17 @@ def _opening_closing_live_standing(
             production_cycle_id=production_cycle_id,
             fish_species=fish_species,
         )
-        if sample_kg is not None and sample_kg > 0:
+        reconciled = _reconciled_standing_opening_kg(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        if reconciled is not None and reconciled > 0:
+            opening_kg = reconciled
+            opening_from_sample = True
+        elif sample_kg is not None and sample_kg > 0:
             opening_kg = sample_kg
             opening_from_sample = True
         else:
@@ -838,7 +981,9 @@ def fcr_period_summary_block(
         "methodology": (
             "Biomass gain on the card is live-crop present weight at period end minus "
             "present when that crop finished stocking (book kg if it still matches the "
-            "sample; otherwise sample × heads). Mid-stocking samples and "
+            "sample; otherwise sample mean × live heads before same-day harvest). "
+            "Stale stock_reference on a retagged sample is not used for opening. "
+            "Mid-stocking samples and "
             "AUTO-AQ-BIOMASS-REVAL book rewrites are not growth. "
             "FCR (biomass) = feed kg ÷ production, where production = that inventory "
             "change + harvest + mortality/losses + transfer-out − transfer-in − stocking "

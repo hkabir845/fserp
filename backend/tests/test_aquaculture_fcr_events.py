@@ -492,3 +492,78 @@ def test_fcr_sums_multi_species_standing_samples_on_opening_day(company_tenant_w
     assert growth["summary"]["interval_count"] == 2
     gains = sorted(Decimal(i["biomass_gain_kg"]) for i in growth["intervals"])
     assert gains == [Decimal("100.00"), Decimal("100.00")]
+
+
+def test_fcr_opening_ignores_stale_sample_head_count_on_harvest_day(company_tenant_with_gl):
+    """Mynuddin C02: retagged sample kept 31k heads; true crop was 27.1k before sale.
+
+    Opening must use seine mean × (EOD heads + same-day harvest heads), not frozen
+    extrapolated_biomass_kg, or production gain goes deeply negative.
+    """
+    company = company_tenant_with_gl
+    cid = company.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Stale Ref Pond", pond_role="grow_out", is_active=True
+    )
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, code="C02", name="Second", start_date=date(2025, 12, 1), is_active=True
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        entry_date=date(2026, 1, 1),
+        entry_kind="adjustment",
+        fish_species="tilapia",
+        fish_count_delta=27_100,
+        weight_kg_delta=Decimal("666.34"),
+        memo="seed stock",
+    )
+    # Wrong frozen ref (as if all pond tilapia) → ~30 t if trusted blindly.
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        sample_date=date(2026, 1, 20),
+        fish_species="tilapia",
+        estimated_fish_count=31,
+        estimated_total_weight_kg=Decimal("30"),
+        avg_weight_kg=Decimal("0.967742"),
+        stock_reference_fish_count=31_276,
+        extrapolated_biomass_kg=Decimal("30267.0988"),
+    )
+    sale = AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        sale_date=date(2026, 1, 20),
+        income_type="fish_harvest_sale",
+        fish_species="tilapia",
+        weight_kg=Decimal("1591"),
+        fish_count=1639,
+        total_amount=Decimal("159100"),
+    )
+    # Auto harvest sample (excluded from standing) — mirrors production.
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        sample_date=date(2026, 1, 20),
+        fish_species="tilapia",
+        estimated_fish_count=1639,
+        estimated_total_weight_kg=Decimal("1591"),
+        avg_weight_kg=Decimal("0.970714"),
+        stock_reference_fish_count=25_461,
+        extrapolated_biomass_kg=Decimal("24715.3492"),
+        source_fish_sale=sale,
+    )
+
+    out = compute_fcr_for_scope(
+        cid, date(2025, 2, 20), date(2026, 2, 20), pond_id=pond.id, production_cycle_id=cy.id
+    )
+    # Pre-harvest: 0.967742 × 27100 ≈ 26225.8; close uses live mean × 25461.
+    assert Decimal(out["biomass_first_kg"]) == Decimal("26225.8065")
+    assert Decimal(out["harvest_kg"]) == Decimal("1591.0000")
+    # Inventory drop ≈ harvest; production near zero (not −4 t).
+    assert Decimal(out["biomass_gain_kg"]) > Decimal("-50")
+    assert Decimal(out["biomass_gain_kg"]) < Decimal("50")

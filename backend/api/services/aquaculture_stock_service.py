@@ -22,9 +22,10 @@ from api.services.aquaculture_i18n import company_language
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
 from api.services.aquaculture_partial_harvest import (
+    biomass_sample_fields_ok_for_pond_mass,
     effective_biomass_kg_from_position_row,
     enrich_position_row_with_fish_metrics,
-    position_row_has_fresh_sample,
+    position_row_has_usable_standing_sample,
 )
 from api.services.aquaculture_units import (
     compute_stocking_load_advice,
@@ -51,6 +52,15 @@ def _latest_sample_avg_kg_str(smp: AquacultureBiomassSample | None) -> str | Non
     if smp.avg_weight_kg is not None:
         return str(smp.avg_weight_kg)
     return None
+
+
+def _sample_ok_for_pond_mass(s: AquacultureBiomassSample) -> bool:
+    return biomass_sample_fields_ok_for_pond_mass(
+        fish_count=s.estimated_fish_count,
+        total_weight_kg=s.estimated_total_weight_kg,
+        avg_weight_kg=s.avg_weight_kg,
+        fish_species=getattr(s, "fish_species", None),
+    )
 
 
 def _is_incoming_lot_sample(s: AquacultureBiomassSample) -> bool:
@@ -419,7 +429,7 @@ def _apply_all_species_combined_biomass(
                 heads = 0
             if heads <= 0:
                 continue
-            if not position_row_has_fresh_sample(bucket, as_of):
+            if not position_row_has_usable_standing_sample(bucket, as_of):
                 continue
             combined += effective_biomass_kg_from_position_row(bucket)
         combined = combined.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
@@ -758,6 +768,8 @@ def compute_fish_stock_position_breakdown_rows(
                 continue
             sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
             if not _species_ok(sp):
+                continue
+            if not _sample_ok_for_pond_mass(s):
                 continue
             ps_key = (s.pond_id, sp)
             if ps_key not in pond_species_sample:

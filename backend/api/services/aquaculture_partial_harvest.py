@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
+from api.services.aquaculture_constants import normalize_fish_species
+
 from api.services.aquaculture_i18n import (
     company_language,
     fish_per_kg_source,
@@ -232,6 +234,11 @@ def compute_partial_harvest_suggestion(
 # leftover Mirka: 2,884 fish × 0.77 kg from 11 Feb = 2,218 kg on top of the
 # 12 Sep tilapia sample 7,860 kg → fake 10,079 kg).
 _SAMPLE_FRESH_DAYS = 90
+# One market fish must not set pond mass (Ashari-2 C22: 1 × 1.6 kg × 42,912
+# heads = 68,659 kg). A 20-fish / 165 kg "tilapia" row (8.25 kg/fish,
+# Mynuddin 12 Aug) is a typo, not a crop size.
+_MIN_SEINE_HEADS_FOR_POND_MASS = 5
+_MAX_TILAPIA_MEAN_KG = Decimal("2.5")
 
 
 def position_row_sample_date(row: dict) -> date | None:
@@ -252,6 +259,48 @@ def position_row_has_fresh_sample(row: dict, as_of: date, *, max_age_days: int =
     if sampled is None:
         return False
     return (as_of - sampled).days <= max_age_days
+
+
+def position_row_has_usable_standing_sample(
+    row: dict, as_of: date, *, max_age_days: int = _SAMPLE_FRESH_DAYS
+) -> bool:
+    """Fresh sample that is safe to multiply by pond heads."""
+    if not position_row_has_fresh_sample(row, as_of, max_age_days=max_age_days):
+        return False
+    return biomass_sample_fields_ok_for_pond_mass(
+        fish_count=row.get("latest_sample_estimated_fish_count"),
+        total_weight_kg=row.get("latest_sample_estimated_total_weight_kg"),
+        avg_weight_kg=row.get("latest_sample_avg_weight_kg"),
+        fish_species=row.get("latest_sample_fish_species") or row.get("fish_species"),
+    )
+
+
+def biomass_sample_fields_ok_for_pond_mass(
+    *,
+    fish_count=None,
+    total_weight_kg=None,
+    avg_weight_kg=None,
+    fish_species=None,
+) -> bool:
+    """Reject 1–4 fish seines and impossible tilapia means before avg × pond heads."""
+    try:
+        seine_n = int(fish_count) if fish_count not in (None, "") else 0
+    except (TypeError, ValueError):
+        seine_n = 0
+    avg = sample_mean_weight_kg_from_fields(
+        fish_count=fish_count,
+        total_weight_kg=total_weight_kg,
+        avg_weight_kg=avg_weight_kg,
+    )
+    if avg is None or avg <= 0:
+        return False
+    sp, _ = normalize_fish_species(fish_species)
+    # 1–4 fish is a market piece, not a tilapia pond seine (Ashari-2 C22).
+    if sp == "tilapia" and 0 < seine_n < _MIN_SEINE_HEADS_FOR_POND_MASS:
+        return False
+    if sp == "tilapia" and avg > _MAX_TILAPIA_MEAN_KG:
+        return False
+    return True
 
 
 def effective_biomass_kg_from_position_row(row: dict) -> Decimal:

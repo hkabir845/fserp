@@ -26,7 +26,7 @@ from api.models import (
 from api.services.aquaculture_biomass_book_revaluation_service import is_book_revaluation_ledger_row
 from api.services.aquaculture_partial_harvest import (
     effective_biomass_kg_from_position_row,
-    position_row_has_fresh_sample,
+    position_row_has_usable_standing_sample,
 )
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 
@@ -185,7 +185,7 @@ def _live_standing_snapshot(
             continue
         # Leftover species with only a months-old sample (Digonto Mirka, Feb)
         # must not enter pond present / gain.
-        if not position_row_has_fresh_sample(row, as_of):
+        if not position_row_has_usable_standing_sample(row, as_of):
             continue
         heads += n
         b = _d(row.get("implied_net_weight_kg"))

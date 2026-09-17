@@ -205,3 +205,73 @@ def test_all_four_growout_ponds_use_species_sum_not_latest_sample(company_tenant
     assert Decimal(str(econ["total_biomass_kg"])) == farm.quantize(Decimal("0.0001"))
     perf = build_pond_performance_report(cid, date(2026, 1, 1), date(2026, 9, 15))
     assert Decimal(str(perf["summary"]["total_biomass_kg"])) == farm.quantize(Decimal("0.01"))
+
+
+@pytest.mark.django_db
+def test_one_fish_tilapia_sample_does_not_set_pond_mass(company_tenant):
+    """Ashari-2 C22: 1 × 1.6 kg × 42,912 heads must not add 68 t on top of C02."""
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Ashari-2", pond_role="grow_out", is_active=True
+    )
+    c02 = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, name="C02", start_date=date(2026, 7, 1)
+    )
+    c22 = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, name="C22", start_date=date(2026, 1, 1)
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid, pond=pond, production_cycle=c02, entry_date=date(2026, 8, 1),
+        entry_kind="adjustment", fish_species="tilapia",
+        fish_count_delta=194888, weight_kg_delta=Decimal("25000"),
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid, pond=pond, production_cycle=c22, entry_date=date(2026, 8, 1),
+        entry_kind="adjustment", fish_species="tilapia",
+        fish_count_delta=42912, weight_kg_delta=Decimal("5000"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid, pond=pond, production_cycle=c02, sample_date=date(2026, 9, 12),
+        fish_species="tilapia", estimated_fish_count=70,
+        estimated_total_weight_kg=Decimal("9.0000"), avg_weight_kg=Decimal("0.128571"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid, pond=pond, production_cycle=c22, sample_date=date(2026, 9, 14),
+        fish_species="tilapia", estimated_fish_count=1,
+        estimated_total_weight_kg=Decimal("1.6000"), avg_weight_kg=Decimal("1.600000"),
+    )
+    row = compute_fish_stock_position_rows(cid, pond_id=pond.id)[0]
+    present = effective_biomass_kg_from_position_row(row)
+    assert present == Decimal("25056.9450")  # 194888 × (9/70)
+    assert present < Decimal("30000")
+
+
+@pytest.mark.django_db
+def test_impossible_tilapia_mean_is_ignored(company_tenant):
+    """Mynuddin 12 Aug: 20 fish / 165 kg (8.25 kg/fish) is a typo, not pond mass."""
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(
+        company_id=cid, name="Mynuddin", pond_role="grow_out", is_active=True
+    )
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=cid, pond=pond, name="C03", start_date=date(2026, 7, 1)
+    )
+    AquacultureFishStockLedger.objects.create(
+        company_id=cid, pond=pond, production_cycle=cy, entry_date=date(2026, 8, 1),
+        entry_kind="adjustment", fish_species="tilapia",
+        fish_count_delta=31644, weight_kg_delta=Decimal("4500"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid, pond=pond, production_cycle=cy, sample_date=date(2026, 8, 12),
+        fish_species="tilapia", estimated_fish_count=20,
+        estimated_total_weight_kg=Decimal("165.0000"), avg_weight_kg=Decimal("8.250000"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid, pond=pond, production_cycle=cy, sample_date=date(2026, 9, 12),
+        fish_species="tilapia", estimated_fish_count=34,
+        estimated_total_weight_kg=Decimal("6.5000"), avg_weight_kg=Decimal("0.191176"),
+    )
+    row = compute_fish_stock_position_rows(cid, pond_id=pond.id)[0]
+    present = effective_biomass_kg_from_position_row(row)
+    assert present == Decimal("6049.5733")  # 31644 × (6.5/34)
+    assert present < Decimal("10000")

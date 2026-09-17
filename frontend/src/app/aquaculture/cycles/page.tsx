@@ -11,7 +11,7 @@ import { AQ_HERO_BTN_GHOST, AQ_HERO_BTN_PRIMARY, AQ_HERO_SELECT_BLOCK, PipelineS
 import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, localDateISO } from '@/utils/date'
 
 import { suggestContinuousBatchName, suggestNursingBatchName, usesSeasonalStockingBatches } from '@/lib/stockingBatch'
 import { isNursingRole } from '@/lib/aquaculturePondSite'
@@ -38,6 +38,7 @@ interface CycleRow {
   name: string
   code: string
   fish_species?: string
+  fish_species_other?: string
   fish_species_label?: string
   source_production_cycle_id?: number | null
   source_production_cycle_name?: string
@@ -172,7 +173,7 @@ export default function AquacultureCyclesPage() {
 
   const openNew = () => {
     setEditing(null)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateISO()
     const pid =
       filterPond && ponds.some((p) => String(p.id) === filterPond)
         ? filterPond
@@ -205,7 +206,7 @@ export default function AquacultureCyclesPage() {
       name: r.name,
       code: r.code || '',
       fish_species: r.fish_species || 'tilapia',
-      fish_species_other: '',
+      fish_species_other: r.fish_species_other || '',
       start_date: r.start_date.slice(0, 10),
       end_date: r.end_date ? r.end_date.slice(0, 10) : '',
       sort_order: String(r.sort_order ?? 0),
@@ -220,17 +221,17 @@ export default function AquacultureCyclesPage() {
       toast.error(aquacultureT('pondNameStartRequired', lang))
       return
     }
+    const endDate = form.end_date.trim()
     const payload: Record<string, unknown> = {
       pond_id: parseInt(form.pond_id, 10),
       name: form.name.trim(),
       start_date: form.start_date,
       sort_order: parseInt(form.sort_order, 10) || 0,
-      is_active: form.is_active,
+      is_active: endDate ? false : form.is_active,
       notes: form.notes.trim(),
       fish_species: form.fish_species || 'tilapia',
-    }
-    if (form.end_date.trim()) {
-      payload.end_date = form.end_date.trim()
+      fish_species_other: form.fish_species === 'other' ? form.fish_species_other.trim() : '',
+      end_date: endDate || null,
     }
     try {
       if (editing) {
@@ -265,6 +266,18 @@ export default function AquacultureCyclesPage() {
     if (r.end_date) return `${start} → ${formatDateOnly(r.end_date)}`
     return `${start} → ${aquacultureT('periodOpen', lang)}`
   }
+
+  const cycleStatusLabel = (r: CycleRow) => {
+    if (r.end_date) return pick('Closed', 'বন্ধ')
+    return r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')
+  }
+
+  const cycleStatusClass = (r: CycleRow) =>
+    r.end_date
+      ? 'bg-muted text-muted-foreground'
+      : r.is_active !== false
+        ? 'bg-emerald-50 text-emerald-800'
+        : 'bg-muted text-muted-foreground'
 
   const CycleActions = ({ r }: { r: CycleRow }) => (
     <div className="flex shrink-0 justify-end gap-1">
@@ -443,11 +456,9 @@ export default function AquacultureCyclesPage() {
                   <td className="px-4 py-3 text-foreground/85">{r.fish_species_label || 'Tilapia'}</td>
                   <td className="px-4 py-3">
                     <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-muted text-muted-foreground'
-                      }`}
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cycleStatusClass(r)}`}
                     >
-                      {r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')}
+                      {cycleStatusLabel(r)}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-foreground/85">{periodLabel(r)}</td>
@@ -480,11 +491,9 @@ export default function AquacultureCyclesPage() {
                   </p>
                 </div>
                 <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                    r.is_active !== false ? 'bg-emerald-50 text-emerald-800' : 'bg-muted text-muted-foreground'
-                  }`}
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${cycleStatusClass(r)}`}
                 >
-                  {r.is_active !== false ? pick('Active', 'সক্রিয়') : pick('Inactive', 'নিষ্ক্রিয়')}
+                  {cycleStatusLabel(r)}
                 </span>
               </div>
 
@@ -556,7 +565,7 @@ export default function AquacultureCyclesPage() {
                       const suggested = applySuggestedName(
                         pid,
                         code,
-                        f.start_date || new Date().toISOString().slice(0, 10),
+                        f.start_date || localDateISO(),
                         f.fish_species || 'tilapia',
                       )
                       return suggested ? { ...next, name: suggested } : next
@@ -583,7 +592,7 @@ export default function AquacultureCyclesPage() {
                         const suggested = applySuggestedName(
                           f.pond_id,
                           f.code,
-                          f.start_date || new Date().toISOString().slice(0, 10),
+                          f.start_date || localDateISO(),
                           v,
                         )
                         if (suggested) next.name = suggested
@@ -609,6 +618,16 @@ export default function AquacultureCyclesPage() {
                   </span>
                 )}
               </label>
+              {form.fish_species === 'other' ? (
+                <label className="block text-sm font-medium text-foreground/85">
+                  {pick('Other species name', 'অন্যান্য প্রজাতির নাম')}
+                  <input
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2"
+                    value={form.fish_species_other}
+                    onChange={(e) => setForm((f) => ({ ...f, fish_species_other: e.target.value }))}
+                  />
+                </label>
+              ) : null}
               <label className="block text-sm font-medium text-foreground/85">
                 {aquacultureT('batchName', lang)}
                 <input

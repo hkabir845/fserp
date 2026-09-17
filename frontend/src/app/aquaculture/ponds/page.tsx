@@ -1213,7 +1213,14 @@ export default function AquaculturePondsPage() {
                           <td className="px-3 py-3 lg:px-4">
                             <div className="flex flex-col gap-1.5">
                               <span className="w-fit rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-                                {p.pond_role_label || (p.pond_role === 'nursing' ? 'Nursing' : 'Grow-out')}
+                                {(p.pond_role_label || '').trim() ||
+                                  (p.pond_role === 'nursing'
+                                    ? 'Nursing'
+                                    : p.pond_role === 'broodstock'
+                                      ? 'Broodstock'
+                                      : p.pond_role === 'other'
+                                        ? 'Other'
+                                        : 'Grow-out')}
                                 {p.physical_site_name ? ` · ${p.physical_site_name}` : ''}
                               </span>
                               <span

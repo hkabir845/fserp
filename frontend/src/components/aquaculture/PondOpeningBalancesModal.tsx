@@ -28,7 +28,7 @@ import { useToast } from '@/components/Toast'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { MODAL_BACKDROP, MODAL_FORM_PANEL } from '@/lib/modalLayout'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, localDateISO } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import {
   formatSigned,
@@ -129,7 +129,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
   const [plZeroConfirmDrafts, setPlZeroConfirmDrafts] = useState<Record<number, boolean>>({})
   const plZeroConfirmDraftsRef = useRef<Record<number, boolean>>({})
   const [saving, setSaving] = useState(false)
-  const [cutoverDate, setCutoverDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [cutoverDate, setCutoverDate] = useState(() => localDateISO())
   const [goLiveSummary, setGoLiveSummary] = useState<OpeningBalancesResponse['go_live'] | null>(null)
   const [focusPondId, setFocusPondId] = useState<number | null>(null)
 
@@ -160,7 +160,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
     const pl: Record<string, PlDraft> = {}
     const plPostGl: Record<number, boolean> = {}
     const plZeroConfirm: Record<number, boolean> = {}
-    const today = asOfDefault || new Date().toISOString().slice(0, 10)
+    const today = asOfDefault || localDateISO()
     for (const p of ponds) {
       lease[p.pond_id] = { leasePaid: p.lease_paid_to_landlord ?? '0' }
       if (p.pos_customer_id) {
@@ -225,7 +225,7 @@ export function PondOpeningBalancesModal({ open, currency, onClose, onSaved }: P
       const cat = data?.catalog ?? null
       setCatalog(cat)
       setConventions(data?.conventions ?? {})
-      const cut = data?.cutover_date?.slice(0, 10) || new Date().toISOString().slice(0, 10)
+      const cut = data?.cutover_date?.slice(0, 10) || localDateISO()
       setCutoverDate(cut)
       setGoLiveSummary(data?.go_live ?? null)
       initDrafts(ponds, cat, cut)
@@ -1241,7 +1241,7 @@ function PlOpeningTab({
                                 ...prev,
                                 [key]: {
                                   amount: e.target.value,
-                                  asOf: prev[key]?.asOf ?? new Date().toISOString().slice(0, 10),
+                                  asOf: prev[key]?.asOf ?? localDateISO(),
                                   memo: prev[key]?.memo ?? '',
                                 },
                               }))

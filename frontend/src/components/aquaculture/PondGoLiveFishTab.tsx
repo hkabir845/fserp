@@ -188,9 +188,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
               rows.filter(
                 (r) =>
                   r.entry_kind === 'adjustment' &&
-                  (r.memo?.includes('Go-live') ||
-                    r.entry_date?.slice(0, 10) === cutoverDate ||
-                    (r.fish_count_delta > 0 && parseMoney(r.weight_kg_delta) > 0)),
+                  Boolean(r.memo?.includes('Go-live') || r.memo?.includes(GO_LIVE_MEMO)),
               ),
             ] as const
           } catch {
@@ -202,7 +200,7 @@ export function PondGoLiveFishTab({ ponds, cutoverDate, currency, onSaved }: Pro
     } finally {
       setLedgerLoading(false)
     }
-  }, [cutoverDate])
+  }, [])
 
   useEffect(() => {
     void loadSpecies()

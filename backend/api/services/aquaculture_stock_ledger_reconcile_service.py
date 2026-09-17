@@ -37,8 +37,21 @@ def resolve_default_production_cycle(
     company_id: int,
     pond_id: int,
 ) -> AquacultureProductionCycle | None:
-    """Prefer the pond's Mid Cycle, else code '0', else the earliest active cycle."""
+    """
+    Prefer an open Mid Cycle / code '0', else any open active batch, then legacy closed demos.
+    Closed Mid Cycle must not win over a real open C0x batch.
+    """
     base = AquacultureProductionCycle.objects.filter(company_id=company_id, pond_id=pond_id)
+    open_qs = base.filter(end_date__isnull=True, is_active=True)
+    cy = open_qs.filter(name__icontains="Mid Cycle").order_by("-start_date", "-id").first()
+    if cy:
+        return cy
+    cy = open_qs.filter(code="0").order_by("-start_date", "-id").first()
+    if cy:
+        return cy
+    cy = open_qs.order_by("-start_date", "-id").first()
+    if cy:
+        return cy
     cy = base.filter(is_active=True, name__icontains="Mid Cycle").order_by("-start_date", "-id").first()
     if cy:
         return cy

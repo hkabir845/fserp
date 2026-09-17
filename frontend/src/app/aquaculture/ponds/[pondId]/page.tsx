@@ -30,7 +30,7 @@ import {
 } from '@/lib/aquacultureExpenseRegister'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, localDateISO } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
 import { bookBiomassKg, displayBiomassKg } from '@/app/aquaculture/aquacultureFishMetrics'
@@ -44,7 +44,7 @@ type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 type PresetButton = Exclude<PeriodPreset, 'custom'>
 
 function iso(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return localDateISO(d)
 }
 
 function periodRange(preset: PeriodPreset): { start: string; end: string; label: string } {
@@ -1684,9 +1684,15 @@ export default function PondDetailViewPage() {
                   ) : (
                     transfersInPeriod.map((t) => {
                       const out = t.from_pond_id === pondIdNum
-                      const lineKg = t.lines?.reduce((a, ln) => a + parseNum(ln.weight_kg), 0) ?? 0
+                      const relevantLines = out
+                        ? t.lines
+                        : t.lines?.filter((ln) => ln.to_pond_id === pondIdNum)
+                      const lineKg = relevantLines?.reduce((a, ln) => a + parseNum(ln.weight_kg), 0) ?? 0
                       const lineHeads =
-                        t.lines?.reduce((a, ln) => a + (ln.fish_count != null ? Number(ln.fish_count) : 0), 0) ?? 0
+                        relevantLines?.reduce(
+                          (a, ln) => a + (ln.fish_count != null ? Number(ln.fish_count) : 0),
+                          0,
+                        ) ?? 0
                       return (
                         <tr key={t.id}>
                           <td className="whitespace-nowrap px-4 py-2">{formatDateOnly(t.transfer_date)}</td>

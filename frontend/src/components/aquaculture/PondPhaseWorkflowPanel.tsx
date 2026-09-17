@@ -32,7 +32,7 @@ export function PondPhaseWorkflowPanel(props: {
         ) : null}
       </p>
       {summary ? <p className="mt-1 text-sky-900/90">{summary}</p> : null}
-      {!compact ? (
+      {!compact && isNursingRole(pond) ? (
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-sky-900/85">
           {NURSING_WORKFLOW_STEPS.map((step) => (
             <li key={step}>{step}</li>

@@ -48,14 +48,14 @@ import {
 } from '@/lib/aquacultureExpenseRegister'
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
-import { formatDateOnly } from '@/utils/date'
+import { formatDateOnly, localDateISO } from '@/utils/date'
 
 type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 
 type PresetButton = Exclude<PeriodPreset, 'custom'>
 
 function iso(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return localDateISO(d)
 }
 
 function periodRange(preset: PeriodPreset): { start: string; end: string; label: string } {

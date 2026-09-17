@@ -176,3 +176,57 @@ def test_link_production_cycles_to_vendor_bills(company_tenant):
     assert stats["lines_linked"] == 1
     bill.lines.get().refresh_from_db()
     assert bill.lines.get().aquaculture_production_cycle_id == cycle.id
+
+@pytest.mark.django_db
+def test_tilapia_feed_attaches_to_batch_open_as_of_bill_date(company_tenant):
+    """With two open tilapia batches, feed posts to the latest that started by bill date."""
+    from api.services.aquaculture_production_cycle_service import (
+        assign_auto_production_cycles_for_parsed_bill_lines,
+    )
+
+    Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
+    pond = AquaculturePond.objects.create(
+        company_id=company_tenant.id, name="Grow", pond_role="grow_out", code="P10"
+    )
+    older = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        name="C02 older",
+        code="C02",
+        fish_species="tilapia",
+        start_date=date(2025, 12, 6),
+        is_active=True,
+    )
+    AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        name="C01 newer",
+        code="C01",
+        fish_species="tilapia",
+        start_date=date(2026, 5, 14),
+        is_active=True,
+    )
+    bill = SimpleNamespace(bill_number="FEED-1", bill_date=date(2026, 3, 1), pk=99)
+    lines = [
+        {
+            "aquaculture_pond_id": pond.id,
+            "aquaculture_fish_species": "tilapia",
+            "aquaculture_cost_bucket": "feed",
+        }
+    ]
+    assign_auto_production_cycles_for_parsed_bill_lines(company_tenant.id, bill, lines)
+    assert lines[0]["aquaculture_production_cycle_id"] == older.id
+
+
+@pytest.mark.django_db
+def test_apply_cycle_status_consistency_closes_active_flag():
+    from api.services.aquaculture_production_cycle_service import apply_cycle_status_consistency
+
+    c = AquacultureProductionCycle(
+        name="X",
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 6, 1),
+        is_active=True,
+    )
+    apply_cycle_status_consistency(c)
+    assert c.is_active is False

@@ -112,20 +112,62 @@ def open_stocking_batch_for_pond_species(
     company_id: int,
     pond_id: int,
     fish_species: str | None,
+    *,
+    as_of_date: date | None = None,
 ) -> AquacultureProductionCycle | None:
-    """Latest open active batch for this pond and species (continuous-culture species)."""
+    """
+    Latest open active batch for this pond and species.
+
+    When as_of_date is set, only batches that have already started by that date
+    are considered — so feed/medicine on a day before a newer C0x starts still
+    attach to the older open batch instead of always picking the newest.
+    """
     sp_code, _ = normalize_fish_species(fish_species or "tilapia")
-    return (
-        AquacultureProductionCycle.objects.filter(
-            company_id=company_id,
-            pond_id=pond_id,
-            fish_species=sp_code,
-            end_date__isnull=True,
-            is_active=True,
-        )
-        .order_by("-start_date", "-id")
-        .first()
+    qs = AquacultureProductionCycle.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        fish_species=sp_code,
+        end_date__isnull=True,
+        is_active=True,
     )
+    if as_of_date is not None:
+        qs = qs.filter(start_date__lte=as_of_date)
+    return qs.order_by("-start_date", "-id").first()
+
+
+def resolve_movement_production_cycle(
+    company_id: int,
+    pond_id: int,
+    *,
+    fish_species: str | None = None,
+    as_of_date: date | None = None,
+) -> AquacultureProductionCycle | None:
+    """
+    Best stocking batch for a fish sale/sample/ledger movement.
+
+    Prefer an open batch for the species (as of date), else any open batch on the pond.
+    """
+    if fish_species:
+        hit = open_stocking_batch_for_pond_species(
+            company_id, pond_id, fish_species, as_of_date=as_of_date
+        )
+        if hit:
+            return hit
+    qs = AquacultureProductionCycle.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        end_date__isnull=True,
+        is_active=True,
+    )
+    if as_of_date is not None:
+        qs = qs.filter(start_date__lte=as_of_date)
+    return qs.order_by("-start_date", "-id").first()
+
+
+def apply_cycle_status_consistency(cycle: AquacultureProductionCycle) -> None:
+    """Closed batches (end_date set) cannot stay is_active=True."""
+    if cycle.end_date is not None:
+        cycle.is_active = False
 
 
 def suggest_continuous_batch_name(
@@ -371,12 +413,15 @@ def assign_auto_production_cycles_for_parsed_bill_lines(
         if key in reused_cycle_by_pond_species:
             pl["aquaculture_production_cycle_id"] = reused_cycle_by_pond_species[key]
             continue
-        existing = open_stocking_batch_for_pond_species(company_id, pid_i, sp_code)
+        existing = open_stocking_batch_for_pond_species(
+            company_id, pid_i, sp_code, as_of_date=bill_date
+        )
         if existing:
             reused_cycle_by_pond_species[key] = existing.id
             pl["aquaculture_production_cycle_id"] = existing.id
 
     # Tilapia (seasonal batches): feed/medicine reuse the pond's open batch; only fry lines open C01/C02/C03.
+    # When several tilapia batches are open, prefer the latest that already started by the bill date.
     reused_open_batch_by_pond: dict[int, int] = {}
     for pl in parsed_lines:
         pid = pl.get("aquaculture_pond_id")
@@ -392,7 +437,9 @@ def assign_auto_production_cycles_for_parsed_bill_lines(
             pl["aquaculture_production_cycle_id"] = reused_open_batch_by_pond[pid_i]
             continue
         sp_code, _ = normalize_fish_species(sp)
-        existing = open_stocking_batch_for_pond_species(company_id, pid_i, sp_code)
+        existing = open_stocking_batch_for_pond_species(
+            company_id, pid_i, sp_code, as_of_date=bill_date
+        )
         if existing:
             reused_open_batch_by_pond[pid_i] = existing.id
             pl["aquaculture_production_cycle_id"] = existing.id
@@ -685,15 +732,24 @@ def link_orphan_bill_lines_to_cycle_by_start_date(
     cycle: AquacultureProductionCycle,
 ) -> int:
     """
-    After a batch is recreated on a pond, attach orphan vendor lines from the same bill date.
+    After a batch is recreated on a pond, attach orphan fry/fish vendor lines from the same bill date.
     Helps when the user deleted C01 and opened a new C01 with the fry bill's stocking date.
+    Feed/medicine orphans are left alone so they are not glued to a fry batch by calendar day alone.
     """
-    return BillLine.objects.filter(
-        bill__company_id=company_id,
-        aquaculture_pond_id=cycle.pond_id,
-        aquaculture_production_cycle_id__isnull=True,
-        bill__bill_date=cycle.start_date,
-    ).update(aquaculture_production_cycle_id=cycle.id)
+    fry_line_q = Q(aquaculture_cost_bucket="fry_stocking") | Q(
+        aquaculture_fish_count__gt=0,
+        item__pos_category__iexact="fish",
+    )
+    return (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            aquaculture_pond_id=cycle.pond_id,
+            aquaculture_production_cycle_id__isnull=True,
+            bill__bill_date=cycle.start_date,
+        )
+        .filter(fry_line_q)
+        .update(aquaculture_production_cycle_id=cycle.id)
+    )
 
 
 def refresh_pond_batch_integrity(

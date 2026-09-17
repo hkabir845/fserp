@@ -126,11 +126,13 @@ from api.services.gl_posting import (
     sync_landlord_lease_payment_journal,
 )
 from api.services.aquaculture_production_cycle_service import (
+    apply_cycle_status_consistency,
     cycle_code_conflict,
     ensure_destination_cycle_for_transfer,
     fry_stocking_summaries_for_cycles,
     next_automatic_cycle_code,
     refresh_pond_batch_integrity,
+    resolve_movement_production_cycle,
 )
 from api.services.accounting_period_lock import assert_period_open, period_lock_error
 from api.services.reference_code import (
@@ -1201,6 +1203,7 @@ def aquaculture_production_cycles_list_or_create(request):
         is_active=bool(body.get("is_active", True)),
         notes=(body.get("notes") or "")[:5000],
     )
+    apply_cycle_status_consistency(c)
     c.save()
     refresh_pond_batch_integrity(cid, pond_id=pond.id, production_cycle_id=c.id)
     return JsonResponse(_cycle_to_json(c), status=201)
@@ -1271,6 +1274,7 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
             c.fish_species_other = normalize_fish_species_other(
                 body.get("fish_species_other"), c.fish_species
             )
+        apply_cycle_status_consistency(c)
         c.save()
         refresh_pond_batch_integrity(cid, pond_id=c.pond_id, production_cycle_id=c.id)
         fry_by_cycle = fry_stocking_summaries_for_cycles(cid, [c.id])
@@ -3283,6 +3287,10 @@ def aquaculture_sales_list_or_create(request):
                 status=400,
             )
         fso = normalize_fish_species_other(body.get("fish_species_other"), fs)
+        if cycle_obj is None:
+            cycle_obj = resolve_movement_production_cycle(
+                cid, pond.id, fish_species=fs, as_of_date=sd
+            )
         stock_err = assert_outbound_fish_within_implied_stock(
             cid,
             pond.id,
@@ -3715,6 +3723,10 @@ def aquaculture_samples_list_or_create(request):
             status=400,
         )
     fso = normalize_fish_species_other(body.get("fish_species_other"), fs)
+    if cycle_obj is None:
+        cycle_obj = resolve_movement_production_cycle(
+            cid, pond.id, fish_species=fs, as_of_date=sd
+        )
     mpp = body.get("market_price_per_kg")
     mpp_d = None
     if mpp is not None and str(mpp).strip() != "":

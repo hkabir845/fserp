@@ -20,12 +20,29 @@ from api.services.aquaculture_stock_service import (
 )
 
 REVAL_MEMO_PREFIX = "AUTO-AQ-BIOMASS-REVAL"
+# Manual / correction bridges (Ashari-2 #95, Mynuddin C01/C02) rewrite book kg only.
+_BOOK_BRIDGE_MEMO_MARKERS = (
+    "book bridge to sample",
+    "bridge book→effective",
+    "bridge book->effective",
+    "replace bad auto revals",
+)
 
 
 def is_book_revaluation_ledger_row(row) -> bool:
-    """True for weight-only AUTO-AQ-BIOMASS-REVAL rows (book kg rewrite, not fish in/out)."""
-    memo = getattr(row, "memo", None) or ""
-    return memo.startswith(REVAL_MEMO_PREFIX)
+    """True for weight-only book rewrites (not fish arriving or leaving).
+
+    Includes AUTO-AQ-BIOMASS-REVAL and CORRECTED … book-bridge adjustments. Counting
+    those as FCR inflows (Ashari-2 C03: +149 t bridge) turns a ~3.7 t production
+    gain into a huge negative.
+    """
+    memo = (getattr(row, "memo", None) or "").strip()
+    if not memo:
+        return False
+    if memo.startswith(REVAL_MEMO_PREFIX):
+        return True
+    lower = memo.lower()
+    return any(marker in lower for marker in _BOOK_BRIDGE_MEMO_MARKERS)
 
 
 def _money_kg(d: Decimal) -> Decimal:

@@ -16,7 +16,7 @@ export function AquacultureFcrSummaryPanel({ fcr, title = 'Feed conversion (FCR)
   if (!p) return null
 
   const feed = Number(p.feed_kg ?? 0)
-  const gain = Number(p.biomass_gain_kg ?? 0)
+  const gain = Number(p.biomass_production_kg ?? p.biomass_gain_kg ?? 0)
   const harvest = Number(p.harvest_kg ?? 0)
   const fcrBio = p.fcr_biomass != null ? Number(p.fcr_biomass) : null
   const fcrHar = p.fcr_harvest != null ? Number(p.fcr_harvest) : null
@@ -39,9 +39,9 @@ export function AquacultureFcrSummaryPanel({ fcr, title = 'Feed conversion (FCR)
           </p>
         </div>
         <div className="rounded-lg border border-white bg-white px-3 py-2 shadow-sm">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Biomass gain (sampling)</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Biomass gain (production)</p>
           <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
-            {gain > 0 ? `${formatNumber(gain, 2)} kg` : '—'}
+            {Number.isFinite(gain) && gain !== 0 ? `${formatNumber(gain, 2)} kg` : '—'}
           </p>
           {p.biomass_gain_note ? <p className="mt-0.5 text-[10px] text-muted-foreground">{p.biomass_gain_note}</p> : null}
         </div>

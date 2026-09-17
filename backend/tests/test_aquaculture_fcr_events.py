@@ -73,8 +73,9 @@ def test_fcr_adds_mortality_and_subtracts_stocking(company_tenant_with_gl):
     )
 
     out = compute_fcr_for_scope(cid, START, END, pond_id=pond.id)
-    # Card is inventory (120 − 100). FCR still uses production 20 + 5 − 8 = 17.
-    assert Decimal(out["biomass_gain_kg"]) == Decimal("20.0000")
+    # Headline gain is production: inventory 20 + mortality 5 − stocking 8 = 17.
+    assert Decimal(out["biomass_net_change_kg"]) == Decimal("20.0000")
+    assert Decimal(out["biomass_gain_kg"]) == Decimal("17.0000")
     assert Decimal(out["biomass_production_kg"]) == Decimal("17.0000")
     assert Decimal(out["mortality_loss_kg"]) == Decimal("5.0000")
     assert Decimal(out["stocking_in_kg"]) == Decimal("8.0000")
@@ -128,12 +129,14 @@ def test_fcr_counts_transfer_out_and_in(company_tenant_with_gl):
     )
 
     src_out = compute_fcr_for_scope(cid, START, END, pond_id=src.id)
-    assert Decimal(src_out["biomass_gain_kg"]) == Decimal("-10.0000")
+    assert Decimal(src_out["biomass_net_change_kg"]) == Decimal("-10.0000")
+    assert Decimal(src_out["biomass_gain_kg"]) == Decimal("2.0000")
     assert Decimal(src_out["biomass_production_kg"]) == Decimal("2.0000")
     assert Decimal(src_out["transfer_out_kg"]) == Decimal("12.0000")
 
     dst_out = compute_fcr_for_scope(cid, START, END, pond_id=dst.id)
-    assert Decimal(dst_out["biomass_gain_kg"]) == Decimal("20.0000")
+    assert Decimal(dst_out["biomass_net_change_kg"]) == Decimal("20.0000")
+    assert Decimal(dst_out["biomass_gain_kg"]) == Decimal("8.0000")
     assert Decimal(dst_out["biomass_production_kg"]) == Decimal("8.0000")
     assert Decimal(dst_out["transfer_in_kg"]) == Decimal("12.0000")
 
@@ -186,13 +189,13 @@ def test_fcr_ignores_auto_biomass_reval_adjustment(company_tenant_with_gl):
     assert Decimal(out["biomass_first_kg"]) == Decimal("13738.0000")
     assert Decimal(out["biomass_last_kg"]) == Decimal("20263.0000")
     assert Decimal(out["manual_biomass_in_kg"]) == Decimal("80.0000")
-    assert Decimal(out["biomass_gain_kg"]) == Decimal("6525.0000")
+    assert Decimal(out["biomass_gain_kg"]) == Decimal("6445.0000")
     assert Decimal(out["biomass_production_kg"]) == Decimal("6445.0000")
 
     growth = build_fish_growth_report(
         cid, date(2026, 8, 1), date(2026, 9, 16), pond_id=pond.id
     )
-    assert Decimal(growth["summary"]["biomass_gain_kg"]) == Decimal("6525.0000")
+    assert Decimal(growth["summary"]["biomass_gain_kg"]) == Decimal("6445.0000")
 
 
 def test_ashari1_live_crop_gain_uses_august_book_not_mid_stocking_sample(company_tenant_with_gl):
@@ -262,6 +265,7 @@ def test_ashari1_live_crop_gain_uses_august_book_not_mid_stocking_sample(company
     # Present = 0.171053 kg × 118,464 heads (12 Sep sample), matching live 20,263.62
     assert Decimal(out["biomass_last_kg"]) == Decimal("20263.6226")
     assert Decimal(out["biomass_gain_kg"]) == Decimal("6524.8582")
+    assert Decimal(out["biomass_production_kg"]) == Decimal("6524.8582")
     # Aug 11 / 16 stocking built the opening crop; not period inbound.
     assert Decimal(out["manual_biomass_in_kg"]) == Decimal("0.0000")
 
@@ -403,17 +407,16 @@ def test_digonto_gain_is_sample_after_harvest_not_stale_carp(company_tenant_with
     )
 
     out = compute_fcr_for_scope(cid, date(2026, 8, 1), date(2026, 9, 16), pond_id=pond.id)
-    # Remaining after 19 Aug harvest: 0.111111 × 58,622 = 6,513.55 kg
+    # Opening = standing sample 8,555.88 (pre-harvest); include 19 Aug harvest 2,042.3.
+    # Close 7,860.68 → production = 7,860.68 − 8,555.88 + 2,042.3 ≈ 1,347.
     first = Decimal(out["biomass_first_kg"])
     last = Decimal(out["biomass_last_kg"])
     gain = Decimal(out["biomass_gain_kg"])
-    # Remaining after harvest ≈ 6,514 kg; 12 Sep sample 7,860.68 → ~1,347 kg.
-    assert Decimal("6513.50") <= first <= Decimal("6514.00")
+    assert first == Decimal("8555.8803")
     assert last == Decimal("7860.6826")
-    assert gain == last - first
+    assert Decimal(out["harvest_kg"]) == Decimal("2042.3000")
+    assert Decimal(out["biomass_net_change_kg"]) == last - first
     assert Decimal("1346.00") <= gain <= Decimal("1348.00")
-    # Same-day harvest is already out of the 19 Aug remaining kg — do not add it again.
-    assert Decimal(out["harvest_kg"]) == Decimal("0.0000")
     assert Decimal(out["biomass_production_kg"]) == gain
 
     from api.services.aquaculture_partial_harvest import effective_biomass_kg_from_position_row

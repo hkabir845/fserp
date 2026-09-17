@@ -355,7 +355,7 @@ def test_fcr_counts_partial_harvest_as_biomass_output(company_tenant):
     fcr = compute_fcr_for_scope(cid, date(2026, 4, 1), date(2026, 4, 30), pond_id=pond.id)
 
     assert fcr["biomass_net_change_kg"] == "20.0000"
-    assert fcr["biomass_gain_kg"] == "20.0000"
+    assert fcr["biomass_gain_kg"] == "100.0000"
     assert fcr["biomass_production_kg"] == "100.0000"
     assert fcr["fcr_biomass"] == "1.20"
 

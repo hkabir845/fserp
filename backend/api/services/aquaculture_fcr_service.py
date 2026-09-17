@@ -59,14 +59,26 @@ def _q4(d: Decimal) -> Decimal:
     return d.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
-def _in_reporting_window(field: str, start: date, end: date, after_date: date | None) -> dict:
-    """Inclusive [start, end], or (opening, end] when live-crop opening is known.
+def _in_reporting_window(
+    field: str,
+    start: date,
+    end: date,
+    after_date: date | None,
+    *,
+    include_after_date: bool = False,
+) -> dict:
+    """Inclusive [start, end], or after opening when live-crop opening is known.
 
     Stocking / opening ledger that built the standing crop must not be subtracted
     again from production — those kilos are already in the opening present weight.
+
+    When ``include_after_date`` is True (harvest / mortality after a standing
+    sample opening), the opening day is included — Ashari-2 11 Aug harvest must
+    count when opening is the pre-harvest vertical sample (41,500 kg).
     """
     if after_date is not None:
-        return {f"{field}__gt": after_date, f"{field}__lte": end}
+        op = f"{field}__gte" if include_after_date else f"{field}__gt"
+        return {op: after_date, f"{field}__lte": end}
     return {f"{field}__gte": start, f"{field}__lte": end}
 
 
@@ -197,6 +209,39 @@ def _live_standing_snapshot(
     return _choose_live_present_kg(effective, book), heads
 
 
+def _standing_sample_on_day(
+    company_id: int,
+    pond_id: int,
+    day: date,
+    *,
+    production_cycle_id: int | None = None,
+    fish_species: str | None = None,
+) -> AquacultureBiomassSample | None:
+    """Best non-derived standing sample on ``day`` (prefer highest extrapolated kg)."""
+    qs = AquacultureBiomassSample.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        sample_date=day,
+        source_fish_sale__isnull=True,
+        source_bill_line__isnull=True,
+        source_fish_pond_transfer_line__isnull=True,
+    )
+    if production_cycle_id is not None:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+    if fish_species:
+        qs = qs.filter(fish_species=fish_species)
+    best: AquacultureBiomassSample | None = None
+    best_kg = Decimal("0")
+    for s in qs.order_by("-id"):
+        kg = _sample_biomass_kg(s)
+        if kg is None or kg <= 0:
+            continue
+        if kg >= best_kg:
+            best_kg = kg
+            best = s
+    return best
+
+
 def _opening_closing_live_standing(
     company_id: int,
     pond_id: int,
@@ -205,19 +250,19 @@ def _opening_closing_live_standing(
     *,
     production_cycle_id: int | None = None,
     fish_species: str | None = None,
-) -> tuple[Decimal, Decimal, date, str] | None:
+) -> tuple[Decimal, Decimal, date, str, bool] | None:
     """
     Opening/closing present weight for the live crop in the period.
 
-    Closing is present as of ``end``. Opening is present on the first day in the
-    period when live heads have reached the closing crop (stocking finished).
-    Candidate days include sample dates and real stock-ledger dates (not
-    AUTO-AQ-BIOMASS-REVAL). Period-end is closing only, not an opening candidate.
+    Returns (opening_kg, closing_kg, opening_on, note, opening_from_standing_sample).
 
-    Live Ashari-1 (Aug 2026 → 12 Sep): opening book 13,738.76 kg on 16 Aug
-    (118,464 fish), closing sample 20,263.62 kg → gain 6,524.86 kg. Using the
-    first sample row (11 Aug, 7,408 kg, 64,878 fish) overstated gain by the
-    mid-month stocking.
+    Closing is present as of ``end``. Opening prefers the standing sample
+    extrapolated biomass on the first day the live crop is in place (Ashari-2
+    11 Aug vertical sample 41,500 kg — not end-of-day heads after the same-day
+    harvest). Falls back to the live snapshot when no standing sample exists.
+
+    When opening is from a standing sample, same-day harvest must be included in
+    production (``include_after_date`` on harvest).
     """
     close_kg, close_heads = _live_standing_snapshot(
         company_id,
@@ -229,8 +274,6 @@ def _opening_closing_live_standing(
     if close_kg <= 0 or close_heads <= 0:
         return None
     need_heads = int((Decimal(close_heads) * _LIVE_CROP_HEAD_FRACTION).to_integral_value(rounding=ROUND_HALF_UP))
-    # Do not seed the walk with period-start: Digonto already had heads on 1 Aug
-    # (book 4,691 kg) but the crop was first measured 19 Aug (8,555 kg).
     qs = AquacultureBiomassSample.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
@@ -259,13 +302,12 @@ def _opening_closing_live_standing(
         if is_book_revaluation_ledger_row(row):
             continue
         ledger_dates.add(row.entry_date)
-    # Period-end is the closing snapshot. Using it as opening makes gain 0
-    # when mid-stocking samples never reach the 90% head threshold.
     dates = sample_dates | ledger_dates
     if start != end:
         dates.discard(end)
     opening_kg = Decimal("0")
     opening_on: date | None = None
+    opening_from_sample = False
     for day in sorted(dates):
         kg, heads = _live_standing_snapshot(
             company_id,
@@ -274,18 +316,33 @@ def _opening_closing_live_standing(
             production_cycle_id=production_cycle_id,
             fish_species=fish_species,
         )
-        if heads >= need_heads and kg > 0:
+        if heads < need_heads or kg <= 0:
+            continue
+        standing = _standing_sample_on_day(
+            company_id,
+            pond_id,
+            day,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        sample_kg = _sample_biomass_kg(standing) if standing is not None else None
+        if sample_kg is not None and sample_kg > 0:
+            opening_kg = _q4(sample_kg)
+            opening_from_sample = True
+        else:
             opening_kg = kg
-            opening_on = day
-            break
+            opening_from_sample = False
+        opening_on = day
+        break
     if opening_on is None or opening_kg <= 0:
         return None
+    src = "standing sample" if opening_from_sample else "live present"
     note = (
-        f"Live-crop present {opening_on.isoformat()} {_q4(opening_kg)} kg "
+        f"Live-crop {src} {opening_on.isoformat()} {_q4(opening_kg)} kg "
         f"→ {end.isoformat()} {_q4(close_kg)} kg "
         f"({close_heads} fish)."
     )
-    return opening_kg, close_kg, opening_on, note
+    return opening_kg, close_kg, opening_on, note, opening_from_sample
 
 
 def _sample_row_opening_closing(
@@ -350,7 +407,7 @@ def biomass_gain_from_samples_for_pond(
         fish_species=fish_species,
     )
     if standing is not None:
-        first, last, _opening_on, note = standing
+        first, last, _opening_on, note, _from_sample = standing
         return first, last, _q4(last - first), note
     return _sample_row_opening_closing(
         company_id,
@@ -370,10 +427,13 @@ def sum_harvest_kg_for_period(
     pond_id: int | None = None,
     production_cycle_id: int | None = None,
     after_date: date | None = None,
+    include_after_date: bool = False,
 ) -> Decimal:
     qs = AquacultureFishSale.objects.filter(
         company_id=company_id,
-        **_in_reporting_window("sale_date", start, end, after_date),
+        **_in_reporting_window(
+            "sale_date", start, end, after_date, include_after_date=include_after_date
+        ),
     )
     if pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
@@ -396,6 +456,7 @@ def _sum_stock_ledger_adjustments_kg(
     pond_id: int | None = None,
     production_cycle_id: int | None = None,
     after_date: date | None = None,
+    include_after_date: bool = False,
 ) -> tuple[Decimal, Decimal]:
     """
     Returns (outflow_kg, inflow_kg) from fish stock ledger.
@@ -403,14 +464,16 @@ def _sum_stock_ledger_adjustments_kg(
     Losses and negative adjustments are outflows (grown biomass that left).
     Positive adjustments are inflows (biomass that did not come from feed).
 
-    AUTO-AQ-BIOMASS-REVAL rows are book kg rewrites so the ledger matches the
-    latest sample. They are not fish arriving or leaving — counting them as
-    inflow (Ashari-1 live: +82,041 kg on 2026-09-12) turns a ~6 t sample-to-sample
-    gain into −69,165 kg.
+    AUTO-AQ-BIOMASS-REVAL and CORRECTED book-bridge rows are book kg rewrites so
+    the ledger matches the latest sample. They are not fish arriving or leaving —
+    counting them as inflow (Ashari-2 C03: +149 t bridge) turns a ~3.7 t gain into
+    a huge negative.
     """
     qs = AquacultureFishStockLedger.objects.filter(
         company_id=company_id,
-        **_in_reporting_window("entry_date", start, end, after_date),
+        **_in_reporting_window(
+            "entry_date", start, end, after_date, include_after_date=include_after_date
+        ),
     )
     if pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
@@ -440,9 +503,16 @@ def _sum_transfer_kg(
     pond_id: int | None = None,
     production_cycle_id: int | None = None,
     after_date: date | None = None,
+    include_after_date: bool = False,
 ) -> tuple[Decimal, Decimal]:
     """Returns (transfer_out_kg, transfer_in_kg) for the pond/cycle scope."""
-    window = _in_reporting_window("transfer__transfer_date", start, end, after_date)
+    window = _in_reporting_window(
+        "transfer__transfer_date",
+        start,
+        end,
+        after_date,
+        include_after_date=include_after_date,
+    )
     out_qs = AquacultureFishPondTransferLine.objects.filter(
         transfer__company_id=company_id,
         **window,
@@ -506,6 +576,7 @@ def compute_fcr_for_scope(
     gain_kg = Decimal("0")
     gain_note = ""
     events_after: date | None = None
+    include_opening_day_exits = False
     if pond_id is not None:
         standing = _opening_closing_live_standing(
             company_id,
@@ -516,7 +587,7 @@ def compute_fcr_for_scope(
             fish_species=fish_species,
         )
         if standing is not None:
-            first_bio, last_bio, events_after, gain_note = standing
+            first_bio, last_bio, events_after, gain_note, include_opening_day_exits = standing
             gain_kg = _q4(last_bio - first_bio)
         else:
             first_bio, last_bio, gain_kg, gain_note = _sample_row_opening_closing(
@@ -542,6 +613,9 @@ def compute_fcr_for_scope(
             gain_kg = _q4(sum(gains, Decimal("0")))
             gain_note = f"Sum of per-pond live-crop present-weight changes ({len(gains)} pond(s))."
 
+    # Harvest / mortality / transfer-out: include opening day when opening is a
+    # pre-harvest standing sample (Ashari-2 11 Aug sale must count in 11→17 Sep).
+    # Stocking / transfer-in / manual in: still exclude opening day (already in open kg).
     harvest_kg = sum_harvest_kg_for_period(
         company_id,
         start,
@@ -549,6 +623,7 @@ def compute_fcr_for_scope(
         pond_id=pond_id,
         production_cycle_id=production_cycle_id,
         after_date=events_after,
+        include_after_date=include_opening_day_exits,
     )
     ledger_out_kg, ledger_in_kg = _sum_stock_ledger_adjustments_kg(
         company_id,
@@ -557,7 +632,22 @@ def compute_fcr_for_scope(
         pond_id=pond_id,
         production_cycle_id=production_cycle_id,
         after_date=events_after,
+        # Outflows on opening day count with sample opening; inflows still use gt
+        # via a second pass below for in only — keep include for out+in together then
+        # zero the false inflows on opening day is hard. Split:
+        include_after_date=include_opening_day_exits,
     )
+    if include_opening_day_exits and events_after is not None:
+        # Recompute inflows with opening day excluded (stocking that built the crop).
+        _out_ignored, ledger_in_kg = _sum_stock_ledger_adjustments_kg(
+            company_id,
+            start,
+            end,
+            pond_id=pond_id,
+            production_cycle_id=production_cycle_id,
+            after_date=events_after,
+            include_after_date=False,
+        )
     transfer_out_kg, transfer_in_kg = _sum_transfer_kg(
         company_id,
         start,
@@ -565,7 +655,18 @@ def compute_fcr_for_scope(
         pond_id=pond_id,
         production_cycle_id=production_cycle_id,
         after_date=events_after,
+        include_after_date=include_opening_day_exits,
     )
+    if include_opening_day_exits and events_after is not None:
+        _tout_ignored, transfer_in_kg = _sum_transfer_kg(
+            company_id,
+            start,
+            end,
+            pond_id=pond_id,
+            production_cycle_id=production_cycle_id,
+            after_date=events_after,
+            include_after_date=False,
+        )
     stocking_in_kg = _sum_stocking_in_kg(
         company_id,
         start,
@@ -575,8 +676,9 @@ def compute_fcr_for_scope(
         after_date=events_after,
     )
 
-    # Inventory change is what the farm compares: present weight − August standing.
-    # FCR still adds harvest / deaths / transfers so feed is judged against production.
+    # Inventory change = close − open. Production gain adds harvest/deaths/transfers
+    # and subtracts stocking/inflows. Headline biomass_gain_kg is production gain
+    # (what the farm expects for 11 Aug→17 Sep ≈ 3,720 kg on Ashari-2 C03).
     net_sample_change_kg = gain_kg
     event_add_kg = _q4(harvest_kg + ledger_out_kg + transfer_out_kg)
     event_sub_kg = _q4(ledger_in_kg + transfer_in_kg + stocking_in_kg)
@@ -610,7 +712,7 @@ def compute_fcr_for_scope(
         "biomass_first_kg": str(_q4(first_bio)) if pond_id else None,
         "biomass_last_kg": str(_q4(last_bio)) if pond_id else None,
         "biomass_net_change_kg": str(net_sample_change_kg),
-        "biomass_gain_kg": str(net_sample_change_kg),
+        "biomass_gain_kg": str(production_gain_kg),
         "biomass_production_kg": str(production_gain_kg),
         "biomass_gain_note": " ".join(note_bits).strip(),
         "fcr_biomass": fcr_biomass,

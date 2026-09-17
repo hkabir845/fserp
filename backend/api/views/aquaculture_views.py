@@ -3051,6 +3051,7 @@ def _sale_to_json(s: AquacultureFishSale) -> dict:
     it = getattr(s, "income_type", None) or "fish_harvest_sale"
     sp = getattr(s, "fish_species", None) or "tilapia"
     spo = getattr(s, "fish_species_other", None) or ""
+    xfer_line_id = getattr(s, "source_fish_pond_transfer_line_id", None)
     return {
         "id": s.id,
         "pond_id": s.pond_id,
@@ -3074,6 +3075,8 @@ def _sale_to_json(s: AquacultureFishSale) -> dict:
             (getattr(s, "invoice", None) and getattr(s.invoice, "invoice_number", None)) or None
         ),
         "accounting_posted": bool(getattr(s, "invoice_id", None)),
+        "source_fish_pond_transfer_line_id": xfer_line_id,
+        "from_inter_pond_transfer": bool(xfer_line_id),
     }
 
 
@@ -3225,6 +3228,10 @@ def aquaculture_sales_list_or_create(request):
         return err
     cid = request.company_id
     if request.method == "GET":
+        from api.services.aquaculture_fish_transfer_as_sale import materialize_fish_sales_for_company
+
+        # Historical transfer rows stay; mirror them as sales for the commercial view.
+        materialize_fish_sales_for_company(cid)
         qs = AquacultureFishSale.objects.filter(company_id=cid).select_related(
             "pond", "production_cycle", "invoice"
         )
@@ -3359,6 +3366,17 @@ def aquaculture_sale_detail(request, sale_id: int):
         return JsonResponse({"detail": "Not found"}, status=404)
     if request.method == "GET":
         return JsonResponse(_sale_to_json(s))
+    if getattr(s, "source_fish_pond_transfer_line_id", None):
+        return JsonResponse(
+            {
+                "detail": (
+                    "This sale mirrors a historical inter-pond fish transfer. "
+                    "The transfer record is kept for stock history and cannot be edited here."
+                ),
+                "code": "sale_from_transfer_readonly",
+            },
+            status=400,
+        )
     if request.method == "PUT":
         lock_err = _pond_write_lock_response(cid, s.pond_id, s.sale_date)
         if lock_err:

@@ -201,11 +201,11 @@ def _year_close_readiness_actions(
         )
         actions.append(
             {
-                "id": "transfer_fish",
+                "id": "sell_fish",
                 "kind": "link",
-                "label": "Transfer fish to another pond",
-                "detail": "Use inter-pond fish transfer when moving fingerlings or biomass.",
-                "href": f"/aquaculture/transfers?from_pond_id={pond_id}",
+                "label": "Sell fish to another pond or buyer",
+                "detail": "Record an inter-pond or external fish sale. Historical transfers appear as sales.",
+                "href": f"/aquaculture/sales?pond_id={pond_id}",
             }
         )
     if bioasset > _BIOASSET_CLOSE_TOLERANCE:

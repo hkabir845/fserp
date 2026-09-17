@@ -14,7 +14,6 @@ const AQUACULTURE_PERM_TO_HREF: Record<string, string> = {
   'app.aquaculture.ponds': '/aquaculture/ponds',
   'app.aquaculture.landlords': '/aquaculture/landlords',
   'app.aquaculture.cycles': '/aquaculture/cycles',
-  'app.aquaculture.transfers': '/aquaculture/transfers',
   'app.aquaculture.stock': '/aquaculture/stock',
   'app.aquaculture.sampling': '/aquaculture/sampling',
   'app.aquaculture.feeding': '/aquaculture/feeding',

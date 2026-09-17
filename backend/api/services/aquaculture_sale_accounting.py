@@ -94,6 +94,13 @@ def finalize_aquaculture_fish_sale_to_invoice(
         )
         if not sale:
             return None, None, "Sale not found"
+        if getattr(sale, "source_fish_pond_transfer_line_id", None) and not sale.invoice_id:
+            return (
+                None,
+                None,
+                "This sale mirrors a historical inter-pond transfer. Use convert_fish_transfers_to_documents "
+                "for IPT invoice/bill paper — do not finalize as an ordinary harvest invoice.",
+            )
         if sale.invoice_id:
             inv = (
                 Invoice.objects.select_related("customer")

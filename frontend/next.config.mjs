@@ -145,6 +145,12 @@ const nextConfig = {
         destination: '/brain-app/login',
         permanent: false,
       },
+      // Fish pond-transfer UI removed; historical rows stay in DB. New moves → sales.
+      {
+        source: '/aquaculture/transfers',
+        destination: '/aquaculture/sales',
+        permanent: false,
+      },
     ]
   },
   async headers() {

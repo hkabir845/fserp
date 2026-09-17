@@ -416,19 +416,50 @@ def compute_aquaculture_pl_summary_dict(
             transfer__transfer_date__gte=start,
             transfer__transfer_date__lte=end,
         ).values(
+            "id",
             "cost_amount",
+            "sale_amount",
             "to_pond_id",
             "to_production_cycle_id",
             "transfer__from_pond_id",
             "transfer__from_production_cycle_id",
         )
     )
+    mirrored_sale_by_line = {
+        int(row["source_fish_pond_transfer_line_id"]): row
+        for row in AquacultureFishSale.objects.filter(
+            company_id=cid,
+            source_fish_pond_transfer_line_id__isnull=False,
+            sale_date__gte=start,
+            sale_date__lte=end,
+        ).values("source_fish_pond_transfer_line_id", "total_amount")
+        if row["source_fish_pond_transfer_line_id"] is not None
+    }
     transfer_in_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     transfer_out_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     trans_cycle_in: dict[tuple[int, int | None], Decimal] = defaultdict(lambda: Decimal("0"))
     trans_cycle_out: dict[tuple[int, int | None], Decimal] = defaultdict(lambda: Decimal("0"))
     for xr in xfer_rows:
+        line_id = int(xr["id"])
         cost = _money_q(Decimal(str(xr["cost_amount"] or 0)))
+        sale_amt = _money_q(Decimal(str(xr["sale_amount"] or 0)))
+        mirrored = mirrored_sale_by_line.get(line_id)
+        if mirrored is not None:
+            # Commercial view is the mirrored AquacultureFishSale (seller revenue).
+            # Buyer still carries the purchase price as transfer-in cost.
+            amount = _money_q(Decimal(str(mirrored["total_amount"] or 0)))
+            if amount <= 0:
+                amount = sale_amt if sale_amt > 0 else cost
+            if amount == 0:
+                continue
+            fp = int(xr["transfer__from_pond_id"])
+            tp = int(xr["to_pond_id"])
+            tc = xr["to_production_cycle_id"]
+            tc_key: int | None = int(tc) if tc is not None else None
+            transfer_in_by_pond[tp] += amount
+            trans_cycle_in[(tp, tc_key)] += amount
+            # Do not add transfer_out — seller income comes from AquacultureFishSale.
+            continue
         if cost == 0:
             continue
         fp = int(xr["transfer__from_pond_id"])
@@ -436,7 +467,7 @@ def compute_aquaculture_pl_summary_dict(
         fc = xr["transfer__from_production_cycle_id"]
         tc = xr["to_production_cycle_id"]
         fc_key: int | None = int(fc) if fc is not None else None
-        tc_key: int | None = int(tc) if tc is not None else None
+        tc_key = int(tc) if tc is not None else None
         transfer_in_by_pond[tp] += cost
         transfer_out_by_pond[fp] += cost
         trans_cycle_in[(tp, tc_key)] += cost

@@ -54,7 +54,6 @@ const NAV_BY_HREF: Record<string, Row> = {
   '/aquaculture/ponds': { en: 'Ponds', bn: 'পুকুর' },
   '/aquaculture/landlords': { en: 'Landlords', bn: 'জমির মালিক' },
   '/aquaculture/cycles': { en: 'Stocking batches', bn: 'স্টকিং ব্যাচ' },
-  '/aquaculture/transfers': { en: 'Past fish transfers', bn: 'পুরনো মাছ স্থানান্তর' },
   '/aquaculture/stock': { en: 'Pond stock', bn: 'পুকুর স্টক' },
   '/aquaculture/sampling': { en: 'Biomass sampling', bn: 'বায়োমাস নমুনা' },
   '/aquaculture/feeding': { en: 'Feeding advice', bn: 'খাবার পরামর্শ' },

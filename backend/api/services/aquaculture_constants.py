@@ -243,7 +243,7 @@ EXPENSE_CATEGORY_LABELS["feed_medicine"] = "Feed & medicine purchase (legacy)"
 AQUACULTURE_INCOME_TYPE_CHOICES: tuple[tuple[str, str], ...] = (
     ("fish_harvest_sale", "Fish harvest sale"),
     ("fingerling_sale", "Fingerling / fry sale"),
-    ("inter_pond_fingerling_transfer", "Inter-pond fingerling transfer (nursing)"),
+    ("inter_pond_fingerling_transfer", "Inter-pond fingerling sale (legacy transfer)"),
     ("processing_value_add", "Processing / value-added"),
     ("feed_sale", "Feed sale"),
     ("medicine_sale", "Medicine sale"),

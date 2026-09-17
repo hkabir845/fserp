@@ -199,6 +199,8 @@ def compute_fish_stock_position_rows(
         sale_q = sale_q.filter(production_cycle_id=cy_id)
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
+    # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
+    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True)
 
     sale_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     for s in sale_q.only("pond_id", "weight_kg", "fish_count", "income_type", "fish_species", "sale_date"):
@@ -646,6 +648,8 @@ def compute_fish_stock_position_breakdown_rows(
         sale_q = sale_q.filter(sale_date__lte=as_of_date)
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
+    # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
+    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True)
     for s in sale_q.only(
         "pond_id", "production_cycle_id", "weight_kg", "fish_count", "income_type", "fish_species"
     ):

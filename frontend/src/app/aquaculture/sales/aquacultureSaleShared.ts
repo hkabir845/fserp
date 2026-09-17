@@ -43,6 +43,8 @@ export interface SaleRow {
   invoice_id?: number | null
   invoice_number?: string | null
   accounting_posted?: boolean
+  source_fish_pond_transfer_line_id?: number | null
+  from_inter_pond_transfer?: boolean
 }
 
 export interface CustomerSuggestion {

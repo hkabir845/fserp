@@ -331,15 +331,6 @@ interface StockRow {
   advice_summary?: string
 }
 
-interface TransferRow {
-  id: number
-  transfer_date: string
-  from_pond_id: number
-  from_pond_name: string
-  fish_species_label?: string
-  lines: { to_pond_id: number; to_pond_name?: string; weight_kg: string; fish_count?: number | null }[]
-}
-
 interface LedgerRow {
   id: number
   entry_date: string
@@ -421,7 +412,6 @@ export default function PondDetailViewPage() {
   const [samples, setSamples] = useState<SampleRow[]>([])
   const [cycles, setCycles] = useState<CycleRow[]>([])
   const [stock, setStock] = useState<StockRow | null>(null)
-  const [transfers, setTransfers] = useState<TransferRow[]>([])
   const [ledger, setLedger] = useState<LedgerRow[]>([])
   const [warehouseRows, setWarehouseRows] = useState<WarehouseStockRow[]>([])
   const [pondWarehouseReceipts, setPondWarehouseReceipts] = useState<PondWarehouseReceipt[]>([])
@@ -446,8 +436,6 @@ export default function PondDetailViewPage() {
         smpRes,
         cyRes,
         stkRes,
-        trOut,
-        trIn,
         ledRes,
         whOutcome,
         pwrRes,
@@ -467,12 +455,6 @@ export default function PondDetailViewPage() {
         api.get<{ rows: StockRow[] }>('/aquaculture/fish-stock-position/', { params: { pond_id: pondIdNum } }).catch(
           () => ({ data: { rows: [] } }),
         ),
-        api.get<{ transfers: TransferRow[] }>('/aquaculture/fish-pond-transfers/', {
-          params: { from_pond_id: pondIdNum },
-        }),
-        api.get<{ transfers: TransferRow[] }>('/aquaculture/fish-pond-transfers/', {
-          params: { to_pond_id: pondIdNum },
-        }),
         api.get<LedgerRow[]>('/aquaculture/fish-stock-ledger/', { params: { pond_id: pondIdNum } }).catch(() => ({
           data: [],
         })),
@@ -502,10 +484,6 @@ export default function PondDetailViewPage() {
       setCycles(Array.isArray(cyRes.data) ? cyRes.data : [])
       const rows = stkRes.data?.rows
       setStock(Array.isArray(rows) && rows[0] ? rows[0] : null)
-      const tmap = new Map<number, TransferRow>()
-      for (const t of trOut.data?.transfers ?? []) tmap.set(t.id, t)
-      for (const t of trIn.data?.transfers ?? []) tmap.set(t.id, t)
-      setTransfers([...tmap.values()].sort((a, b) => b.transfer_date.localeCompare(a.transfer_date)))
       setLedger(Array.isArray(ledRes.data) ? ledRes.data : [])
       if (whOutcome.whOk) {
         setWarehouseRows(
@@ -622,10 +600,6 @@ export default function PondDetailViewPage() {
   const samplesInPeriod = useMemo(
     () => samples.filter((s) => inRange(s.sample_date, start, end)),
     [samples, start, end],
-  )
-  const transfersInPeriod = useMemo(
-    () => transfers.filter((t) => inRange(t.transfer_date, start, end)),
-    [transfers, start, end],
   )
   const ledgerInPeriod = useMemo(
     () => ledger.filter((r) => inRange(r.entry_date, start, end)),
@@ -1715,79 +1689,6 @@ export default function PondDetailViewPage() {
                           <td className="px-4 py-2 text-muted-foreground">{s.fish_species_label || '—'}</td>
                         </tr>
                       ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="mb-6">
-            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">Past inter-pond fish transfers</h2>
-                <p className="text-xs text-muted-foreground">
-                  History only. New fish moves are sales under Pond &amp; fish sales.
-                </p>
-              </div>
-              <Link
-                href={`/aquaculture/sales?pond_id=${pondIdNum}`}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                Record fish sale →
-              </Link>
-            </div>
-            <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-sm">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2">Date</th>
-                    <th className="px-4 py-2">Direction</th>
-                    <th className="px-4 py-2">Species</th>
-                    <th className="px-4 py-2 text-right">Kg (lines)</th>
-                    <th className="px-4 py-2 text-right">Heads</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/70">
-                  {transfersInPeriod.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
-                        None in this period — use Sales to move fish to another pond.
-                      </td>
-                    </tr>
-                  ) : (
-                    transfersInPeriod.map((t) => {
-                      const out = t.from_pond_id === pondIdNum
-                      const relevantLines = out
-                        ? t.lines
-                        : t.lines?.filter((ln) => ln.to_pond_id === pondIdNum)
-                      const lineKg = relevantLines?.reduce((a, ln) => a + parseNum(ln.weight_kg), 0) ?? 0
-                      const lineHeads =
-                        relevantLines?.reduce(
-                          (a, ln) => a + (ln.fish_count != null ? Number(ln.fish_count) : 0),
-                          0,
-                        ) ?? 0
-                      return (
-                        <tr key={t.id}>
-                          <td className="whitespace-nowrap px-4 py-2">{formatDateOnly(t.transfer_date)}</td>
-                          <td className="px-4 py-2 text-foreground/85">
-                            {out ? (
-                              <span>
-                                Out →{' '}
-                                {t.lines
-                                  ?.map((l) => l.to_pond_name || `Pond #${l.to_pond_id}`)
-                                  .filter(Boolean)
-                                  .join(', ') || '—'}
-                              </span>
-                            ) : (
-                              <span>In ← {t.from_pond_name || `Pond #${t.from_pond_id}`}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 text-muted-foreground">{t.fish_species_label || '—'}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{formatNumber(lineKg, 2)}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{formatNumber(lineHeads, 0)}</td>
-                        </tr>
-                      )
-                    })
                   )}
                 </tbody>
               </table>

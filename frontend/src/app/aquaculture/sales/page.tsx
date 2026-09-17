@@ -366,12 +366,23 @@ export default function AquacultureSalesPage() {
               {rows.map((r) => {
                 const rowFishPerKg =
                   r.income_type === 'fish_harvest_sale' ? fishPerKg(Number(r.weight_kg), r.fish_count) : null
+                const fromTransfer = Boolean(r.from_inter_pond_transfer || r.source_fish_pond_transfer_line_id)
+                const locked = Boolean(r.accounting_posted || fromTransfer)
                 return (
                 <tr key={r.id} className="border-b border-border/70">
                   <td className="px-2 py-2 whitespace-nowrap align-top">{formatDateOnly(r.sale_date)}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-foreground">{r.pond_name}</td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-muted-foreground">{r.production_cycle_name || '—'}</td>
-                  <td className="min-w-0 break-words px-2 py-2 align-top text-foreground/85">{r.income_type_label || r.income_type || '—'}</td>
+                  <td className="min-w-0 break-words px-2 py-2 align-top text-foreground/85">
+                    <span className="inline-flex flex-col gap-0.5">
+                      <span>{r.income_type_label || r.income_type || '—'}</span>
+                      {fromTransfer ? (
+                        <span className="w-fit rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-900 ring-1 ring-sky-200">
+                          Inter-pond (from transfer history)
+                        </span>
+                      ) : null}
+                    </span>
+                  </td>
                   <td className="min-w-0 break-words px-2 py-2 align-top text-foreground/85">
                     {r.income_type && isNonFishSaleIncome(r.income_type, incomeTypes) ? '—' : r.fish_species_label || '—'}
                   </td>
@@ -401,6 +412,10 @@ export default function AquacultureSalesPage() {
                           {r.invoice_number}
                         </Link>
                       </span>
+                    ) : fromTransfer ? (
+                      <span className="inline-block rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-900 ring-1 ring-sky-200">
+                        Transfer history
+                      </span>
                     ) : (
                       <span
                         className="inline-block rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground ring-1 ring-border"
@@ -412,7 +427,7 @@ export default function AquacultureSalesPage() {
                   </td>
                   <td className="min-w-0 px-2 py-2 align-top">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {!r.accounting_posted ? (
+                      {!r.accounting_posted && !fromTransfer ? (
                         <button
                           type="button"
                           className="rounded-md bg-foreground px-2 py-1 text-xs font-medium text-white hover:bg-foreground/90"
@@ -424,18 +439,31 @@ export default function AquacultureSalesPage() {
                       ) : null}
                       <button
                         type="button"
-                        className={`text-sm ${r.accounting_posted ? 'cursor-not-allowed text-muted-foreground/70' : 'text-primary hover:underline'}`}
+                        className={`text-sm ${locked ? 'cursor-not-allowed text-muted-foreground/70' : 'text-primary hover:underline'}`}
                         onClick={() => openEdit(r)}
-                        disabled={!!r.accounting_posted}
+                        disabled={locked}
+                        title={
+                          fromTransfer
+                            ? 'Mirrored from a historical transfer — kept read-only'
+                            : r.accounting_posted
+                              ? aquacultureT('salePostedEditBlocked', lang)
+                              : t('edit')
+                        }
                       >
                         {t('edit')}
                       </button>
                       <button
                         type="button"
-                        className={r.accounting_posted ? 'cursor-not-allowed text-muted-foreground/40' : 'text-destructive'}
+                        className={locked ? 'cursor-not-allowed text-muted-foreground/40' : 'text-destructive'}
                         onClick={() => void remove(r)}
-                        disabled={!!r.accounting_posted}
-                        title={r.accounting_posted ? aquacultureT('deleteLinkedInvoiceFirst', lang) : t('delete')}
+                        disabled={locked}
+                        title={
+                          fromTransfer
+                            ? 'Mirrored from a historical transfer — kept read-only'
+                            : r.accounting_posted
+                              ? aquacultureT('deleteLinkedInvoiceFirst', lang)
+                              : t('delete')
+                        }
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

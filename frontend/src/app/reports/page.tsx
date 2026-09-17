@@ -787,22 +787,6 @@ const reports: ReportCard[] = [
     category: 'aquaculture',
   },
   {
-    id: 'aquaculture-fish-transfers',
-    title: 'Aquaculture — Inter-pond fish sales',
-    description:
-      'Internal pond-to-pond sales: invoice and bill per line, book cost vs sale price, and AUTO-IPT GL (1595 / 4245 / 5245 / 1581)',
-    icon: Fish,
-    category: 'aquaculture',
-  },
-  {
-    id: 'aquaculture-fingerling-transfers',
-    title: 'Aquaculture — Past fingerling transfers (history)',
-    description:
-      'Historical nursing → grow-out transfer lines (retired). New fingerling moves are recorded as pond-to-pond sales',
-    icon: Fish,
-    category: 'aquaculture',
-  },
-  {
     id: 'aquaculture-pond-total-inventory',
     title: 'Aquaculture — Pond total inventory & value',
     description:

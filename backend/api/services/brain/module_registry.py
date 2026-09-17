@@ -42,7 +42,6 @@ SIDEBAR_MODULES: list[dict[str, str]] = [
     {"key": "ponds", "section": "aquaculture", "label_bn": "পোন্ড", "path": "/aquaculture/ponds"},
     {"key": "landlords", "section": "aquaculture", "label_bn": "জমিদার", "path": "/aquaculture/landlords"},
     {"key": "production_cycles", "section": "aquaculture", "label_bn": "স্টকিং ব্যাচ", "path": "/aquaculture/cycles"},
-    {"key": "fish_transfers", "section": "aquaculture", "label_bn": "মাছ স্থানান্তর", "path": "/aquaculture/transfers"},
     {"key": "pond_stock", "section": "aquaculture", "label_bn": "পোন্ড স্টক", "path": "/aquaculture/stock"},
     {"key": "biomass_sampling", "section": "aquaculture", "label_bn": "বায়োমাস স্যাম্পলিং", "path": "/aquaculture/sampling"},
     {"key": "feeding_advice", "section": "aquaculture", "label_bn": "ফিডিং পরামর্শ", "path": "/aquaculture/feeding"},

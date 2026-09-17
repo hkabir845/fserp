@@ -3450,6 +3450,18 @@ class AquacultureFishSale(models.Model):
         related_name="aquaculture_fish_sale",
         help_text="When set, this harvest line is booked through AR / cash sale GL (AUTO-INV-* journals).",
     )
+    source_fish_pond_transfer_line = models.OneToOneField(
+        "AquacultureFishPondTransferLine",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="materialized_fish_sale",
+        help_text=(
+            "When set, this sale mirrors a historical inter-pond fish transfer line. "
+            "The transfer row stays for stock history; this sale is the commercial view "
+            "(fingerling/inter-pond sale). Stock math still uses the transfer, not this sale."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

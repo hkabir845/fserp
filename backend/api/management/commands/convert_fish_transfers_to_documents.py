@@ -194,6 +194,12 @@ class Command(BaseCommand):
                     # this command), prices the lines, raises the documents and posts them. That
                     # is what makes re-running this safe.
                     gl = sync_aquaculture_fish_pond_transfer_gl(cid, t)
+                    from api.services.aquaculture_fish_transfer_as_sale import (
+                        materialize_fish_sales_for_transfer,
+                    )
+
+                    sales = materialize_fish_sales_for_transfer(t)
+                    row["sales_materialized"] = len(sales)
                     row["lines_repriced"] = None
                     row["documents_raised"] = gl.get("documents", 0)
                     row["documents_skipped"] = gl.get("document_skips", [])

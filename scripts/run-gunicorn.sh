@@ -28,8 +28,11 @@ fi
 # PostgreSQL + Django are thread-safe, so threads overlap I/O waits safely.
 # Keep --timeout well above any client request timeout so a slow request can still
 # finish and commit instead of being SIGKILLed mid-transaction.
-WORKERS="${GUNICORN_WORKERS:-4}"
-THREADS="${GUNICORN_THREADS:-8}"
+#
+# Shared VPS (FSERP + VIPTAP on 4 vCPU / ~6 GiB): default 2×6, not 4×8.
+# Override in backend/.env: GUNICORN_WORKERS=3 GUNICORN_THREADS=8 on a dedicated box.
+WORKERS="${GUNICORN_WORKERS:-2}"
+THREADS="${GUNICORN_THREADS:-6}"
 
 exec python -m gunicorn fsms.wsgi:application \
   --bind 127.0.0.1:8001 \
@@ -39,4 +42,6 @@ exec python -m gunicorn fsms.wsgi:application \
   --timeout 300 \
   --graceful-timeout 60 \
   --access-logfile - \
-  --error-logfile -
+  --error-logfile - \
+  --max-requests 1000 \
+  --max-requests-jitter 100

@@ -938,22 +938,38 @@ def fcr_period_summary_block(
     *,
     pond_id: int | None = None,
     production_cycle_id: int | None = None,
+    fish_species: str | None = None,
 ) -> dict:
     """Standard FCR block attached to date-range aquaculture reports."""
     portfolio = compute_fcr_for_scope(
-        company_id, start, end, pond_id=None, production_cycle_id=production_cycle_id
+        company_id,
+        start,
+        end,
+        pond_id=None,
+        production_cycle_id=production_cycle_id,
+        fish_species=fish_species,
     )
     scoped = None
     if pond_id is not None:
         scoped = compute_fcr_for_scope(
-            company_id, start, end, pond_id=pond_id, production_cycle_id=production_cycle_id
+            company_id,
+            start,
+            end,
+            pond_id=pond_id,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
         )
     per_pond: list[dict] = []
     if pond_id is None:
         ponds = AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by("sort_order", "id")
         for p in ponds:
             row = compute_fcr_for_scope(
-                company_id, start, end, pond_id=p.id, production_cycle_id=production_cycle_id
+                company_id,
+                start,
+                end,
+                pond_id=p.id,
+                production_cycle_id=production_cycle_id,
+                fish_species=fish_species,
             )
             if (
                 _d(row.get("feed_kg")) <= 0

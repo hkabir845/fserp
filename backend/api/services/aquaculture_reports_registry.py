@@ -2353,6 +2353,7 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
     pond_filter_id, rerr = _reconcile_pond_and_cycle(pond_filter_id, cycle_filter_id, scoped_cycle)
     if rerr:
         return rerr
+    species_raw = (request.GET.get("fish_species") or "").strip() or None
 
     fcr_block = fcr_period_summary_block(
         company_id,
@@ -2360,11 +2361,13 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
         end,
         pond_id=pond_filter_id,
         production_cycle_id=cycle_filter_id,
+        fish_species=species_raw,
     )
     stock_rows = compute_fish_stock_position_rows(
         company_id,
         pond_id=pond_filter_id,
         production_cycle_id=cycle_filter_id,
+        fish_species_filter=species_raw,
         include_inactive_ponds=False,
     )
     load_rows: list[dict[str, Any]] = []
@@ -2412,6 +2415,7 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
         },
         "fcr": fcr_block,
         "load_by_pond": load_rows,
+        "filter_fish_species": species_raw,
         "data_coverage": _fcr_data_coverage(
             company_id, start, end, pond_id=pond_filter_id, production_cycle_id=cycle_filter_id
         ),

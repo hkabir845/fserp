@@ -1573,6 +1573,11 @@ function ReportsPageContent() {
   const [aquacultureCycleId, setAquacultureCycleId] = useState('')
   /** Cycle code filter (C01, C02, …) — narrows Batch options; API still uses cycle_id. */
   const [aquacultureCycleCode, setAquacultureCycleCode] = useState('')
+  /** FCR report: species filter (replaces Cycle dropdown); API uses fish_species. */
+  const [aquacultureFishSpecies, setAquacultureFishSpecies] = useState('')
+  const [aquacultureFishSpeciesOpts, setAquacultureFishSpeciesOpts] = useState<
+    { id: string; label: string }[]
+  >([])
   const [aquacultureIncludeCycleBreakdown, setAquacultureIncludeCycleBreakdown] = useState(false)
   const [fingerlingSearch, setFingerlingSearch] = useState('')
   const [fingerlingSpecies, setFingerlingSpecies] = useState('')
@@ -1583,7 +1588,15 @@ function ReportsPageContent() {
   const [fingerlingBalance, setFingerlingBalance] = useState<'all' | 'balanced' | 'unbalanced'>('all')
   const [aquaculturePonds, setAquaculturePonds] = useState<{ id: number; name: string; pond_role?: string }[]>([])
   const [aquacultureCycles, setAquacultureCycles] = useState<
-    { id: number; name: string; code?: string; pond_id?: number; pond_name?: string }[]
+    {
+      id: number
+      name: string
+      code?: string
+      pond_id?: number
+      pond_name?: string
+      fish_species?: string
+      fish_species_label?: string
+    }[]
   >([])
   /** null = not loaded yet; false = company setting off */
   const [companyAquacultureEnabled, setCompanyAquacultureEnabled] = useState<boolean | null>(null)
@@ -1993,10 +2006,19 @@ function ReportsPageContent() {
     }
     let cancelled = false
     api
-      .get<{ id: number; name: string; code?: string; pond_id?: number; pond_name?: string }[]>(
-        '/aquaculture/production-cycles/',
-        { params: { pond_id: effectiveAquaculturePondId } }
-      )
+      .get<
+        {
+          id: number
+          name: string
+          code?: string
+          pond_id?: number
+          pond_name?: string
+          fish_species?: string
+          fish_species_label?: string
+        }[]
+      >('/aquaculture/production-cycles/', {
+        params: { pond_id: effectiveAquaculturePondId },
+      })
       .then((res) => {
         if (cancelled) return
         const rows = Array.isArray(res.data) ? res.data : []
@@ -2007,6 +2029,8 @@ function ReportsPageContent() {
             code: (c.code || '').trim(),
             pond_id: c.pond_id,
             pond_name: c.pond_name,
+            fish_species: (c.fish_species || '').trim() || 'tilapia',
+            fish_species_label: (c.fish_species_label || '').trim(),
           }))
         )
       })
@@ -2022,6 +2046,31 @@ function ReportsPageContent() {
     selectedCompany?.id,
   ])
 
+  useEffect(() => {
+    if (selectedReport !== 'aquaculture-fcr-biomass') {
+      setAquacultureFishSpeciesOpts([])
+      return
+    }
+    let cancelled = false
+    api
+      .get<{ id: string; label: string }[]>('/aquaculture/fish-species/')
+      .then((res) => {
+        if (cancelled) return
+        const rows = Array.isArray(res.data) ? res.data : []
+        setAquacultureFishSpeciesOpts(
+          rows
+            .filter((s) => s.id && s.id !== 'not_applicable')
+            .map((s) => ({ id: s.id, label: s.label || s.id }))
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setAquacultureFishSpeciesOpts([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedReport, selectedCompany?.id])
+
   const aquacultureCycleCodeOptions = useMemo(() => {
     const codes = new Set<string>()
     for (const c of aquacultureCycles) {
@@ -2031,11 +2080,34 @@ function ReportsPageContent() {
     return Array.from(codes).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
   }, [aquacultureCycles])
 
+  const aquacultureSpeciesOptionsForFilter = useMemo(() => {
+    const byId = new Map<string, string>()
+    for (const opt of aquacultureFishSpeciesOpts) {
+      byId.set(opt.id, opt.label)
+    }
+    for (const c of aquacultureCycles) {
+      const id = (c.fish_species || 'tilapia').trim() || 'tilapia'
+      if (!byId.has(id)) {
+        byId.set(id, (c.fish_species_label || '').trim() || id)
+      }
+    }
+    return Array.from(byId.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [aquacultureFishSpeciesOpts, aquacultureCycles])
+
   const aquacultureBatchesForFilter = useMemo(() => {
+    if (selectedReport === 'aquaculture-fcr-biomass') {
+      const sp = aquacultureFishSpecies.trim()
+      if (!sp) return aquacultureCycles
+      return aquacultureCycles.filter(
+        (c) => ((c.fish_species || 'tilapia').trim() || 'tilapia') === sp
+      )
+    }
     const code = aquacultureCycleCode.trim()
     if (!code) return aquacultureCycles
     return aquacultureCycles.filter((c) => (c.code || '').trim() === code)
-  }, [aquacultureCycles, aquacultureCycleCode])
+  }, [aquacultureCycles, aquacultureCycleCode, aquacultureFishSpecies, selectedReport])
 
   useEffect(() => {
     if (!aquacultureCycleId) return
@@ -2048,6 +2120,12 @@ function ReportsPageContent() {
     if (aquacultureCycleCodeOptions.includes(aquacultureCycleCode.trim())) return
     setAquacultureCycleCode('')
   }, [aquacultureCycleCodeOptions, aquacultureCycleCode])
+
+  useEffect(() => {
+    if (!aquacultureFishSpecies.trim()) return
+    if (aquacultureSpeciesOptionsForFilter.some((s) => s.id === aquacultureFishSpecies.trim())) return
+    setAquacultureFishSpecies('')
+  }, [aquacultureSpeciesOptionsForFilter, aquacultureFishSpecies])
 
   useEffect(() => {
     if (!aquacultureCycleId) return
@@ -2294,6 +2372,12 @@ function ReportsPageContent() {
         params.cycle_id = aquacultureCycleId
       }
       if (
+        reportId === 'aquaculture-fcr-biomass' &&
+        aquacultureFishSpecies.trim()
+      ) {
+        params.fish_species = aquacultureFishSpecies.trim()
+      }
+      if (
         reportId === 'aquaculture-pond-pl' &&
         aquacultureIncludeCycleBreakdown &&
         !aquacultureCycleId
@@ -2472,6 +2556,7 @@ function ReportsPageContent() {
     aquacultureFeedItemId,
     aquacultureMedicineItemId,
     aquacultureCycleId,
+    aquacultureFishSpecies,
     aquacultureIncludeCycleBreakdown,
     fingerlingSearch,
     fingerlingSpecies,
@@ -2582,7 +2667,7 @@ function ReportsPageContent() {
   useEffect(() => {
     if (!selectedReport || !String(selectedReport).startsWith('aquaculture-')) return
     if (selectedReport === 'aquaculture-pl-management') return
-    const sig = `${effectiveAquaculturePondId}|${aquacultureCycleId}|${aquacultureIncludeCycleBreakdown ? '1' : '0'}|${aquacultureFeedItemId}|${aquacultureMedicineItemId}`
+    const sig = `${effectiveAquaculturePondId}|${aquacultureCycleId}|${aquacultureFishSpecies}|${aquacultureIncludeCycleBreakdown ? '1' : '0'}|${aquacultureFeedItemId}|${aquacultureMedicineItemId}`
     if (aquacultureFilterSigRef.current === '') {
       aquacultureFilterSigRef.current = sig
       return
@@ -2593,6 +2678,7 @@ function ReportsPageContent() {
   }, [
     effectiveAquaculturePondId,
     aquacultureCycleId,
+    aquacultureFishSpecies,
     aquacultureIncludeCycleBreakdown,
     aquacultureFeedItemId,
     aquacultureMedicineItemId,
@@ -2657,10 +2743,12 @@ function ReportsPageContent() {
         setAquaculturePondId(String(scope.id))
         setAquacultureCycleId('')
         setAquacultureCycleCode('')
+        setAquacultureFishSpecies('')
       } else {
         setAquaculturePondId('')
         setAquacultureCycleId('')
         setAquacultureCycleCode('')
+        setAquacultureFishSpecies('')
       }
       if (!selectedReport) return
       if (selectedReport === 'analytics-kpi') {
@@ -4228,8 +4316,12 @@ function ReportsPageContent() {
                             Amounts in BDT — refresh after changing filters.
                             {AQUACULTURE_BATCH_FILTER_REPORT_IDS.has(selectedReport)
                               ? effectiveAquaculturePondId
-                                ? ' Use Cycle (C01…) and Batch to narrow to one stocking cohort.'
-                                : ' Choose a pond (Site above, or Pond below) to enable Cycle and Batch.'
+                                ? selectedReport === 'aquaculture-fcr-biomass'
+                                  ? ' Use Fish Species and Batch to narrow growth/FCR to one cohort.'
+                                  : ' Use Cycle (C01…) and Batch to narrow to one stocking cohort.'
+                                : selectedReport === 'aquaculture-fcr-biomass'
+                                  ? ' Choose a pond (Site above, or Pond below) to enable Fish Species and Batch.'
+                                  : ' Choose a pond (Site above, or Pond below) to enable Cycle and Batch.'
                               : null}
                           </p>
                           <div className="mt-3 flex flex-wrap items-end gap-3">
@@ -4248,6 +4340,7 @@ function ReportsPageContent() {
                                         setAquaculturePondId(e.target.value)
                                         setAquacultureCycleId('')
                                         setAquacultureCycleCode('')
+                                        setAquacultureFishSpecies('')
                                       }}
                                       className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[14rem]"
                                     >
@@ -4262,38 +4355,84 @@ function ReportsPageContent() {
                                 ) : null}
                                 {effectiveAquaculturePondId ? (
                                   <>
-                                    <div className="flex flex-col gap-1">
-                                      <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-cycle-code">
-                                        Cycle
-                                      </label>
-                                      <select
-                                        id="aq-report-cycle-code"
-                                        value={aquacultureCycleCode}
-                                        onChange={(e) => {
-                                          const next = e.target.value
-                                          setAquacultureCycleCode(next)
-                                          const matched = next.trim()
-                                            ? aquacultureCycles.filter((c) => (c.code || '').trim() === next.trim())
-                                            : aquacultureCycles
-                                          if (matched.length === 1) {
-                                            setAquacultureCycleId(String(matched[0].id))
-                                          } else if (
-                                            aquacultureCycleId &&
-                                            !matched.some((c) => String(c.id) === aquacultureCycleId)
-                                          ) {
-                                            setAquacultureCycleId('')
-                                          }
-                                        }}
-                                        className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[10rem]"
-                                      >
-                                        <option value="">All cycles</option>
-                                        {aquacultureCycleCodeOptions.map((code) => (
-                                          <option key={code} value={code}>
-                                            {code}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
+                                    {selectedReport === 'aquaculture-fcr-biomass' ? (
+                                      <div className="flex flex-col gap-1">
+                                        <label
+                                          className="text-xs font-medium text-cyan-900"
+                                          htmlFor="aq-report-fish-species"
+                                        >
+                                          Fish Species
+                                        </label>
+                                        <select
+                                          id="aq-report-fish-species"
+                                          value={aquacultureFishSpecies}
+                                          onChange={(e) => {
+                                            const next = e.target.value
+                                            setAquacultureFishSpecies(next)
+                                            if (!next.trim()) return
+                                            const matched = aquacultureCycles.filter(
+                                              (c) =>
+                                                ((c.fish_species || 'tilapia').trim() || 'tilapia') ===
+                                                next.trim()
+                                            )
+                                            if (matched.length === 1) {
+                                              setAquacultureCycleId(String(matched[0].id))
+                                            } else if (
+                                              aquacultureCycleId &&
+                                              !matched.some((c) => String(c.id) === aquacultureCycleId)
+                                            ) {
+                                              setAquacultureCycleId('')
+                                            }
+                                          }}
+                                          className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[12rem]"
+                                        >
+                                          <option value="">All species</option>
+                                          {aquacultureSpeciesOptionsForFilter.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                              {s.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col gap-1">
+                                        <label
+                                          className="text-xs font-medium text-cyan-900"
+                                          htmlFor="aq-report-cycle-code"
+                                        >
+                                          Cycle
+                                        </label>
+                                        <select
+                                          id="aq-report-cycle-code"
+                                          value={aquacultureCycleCode}
+                                          onChange={(e) => {
+                                            const next = e.target.value
+                                            setAquacultureCycleCode(next)
+                                            const matched = next.trim()
+                                              ? aquacultureCycles.filter(
+                                                  (c) => (c.code || '').trim() === next.trim()
+                                                )
+                                              : aquacultureCycles
+                                            if (matched.length === 1) {
+                                              setAquacultureCycleId(String(matched[0].id))
+                                            } else if (
+                                              aquacultureCycleId &&
+                                              !matched.some((c) => String(c.id) === aquacultureCycleId)
+                                            ) {
+                                              setAquacultureCycleId('')
+                                            }
+                                          }}
+                                          className="w-full min-w-0 rounded-md border border-cyan-300 bg-white px-2 py-1.5 text-sm sm:min-w-[10rem]"
+                                        >
+                                          <option value="">All cycles</option>
+                                          {aquacultureCycleCodeOptions.map((code) => (
+                                            <option key={code} value={code}>
+                                              {code}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
                                     <div className="flex flex-col gap-1">
                                       <label className="text-xs font-medium text-cyan-900" htmlFor="aq-report-batch">
                                         Batch
@@ -4306,6 +4445,12 @@ function ReportsPageContent() {
                                           setAquacultureCycleId(next)
                                           if (!next) return
                                           const row = aquacultureCycles.find((c) => String(c.id) === next)
+                                          if (selectedReport === 'aquaculture-fcr-biomass') {
+                                            const sp =
+                                              ((row?.fish_species || 'tilapia').trim() || 'tilapia')
+                                            if (sp) setAquacultureFishSpecies(sp)
+                                            return
+                                          }
                                           const code = (row?.code || '').trim()
                                           if (code) setAquacultureCycleCode(code)
                                         }}

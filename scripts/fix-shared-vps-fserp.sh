@@ -1,10 +1,27 @@
 #!/usr/bin/env bash
 # Shared-VPS smoothness fixes for FSERP alongside VIPTAP.
-# Run on the VPS as sas: bash scripts/fix-shared-vps-fserp.sh
+# Run on the VPS as sas (prefer without sudo for PM2; script elevates only for nginx/startup):
+#   bash scripts/fix-shared-vps-fserp.sh
+# Or with sudo for nginx + pm2-startup (safe — uses script path, not /root):
+#   sudo bash /home/sas/fserp/fserp/scripts/fix-shared-vps-fserp.sh
 set -euo pipefail
 
-REPO="${HOME}/fserp/fserp"
+# Resolve repo from this file — do NOT use $HOME (breaks under `sudo`, which is /root).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO"
+
+# When invoked via sudo, PM2 must run as the deploy user (sas), not root.
+PM2_USER="${SUDO_USER:-${USER:-sas}}"
+run_as_app_user() {
+  if [[ "$(id -un)" == "$PM2_USER" ]]; then
+    "$@"
+  else
+    sudo -u "$PM2_USER" -H -- "$@"
+  fi
+}
+
+echo "==> Repo: $REPO (user=$PM2_USER)"
 
 echo "==> Tune Gunicorn for shared 4-vCPU host (leave room for VIPTAP)"
 ENVF="$REPO/backend/.env"
@@ -19,12 +36,19 @@ if grep -q '^GUNICORN_THREADS=' "$ENVF"; then
 else
   echo 'GUNICORN_THREADS=6' >> "$ENVF"
 fi
+# Ensure sas owns .env if we created lines under sudo
+if [[ -n "${SUDO_USER:-}" ]]; then
+  chown "${SUDO_USER}:${SUDO_USER}" "$ENVF" 2>/dev/null || true
+fi
 grep '^GUNICORN_' "$ENVF" || true
 
 echo "==> Restart FSERP under PM2 with new env"
-pm2 delete fserp_backend fserp_frontend >/dev/null 2>&1 || true
-pm2 start "$REPO/ecosystem.config.js" --update-env
-pm2 save
+run_as_app_user bash -lc "
+  cd '$REPO'
+  pm2 delete fserp_backend fserp_frontend >/dev/null 2>&1 || true
+  pm2 start '$REPO/ecosystem.config.js' --update-env
+  pm2 save
+"
 sleep 6
 curl -sf -H 'X-Forwarded-Proto: https' http://127.0.0.1:8001/health/ || {
   echo "ERROR: backend health failed" >&2
@@ -35,7 +59,14 @@ curl -sf -o /dev/null -w "frontend HTTP %{http_code}\n" http://127.0.0.1:3001/ |
   exit 1
 }
 
-if sudo -n true 2>/dev/null; then
+need_sudo=0
+if [[ "$(id -u)" -eq 0 ]]; then
+  need_sudo=1
+elif sudo -n true 2>/dev/null; then
+  need_sudo=1
+fi
+
+if [[ "$need_sudo" -eq 1 ]]; then
   echo "==> Patch nginx: 127.0.0.1 + long proxy timeouts"
   TS="$(date +%Y%m%d%H%M%S)"
   for f in /etc/nginx/sites-enabled/fserp /etc/nginx/sites-enabled/api.mahasoftcorporation.com; do
@@ -105,18 +136,21 @@ PY
   sudo systemctl reload nginx
   echo "nginx reloaded"
 
-  echo "==> Install PM2 startup (survive reboot)"
-  sudo env "PATH=$PATH:/usr/bin" /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u sas --hp /home/sas
-  pm2 save
+  echo "==> Ensure PM2 startup unit is enabled"
+  if [[ ! -f /etc/systemd/system/pm2-sas.service ]]; then
+    sudo env "PATH=$PATH:/usr/bin" /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u sas --hp /home/sas
+  else
+    sudo systemctl enable pm2-sas >/dev/null 2>&1 || true
+    echo "pm2-sas.service already present"
+  fi
+  run_as_app_user pm2 save
   echo "pm2 startup done"
 else
-  echo "NOTE: no passwordless sudo — skip nginx/pm2-startup."
-  echo "Run once:"
-  echo "  sudo env PATH=\$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u sas --hp /home/sas"
-  echo "  pm2 save"
+  echo "NOTE: no sudo — skip nginx/pm2-startup patches."
+  echo "Re-run with: sudo bash $REPO/scripts/fix-shared-vps-fserp.sh"
 fi
 
 echo "==> Final status"
-pm2 list
+run_as_app_user pm2 list
 ps aux | grep 'gunicorn fsms' | grep -v grep | head -8 || true
 echo "Done."

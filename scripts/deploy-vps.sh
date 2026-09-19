@@ -179,14 +179,15 @@ if [[ "$login_code" != "400" ]]; then
 fi
 
 # Confirm PM2 still shows both apps online after smoke tests.
-pm2_status="$(pm2 jlist 2>/dev/null | python3 -c '
-import json,sys
-apps={p.get("name"): (p.get("pm2_env") or {}).get("status") for p in json.load(sys.stdin)}
-for n in ("fserp_backend","fserp_frontend"):
-    print(f"{n}={apps.get(n) or \"missing\"}")
-    if apps.get(n) != "online":
+pm2_status="$(pm2 jlist 2>/dev/null | python3 -c "
+import json, sys
+apps = {p.get('name'): (p.get('pm2_env') or {}).get('status') for p in json.load(sys.stdin)}
+for n in ('fserp_backend', 'fserp_frontend'):
+    status = apps.get(n) or 'missing'
+    print(f'{n}={status}')
+    if status != 'online':
         raise SystemExit(1)
-' || true)"
+" || true)"
 echo "$pm2_status"
 if ! printf '%s\n' "$pm2_status" | grep -q 'fserp_backend=online'; then
   echo "ERROR: fserp_backend is not online" >&2

@@ -831,12 +831,20 @@
 /*
  * Report KPI / summary cards: keep large amounts inside the card.
  * Uses container query units (cqi) so font size tracks card width.
+ *
+ * Do NOT force min-width:0 on .report-metric-inline — in flex rows
+ * (Income − Expenses = Net) that collapses the column to ~0 width and
+ * hides the numbers (only the − / = operators remain visible).
  */
 .report-body .grid > [class*='rounded'],
-.report-metric-grid > [class*='rounded'],
+.report-metric-grid > [class*='rounded'] {
+  min-width: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
 .report-body .report-metric-inline,
 .report-metric-inline {
-  min-width: 0;
   overflow: hidden;
   container-type: inline-size;
 }

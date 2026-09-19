@@ -8,7 +8,7 @@
 
 /** Outer shell: enables container-relative font sizing and clips overflow. */
 export const reportMetricCardClass =
-  'report-metric-inline min-w-0 overflow-hidden'
+  'report-metric-inline min-w-[7rem] overflow-hidden'
 
 /** Grid wrapper for KPI card rows outside `.report-body`. */
 export const reportMetricGridClass = 'report-metric-grid'

@@ -702,21 +702,21 @@ export function AquaculturePlNetSummary({
         Expenses include feed &amp; medicine consumption and all other operating costs.
       </p>
       <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
-        <div className="report-metric-inline min-w-[7rem] max-w-full text-center">
+        <div className="min-w-[8.5rem] shrink-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
           <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">{MoneyBdt(income)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           −
         </span>
-        <div className="report-metric-inline min-w-[7rem] max-w-full text-center">
+        <div className="min-w-[8.5rem] shrink-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Expenses</p>
           <div className="mt-1 text-2xl font-bold tabular-nums text-rose-900">{MoneyBdt(expenses)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           =
         </span>
-        <div className="report-metric-inline min-w-[7rem] max-w-full text-center">
+        <div className="min-w-[8.5rem] shrink-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">Net profit</p>
           <div
             className={`mt-1 text-2xl font-bold tabular-nums ${

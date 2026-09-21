@@ -149,12 +149,16 @@ def compute_pond_warehouse_consumption_rows(
         item_name = ""
         quantity: str | None = None
         unit = ""
+        content_weight_kg: str | None = None
         if inv_lines:
             first = inv_lines[0]
             item_id = first.item_id
             if getattr(first, "item", None):
                 item_name = (first.item.name or "").strip()
                 unit = (first.item.unit or "").strip() or "unit"
+                cw = getattr(first.item, "content_weight_kg", None)
+                if cw is not None and cw > 0:
+                    content_weight_kg = str(cw)
             quantity = str(_d(first.quantity))
         rows.append(
             {
@@ -170,6 +174,7 @@ def compute_pond_warehouse_consumption_rows(
                 "item_name": item_name,
                 "quantity": quantity,
                 "unit": unit,
+                "content_weight_kg": content_weight_kg,
                 "amount": str(_d(x.amount)),
                 "feed_weight_kg": str(x.feed_weight_kg) if x.feed_weight_kg is not None else None,
                 "feed_sack_count": (

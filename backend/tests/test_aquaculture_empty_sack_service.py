@@ -11,6 +11,7 @@ from api.services.aquaculture_empty_sack_service import (
     EMPTY_SACK_ITEM_NUMBER,
     ensure_empty_feed_sack_catalog_item,
     feed_sacks_opened_from_kg,
+    feed_sacks_used_from_kg,
     is_empty_feed_sack_sale_income,
 )
 from api.services.aquaculture_expense_cleanup import cleanup_aquaculture_expense_posting_effects
@@ -54,6 +55,20 @@ def test_feed_sacks_opened_from_kg_uses_ceil(applied_kg, sack_kg, expected):
     assert feed_sacks_opened_from_kg(applied_kg, sack_kg) == expected
 
 
+@pytest.mark.parametrize(
+    ("applied_kg", "sack_kg", "expected"),
+    [
+        (Decimal("10"), Decimal("25"), Decimal("0.4000")),
+        (Decimal("25"), Decimal("25"), Decimal("1.0000")),
+        (Decimal("26"), Decimal("25"), Decimal("1.0400")),
+        (Decimal("400"), Decimal("25"), Decimal("16.0000")),
+        (Decimal("30"), Decimal("10"), Decimal("3.0000")),
+    ],
+)
+def test_feed_sacks_used_from_kg_is_exact(applied_kg, sack_kg, expected):
+    assert feed_sacks_used_from_kg(applied_kg, sack_kg) == expected
+
+
 @pytest.mark.django_db
 def test_consume_feed_creates_empty_sacks_at_pond(company_tenant_with_gl):
     company_tenant = company_tenant_with_gl
@@ -76,7 +91,7 @@ def test_consume_feed_creates_empty_sacks_at_pond(company_tenant_with_gl):
     )
 
     assert exp.empty_sack_count == Decimal("1")
-    assert exp.feed_sack_count == Decimal("1")
+    assert exp.feed_sack_count == Decimal("0.4000")
     empty = Item.objects.get(company_id=cid, item_number=EMPTY_SACK_ITEM_NUMBER)
     assert get_pond_item_stock(cid, pond.id, empty.id) == Decimal("1")
 

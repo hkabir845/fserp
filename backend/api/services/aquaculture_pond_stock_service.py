@@ -34,7 +34,7 @@ from api.services.aquaculture_warehouse_group_service import assert_ponds_allow_
 from api.services.aquaculture_shop_stock import _parse_shop_issue_items, _total_cost_at_issue
 from api.services.aquaculture_empty_sack_service import (
     apply_empty_sacks_from_feed_consumption,
-    empty_sacks_opened_for_feed_consumption,
+    feed_sacks_used_for_feed_consumption,
 )
 from api.services.gl_posting import (
     _item_receives_physical_stock,
@@ -685,7 +685,8 @@ def consume_pond_warehouse_stock(
             raise StockBusinessError("production_cycle_id does not belong to the selected pond.")
 
     if ec == "feed_consumed":
-        computed_sacks = empty_sacks_opened_for_feed_consumption(
+        # Report / ledger sacks = kg ÷ sack size (exact). Empty scrap uses ceil separately.
+        computed_sacks = feed_sacks_used_for_feed_consumption(
             item=item,
             quantity=quantity,
             feed_weight_kg=feed_weight_kg,

@@ -328,3 +328,60 @@ def test_feed_medicine_consumption_report_item_filters(
     data3 = json.loads(r3.content.decode())
     assert data3["filter_medicine_item_id"] == med.id
     assert data3["totals"]["total_medicine_amount"] == "50.00"
+
+
+@pytest.mark.django_db
+def test_feed_consumption_report_uses_exact_sacks_not_ceil_per_batch_slice(
+    api_client, company_tenant, auth_admin_headers
+):
+    """
+    Batch-split days used to ceil each slice (e.g. 400 kg → 6+6+6 = 18 sacks).
+    Report must show kg ÷ sack size (400 / 25 = 16) via inventory quantity.
+    """
+    _enable(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Split Pond", is_active=True)
+    feed = Item.objects.create(
+        company_id=cid,
+        name="Grower 25kg",
+        item_type="inventory",
+        unit="sack",
+        content_weight_kg=Decimal("25"),
+        pos_category="feed",
+        is_active=True,
+    )
+
+    # Three batch slices of ~133.33 kg; inflated ceil feed_sack_count (legacy bug).
+    slices = [
+        (Decimal("133.3400"), Decimal("6.0000"), Decimal("5.3336")),
+        (Decimal("133.3300"), Decimal("6.0000"), Decimal("5.3332")),
+        (Decimal("133.3300"), Decimal("6.0000"), Decimal("5.3332")),
+    ]
+    for kg, bad_sacks, qty in slices:
+        exp = AquacultureExpense.objects.create(
+            company_id=cid,
+            pond=pond,
+            expense_category="feed_consumed",
+            expense_date=date(2026, 8, 22),
+            amount=Decimal("1000.00"),
+            feed_weight_kg=kg,
+            feed_sack_count=bad_sacks,
+            empty_sack_count=Decimal("16"),
+        )
+        AquacultureExpenseInventoryLine.objects.create(expense=exp, item=feed, quantity=qty)
+
+    r = api_client.get(
+        "/api/reports/aquaculture-feed-consumption/",
+        {"start_date": "2026-08-01", "end_date": "2026-08-31"},
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content.decode())
+    assert data["totals"]["total_feed_kg"] == "400.00"
+    # Exact inventory sacks, not 18 from ceil-per-slice
+    assert data["totals"]["total_feed_sacks"] == "16.00"
+    day = data["groups"][0]["daily_feed"][0]
+    assert day["date"] == "2026-08-22"
+    assert day["kg"] == "400.00"
+    assert day["sacks"] == "16.00"
+    assert day["entry_count"] == 3

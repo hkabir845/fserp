@@ -28,12 +28,43 @@ def feed_sack_size_kg(item: Item, sack_size_kg: int | None = None) -> Decimal | 
     return Decimal("25")
 
 
+def feed_sacks_used_from_kg(applied_kg: Decimal, kg_per_sack: Decimal) -> Decimal:
+    """Exact feed sacks used for reporting / inventory (fractional OK): kg ÷ sack size."""
+    if applied_kg <= 0 or kg_per_sack <= 0:
+        return Decimal("0")
+    return (applied_kg / kg_per_sack).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
 def feed_sacks_opened_from_kg(applied_kg: Decimal, kg_per_sack: Decimal) -> Decimal:
     """Whole sacks opened when feed is used — any partial use counts as one sack (ceil)."""
     if applied_kg <= 0 or kg_per_sack <= 0:
         return Decimal("0")
     opened = math.ceil(float(applied_kg / kg_per_sack))
     return Decimal(max(opened, 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def feed_sacks_used_for_feed_consumption(
+    *,
+    item: Item,
+    quantity: Decimal,
+    feed_weight_kg: Decimal | None,
+    sack_size_kg: int | None = None,
+) -> Decimal:
+    """
+    Exact sack count for feed_consumed reporting (feed_sack_count).
+    Prefers feed_weight_kg ÷ sack size; otherwise quantity for sack-unit SKUs.
+    """
+    kg_per = feed_sack_size_kg(item, sack_size_kg)
+    if feed_weight_kg is not None and feed_weight_kg > 0:
+        if kg_per is None or kg_per <= 0:
+            return Decimal("0")
+        return feed_sacks_used_from_kg(feed_weight_kg, kg_per)
+    unit_l = (item.unit or "").strip().lower()
+    if unit_l in ("kg", "kilogram", "kilograms"):
+        return Decimal("0")
+    if quantity > 0:
+        return Decimal(quantity).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return Decimal("0")
 
 
 def empty_sacks_opened_for_feed_consumption(

@@ -100,6 +100,37 @@ def _decimal(s: str) -> Decimal:
         return Decimal("0")
 
 
+_SACK_UNITS = frozenset({"sack", "sacks", "bag", "bags", "bag/sack", "sack/bag"})
+
+
+def _feed_sacks_for_consumption_row(r: dict) -> Decimal:
+    """
+    Feed sacks for reports = usage kg ÷ sack size (exact), not ceil empty-sack opens.
+
+    Prefer inventory quantity when the SKU is counted in sacks (matches stock deduction).
+    Else kg ÷ content_weight_kg (or 25 kg default). Fall back to stored feed_sack_count.
+    """
+    stored = (
+        _decimal(r["feed_sack_count"]) if r.get("feed_sack_count") not in (None, "") else Decimal("0")
+    )
+    unit = (r.get("unit") or "").strip().lower()
+    qty = _decimal(r["quantity"]) if r.get("quantity") not in (None, "") else Decimal("0")
+    if unit in _SACK_UNITS and qty > 0:
+        return qty
+
+    kg = (
+        _decimal(r["feed_weight_kg"]) if r.get("feed_weight_kg") not in (None, "") else Decimal("0")
+    )
+    if kg <= 0:
+        return stored
+
+    cw_raw = r.get("content_weight_kg")
+    kg_per = _decimal(str(cw_raw)) if cw_raw not in (None, "") else Decimal("0")
+    if kg_per <= 0:
+        kg_per = Decimal("25")
+    return _qty_q(kg / kg_per, "0.0001")
+
+
 def _internal_trade_docs_by_line(
     company_id: int,
     line_ids: list[int],
@@ -1645,7 +1676,7 @@ def _report_feed_medicine_consumption(
         if r.get("kind") == "feed":
             grand_feed += amt
             kg = _decimal(r["feed_weight_kg"]) if r.get("feed_weight_kg") else Decimal("0")
-            sacks = _decimal(r["feed_sack_count"]) if r.get("feed_sack_count") else Decimal("0")
+            sacks = _feed_sacks_for_consumption_row(r)
             grand_feed_kg += kg
             grand_feed_sacks += sacks
             day = r.get("entry_date") or ""
@@ -1657,7 +1688,6 @@ def _report_feed_medicine_consumption(
                 farm_daily_ponds[day].add(pid)
         else:
             grand_med += amt
-
     groups: list[dict[str, Any]] = []
     for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
         lines = sorted(by_pond[pid], key=lambda ln: (ln.get("entry_date") or "", ln.get("id") or 0))
@@ -1685,9 +1715,7 @@ def _report_feed_medicine_consumption(
             if ln.get("kind") == "feed":
                 sub_feed += amt
                 kg = _decimal(ln["feed_weight_kg"]) if ln.get("feed_weight_kg") else Decimal("0")
-                sacks = (
-                    _decimal(ln["feed_sack_count"]) if ln.get("feed_sack_count") else Decimal("0")
-                )
+                sacks = _feed_sacks_for_consumption_row(ln)
                 sub_feed_kg += kg
                 sub_feed_sacks += sacks
                 feed_lines.append(ln)

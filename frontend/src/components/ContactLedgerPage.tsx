@@ -589,7 +589,11 @@ export default function ContactLedgerPage({
                                 ? 'Try different keywords or clear filters to see all activity.'
                                 : hasActiveFilters
                                   ? 'Adjust the date range or clear filters to widen the view.'
-                                  : 'Invoices, bills, and payments for this contact will appear here.'
+                                  : entity === 'employees'
+                                    ? 'No payroll or payments have been posted for this employee yet. Post a payroll run that includes them (Payroll → wages by employee), or add a manual ledger entry above.'
+                                    : entity === 'vendors'
+                                      ? 'Bills and payments made for this vendor will appear here.'
+                                      : 'Invoices and payments received for this customer will appear here.'
                             }
                             hasActiveFilters={hasActiveFilters}
                             onClearFilters={clearFilters}

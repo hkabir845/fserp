@@ -32,7 +32,7 @@ import {
   confirmDeletePaymentDialog,
   deletePaymentRequest,
 } from '@/app/payments/paymentMutations'
-import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
+import { readStoredAccessToken } from '@/lib/authSession'
 import {
   hasTransactionTextSearch,
   transactionDateParams,
@@ -748,8 +748,7 @@ export default function ChartOfAccountsPage() {
         
         if (status === 401) {
           errorMessage = 'Authentication required. Please log in again.'
-          clearStoredAccessToken()
-          localStorage.removeItem('refresh_token')
+          // Interceptor already attempted refresh; do not wipe tokens here again.
           router.push('/login')
           return
         } else if (status === 403) {
@@ -832,7 +831,6 @@ export default function ChartOfAccountsPage() {
       await refreshUnlinkedBanks()
     } catch (error: any) {
       if (error.response?.status === 401) {
-        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -950,7 +948,6 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error fetching statement:', error)
       if (error.response?.status === 401) {
-        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1139,7 +1136,6 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error creating account:', error)
       if (error.response?.status === 401) {
-        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1222,7 +1218,6 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error updating account:', error)
       if (error.response?.status === 401) {
-        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return
@@ -1240,7 +1235,6 @@ export default function ChartOfAccountsPage() {
     } catch (error: any) {
       console.error('Error deleting account:', error)
       if (error.response?.status === 401) {
-        clearStoredAccessToken()
         router.push('/login')
         toast.error('Session expired. Please login again.')
         return

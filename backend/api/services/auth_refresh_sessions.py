@@ -49,13 +49,17 @@ def rotate_refresh_session(
     user_agent: str = "",
     ip_address: str = "",
     ttl_days: int = 7,
+    reuse_grace_seconds: int = 60,
 ) -> tuple[str, str, datetime] | None:
     """
     Mark the presented jti as rotated and mint a successor in the same family.
 
     Returns None when the token is unknown/expired/revoked.
-    Raises ReplayDetected when a previously rotated jti is presented again —
-    the caller should revoke the family and refuse the refresh.
+    Raises ReplayDetected when a previously rotated jti is presented again outside
+    the reuse grace window — the caller should revoke the family and refuse.
+
+    Within ``reuse_grace_seconds`` of a prior rotation (parallel tabs / duplicate
+    401 retries), return the existing successor jti instead of killing the family.
     """
     now = dj_tz.now()
     row = (
@@ -72,6 +76,21 @@ def rotate_refresh_session(
     if row.expires_at < now:
         return None
     if row.rotated_at is not None:
+        grace = max(0, int(reuse_grace_seconds))
+        if grace and row.rotated_at >= now - timedelta(seconds=grace):
+            successor = (
+                AuthRefreshSession.objects.select_for_update()
+                .filter(
+                    family_id=row.family_id,
+                    user_id=user.id,
+                    revoked_at__isnull=True,
+                    rotated_at__isnull=True,
+                )
+                .order_by("-id")
+                .first()
+            )
+            if successor is not None:
+                return successor.jti, successor.family_id, successor.expires_at
         raise ReplayDetected(row.family_id)
     row.rotated_at = now
     row.save(update_fields=["rotated_at"])

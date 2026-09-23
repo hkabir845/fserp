@@ -72,6 +72,45 @@ def test_refresh_token_replay_revokes_family(company_tenant):
     assert first.status_code == 200, first.content
     assert first.json().get("access_token")
 
+    # Within grace: duplicate refresh of the same token must NOT kill the family.
+    grace = c.post(
+        "/api/auth/refresh/",
+        data=json.dumps({"refresh_token": refresh}),
+        content_type="application/json",
+        HTTP_X_AUTH_CLIENT="native",
+    )
+    assert grace.status_code == 200, grace.content
+    assert grace.json().get("access_token")
+    assert AuthRefreshSession.objects.filter(family_id=fid, revoked_at__isnull=True).exists()
+
+
+def test_refresh_token_replay_after_grace_revokes_family(company_tenant, monkeypatch):
+    """Old refresh reuse after the grace window still revokes the family (theft signal)."""
+    from datetime import timedelta
+
+    from django.utils import timezone as dj_tz
+
+    from api.services import auth_refresh_sessions as ars
+
+    user = _user(company_tenant)
+    jti, fid, _ = issue_refresh_session(user)
+    _, refresh = create_tokens(user, refresh_jti=jti, refresh_family_id=fid)
+    c = Client()
+
+    first = c.post(
+        "/api/auth/refresh/",
+        data=json.dumps({"refresh_token": refresh}),
+        content_type="application/json",
+        HTTP_X_AUTH_CLIENT="native",
+    )
+    assert first.status_code == 200, first.content
+
+    row = AuthRefreshSession.objects.get(jti=jti)
+    # Simulate rotation completed well outside the grace window.
+    row.rotated_at = dj_tz.now() - timedelta(minutes=5)
+    row.save(update_fields=["rotated_at"])
+
+    monkeypatch.setattr(ars, "rotate_refresh_session", ars.rotate_refresh_session)
     replay = c.post(
         "/api/auth/refresh/",
         data=json.dumps({"refresh_token": refresh}),
@@ -82,7 +121,6 @@ def test_refresh_token_replay_revokes_family(company_tenant):
     detail = (replay.json().get("detail") or "").lower()
     assert "reuse" in detail or "revoked" in detail
     assert AuthRefreshSession.objects.filter(family_id=fid, revoked_at__isnull=False).exists()
-
 
 def test_logout_revokes_refresh_session(company_tenant):
     user = _user(company_tenant)

@@ -3,7 +3,7 @@
 import { isCapacitorNativeApp } from '@/lib/androidApp'
 import { getApiBaseUrl, setAuthApiOriginStamp } from '@/lib/api'
 import { formatApiErrorJson } from '@/utils/errorHandler'
-import { writeStoredAccessToken } from './authSession'
+import { writeStoredAccessToken, writeStoredRefreshToken } from './authSession'
 
 export type LoginResult = {
   access_token: string
@@ -104,7 +104,11 @@ export async function performLogin(username: string, password: string): Promise<
       if (!data?.access_token) throw new Error('No access token received')
       writeStoredAccessToken(String(data.access_token).trim())
       try {
-        localStorage.removeItem('refresh_token')
+        writeStoredRefreshToken(
+          isCapacitorNativeApp() && data.refresh_token
+            ? String(data.refresh_token).trim()
+            : null,
+        )
       } catch {
         /* ignore */
       }

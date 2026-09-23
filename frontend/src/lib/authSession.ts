@@ -80,6 +80,7 @@ export function writeStoredAccessToken(token: string): void {
     store.setItem(ACCESS_TOKEN_KEY, t)
     if (!isCapacitorNativeApp()) {
       localStorage.removeItem(ACCESS_TOKEN_KEY)
+      // Browser refresh lives in the HttpOnly cookie — never keep a JS-readable copy.
       localStorage.removeItem('refresh_token')
     }
   } catch {
@@ -87,14 +88,38 @@ export function writeStoredAccessToken(token: string): void {
   }
 }
 
+/** Persist rotated refresh JWT for native shells (browsers use HttpOnly cookie only). */
+export function writeStoredRefreshToken(token: string | null | undefined): void {
+  if (typeof window === 'undefined') return
+  try {
+    const t = String(token || '').trim()
+    if (!isCapacitorNativeApp()) {
+      localStorage.removeItem('refresh_token')
+      return
+    }
+    if (!t) {
+      localStorage.removeItem('refresh_token')
+      return
+    }
+    localStorage.setItem('refresh_token', t)
+  } catch {
+    /* ignore */
+  }
+}
+
 export function clearStoredAccessToken(): void {
   writeStoredAccessToken('')
 }
 
+/** True when we should attempt silent refresh (access JWT and/or cookie-backed browser session). */
 export function hasStoredSession(): boolean {
   if (typeof window === 'undefined') return false
   try {
-    return Boolean(readStoredAccessToken() || localStorage.getItem('refresh_token')?.trim())
+    if (readStoredAccessToken()) return true
+    if (localStorage.getItem('refresh_token')?.trim()) return true
+    // Browser refresh lives in an HttpOnly cookie; `user` is the durable client hint.
+    const user = localStorage.getItem('user')
+    return Boolean(user && user !== 'undefined' && user !== 'null')
   } catch {
     return false
   }

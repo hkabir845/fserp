@@ -7,9 +7,11 @@ import { withEffectiveAquacultureFlags } from '@/lib/aquacultureCompanyFlags'
 import { isCapacitorNativeApp } from '@/lib/androidApp'
 import {
   clearStoredAccessToken,
+  hasStoredSession,
   isAccessTokenExpired,
   readStoredAccessToken,
   writeStoredAccessToken,
+  writeStoredRefreshToken,
 } from '@/lib/authSession'
 
 /**
@@ -247,6 +249,104 @@ function appendDjangoTrailingSlash(url: string | undefined): string | undefined 
 let refreshInFlight: Promise<string | null> | null = null
 let loginRedirectStarted = false
 
+const REFRESH_LOCK_KEY = 'fserp_refresh_lock'
+const REFRESH_RESULT_KEY = 'fserp_refresh_result'
+const REFRESH_LOCK_TTL_MS = 12_000
+
+function _readRefreshLock(): { owner: string; at: number } | null {
+  try {
+    const raw = localStorage.getItem(REFRESH_LOCK_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { owner?: string; at?: number }
+    if (!parsed?.owner || typeof parsed.at !== 'number') return null
+    return { owner: parsed.owner, at: parsed.at }
+  } catch {
+    return null
+  }
+}
+
+function _tryAcquireRefreshLock(owner: string): boolean {
+  try {
+    const existing = _readRefreshLock()
+    const now = Date.now()
+    if (existing && now - existing.at < REFRESH_LOCK_TTL_MS && existing.owner !== owner) {
+      return false
+    }
+    localStorage.setItem(REFRESH_LOCK_KEY, JSON.stringify({ owner, at: now }))
+    const confirm = _readRefreshLock()
+    return Boolean(confirm && confirm.owner === owner)
+  } catch {
+    return true
+  }
+}
+
+function _releaseRefreshLock(owner: string): void {
+  try {
+    const existing = _readRefreshLock()
+    if (!existing || existing.owner === owner) {
+      localStorage.removeItem(REFRESH_LOCK_KEY)
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function _publishRefreshResult(access: string): void {
+  try {
+    localStorage.setItem(
+      REFRESH_RESULT_KEY,
+      JSON.stringify({ access, at: Date.now() }),
+    )
+  } catch {
+    /* ignore */
+  }
+}
+
+function _awaitCrossTabRefresh(timeoutMs = 10_000): Promise<string | null> {
+  if (typeof window === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (token: string | null) => {
+      if (done) return
+      done = true
+      window.removeEventListener('storage', onStorage)
+      clearTimeout(timer)
+      resolve(token)
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== REFRESH_RESULT_KEY || !e.newValue) return
+      try {
+        const parsed = JSON.parse(e.newValue) as { access?: string; at?: number }
+        const access = String(parsed?.access || '').trim()
+        if (access) {
+          writeStoredAccessToken(access)
+          finish(access)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    const timer = window.setTimeout(() => finish(null), timeoutMs)
+    // Another tab may have finished just before we subscribed.
+    try {
+      const raw = localStorage.getItem(REFRESH_RESULT_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { access?: string; at?: number }
+        if (parsed?.access && typeof parsed.at === 'number' && Date.now() - parsed.at < 15_000) {
+          const access = String(parsed.access).trim()
+          if (access) {
+            writeStoredAccessToken(access)
+            finish(access)
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  })
+}
+
 function redirectToLoginIfNeeded(): void {
   if (typeof window === 'undefined') return
   if (loginRedirectStarted) return
@@ -276,14 +376,25 @@ function isPublicAuthUrl(url: string | undefined): boolean {
   return u.includes('/auth/login') || u.includes('/auth/refresh')
 }
 
-/** Refresh access token if expired; returns usable token or null (session cleared). */
+/** Refresh access token if missing/expired; returns usable token or null (session cleared). */
 export async function ensureAccessTokenFresh(): Promise<string | null> {
   if (typeof window === 'undefined') return null
   let token = readStoredAccessToken()
-  if (!token) return null
-  if (!isAccessTokenExpired(token)) return token
+  if (token && !isAccessTokenExpired(token)) return token
+
+  // Browser access JWT is sessionStorage (per-tab). Refresh is an HttpOnly cookie.
+  // New tabs / restored sessions often have `user` + cookie but no access token yet —
+  // must silent-refresh instead of treating as logged out.
+  if (!token && !hasStoredSession()) {
+    return null
+  }
+
   const refreshed = await fetchNewAccessToken()
   if (refreshed) return refreshed
+  // Refresh failed but access JWT may still be within its real lifetime (skew-only).
+  // Keep working instead of forcing logout mid-operation.
+  token = readStoredAccessToken()
+  if (token && !isAccessTokenExpired(token, 0)) return token
   try {
     clearAuthStorage()
   } catch {
@@ -384,6 +495,13 @@ function fetchNewAccessToken(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight
 
   refreshInFlight = (async () => {
+    const owner = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const gotLock = _tryAcquireRefreshLock(owner)
+    if (!gotLock) {
+      const fromOther = await _awaitCrossTabRefresh()
+      if (fromOther) return fromOther
+      // Lock holder stalled — try ourselves.
+    }
     try {
       const response = await axios.post(
         `${getApiBaseUrl().replace(/\/+$/, '')}/auth/refresh/`,
@@ -401,19 +519,27 @@ function fetchNewAccessToken(): Promise<string | null> {
       if (!access) return null
       const trimmed = String(access).trim()
       writeStoredAccessToken(trimmed)
-      localStorage.removeItem('refresh_token')
+      const newRt = response.data?.refresh_token
+      if (isCapacitorNativeApp() && newRt) {
+        writeStoredRefreshToken(String(newRt).trim())
+      } else if (!isCapacitorNativeApp()) {
+        writeStoredRefreshToken(null)
+      }
       setAuthApiOriginStamp()
+      _publishRefreshResult(trimmed)
       return trimmed
     } catch {
       try {
-        clearStoredAccessToken()
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('user')
+        // Do not wipe a still-valid access token here — caller decides.
+        if (!isCapacitorNativeApp()) {
+          localStorage.removeItem('refresh_token')
+        }
       } catch {
         /* ignore */
       }
       return null
     } finally {
+      _releaseRefreshLock(owner)
       refreshInFlight = null
     }
   })()
@@ -493,20 +619,25 @@ api.interceptors.request.use(
       // Resolve API host on each request so it always matches current window + env (important after deploy).
       config.baseURL = getApiBaseUrl()
 
-      // Proactive refresh — avoids 401 spam when access token just expired
+      // Proactive refresh — missing (new tab) or expired access JWT via HttpOnly cookie
       try {
         const reqUrl = String(config.url || '')
         if (!isPublicAuthUrl(reqUrl)) {
           let token = readStoredAccessToken()
-          if (!token) {
-            return Promise.reject(new axios.Cancel('Not authenticated'))
-          }
-          if (isAccessTokenExpired(token)) {
+          if (!token || isAccessTokenExpired(token)) {
+            if (!token && !hasStoredSession()) {
+              return Promise.reject(new axios.Cancel('Not authenticated'))
+            }
             token = (await fetchNewAccessToken()) || ''
             if (!token) {
-              clearAuthStorage()
-              redirectToLoginIfNeeded()
-              return Promise.reject(new axios.Cancel('Session expired'))
+              const still = readStoredAccessToken()
+              if (still && !isAccessTokenExpired(still, 0)) {
+                token = still
+              } else {
+                clearAuthStorage()
+                redirectToLoginIfNeeded()
+                return Promise.reject(new axios.Cancel('Session expired'))
+              }
             }
           }
           config.headers.Authorization = `Bearer ${token}`

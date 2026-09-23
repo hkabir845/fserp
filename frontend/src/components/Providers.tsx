@@ -10,6 +10,7 @@ import { SidebarNavProvider } from '@/contexts/SidebarNavContext'
 import { FixedBanner } from './FixedBanner'
 import { PwaInstallBanner } from './PwaInstallBanner'
 import { AuthApiOriginGuard } from './AuthApiOriginGuard'
+import { SessionKeepAlive } from './SessionKeepAlive'
 import { DevEnvironmentBanner } from './DevEnvironmentBanner'
 import { isBrainAppRoute, isPublicAuthRoute } from '@/utils/publicAuthRoutes'
 
@@ -32,6 +33,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
       <AuthApiOriginGuard>
+        <SessionKeepAlive />
         <DevEnvironmentBanner />
         {isPublic || isBrainApp ? (
           children

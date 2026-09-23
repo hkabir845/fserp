@@ -191,7 +191,11 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
           url: `${baseUrl}/auth/login/json/`,
           method: 'POST',
           body: JSON.stringify({ username: username.trim(), password }),
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-Auth-Client': nativeApp ? 'native' : 'browser',
+          },
         },
         ...(nativeApp
           ? []
@@ -206,7 +210,10 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
                   formData.append('password', password)
                   return formData
                 })(),
-                headers: { Accept: 'application/json' },
+                headers: {
+                  Accept: 'application/json',
+                  'X-Auth-Client': 'browser',
+                },
               },
               {
                 name: 'oauth2',
@@ -222,6 +229,7 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
                 headers: {
                   'Content-Type': 'application/x-www-form-urlencoded',
                   Accept: 'application/json',
+                  'X-Auth-Client': 'browser',
                 },
               },
             ]),
@@ -323,7 +331,15 @@ export function LoginPageInner({ variant = 'default' }: { variant?: 'default' | 
       if (!access_token) throw new Error('No access token received from server')
 
       writeStoredAccessToken(String(access_token).trim())
-      localStorage.removeItem('refresh_token')
+      try {
+        if (nativeApp && data.refresh_token) {
+          localStorage.setItem('refresh_token', String(data.refresh_token).trim())
+        } else {
+          localStorage.removeItem('refresh_token')
+        }
+      } catch {
+        /* ignore */
+      }
       localStorage.setItem('user', JSON.stringify(user))
       persistRememberedUsername(username, rememberLogin)
       if (rememberLogin) {

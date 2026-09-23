@@ -34,6 +34,7 @@ import { formatDateOnly, localDateISO } from '@/utils/date'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
 import { bookBiomassKg, displayBiomassKg } from '@/app/aquaculture/aquacultureFishMetrics'
+import { PolycultureSpeciesPanel } from '@/components/aquaculture/PolycultureSpeciesPanel'
 import { AskBrainButton } from '@/components/brain/AskBrainButton'
 import {
   PondEconomicsSnapshotPanel,
@@ -1166,6 +1167,12 @@ export default function PondDetailViewPage() {
               </section>
             ) : null}
           </div>
+
+          {Number.isFinite(pondIdNum) ? (
+            <div className="mb-6">
+              <PolycultureSpeciesPanel pondId={pondIdNum} />
+            </div>
+          ) : null}
 
           <section className="mb-6 rounded-xl border border-border bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">

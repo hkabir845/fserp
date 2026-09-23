@@ -24,16 +24,20 @@ from api.services.aquaculture_stock_service import (
     compute_fish_stock_position_rows,
 )
 from api.services.aquaculture_partial_harvest import sample_mean_weight_kg_from_fields
-from api.services.aquaculture_constants import POND_ROLE_LABELS
+from api.services.aquaculture_constants import (
+    POND_ROLE_LABELS,
+    fish_species_feeding_profile,
+)
 from api.services.aquaculture_i18n import company_language, normalize_lang, temp_factor_note, weather_tier_label, _pick
 from api.services.aquaculture_units import format_pond_area_decimal_for_api, format_two_decimal_places_for_api
 
 # Public citation string stored in JSON snapshots for auditors.
 WORLDFISH_FEEDING_REFERENCE = (
-    "WorldFish / CGIAR extension guidance for Nile tilapia grow-out: feeding rate as % of body weight "
-    "per day depends on mean fish weight and water temperature (tables often quoted at ~28 °C); "
-    "reduce rations when cold, cloudy, or when water quality is stressed. "
-    "Source collection: https://digitalarchive.worldfishcenter.org/"
+    "WorldFish / CGIAR / FAO extension guidance: daily feed as % of body weight by mean fish size "
+    "(tables often quoted near ~28 °C). Nile tilapia grow-out bands are used for tilapia; "
+    "Indian major carp / Chinese carp / Deshi polyculture use lower carp-style rates; "
+    "pangas uses an intermediate table. Reduce rations when cold, cloudy, or water-quality stressed. "
+    "Sources: https://digitalarchive.worldfishcenter.org/ and FAO cultured-species fact sheets."
 )
 
 
@@ -55,7 +59,7 @@ class _WorldFishSizeBand:
 
 
 # Bands synthesised from widely reproduced WorldFish / FAO tilapia pond-culture tables (mean weight, ~28 °C).
-_WORLDFISH_BANDS: tuple[_WorldFishSizeBand, ...] = (
+_TILAPIA_BANDS: tuple[_WorldFishSizeBand, ...] = (
     _WorldFishSizeBand("Fry", Decimal("1"), Decimal("5"), Decimal("10"), Decimal("6"), "4× / day", "Powder / crumble 0.5–1 mm"),
     _WorldFishSizeBand("Fingerling", Decimal("5"), Decimal("20"), Decimal("6"), Decimal("4"), "3–4× / day", "Crumbles 1–2 mm"),
     _WorldFishSizeBand("Juvenile", Decimal("20"), Decimal("100"), Decimal("4"), Decimal("3"), "2× / day", "Small pellet 2 mm"),
@@ -63,20 +67,60 @@ _WORLDFISH_BANDS: tuple[_WorldFishSizeBand, ...] = (
     _WorldFishSizeBand("Finisher", Decimal("250"), None, Decimal("2"), Decimal("1.5"), "1–1.5× / day", "Finisher pellet 4–6 mm"),
 )
 
+# Indian major carp / Chinese carp / Deshi (rui, catla, mrigal, kalibaush, puti, …) — lower %BW than tilapia.
+_CARP_BANDS: tuple[_WorldFishSizeBand, ...] = (
+    _WorldFishSizeBand("Fry", Decimal("1"), Decimal("5"), Decimal("8"), Decimal("5"), "3–4× / day", "Powder / fine crumble"),
+    _WorldFishSizeBand("Fingerling", Decimal("5"), Decimal("20"), Decimal("5"), Decimal("3"), "3× / day", "Crumbles 1–2 mm"),
+    _WorldFishSizeBand("Juvenile", Decimal("20"), Decimal("100"), Decimal("3"), Decimal("2"), "2× / day", "Small pellet 2 mm"),
+    _WorldFishSizeBand("Grower", Decimal("100"), Decimal("500"), Decimal("2.5"), Decimal("1.5"), "1–2× / day", "Sinking / floating 3–4 mm"),
+    _WorldFishSizeBand("Finisher", Decimal("500"), None, Decimal("1.5"), Decimal("1"), "1× / day", "Finisher pellet 4–6 mm"),
+)
 
-def _band_for_mean_weight_g(mean_g: Decimal) -> _WorldFishSizeBand:
+# Pangas grow-out — between tilapia and carp for typical BD pond practice.
+_PANGAS_BANDS: tuple[_WorldFishSizeBand, ...] = (
+    _WorldFishSizeBand("Fry", Decimal("1"), Decimal("5"), Decimal("9"), Decimal("6"), "4× / day", "Powder / crumble"),
+    _WorldFishSizeBand("Fingerling", Decimal("5"), Decimal("20"), Decimal("5.5"), Decimal("3.5"), "3–4× / day", "Crumbles 1–2 mm"),
+    _WorldFishSizeBand("Juvenile", Decimal("20"), Decimal("100"), Decimal("3.5"), Decimal("2.5"), "2× / day", "Small pellet 2 mm"),
+    _WorldFishSizeBand("Grower", Decimal("100"), Decimal("500"), Decimal("2.8"), Decimal("1.8"), "1.5–2× / day", "Floating pellet 3–4 mm"),
+    _WorldFishSizeBand("Finisher", Decimal("500"), None, Decimal("1.8"), Decimal("1.2"), "1–1.5× / day", "Finisher pellet 4–6 mm"),
+)
+
+_WORLDFISH_BANDS = _TILAPIA_BANDS  # backward-compatible alias used in tests / imports
+
+
+def _bands_for_profile(profile: str) -> tuple[_WorldFishSizeBand, ...]:
+    p = (profile or "tilapia").strip().lower()
+    if p == "carp":
+        return _CARP_BANDS
+    if p == "pangas":
+        return _PANGAS_BANDS
+    return _TILAPIA_BANDS
+
+
+def _band_for_mean_weight_g(mean_g: Decimal, *, profile: str = "tilapia") -> _WorldFishSizeBand:
+    bands = _bands_for_profile(profile)
     g = mean_g if mean_g > 0 else Decimal("0")
     if g < Decimal("1"):
         # Nursery / very small fry — high %BW in manuals; managers usually use on-farm fry protocols.
-        return _WorldFishSizeBand("Fry (nursery)", Decimal("0"), Decimal("1"), Decimal("20"), Decimal("10"), "6–8× / day", "Starter powder / fine crumble")
-    for b in _WORLDFISH_BANDS:
+        if profile == "carp":
+            return _WorldFishSizeBand(
+                "Fry (nursery)", Decimal("0"), Decimal("1"), Decimal("12"), Decimal("8"), "4–6× / day", "Starter powder / fine crumble"
+            )
+        if profile == "pangas":
+            return _WorldFishSizeBand(
+                "Fry (nursery)", Decimal("0"), Decimal("1"), Decimal("16"), Decimal("10"), "5–7× / day", "Starter powder / fine crumble"
+            )
+        return _WorldFishSizeBand(
+            "Fry (nursery)", Decimal("0"), Decimal("1"), Decimal("20"), Decimal("10"), "6–8× / day", "Starter powder / fine crumble"
+        )
+    for b in bands:
         cap = b.max_g
         if cap is None:
             if g >= b.min_g:
                 return b
         elif b.min_g <= g < cap:
             return b
-    return _WORLDFISH_BANDS[-1]
+    return bands[-1]
 
 
 def _mean_fish_weight_g_from_stock_row(stock_row: dict) -> tuple[Decimal | None, str]:
@@ -156,11 +200,13 @@ def compute_batch_feed_demand_shares(
     *,
     water_temp_c: Decimal | None = None,
     production_cycle_id: int | None = None,
-    fish_species_filter: str | None = "tilapia",
+    fish_species_filter: str | None = None,
     as_of_date: date | None = None,
 ) -> list[dict]:
     """
     Per stocking batch (production cycle) daily feed demand from sampling biomass × WorldFish %BW.
+
+    Defaults to **all species** in the pond (polyculture). Pass ``fish_species_filter`` to limit.
 
     ``as_of_date`` (feeding/medicine/expense date): stock after sales/harvests on or before that
     day, so batch shares match fish still in the pond when feed/medicine was used.
@@ -350,19 +396,33 @@ def worldfish_daily_bw_percent(
     *,
     water_temp_c: Decimal | None,
     lang: str | None = "en",
+    fish_species: str | None = None,
 ) -> dict:
     """
     Picks a single % body weight / day from WorldFish-style bands + load + temperature guards.
+
+    Species profile (tilapia / carp / pangas) selects the published band set.
     """
     lang_n = normalize_lang(lang)
+    sp = (
+        (fish_species or "").strip()
+        or (stock_row.get("fish_species") or "").strip()
+        or (stock_row.get("latest_sample_fish_species") or "").strip()
+        or "tilapia"
+    )
+    profile = fish_species_feeding_profile(sp)
     mean_g, prov = _mean_fish_weight_g_from_stock_row(stock_row)
     load_level = stock_row.get("load_level") if isinstance(stock_row.get("load_level"), str) else None
     tf, temp_note = _temp_factor(water_temp_c, lang_n)
 
     if mean_g is None:
         pct = _rate_pct_for_load(load_level)
+        if profile == "carp":
+            pct = max(Decimal("1.5"), pct - Decimal("0.5"))
         return {
             "method": "load_heuristic_only",
+            "fish_species": sp,
+            "feeding_profile": profile,
             "mean_fish_weight_g": None,
             "mean_weight_source": prov,
             "worldfish_stage": None,
@@ -376,7 +436,7 @@ def worldfish_daily_bw_percent(
             "reference": WORLDFISH_FEEDING_REFERENCE,
         }
 
-    band = _band_for_mean_weight_g(mean_g)
+    band = _band_for_mean_weight_g(mean_g, profile=profile)
     mid = (band.bw_high_pct + band.bw_low_pct) / Decimal("2")
     biased = mid + _load_bias(load_level)
     # Clamp to the published band in both directions — including the understocked +0.1 nudge,
@@ -391,6 +451,8 @@ def worldfish_daily_bw_percent(
 
     return {
         "method": "worldfish_table_adjusted",
+        "fish_species": sp,
+        "feeding_profile": profile,
         "mean_fish_weight_g": str(mean_g),
         "mean_weight_source": prov,
         "worldfish_stage": band.label,
@@ -940,7 +1002,7 @@ def build_feeding_advice_payload(
         company_id,
         pond_id=pond_id,
         production_cycle_id=production_cycle_id,
-        fish_species_filter="tilapia",
+        fish_species_filter=None,
         include_inactive_ponds=True,
     )
     if not rows and not batch_shares:

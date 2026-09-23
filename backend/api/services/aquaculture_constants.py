@@ -277,19 +277,21 @@ NON_BIOLOGICAL_POND_SALE_INCOME_TYPES: frozenset[str] = frozenset(
 SHOP_INVENTORY_SALE_INCOME_TYPES: frozenset[str] = frozenset({"feed_sale", "medicine_sale"})
 
 # Harvest line species (polyculture / mixed sales); stable keys in DB. Default tilapia for main culture.
+# BD freshwater pack: tilapia + Indian major carps + Chinese carps + Deshi (puti, kalibaush) + pangas.
 AQUACULTURE_FISH_SPECIES_CHOICES: tuple[tuple[str, str], ...] = (
     ("not_applicable", "N/A (not fish)"),
     ("tilapia", "Tilapia"),
     ("rui", "Rui (rohu)"),
     ("catla", "Catla"),
+    ("mrigal", "Mrigal"),
     ("common_carp", "Common carp"),
     ("silver_carp", "Silver carp"),
     ("bighead_carp", "Bighead carp"),
     ("grass_carp", "Grass carp"),
-    ("puti", "Puti"),
-    ("kalibaush", "Kalibaush"),
+    ("puti", "Puti (punti)"),
+    ("kalibaush", "Kalibaush (kalboush)"),
     ("pangas", "Pangas"),
-    ("other", "Other"),
+    ("other", "Other (Deshi / write-in)"),
 )
 
 FISH_SPECIES_CODES: frozenset[str] = frozenset(c for c, _ in AQUACULTURE_FISH_SPECIES_CHOICES)
@@ -331,10 +333,115 @@ FISH_STOCK_LEDGER_PL_NOTE = (
 _FISH_SPECIES_ALIASES: dict[str, str] = {
     "ruhi": "rui",
     "rohu": "rui",
+    "labeo_rohita": "rui",
+    "mrigala": "mrigal",
+    "cirrhinus_mrigala": "mrigal",
+    "mrigel": "mrigal",
+    "kalboush": "kalibaush",
+    "kalbasu": "kalibaush",
+    "labeo_calbasu": "kalibaush",
+    "punti": "puti",
     "general_carp": "common_carp",
     "pangasius": "pangas",
     "pangas_catfish": "pangas",
 }
+
+# Feeding profile groups for WorldFish / FAO-style % body-weight tables.
+FISH_SPECIES_FEEDING_PROFILE: dict[str, str] = {
+    "tilapia": "tilapia",
+    "pangas": "pangas",
+    "rui": "carp",
+    "catla": "carp",
+    "mrigal": "carp",
+    "common_carp": "carp",
+    "silver_carp": "carp",
+    "bighead_carp": "carp",
+    "grass_carp": "carp",
+    "puti": "carp",
+    "kalibaush": "carp",
+    "other": "carp",
+    "not_applicable": "tilapia",
+}
+
+
+def fish_species_feeding_profile(code: str | None) -> str:
+    """tilapia | carp | pangas — drives extension-style feeding bands."""
+    c = (code or "tilapia").strip().lower() or "tilapia"
+    c = _FISH_SPECIES_ALIASES.get(c, c)
+    return FISH_SPECIES_FEEDING_PROFILE.get(c, "carp")
+
+
+# WorldFish / FAO BD pond-culture style hints (advisory; managers adapt to farm SOP).
+FISH_SPECIES_CULTURE_HINTS: dict[str, dict[str, str]] = {
+    "tilapia": {
+        "niche": "Water column / mid — main feed consumer",
+        "harvest_target": "Often 200–400 g (market-dependent)",
+        "stocking_note": "Often 60–120 pcs/decimal in fertilized ponds (farm SOP)",
+    },
+    "rui": {
+        "niche": "Column feeder — Indian major carp",
+        "harvest_target": "Often 0.8–1.5 kg",
+        "stocking_note": "Polyculture: typically fewer heads than tilapia",
+    },
+    "catla": {
+        "niche": "Surface / zooplankton feeder",
+        "harvest_target": "Often 1–2+ kg",
+        "stocking_note": "Keep share modest vs rui/mrigal in classic 3-carp mix",
+    },
+    "mrigal": {
+        "niche": "Bottom feeder — Indian major carp",
+        "harvest_target": "Often 0.7–1.2 kg",
+        "stocking_note": "Complements rui/catla; do not overstock bottom layer",
+    },
+    "kalibaush": {
+        "niche": "Bottom / Deshi carp",
+        "harvest_target": "Market size varies by locality",
+        "stocking_note": "Usually a small polyculture share",
+    },
+    "puti": {
+        "niche": "Small Deshi / punti — often secondary",
+        "harvest_target": "Small market sizes",
+        "stocking_note": "Low density add-on in mixed ponds",
+    },
+    "pangas": {
+        "niche": "Air-breathing catfish — high biomass possible",
+        "harvest_target": "Often 0.8–1.5+ kg",
+        "stocking_note": "Use pangas feeding table; watch DO and waste load",
+    },
+    "common_carp": {
+        "niche": "Bottom omnivore",
+        "harvest_target": "Often 0.7–1.5 kg",
+        "stocking_note": "Can muddy water if overstocked",
+    },
+    "silver_carp": {
+        "niche": "Filter feeder (phytoplankton)",
+        "harvest_target": "Often 1–2+ kg",
+        "stocking_note": "Relies more on natural food; moderate artificial feed",
+    },
+    "bighead_carp": {
+        "niche": "Filter feeder (zooplankton)",
+        "harvest_target": "Often 1–2+ kg",
+        "stocking_note": "Pair with silver carp carefully",
+    },
+    "grass_carp": {
+        "niche": "Herbivore — vegetation control",
+        "harvest_target": "Often 1–3+ kg",
+        "stocking_note": "Needs plant matter or grass; not a full pellet monoculture",
+    },
+}
+
+POLYCULTURE_MIX_HINT = (
+    "Classic BD polyculture often combines tilapia (main feed) with Indian major carps "
+    "(rui / catla / mrigal) and a small Deshi share (puti / kalibaush). Feed demand is "
+    "summed per species using WorldFish-style % body-weight tables (carp rates are lower "
+    "than tilapia). Adjust mix to pond depth, fertility, and market."
+)
+
+
+def fish_species_culture_hint(code: str | None) -> dict[str, str] | None:
+    c = (code or "").strip().lower() or ""
+    c = _FISH_SPECIES_ALIASES.get(c, c)
+    return FISH_SPECIES_CULTURE_HINTS.get(c)
 
 
 def normalize_expense_category(raw: str | None) -> tuple[str | None, str | None]:

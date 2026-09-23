@@ -1127,10 +1127,25 @@ def aquaculture_fish_species(request):
     err = _aquaculture_access(request)
     if err:
         return err
-    return JsonResponse(
-        [{"id": c, "label": lbl} for c, lbl in AQUACULTURE_FISH_SPECIES_CHOICES],
-        safe=False,
+    from api.services.aquaculture_constants import (
+        FISH_SPECIES_CULTURE_HINTS,
+        fish_species_feeding_profile,
     )
+
+    rows = []
+    for c, lbl in AQUACULTURE_FISH_SPECIES_CHOICES:
+        hint = FISH_SPECIES_CULTURE_HINTS.get(c) or {}
+        rows.append(
+            {
+                "id": c,
+                "label": lbl,
+                "feeding_profile": fish_species_feeding_profile(c),
+                "niche": hint.get("niche"),
+                "harvest_target": hint.get("harvest_target"),
+                "stocking_note": hint.get("stocking_note"),
+            }
+        )
+    return JsonResponse(rows, safe=False)
 
 
 @csrf_exempt

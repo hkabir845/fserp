@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import PageLayout from '@/components/PageLayout'
 import { useCompany } from '@/contexts/CompanyContext'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
-import api, { fetchCurrentCompany } from '@/lib/api'
+import api, { ensureAccessTokenFresh, fetchCurrentCompany } from '@/lib/api'
 import { aquacultureT } from '@/lib/aquacultureI18n'
 import {
   isPermanentAquacultureCompany,
@@ -18,7 +18,6 @@ import {
 } from '@/lib/adibAndroidApp'
 import { isAquacultureNavUnlocked } from '@/navigation/erpAppMenu'
 import { ShieldAlert } from 'lucide-react'
-import { readStoredAccessToken } from '@/lib/authSession'
 
 function readSessionRoleAndPermissions(): {
   role: string | null
@@ -58,7 +57,7 @@ export default function AquacultureLayout({ children }: { children: React.ReactN
   const [navUnlocked, setNavUnlocked] = useState(false)
 
   const evaluateAccess = useCallback(async () => {
-    const token = readStoredAccessToken()
+    const token = await ensureAccessTokenFresh()
     if (!token) {
       router.replace('/login')
       return

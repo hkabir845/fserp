@@ -21,7 +21,13 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine, AquaculturePond, Company
+from api.models import (
+    AquacultureFishPondTransfer,
+    AquacultureFishPondTransferLine,
+    AquacultureFishSale,
+    AquaculturePond,
+    Company,
+)
 from api.services.aquaculture_data_bank_service import fiscal_period_for_end_date
 from api.services.aquaculture_fish_transfer_as_sale import ensure_fish_sale_for_transfer_line
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
@@ -100,6 +106,53 @@ def _reprice_and_mirror(company_id: int, lines: list) -> set[int]:
 
 def _fish_weights(lines: list) -> list[tuple[object, int]]:
     return [(ln, int(ln.fish_count or 0)) for ln in lines if int(ln.fish_count or 0) > 0]
+
+
+def _mirror_by_line_id(line_ids: list[int]) -> dict[int, AquacultureFishSale]:
+    if not line_ids:
+        return {}
+    return {
+        int(s.source_fish_pond_transfer_line_id): s
+        for s in AquacultureFishSale.objects.filter(source_fish_pond_transfer_line_id__in=line_ids)
+        if s.source_fish_pond_transfer_line_id is not None
+    }
+
+
+def _log_line_vs_mirror(stdout, lines: list) -> Decimal:
+    """
+    P&L income for invoiced IPT lines follows AquacultureFishSale.total_amount, not
+    line.sale_amount. Stale mirrors understate income and make a naive gap raise overshoot.
+    """
+    mirrors = _mirror_by_line_id([int(ln.id) for ln in lines])
+    line_sale_total = Decimal("0")
+    mirror_total = Decimal("0")
+    stale = 0
+    for ln in lines:
+        sale = _money_q(Decimal(str(ln.sale_amount or "0")))
+        cost = _money_q(Decimal(str(ln.cost_amount or "0")))
+        line_sale_total += sale if sale > 0 else cost
+        mir = mirrors.get(int(ln.id))
+        if mir is None:
+            stdout.write(
+                f"  line {ln.id}: cost={cost} sale={sale} mirror=MISSING"
+            )
+            stale += 1
+            continue
+        mir_amt = _money_q(Decimal(str(mir.total_amount or "0")))
+        mirror_total += mir_amt
+        drift = _money_q(sale - mir_amt) if sale > 0 else _money_q(cost - mir_amt)
+        if abs(drift) > _GAP_TOL:
+            stale += 1
+        inv = f" invoice#{mir.invoice_id}" if mir.invoice_id else " (no invoice)"
+        stdout.write(
+            f"  line {ln.id}: cost={cost} sale={sale} mirror={mir_amt}{inv} drift={drift}"
+        )
+    stdout.write(
+        f"Line vs mirror totals: line_pl={_money_q(line_sale_total)} "
+        f"mirror={_money_q(mirror_total)} drift={_money_q(line_sale_total - mirror_total)} "
+        f"stale_lines={stale}"
+    )
+    return _money_q(line_sale_total - mirror_total)
 
 
 def _split_by_fish(total: Decimal, weighted: list[tuple[object, int]]) -> list[Decimal]:
@@ -256,6 +309,9 @@ class Command(BaseCommand):
             lines = _transfer_lines_for_pond(
                 company_id, pond.id, period_start=period_start, period_end=period_end
             )
+            self.stdout.write("Before reprice — line sale vs IPT mirror (P&L uses mirror when present):")
+            _log_line_vs_mirror(self.stdout, lines)
+
             touched = _reprice_and_mirror(company_id, lines)
             self.stdout.write(
                 f"Repriced + mirrored {len(lines)} line(s) across {len(touched)} transfer(s)"
@@ -265,6 +321,9 @@ class Command(BaseCommand):
             lines = _transfer_lines_for_pond(
                 company_id, pond.id, period_start=period_start, period_end=period_end
             )
+            self.stdout.write("After reprice/mirror — line vs mirror:")
+            _log_line_vs_mirror(self.stdout, lines)
+
             row = _pond_pl_row(company_id, pond.id, period_start, period_end)
             gap = _pl_gap(row)
             self.stdout.write(
@@ -289,6 +348,7 @@ class Command(BaseCommand):
                 f"total cost_amount={total_xfer_cost}, total pl_effective={total_pl_amt}"
             )
 
+            gap_before_distribute = gap
             changes = _distribute_cost_delta(lines, gap)
             if not changes:
                 self.stderr.write(self.style.ERROR("No transfer lines in period to distribute gap to."))
@@ -339,6 +399,16 @@ class Command(BaseCommand):
                 f"After adjustment: income={row.get('income_total')} expense={row.get('expense_total')} "
                 f"net_profit={row.get('net_profit')} gap={gap_after}"
             )
+
+            # Fail closed if we made the imbalance worse (classic stale-mirror overshoot).
+            if abs(gap_after) > abs(gap_before_distribute) + _GAP_TOL:
+                self.stderr.write(
+                    self.style.ERROR(
+                        f"Adjustment worsened gap ({gap_before_distribute} -> {gap_after}); rolling back."
+                    )
+                )
+                transaction.set_rollback(True)
+                return
 
             if dry:
                 transaction.set_rollback(True)

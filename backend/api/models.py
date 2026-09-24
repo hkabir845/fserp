@@ -1966,6 +1966,12 @@ class Bill(models.Model):
             "cash = credit limit full, pay that same net by bank/cash now."
         ),
     )
+    is_landed_cost = models.BooleanField(
+        default=False,
+        help_text="When true, freight and duty are added to inventory cost instead of being expensed.",
+    )
+    freight_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    duty_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     stock_receipt_applied = models.BooleanField(
         default=False,
         help_text="Set when inventory receipt from this bill has been applied (tank + QOH).",
@@ -4462,3 +4468,105 @@ class FinancialAuditEvent(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValueError("FinancialAuditEvent rows are append-only and cannot be deleted.")
+
+
+class CreditNote(models.Model):
+    """Reverses part or all of a posted sale: revenue, receivable, stock, and cost."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="credit_notes")
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="credit_notes")
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="credit_notes")
+    credit_note_number = models.CharField(max_length=64)
+    credit_date = models.DateField()
+    status = models.CharField(max_length=32, default="posted")
+    reason = models.CharField(max_length=300, blank=True, default="")
+    amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    refunded_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    stock_restored = models.BooleanField(default=False)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="credit_notes",
+    )
+    refund_journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="credit_note_refunds",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "credit_note"
+        unique_together = [["company", "credit_note_number"]]
+
+
+class FiscalYearClose(models.Model):
+    """Closing journal that moves one year's profit into retained earnings (3100)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="fiscal_year_closes")
+    fiscal_year = models.PositiveIntegerField()
+    close_date = models.DateField()
+    net_income = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    opening_absorbed = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text="Retained-earnings opening cleared because it already held this year's profit.",
+    )
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fiscal_year_closes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "fiscal_year_close"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "fiscal_year"],
+                name="fiscal_year_close_company_year_uniq",
+            )
+        ]
+
+
+class BankStatement(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="bank_statements")
+    account = models.ForeignKey(
+        ChartOfAccount, on_delete=models.PROTECT, related_name="bank_statements"
+    )
+    statement_date = models.DateField()
+    ending_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "bank_statement"
+
+
+class BankStatementLine(models.Model):
+    statement = models.ForeignKey(
+        BankStatement, on_delete=models.CASCADE, related_name="lines"
+    )
+    line_date = models.DateField()
+    description = models.CharField(max_length=300, blank=True, default="")
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        help_text="Signed: positive is money in, negative is money out.",
+    )
+    matched_journal_line = models.ForeignKey(
+        JournalEntryLine,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bank_statement_lines",
+    )
+
+    class Meta:
+        db_table = "bank_statement_line"

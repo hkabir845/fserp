@@ -444,34 +444,23 @@ def compute_aquaculture_pl_summary_dict(
         cost = _money_q(Decimal(str(xr["cost_amount"] or 0)))
         sale_amt = _money_q(Decimal(str(xr["sale_amount"] or 0)))
         mirrored = mirrored_sale_by_line.get(line_id)
-        if mirrored is not None:
-            # Commercial view is the mirrored AquacultureFishSale (seller revenue).
-            # Buyer still carries the purchase price as transfer-in cost.
-            amount = _money_q(Decimal(str(mirrored["total_amount"] or 0)))
-            if amount <= 0:
-                amount = sale_amt if sale_amt > 0 else cost
-            if amount == 0:
-                continue
-            fp = int(xr["transfer__from_pond_id"])
-            tp = int(xr["to_pond_id"])
-            tc = xr["to_production_cycle_id"]
-            tc_key: int | None = int(tc) if tc is not None else None
-            transfer_in_by_pond[tp] += amount
-            trans_cycle_in[(tp, tc_key)] += amount
-            # Do not add transfer_out — seller income comes from AquacultureFishSale.
+        if mirrored is None:
+            # No pond-to-pond sale yet. Nursing cost stays on the source pond until
+            # the transfer is materialized as a sale (see materialize_fish_sales_for_company).
             continue
-        if cost == 0:
+        # Commercial view is the mirrored AquacultureFishSale (seller revenue).
+        # Buyer still carries the purchase price as transfer-in cost.
+        amount = _money_q(Decimal(str(mirrored["total_amount"] or 0)))
+        if amount <= 0:
+            amount = sale_amt if sale_amt > 0 else cost
+        if amount == 0:
             continue
-        fp = int(xr["transfer__from_pond_id"])
         tp = int(xr["to_pond_id"])
-        fc = xr["transfer__from_production_cycle_id"]
         tc = xr["to_production_cycle_id"]
-        fc_key: int | None = int(fc) if fc is not None else None
-        tc_key = int(tc) if tc is not None else None
-        transfer_in_by_pond[tp] += cost
-        transfer_out_by_pond[fp] += cost
-        trans_cycle_in[(tp, tc_key)] += cost
-        trans_cycle_out[(fp, fc_key)] += cost
+        tc_key: int | None = int(tc) if tc is not None else None
+        transfer_in_by_pond[tp] += amount
+        trans_cycle_in[(tp, tc_key)] += amount
+        # Do not add transfer_out — seller income comes from AquacultureFishSale.
 
     def _rev_q(pond_id: int):
         q = AquacultureFishSale.objects.filter(

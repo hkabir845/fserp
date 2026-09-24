@@ -27,7 +27,11 @@ from api.services.gl_posting import (
     _gl_station_id,
 )
 
-ADVANCE_TYPES = frozenset({"advance"})
+# Subledger credit on an advance is cash leaving (Dr 1150 / Cr cash).
+# A debit on an advance, or any recovery type, is cash coming back.
+ADVANCE_GIVEN_TYPES = frozenset({"advance", "staff_advance"})
+RECOVERY_TYPES = frozenset({"recovery", "advance_recovery"})
+ADVANCE_TYPES = ADVANCE_GIVEN_TYPES | RECOVERY_TYPES
 
 
 def employee_ledger_journal_number(entry_id: int) -> str:
@@ -39,11 +43,38 @@ def _money(value: Decimal) -> Decimal:
 
 
 def delete_employee_ledger_journal(company_id: int, entry_id: int) -> int:
+    from api.services.gl_posting import assert_period_open
+
+    row = EmployeeLedgerEntry.objects.filter(pk=entry_id, employee__company_id=company_id).first()
+    if row is not None:
+        assert_period_open(company_id, row.entry_date, action="delete")
     deleted, _ = JournalEntry.objects.filter(
         company_id=company_id,
         entry_number=employee_ledger_journal_number(entry_id),
     ).delete()
     return deleted
+
+
+def delete_manual_employee_ledger_entry(company_id: int, entry_id: int) -> None:
+    """Remove a manual ledger row and its journal so the subledger and 1150/2200 stay together."""
+    with transaction.atomic():
+        entry = (
+            EmployeeLedgerEntry.objects.select_for_update()
+            .filter(pk=entry_id, employee__company_id=company_id)
+            .first()
+        )
+        if entry is None:
+            raise GlPostingError("Employee ledger entry not found.")
+        if entry.payroll_run_id:
+            raise GlPostingError(
+                "Payroll lines are reversed from the payroll run, not deleted from the employee ledger."
+            )
+        delete_employee_ledger_journal(company_id, entry.id)
+        employee_id = entry.employee_id
+        entry.delete()
+        from api.services.employee_payroll_subledger import refresh_employee_balance
+
+        refresh_employee_balance(employee_id)
 
 
 def post_manual_employee_ledger_journal(
@@ -86,11 +117,14 @@ def post_manual_employee_ledger_journal(
             raise GlPostingError(
                 "Could not post a staff advance. Ensure account 1150 (Employee Advances) exists."
             )
-        if is_debit:
+        giving_advance = et in ADVANCE_GIVEN_TYPES and not is_debit
+        if et in RECOVERY_TYPES:
+            giving_advance = not is_debit
+        if giving_advance:
+            debit_acc, credit_acc = advance, cash
+        else:
             # Recovery: cash in, reduce the advance asset; subledger payable rises.
             debit_acc, credit_acc = cash, advance
-        else:
-            debit_acc, credit_acc = advance, cash
     elif is_debit:
         if not expense:
             raise GlPostingError(

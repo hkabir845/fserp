@@ -542,6 +542,25 @@ def employee_ledger_entries(request, employee_id: int):
     )
 
 
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@auth_required
+@require_company_id
+@require_permission("app.page.employees", methods=("DELETE",))
+def employee_ledger_entry_detail(request, employee_id: int, entry_id: int):
+    from api.services.employee_ledger_gl import delete_manual_employee_ledger_entry
+
+    if not EmployeeLedgerEntry.objects.filter(
+        pk=entry_id, employee_id=employee_id, employee__company_id=request.company_id
+    ).exists():
+        return JsonResponse({"detail": "Employee ledger entry not found"}, status=404)
+    try:
+        delete_manual_employee_ledger_entry(request.company_id, entry_id)
+    except GlPostingError as err:
+        return JsonResponse({"detail": err.detail}, status=400)
+    return JsonResponse({"detail": "Deleted"}, status=200)
+
+
 def _payroll_je_number(p: PayrollRun, attr: str) -> str:
     jid = getattr(p, f"{attr}_id", None)
     if not jid:

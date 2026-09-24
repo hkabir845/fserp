@@ -2727,26 +2727,88 @@ def refresh_item_quantity_on_hand_from_tanks(company_id: int, item_id: int) -> N
     Item.objects.filter(pk=item_id, company_id=company_id).update(quantity_on_hand=total)
 
 
+def _landed_charges(bill: Bill) -> Decimal:
+    if not getattr(bill, "is_landed_cost", False):
+        return Decimal("0")
+    freight = bill.freight_total or Decimal("0")
+    duty = bill.duty_total or Decimal("0")
+    return (freight + duty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _landed_cost_split(bill: Bill, other: Decimal) -> tuple[Decimal, Decimal]:
+    """How much of the non-tax header remainder is inventory cost, and how much stays expense."""
+    if not getattr(bill, "is_landed_cost", False) or other <= 0:
+        return Decimal("0"), other
+    charges = _landed_charges(bill)
+    cap = other if charges <= 0 else min(other, charges)
+    cap = cap.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return cap, (other - cap).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _capitalize_landed_cost(debit_rows: list, cap: Decimal) -> bool:
+    """Spread freight and duty onto inventory debits. Returns False when no inventory line exists."""
+    indexes = []
+    basis = Decimal("0")
+    for i, row in enumerate(debit_rows):
+        acc = row[0]
+        amt = row[1]
+        sub = (getattr(acc, "account_sub_type", None) or "").strip().lower()
+        code = (getattr(acc, "account_code", None) or "").strip()
+        if amt > 0 and (sub == "inventory" or code in (CODE_INV_FUEL, CODE_INV_SHOP, CODE_INV_BIO)):
+            indexes.append(i)
+            basis += amt
+    if not indexes or basis <= 0:
+        return False
+    running = Decimal("0")
+    for n, i in enumerate(indexes):
+        acc, amt, desc, meta, line_st = debit_rows[i]
+        if n == len(indexes) - 1:
+            share = (cap - running).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        else:
+            share = (cap * amt / basis).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            running += share
+        debit_rows[i] = (acc, (amt + share).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), desc, meta, line_st)
+    return True
+
+
 def _bill_line_receipt_value(bill: Bill, line: BillLine) -> Decimal:
     """Inventory receipt value that matches the GL debit after header tax/discount.
 
     Tax is pulled into 1170 and does not scale line costs. A header discount that makes
     ``total < sum(lines)`` does scale every line, so AVCO uses the same factor as the journal.
+    Freight and duty on a landed-cost bill are added to inventory lines, not expensed.
     """
     amt = line.amount if line.amount is not None else Decimal("0")
     if amt <= 0:
         return Decimal("0")
+    siblings = list(BillLine.objects.filter(bill_id=bill.id).select_related("item"))
     line_sum = Decimal("0")
-    for ln in BillLine.objects.filter(bill_id=bill.id).only("amount"):
+    for ln in siblings:
         a = ln.amount if ln.amount is not None else Decimal("0")
         if a > 0:
             line_sum += a
-    total = bill.total if bill.total is not None else Decimal("0")
-    if line_sum <= 0:
-        return amt
-    if line_sum > total:
-        return (amt * (total / line_sum)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return amt
+    goods_total = bill.total if bill.total is not None else Decimal("0")
+    charges = _landed_charges(bill)
+    goods_base = goods_total - (bill.tax_total or Decimal("0")) - charges
+    if goods_base < 0:
+        goods_base = goods_total
+    value = amt
+    if line_sum > 0 and goods_base > 0 and line_sum > goods_base:
+        value = (amt * (goods_base / line_sum)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    elif line_sum > goods_total and line_sum > 0 and charges <= 0:
+        value = (amt * (goods_total / line_sum)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if charges <= 0 or line.item_id is None:
+        return value
+    if not _item_receives_physical_stock(line.item):
+        return value
+    inv_basis = Decimal("0")
+    for ln in siblings:
+        if ln.item_id and ln.item and _item_receives_physical_stock(ln.item) and (ln.amount or 0) > 0:
+            inv_basis += ln.amount
+    if inv_basis <= 0:
+        return value
+    share = (charges * amt / inv_basis).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return (value + share).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def receipt_inventory_from_posted_bill(
@@ -3159,7 +3221,12 @@ def _build_bill_journal_lines(
                 return None
             debit_rows.append((vat_acc, vat_amt, memo_ap, rem_meta, rem_st))
         if other > 0:
-            debit_rows.append((exp, other, memo_ap, rem_meta, rem_st))
+            cap, leftover = _landed_cost_split(bill, other)
+            if cap > 0:
+                if not _capitalize_landed_cost(debit_rows, cap):
+                    leftover = (leftover + cap).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if leftover > 0:
+                debit_rows.append((exp, leftover, memo_ap, rem_meta, rem_st))
         sum_lines = total
     elif sum_lines > total:
         positive_rows = [row for row in debit_rows if row[1] > 0]

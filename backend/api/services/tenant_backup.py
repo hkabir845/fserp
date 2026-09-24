@@ -69,6 +69,8 @@ from api.models import (
     PondWarehouseStockReturnLine,
     BankAccount,
     BankDeposit,
+    BankStatement,
+    BankStatementLine,
     Bill,
     BillLine,
     BrainCompanyDocument,
@@ -80,11 +82,13 @@ from api.models import (
     CompanyJobType,
     CompanyRole,
     Contract,
+    CreditNote,
     Customer,
     Dispenser,
     Employee,
     EmployeeHandoverProfile,
     EmployeeLedgerEntry,
+    FiscalYearClose,
     FundTransfer,
     FixedAsset,
     FixedAssetDepreciationRun,
@@ -240,6 +244,10 @@ EXPECTED_BACKUP_MODELS: tuple[str, ...] = (
     "api.braincompanydocument",
     "api.braincompanysettings",
     "api.employeehandoverprofile",
+    "api.creditnote",
+    "api.fiscalyearclose",
+    "api.bankstatement",
+    "api.bankstatementline",
 )
 
 # Nullable FKs to JournalEntry that may appear before journal rows in the backup stream.
@@ -259,6 +267,9 @@ _DEFERRED_JOURNAL_ENTRY_FKS: dict[str, tuple[str, ...]] = {
     "api.aquaculturefishstockledger": ("journal_entry",),
     "api.aquaculturelandlordledgerentry": ("journal_entry",),
     "api.employeeledgerentry": ("journal_entry",),
+    "api.creditnote": ("journal_entry", "refund_journal_entry"),
+    "api.fiscalyearclose": ("journal_entry",),
+    "api.bankstatementline": ("matched_journal_line",),
     "api.aquaculturepondprofittransfer": ("journal_entry",),
 }
 
@@ -289,6 +300,9 @@ def _init_backup_row_exists_overrides() -> None:
             ).exists(),
             "api.invoiceline": lambda cid: InvoiceLine.objects.filter(invoice__company_id=cid).exists(),
             "api.billline": lambda cid: BillLine.objects.filter(bill__company_id=cid).exists(),
+            "api.bankstatementline": lambda cid: BankStatementLine.objects.filter(
+                statement__company_id=cid
+            ).exists(),
             "api.paymentinvoiceallocation": lambda cid: PaymentInvoiceAllocation.objects.filter(
                 payment__company_id=cid
             ).exists(),
@@ -588,6 +602,9 @@ def delete_tenant_company_data(company_id: int) -> None:
 
     TankDip.objects.filter(company_id=cid).delete()
     Payment.objects.filter(company_id=cid).delete()
+    CreditNote.objects.filter(company_id=cid).delete()
+    BankStatement.objects.filter(company_id=cid).delete()
+    FiscalYearClose.objects.filter(company_id=cid).delete()
     Bill.objects.filter(company_id=cid).delete()
     Invoice.objects.filter(company_id=cid).delete()
     ShiftSession.objects.filter(company_id=cid).delete()
@@ -813,6 +830,10 @@ def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> No
         PondWarehouseInterPondTransferLine.objects.filter(transfer__company_id=cid).order_by("id"),
     )
     _serialize_many(records, Invoice.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, CreditNote.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, FiscalYearClose.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, BankStatement.objects.filter(company_id=cid).order_by("id"))
+    _serialize_many(records, BankStatementLine.objects.filter(statement__company_id=cid).order_by("id"))
     _serialize_many(records, Bill.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, Payment.objects.filter(company_id=cid).order_by("id"))
     _serialize_many(records, TankDip.objects.filter(company_id=cid).order_by("id"))

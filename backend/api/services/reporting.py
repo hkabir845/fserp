@@ -1025,6 +1025,14 @@ def report_balance_sheet(
     unscoped_lines = (
         _je_lines_unscoped_dims(company_id) if unscoped_dims else None
     )
+    if pond_id is not None:
+        bs_moves = _movements_by_account(_je_lines_pond(company_id, pond_id), end=end)
+    elif unscoped_dims and unscoped_lines is not None:
+        bs_moves = _movements_by_account(unscoped_lines, end=end)
+    elif station_id is not None:
+        bs_moves = _movements_by_account(_je_lines_base(company_id, station_id), end=end)
+    else:
+        bs_moves = _movements_by_account(_je_lines_base(company_id), end=end)
     assets: list[dict[str, Any]] = []
     liabilities: list[dict[str, Any]] = []
     equity: list[dict[str, Any]] = []
@@ -1036,14 +1044,12 @@ def report_balance_sheet(
         st = (coa.account_sub_type or "").strip().lower()
         if t in ("income", "cost_of_goods_sold", "expense"):
             continue
-        if pond_id is not None:
-            bal = _balance_sheet_balance_from_pond_activity(coa, company_id, end, pond_id)
-        elif unscoped_dims and unscoped_lines is not None:
-            bal = _balance_sheet_balance_from_line_qs(coa, company_id, end, unscoped_lines)
-        elif station_id is not None:
-            bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
+        movement = bs_moves.get(coa.id)
+        if pond_id is not None or station_id is not None or unscoped_dims:
+            d, c = movement or (Decimal("0"), Decimal("0"))
+            bal = _signed_balance_sheet_activity(coa, d, c)
         else:
-            bal = _ending_balance(coa, company_id, end)
+            bal = _ending_balance_from_movement(coa, movement, as_of=end)
         if bal == 0:
             continue
 
@@ -1215,13 +1221,19 @@ def report_liabilities_detail(
     _ = start
     rows: list[dict[str, Any]] = []
     total = Decimal("0")
+    if station_id is not None:
+        liab_moves = _movements_by_account(_je_lines_base(company_id, station_id), end=end)
+    else:
+        liab_moves = _movements_by_account(_je_lines_base(company_id), end=end)
     for coa in ChartOfAccount.objects.filter(company_id=company_id).order_by("account_code"):
         if _balance_sheet_bucket_for_coa(coa) != "liability":
             continue
+        movement = liab_moves.get(coa.id)
         if station_id is not None:
-            bal = _balance_sheet_balance_from_site_activity(coa, company_id, end, station_id)
+            d, c = movement or (Decimal("0"), Decimal("0"))
+            bal = _signed_balance_sheet_activity(coa, d, c)
         else:
-            bal = _ending_balance(coa, company_id, end)
+            bal = _ending_balance_from_movement(coa, movement, as_of=end)
         if bal == 0:
             continue
         total += bal
@@ -2547,20 +2559,72 @@ def report_ar_aging(
     as_of = end
     customers_out: list[dict[str, Any]] = []
     totals = _empty_aging_buckets()
+    customers = list(
+        _reportable_customers(company_id).order_by("display_name", "company_name")
+    )
+    invoices = list(
+        _invoices_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
+        .filter(customer_id__in=[c.id for c in customers], invoice_date__lte=as_of)
+        .exclude(status__in=("draft", "void"))
+        .order_by("due_date", "invoice_date", "id")
+    )
+    invoice_ids = [inv.id for inv in invoices]
+    paid_as_of: dict[int, Decimal] = {}
+    paid_life: dict[int, Decimal] = {}
+    credited: dict[int, Decimal] = {}
+    if invoice_ids:
+        for row in (
+            PaymentInvoiceAllocation.objects.filter(
+                invoice_id__in=invoice_ids,
+                payment__company_id=company_id,
+                payment__payment_date__lte=as_of,
+            )
+            .values("invoice_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            paid_as_of[int(row["invoice_id"])] = row["total"] or Decimal("0")
+        for row in (
+            PaymentInvoiceAllocation.objects.filter(
+                invoice_id__in=invoice_ids, payment__company_id=company_id
+            )
+            .values("invoice_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            paid_life[int(row["invoice_id"])] = row["total"] or Decimal("0")
+        from api.models import CreditNote
 
-    for c in _reportable_customers(company_id).order_by(
-        "display_name", "company_name"
-    ):
+        for row in (
+            CreditNote.objects.filter(
+                company_id=company_id,
+                invoice_id__in=invoice_ids,
+                status="posted",
+                credit_date__lte=as_of,
+            )
+            .values("invoice_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            credited[int(row["invoice_id"])] = row["total"] or Decimal("0")
+    invoices_by_customer: dict[int, list] = defaultdict(list)
+    for inv in invoices:
+        invoices_by_customer[inv.customer_id].append(inv)
+
+    for c in customers:
         buckets = _empty_aging_buckets()
         documents: list[dict[str, Any]] = []
-        for inv in (
-            _invoices_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
-            .filter(customer_id=c.id, invoice_date__lte=as_of)
-            .exclude(status__in=("draft", "void"))
-            .order_by("due_date", "invoice_date", "id")
-        ):
+        for inv in invoices_by_customer.get(c.id, []):
             # As-of aging: an invoice paid after the end date was still receivable then.
-            open_amt = invoice_open_amount_as_of(inv, company_id, as_of)
+            total_amt = inv.total or Decimal("0")
+            if total_amt <= 0:
+                continue
+            if (inv.status or "") == "paid" and paid_life.get(inv.id, Decimal("0")) <= 0:
+                open_amt = Decimal("0")
+            else:
+                open_amt = max(
+                    Decimal("0"),
+                    total_amt
+                    - paid_as_of.get(inv.id, Decimal("0"))
+                    - credited.get(inv.id, Decimal("0")),
+                )
             if open_amt <= 0:
                 continue
             due = inv.due_date or inv.invoice_date
@@ -2640,20 +2704,78 @@ def report_ap_aging(
     as_of = end
     vendors_out: list[dict[str, Any]] = []
     totals = _empty_aging_buckets()
+    vendors = list(
+        _reportable_vendors(company_id).order_by("company_name", "display_name")
+    )
+    bills = list(
+        _bills_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
+        .filter(vendor_id__in=[v.id for v in vendors], bill_date__lte=as_of)
+        .exclude(status__in=("draft", "void"))
+        .order_by("due_date", "bill_date", "id")
+    )
+    bill_ids = [b.id for b in bills]
+    bill_paid_as_of: dict[int, Decimal] = {}
+    bill_paid_life: dict[int, Decimal] = {}
+    if bill_ids:
+        for row in (
+            PaymentBillAllocation.objects.filter(
+                bill_id__in=bill_ids,
+                payment__company_id=company_id,
+                payment__payment_date__lte=as_of,
+            )
+            .values("bill_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            bill_paid_as_of[int(row["bill_id"])] = row["total"] or Decimal("0")
+        for row in (
+            PaymentBillAllocation.objects.filter(
+                bill_id__in=bill_ids, payment__company_id=company_id
+            )
+            .values("bill_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            bill_paid_life[int(row["bill_id"])] = row["total"] or Decimal("0")
+        from api.models import VendorCredit
 
-    for v in _reportable_vendors(company_id).order_by(
-        "company_name", "display_name"
-    ):
+        for row in (
+            VendorCredit.objects.filter(
+                company_id=company_id, bill_id__in=bill_ids, credit_date__lte=as_of
+            )
+            .values("bill_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            bid = int(row["bill_id"])
+            bill_paid_as_of[bid] = bill_paid_as_of.get(bid, Decimal("0")) + (
+                row["total"] or Decimal("0")
+            )
+        for row in (
+            VendorCredit.objects.filter(company_id=company_id, bill_id__in=bill_ids)
+            .values("bill_id")
+            .annotate(total=Coalesce(Sum("amount"), Decimal("0")))
+        ):
+            bid = int(row["bill_id"])
+            bill_paid_life[bid] = bill_paid_life.get(bid, Decimal("0")) + (
+                row["total"] or Decimal("0")
+            )
+    bills_by_vendor: dict[int, list] = defaultdict(list)
+    for bill in bills:
+        bills_by_vendor[bill.vendor_id].append(bill)
+
+    for v in vendors:
         buckets = _empty_aging_buckets()
         documents: list[dict[str, Any]] = []
-        for bill in (
-            _bills_for_subledger_scope(company_id, station_id=station_id, pond_id=pond_id)
-            .filter(vendor_id=v.id, bill_date__lte=as_of)
-            .exclude(status__in=("draft", "void"))
-            .order_by("due_date", "bill_date", "id")
-        ):
+        for bill in bills_by_vendor.get(v.id, []):
             # As-of aging: a bill paid after the end date was still payable then.
-            open_amt = bill_open_amount_as_of(bill, company_id, as_of)
+            total_amt = bill.total or Decimal("0")
+            if total_amt <= 0:
+                continue
+            if (bill.status or "") == "paid" and bill_paid_life.get(bill.id, Decimal("0")) <= 0:
+                open_amt = Decimal("0")
+            else:
+                open_amt = max(
+                    Decimal("0"),
+                    total_amt - bill_paid_as_of.get(bill.id, Decimal("0")),
+                )
             if open_amt <= 0:
                 continue
             due = bill.due_date or bill.bill_date

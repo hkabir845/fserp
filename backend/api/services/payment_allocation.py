@@ -68,14 +68,21 @@ def total_allocated_for_invoice(inv: Invoice, company_id: int) -> Decimal:
     return total_allocated_to_invoice(company_id, inv.id)
 
 
+def _posted_credits_for_invoice(inv: Invoice, company_id: int, as_of=None) -> Decimal:
+    from api.services.credit_note import posted_credit_total
+
+    return posted_credit_total(company_id, inv.id, as_of=as_of)
+
+
 def invoice_open_amount(inv: Invoice, company_id: int) -> Decimal:
-    """Remaining invoice total not covered by payment allocations."""
+    """Remaining invoice total not covered by payments or posted credit notes."""
     # Mirrors bill_open_amount: a voided invoice is not a receivable.
     if inv.status in ("draft", "void", "paid"):
         return Decimal("0")
     total = inv.total or Decimal("0")
     paid = total_allocated_for_invoice(inv, company_id)
-    return max(Decimal("0"), total - paid)
+    credited = _posted_credits_for_invoice(inv, company_id)
+    return max(Decimal("0"), total - paid - credited)
 
 
 def total_allocated_to_invoice_as_of(company_id: int, invoice_id: int, as_of) -> Decimal:
@@ -109,7 +116,8 @@ def invoice_open_amount_as_of(inv: Invoice, company_id: int, as_of) -> Decimal:
         # Settled at the counter (cash/POS): the sale posted straight to cash, never to A/R.
         return Decimal("0")
     paid = total_allocated_to_invoice_as_of(company_id, inv.id, as_of)
-    return max(Decimal("0"), total - paid)
+    credited = _posted_credits_for_invoice(inv, company_id, as_of=as_of)
+    return max(Decimal("0"), total - paid - credited)
 
 
 def invoice_balance_due(inv: Invoice, company_id: int) -> Decimal:

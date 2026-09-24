@@ -170,11 +170,14 @@ def _balance_due(bill: Bill) -> Decimal:
 
 
 def _refresh_bill_totals_from_lines(bill: Bill) -> None:
-    """Subtotal = sum(line amounts); total = subtotal + header tax_total."""
+    """Subtotal = sum(line amounts); total adds tax and, on a landed-cost bill, freight and duty."""
     sub = bill.lines.aggregate(s=Sum("amount"))["s"] or Decimal("0")
     tax = bill.tax_total or Decimal("0")
+    extra = Decimal("0")
+    if getattr(bill, "is_landed_cost", False):
+        extra = (bill.freight_total or Decimal("0")) + (bill.duty_total or Decimal("0"))
     bill.subtotal = sub
-    bill.total = sub + tax
+    bill.total = sub + tax + extra
     bill.save(update_fields=["subtotal", "total", "updated_at"])
 
 
@@ -738,6 +741,9 @@ def _bill_to_json(
         "status": b.status,
         "subtotal": str(sub),
         "tax_total": str(tax),
+        "is_landed_cost": bool(getattr(b, "is_landed_cost", False)),
+        "freight_total": str(getattr(b, "freight_total", None) or Decimal("0")),
+        "duty_total": str(getattr(b, "duty_total", None) or Decimal("0")),
         "total": str(total),
         # Frontend-friendly aliases (QuickBooks / Xero style)
         "tax_amount": str(tax),
@@ -1126,6 +1132,9 @@ def bills_create(request):
                 status=status,
                 subtotal=_decimal(body.get("subtotal")),
                 tax_total=tax_total,
+                is_landed_cost=bool(body.get("is_landed_cost")),
+                freight_total=_decimal(body.get("freight_total")),
+                duty_total=_decimal(body.get("duty_total")),
                 total=_decimal(body.get("total_amount", body.get("total"))),
                 truck_transport_amount=truck_amount,
                 actual_lorry_fare=parse_actual_lorry_fare(body),
@@ -1292,6 +1301,12 @@ def bill_detail(request, bill_id: int):
         if "actual_lorry_fare" in body or "lorry_payment" in body:
             b.actual_lorry_fare = parse_actual_lorry_fare(body)
         b.tax_total = _decimal(body.get("tax_amount", body.get("tax_total")), b.tax_total)
+        if "is_landed_cost" in body:
+            b.is_landed_cost = bool(body.get("is_landed_cost"))
+        if "freight_total" in body:
+            b.freight_total = _decimal(body.get("freight_total"), b.freight_total)
+        if "duty_total" in body:
+            b.duty_total = _decimal(body.get("duty_total"), b.duty_total)
         old_bill_status = b.status
         if "status" in body:
             new_bill_status, status_err = _validated_bill_status(body.get("status"), b.status)

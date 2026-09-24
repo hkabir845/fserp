@@ -1,12 +1,13 @@
 """
 Balance a nursing pond P&L by spreading unallocated batch cost to fingerling transfer lines.
 
-When nursing expenses exceed inter-pond transfer income (negative net profit), this command:
+When nursing expenses and inter-pond transfer income disagree, this command:
   1. Optionally resyncs batch transfer costs from the nursing cost pool
-  2. Distributes any remaining gap across outgoing transfer lines in the P&L period
-     (proportional to fish count), raising both cost_amount and sale_amount so pond P&L
-     income actually moves (P&L prefers sale_amount / IPT mirror over cost)
-  3. Refreshes mirrored AquacultureFishSale rows and reposts transfer GL
+  2. Reprices lines (cost + company inter-pond margin/kg) and refreshes fish-sale
+     mirrors — GL always re-applies that price rule, so sale_amount alone cannot stick
+  3. Remeasures the P&L gap, then raises/lowers in-period ``cost_amount`` (by fish count)
+     so that after the same reprice, income lands on expense
+  4. Reprices, refreshes mirrors, and reposts transfer GL
 
 Usage (from backend/, venv active):
   python manage.py reconcile_nursing_pond_pl_balance --pond-code P07 --dry-run
@@ -24,8 +25,12 @@ from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferL
 from api.services.aquaculture_data_bank_service import fiscal_period_for_end_date
 from api.services.aquaculture_fish_transfer_as_sale import ensure_fish_sale_for_transfer_line
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
+from api.services.aquaculture_internal_transfer_price import apply_internal_prices_to_transfer
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_costs
+
+# Allow up to ৳1: cost/kg rate quantization (4 dp) can leave a few paisa vs expense.
+_GAP_TOL = Decimal("1.00")
 
 
 def _money_q(d: Decimal) -> Decimal:
@@ -49,13 +54,13 @@ def _pond_pl_row(company_id: int, pond_id: int, start: date, end: date) -> dict:
 
 
 def _pl_gap(row: dict) -> Decimal:
+    """Positive = expense exceeds income (deficit); negative = surplus income."""
     income = _money_q(Decimal(str(row.get("income_total") or "0")))
     expense = _money_q(Decimal(str(row.get("expense_total") or "0")))
     return _money_q(expense - income)
 
 
 def _pl_effective_amount(line: AquacultureFishPondTransferLine) -> Decimal:
-    """Match aquaculture_pl_service: sale_amount wins over cost when set."""
     sale = _money_q(Decimal(str(line.sale_amount or "0")))
     if sale > 0:
         return sale
@@ -80,57 +85,73 @@ def _transfer_lines_for_pond(
     return list(qs.select_related("transfer", "to_pond").order_by("transfer__transfer_date", "id"))
 
 
-def _distribute_gap_to_lines(
-    lines: list,
-    gap: Decimal,
-) -> list[tuple[object, Decimal, Decimal, Decimal, Decimal]]:
-    """
-    Return (line, old_cost, new_cost, old_sale, new_sale) for lines that change.
+def _reprice_and_mirror(company_id: int, lines: list) -> set[int]:
+    """Apply cost+margin pricing, refresh fish-sale mirrors. Returns touched transfer ids."""
+    touched: set[int] = set()
+    for ln in lines:
+        touched.add(int(ln.transfer_id))
+    for tid in sorted(touched):
+        tr = AquacultureFishPondTransfer.objects.prefetch_related("lines").get(pk=tid)
+        apply_internal_prices_to_transfer(company_id, tr)
+        for line in tr.lines.select_related("to_pond", "transfer").all():
+            ensure_fish_sale_for_transfer_line(line, transfer=tr)
+    return touched
 
-    Bump is applied to both cost_amount and the P&L-effective sale side so nursing
-    income and grow-out transfer-in stay aligned.
-    """
-    active = [ln for ln in lines if int(ln.fish_count or 0) > 0]
-    if not active or gap <= 0:
+
+def _fish_weights(lines: list) -> list[tuple[object, int]]:
+    return [(ln, int(ln.fish_count or 0)) for ln in lines if int(ln.fish_count or 0) > 0]
+
+
+def _split_by_fish(total: Decimal, weighted: list[tuple[object, int]]) -> list[Decimal]:
+    if not weighted:
         return []
-
-    total_fish = sum(int(ln.fish_count or 0) for ln in active)
-    if total_fish <= 0:
-        return []
-
-    bumps: list[Decimal] = []
+    total_fish = sum(fc for _, fc in weighted)
+    parts: list[Decimal] = []
     running = Decimal("0")
-    for i, ln in enumerate(active):
-        fc = int(ln.fish_count or 0)
-        if i == len(active) - 1:
-            bump = _money_q(gap - running)
+    for i, (_, fc) in enumerate(weighted):
+        if i == len(weighted) - 1:
+            parts.append(_money_q(total - running))
         else:
-            bump = _money_q(gap * Decimal(fc) / Decimal(total_fish))
-            running += bump
-        bumps.append(bump)
+            part = _money_q(total * Decimal(fc) / Decimal(total_fish))
+            running += part
+            parts.append(part)
+    return parts
 
-    changes: list[tuple[object, Decimal, Decimal, Decimal, Decimal]] = []
-    for ln, bump in zip(active, bumps):
-        if bump <= 0:
+
+def _distribute_cost_delta(
+    lines: list,
+    delta: Decimal,
+) -> list[tuple[object, Decimal, Decimal]]:
+    """
+    Spread ``delta`` onto ``cost_amount`` by fish count.
+
+    Sale is not set here — ``apply_internal_prices_to_transfer`` owns sale
+    (cost + margin/kg), and GL re-runs that rule on every post.
+    """
+    active = _fish_weights(lines)
+    if not active or delta == 0:
+        return []
+
+    parts = _split_by_fish(delta, active)
+    changes: list[tuple[object, Decimal, Decimal]] = []
+    for (ln, _), part in zip(active, parts):
+        if part == 0:
             continue
         old_cost = _money_q(Decimal(str(ln.cost_amount or "0")))
-        old_sale = _money_q(Decimal(str(ln.sale_amount or "0")))
-        new_cost = _money_q(old_cost + bump)
-        # Keep sale in lockstep with cost when sale was already priced or when P&L
-        # already uses cost (sale==0). If sale was 0, leave it 0 so cost remains the
-        # P&L driver — unless cost alone wouldn't move income (sale was the driver).
-        if old_sale > 0:
-            new_sale = _money_q(old_sale + bump)
-        else:
-            new_sale = old_sale
-        changes.append((ln, old_cost, new_cost, old_sale, new_sale))
+        new_cost = _money_q(old_cost + part)
+        if new_cost < 0:
+            new_cost = Decimal("0.00")
+        if new_cost == old_cost:
+            continue
+        changes.append((ln, old_cost, new_cost))
     return changes
 
 
 class Command(BaseCommand):
     help = (
-        "Balance nursing pond income vs expense by increasing fingerling transfer line "
-        "cost/sale amounts (period-scoped) and reposting GL."
+        "Balance nursing pond income vs expense by adjusting fingerling transfer "
+        "cost_amount (period-scoped), repricing sale via the inter-pond margin rule, "
+        "syncing IPT mirrors, and reposting GL."
     )
 
     def add_arguments(self, parser):
@@ -214,10 +235,6 @@ class Command(BaseCommand):
             f"net_profit={row.get('net_profit')} gap(expense-income)={gap}"
         )
 
-        if gap <= Decimal("0.01"):
-            self.stdout.write(self.style.SUCCESS("Pond P&L already balanced (gap <= 0.01)."))
-            return
-
         gap_after = gap
         with transaction.atomic():
             if not options["skip_resync"]:
@@ -236,17 +253,33 @@ class Command(BaseCommand):
                     f"net_profit={row.get('net_profit')} gap={gap}"
                 )
 
-            if gap <= Decimal("0.01"):
+            lines = _transfer_lines_for_pond(
+                company_id, pond.id, period_start=period_start, period_end=period_end
+            )
+            touched = _reprice_and_mirror(company_id, lines)
+            self.stdout.write(
+                f"Repriced + mirrored {len(lines)} line(s) across {len(touched)} transfer(s)"
+            )
+
+            # Reload after reprice mutated sale_amount.
+            lines = _transfer_lines_for_pond(
+                company_id, pond.id, period_start=period_start, period_end=period_end
+            )
+            row = _pond_pl_row(company_id, pond.id, period_start, period_end)
+            gap = _pl_gap(row)
+            self.stdout.write(
+                f"After reprice/mirror: income={row.get('income_total')} expense={row.get('expense_total')} "
+                f"net_profit={row.get('net_profit')} gap={gap}"
+            )
+
+            if abs(gap) <= _GAP_TOL:
                 if not dry:
-                    self._repost_gl(company_id, pond.id, period_start, period_end)
-                self.stdout.write(self.style.SUCCESS("Balanced after resync."))
+                    self._repost_gl(company_id, pond.id, period_start, period_end, only_ids=touched)
+                self.stdout.write(self.style.SUCCESS("Pond P&L balanced after reprice/mirror."))
                 if dry:
                     transaction.set_rollback(True)
                 return
 
-            lines = _transfer_lines_for_pond(
-                company_id, pond.id, period_start=period_start, period_end=period_end
-            )
             total_xfer_cost = _money_q(
                 sum((Decimal(str(ln.cost_amount or "0")) for ln in lines), Decimal("0"))
             )
@@ -256,33 +289,36 @@ class Command(BaseCommand):
                 f"total cost_amount={total_xfer_cost}, total pl_effective={total_pl_amt}"
             )
 
-            changes = _distribute_gap_to_lines(lines, gap)
+            changes = _distribute_cost_delta(lines, gap)
             if not changes:
                 self.stderr.write(self.style.ERROR("No transfer lines in period to distribute gap to."))
                 if dry:
                     transaction.set_rollback(True)
                 return
 
-            self.stdout.write(f"Distributing gap {gap} across {len(changes)} line(s):")
+            verb = "Raising cost" if gap > 0 else "Lowering cost"
+            self.stdout.write(f"{verb} by {abs(gap)} across {len(changes)} line(s) (sale follows margin rule):")
             touched_transfer_ids: set[int] = set()
-            for ln, old_cost, new_cost, old_sale, new_sale in changes:
+            for ln, old_cost, new_cost in changes:
                 dest = ln.to_pond.code or ln.to_pond.name
-                bump = _money_q(new_cost - old_cost)
                 self.stdout.write(
                     f"  line {ln.id} xfer#{ln.transfer_id} -> {dest} fish={ln.fish_count}: "
-                    f"cost {old_cost} -> {new_cost} (+{bump}); "
-                    f"sale {old_sale} -> {new_sale}"
+                    f"cost {old_cost} -> {new_cost}"
                 )
-                # Always mutate in-memory so dry-run P&L measurement is real (rolled back later).
                 ln.cost_amount = new_cost
-                if new_sale != old_sale:
-                    ln.sale_amount = new_sale
-                update_fields = ["cost_amount"]
-                if new_sale != old_sale:
-                    update_fields.append("sale_amount")
-                ln.save(update_fields=update_fields)
-                ensure_fish_sale_for_transfer_line(ln, transfer=ln.transfer)
+                ln.save(update_fields=["cost_amount"])
                 touched_transfer_ids.add(int(ln.transfer_id))
+
+            _reprice_and_mirror(company_id, lines)
+            lines = _transfer_lines_for_pond(
+                company_id, pond.id, period_start=period_start, period_end=period_end
+            )
+            for ln in lines:
+                if int(ln.transfer_id) in touched_transfer_ids:
+                    self.stdout.write(
+                        f"  line {ln.id}: sale now {_money_q(Decimal(str(ln.sale_amount or 0)))} "
+                        f"(cost {_money_q(Decimal(str(ln.cost_amount or 0)))})"
+                    )
 
             if not dry:
                 gl_stats = self._repost_gl(
@@ -291,6 +327,11 @@ class Command(BaseCommand):
                 self.stdout.write(
                     f"GL repost: posted={gl_stats['posted']} skipped={gl_stats['skipped']}"
                 )
+                # GL re-applies internal prices; refresh mirrors one last time.
+                lines = _transfer_lines_for_pond(
+                    company_id, pond.id, period_start=period_start, period_end=period_end
+                )
+                _reprice_and_mirror(company_id, [ln for ln in lines if int(ln.transfer_id) in touched_transfer_ids])
 
             row = _pond_pl_row(company_id, pond.id, period_start, period_end)
             gap_after = _pl_gap(row)
@@ -303,13 +344,13 @@ class Command(BaseCommand):
                 transaction.set_rollback(True)
                 self.stdout.write(self.style.WARNING("DRY RUN — rolled back"))
 
-        if gap_after <= Decimal("0.01"):
+        if abs(gap_after) <= _GAP_TOL:
             self.stdout.write(self.style.SUCCESS("Nursing pond P&L balanced."))
         else:
             self.stdout.write(
                 self.style.WARNING(
                     f"Remaining gap {gap_after} — may need manual review "
-                    "(check sale_amount / IPT mirrors still override cost)."
+                    "(other income/expense outside transfer lines, or GL caps)."
                 )
             )
 

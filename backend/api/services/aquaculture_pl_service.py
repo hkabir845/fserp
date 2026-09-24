@@ -479,6 +479,7 @@ def compute_aquaculture_pl_summary_dict(
             pond_id=pond_id,
             sale_date__gte=start,
             sale_date__lte=end,
+            invoice_id__isnull=False,
         )
         if cycle_filter_id is not None:
             q = q.filter(production_cycle_id=cycle_filter_id)
@@ -892,6 +893,7 @@ def compute_aquaculture_pl_summary_dict(
                         production_cycle_id=c.id,
                         sale_date__gte=start,
                         sale_date__lte=end,
+                        invoice_id__isnull=False,
                     ).aggregate(t=Sum("total_amount"))["t"]
                     or Decimal("0")
                 )
@@ -945,6 +947,7 @@ def compute_aquaculture_pl_summary_dict(
                     production_cycle__isnull=True,
                     sale_date__gte=start,
                     sale_date__lte=end,
+                    invoice_id__isnull=False,
                 ).aggregate(t=Sum("total_amount"))["t"]
                 or Decimal("0")
             )

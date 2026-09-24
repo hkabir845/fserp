@@ -692,9 +692,10 @@ def item_cogs_unit_cost(company_id: int, item: Optional[Item]) -> Decimal:
       1. Item.cost                              — the carried AVCO cost (see item_inventory_unit_cost)
       2. Most recent posted purchase unit price — last actual buy price
       3. Opening stock unit cost                — initial valuation
-      4. Selling price (unit_price)             — last-resort guarantee (zero-margin sale)
 
-    Returns 0 only when the item is missing or has no cost, no purchase history, and no price.
+    Selling price is not a cost. Using it credited inventory for a margin that was
+    never purchased and drove the control account credit while quantity stayed put.
+    Returns 0 when the item is missing or has no cost, no purchase history, and no opening cost.
     """
     if not item:
         return Decimal("0")
@@ -718,7 +719,7 @@ def item_cogs_unit_cost(company_id: int, item: Optional[Item]) -> Decimal:
     opening = item.opening_stock_unit_cost or Decimal("0")
     if opening > 0:
         return opening
-    return item.unit_price or Decimal("0")
+    return Decimal("0")
 
 
 def item_has_cost_basis(company_id: int, item: Optional[Item]) -> bool:
@@ -744,23 +745,21 @@ def item_has_cost_basis(company_id: int, item: Optional[Item]) -> bool:
 
 def item_should_relieve_cogs(company_id: int, item: Optional[Item]) -> bool:
     """
-    Whether a sold line should post COGS: any physical-stock item, or any item that
-    carries a real cost basis even if it is not stock-tracked.
+    Whether a sold line should post COGS: a physical-stock item that has a real cost
+    basis. The credit lands on the inventory asset, so it is only valid when that
+    asset was capitalized.
 
-    Gap closure: explicit non-inventory *goods* (item_type="non_inventory") also relieve
-    COGS whenever a unit cost can be determined (incl. the selling-price last resort in
-    ``item_cogs_unit_cost``), so the P&L never shows non-inventory goods sold without a
-    matching Cost of Goods Sold. Services (item_type="service") carry no COGS.
+    Non-inventory goods are expensed on purchase. Crediting shop inventory for them
+    (at cost or at selling price) drives the control account credit with nothing on
+    hand. Services carry no COGS.
     """
     if not item:
         return False
-    if normalize_item_type(getattr(item, "item_type", None)) == TYPE_SERVICE:
+    if normalize_item_type(getattr(item, "item_type", None)) in (TYPE_SERVICE, TYPE_NON_INVENTORY):
         return False
-    if item_tracks_physical_stock(item) or item_has_cost_basis(company_id, item):
-        return True
-    if normalize_item_type(getattr(item, "item_type", None)) == TYPE_NON_INVENTORY:
-        return item_cogs_unit_cost(company_id, item) > 0
-    return False
+    if not item_tracks_physical_stock(item):
+        return False
+    return item_has_cost_basis(company_id, item)
 
 
 def apply_weighted_average_cost_on_receipt(

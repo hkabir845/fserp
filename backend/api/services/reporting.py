@@ -46,6 +46,7 @@ from api.services.gl_posting import (
     CODE_INV_SHOP,
     backfill_invoice_cogs_journals,
     item_cogs_unit_cost,
+    item_inventory_cost_strict,
     item_inventory_unit_cost,
     item_should_relieve_cogs,
 )
@@ -803,9 +804,7 @@ def _balance_sheet_balance_from_site_activity(
     Matches site-scoped trial balance / P&L basis.
     """
     d, c = _movement_through(company_id, coa.id, as_of, station_id)
-    if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
-        return d - c
-    return c - d
+    return _signed_balance_sheet_activity(coa, d, c)
 
 
 def _movement_through_pond(
@@ -831,9 +830,7 @@ def _balance_sheet_balance_from_pond_activity(
     Pond analogue of ``_balance_sheet_balance_from_site_activity``.
     """
     d, c = _movement_through_pond(company_id, coa.id, as_of, pond_id)
-    if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
-        return d - c
-    return c - d
+    return _signed_balance_sheet_activity(coa, d, c)
 
 
 def _internal_trade_realized_margin_through(company_id: int, as_of: date) -> Decimal:
@@ -946,6 +943,25 @@ def _unknown_type_balance_sheet_bucket(
     if "asset" in t or "receivable" in t or "inventory" in t or "bank" in t:
         return "asset"
     return "equity"
+
+
+def _signed_balance_sheet_activity(
+    coa: ChartOfAccount, d: Decimal, c: Decimal
+) -> Decimal:
+    """Sign a station or pond movement the way the company sheet signs it.
+
+    Contra-assets (accumulated depreciation, allowance for doubtful accounts) are
+    credit-normal. Signing them by normal balance prints a positive asset and
+    overstates the section by twice the credit. Asset rows are debits minus credits.
+    """
+    bucket = _balance_sheet_bucket_for_coa(coa)
+    if bucket == "asset":
+        return d - c
+    if bucket in ("liability", "equity"):
+        return c - d
+    if is_debit_normal_chart_type(coa.account_type, coa.account_sub_type):
+        return d - c
+    return c - d
 
 
 def _balance_sheet_bucket_for_coa(coa: ChartOfAccount) -> str | None:
@@ -1722,6 +1738,24 @@ def _internal_elimination_block(
     }
 
 
+def _estimated_unposted_cogs(company_id: int, start: date, end: date) -> Decimal:
+    """Qty × real unit cost of invoiced goods in the period. Does not post a journal."""
+    total = Decimal("0")
+    lines = InvoiceLine.objects.filter(
+        invoice__company_id=company_id,
+        invoice__invoice_date__gte=start,
+        invoice__invoice_date__lte=end,
+        item__isnull=False,
+    ).exclude(invoice__status__in=("draft", "void")).select_related("item")
+    for line in lines:
+        cost = item_cogs_unit_cost(company_id, line.item)
+        if cost <= 0:
+            continue
+        qty = line.quantity or Decimal("0")
+        total += qty * cost
+    return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def report_income_statement(
     company_id: int,
     start: date,
@@ -1867,11 +1901,11 @@ def report_income_statement(
     note += _pl_scope_accounting_note(
         station_id, pond_id, pond_name=pond_name, unscoped_dims=unscoped_dims
     )
+    est_cogs = _estimated_unposted_cogs(company_id, start, end)
     if tcogs <= 0 and est_cogs > 0:
         note += (
             f" Inventory sales in this period imply about {_f(est_cogs)} in cost (qty × item cost) "
-            "but no COGS journal could be posted — check that the items have COGS (5xxx) and "
-            "inventory (12xx) accounts configured so AUTO-INV-*-COGS journals can be created."
+            "but no COGS journal is posted. Post the sale's COGS journal; this report does not create one."
         )
     out_is: dict[str, Any] = {
         "report_id": "income-statement",
@@ -5389,14 +5423,9 @@ def report_tank_dip_variance(
             book = _d(tank.current_stock)
         var = phy - book
         prod = tank.product if tank.product_id else None
-        rate = item_inventory_unit_cost(prod)
+        rate = item_inventory_cost_strict(prod)
         var_val = var * rate
-        if prod is not None and (prod.cost or Decimal("0")) > 0:
-            v_basis = "cost"
-        elif prod is not None and (prod.unit_price or Decimal("0")) > 0:
-            v_basis = "sale_price"
-        else:
-            v_basis = "none"
+        v_basis = "cost" if rate > 0 else "none"
 
         if var > 0:
             vtype = "GAIN"
@@ -5478,7 +5507,7 @@ def report_tank_dip_variance(
         "by_tank": by_tank_out,
         "dips": rows,
         "accounting_note": (
-            "Value columns use inventory unit cost (Item.cost) when set, else Item.unit_price. "
+            "Value columns use inventory unit cost (Item.cost) only. A zero cost is left unvalued. "
             "Selling those liters still flows through normal POS revenue; dip gain lowers future COGS at sale. "
             "GL: saving a dip can post AUTO-TANKDIP-{id}-VAR — gain Dr 1200 / Cr 5100; loss Dr 5200 / Cr 1200 (when COA exists)."
         ),
@@ -5527,7 +5556,7 @@ def report_tank_dip_register(company_id: int, start: date, end: date, station_id
         if var is not None and cap > 0:
             pct_cap = float((var / cap * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
         prod = tank.product if tank.product_id else None
-        rate = item_inventory_unit_cost(prod)
+        rate = item_inventory_cost_strict(prod)
         var_val: Optional[float] = None
         if var is not None:
             var_val = _f(var * rate)

@@ -213,7 +213,8 @@ def test_fish_pond_transfer_api_auto_fills_zero_cost(api_client, company_tenant,
     )
     assert r.status_code == 201, r.content.decode()
     line = json.loads(r.content)["transfer"]["lines"][0]
-    assert Decimal(line["cost_amount"]) == Decimal("800.00")  # 2000 × 400 ÷ 1000 live (3500 − 2500 sold)
+    # The fingerling sale is not invoiced, so those 2,500 heads are still in the pond.
+    assert Decimal(line["cost_amount"]) == Decimal("228.57")  # 2000 × 400 ÷ 3500 live
 
 
 @pytest.mark.django_db
@@ -567,7 +568,7 @@ def test_fish_pond_transfer_preview_cost_api(api_client, company_tenant, auth_ad
     assert r.status_code == 200, r.content.decode()
     body = json.loads(r.content)
     assert body["cost_basis"] == "per_head"
-    assert Decimal(body["lines"][0]["cost_amount"]) == Decimal("800.00")
+    assert Decimal(body["lines"][0]["cost_amount"]) == Decimal("228.57")
     assert body["transfer_cost_per_head"] is not None
 
 

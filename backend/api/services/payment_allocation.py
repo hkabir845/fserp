@@ -136,7 +136,7 @@ def customer_uninvoiced_receivable(
     exclude_payment_id = exclude_payment.id if exclude_payment is not None else None
     invoices = list(
         Invoice.objects.filter(company_id=company_id, customer_id=customer.id)
-        .exclude(status="draft")
+        .exclude(status__in=("draft", "void"))
         .only("id", "total", "status")
     )
     invoice_ids = [inv.id for inv in invoices]
@@ -183,7 +183,7 @@ def vendor_unbilled_payable(
     """
     a = Decimal("0")
     for b in Bill.objects.filter(company_id=company_id, vendor_id=vendor.id).exclude(
-        status="draft"
+        status__in=("draft", "void")
     ):
         total = b.total or Decimal("0")
         if total <= 0:

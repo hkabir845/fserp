@@ -842,7 +842,16 @@ def build_pond_cost_per_kg_block(
         end=end,
         cycle_filter_id=cycle_filter_id,
     )
-    denom_kg = primary_kg if primary_kg > 0 else fallback_kg
+    sale_kg = primary_kg if primary_kg > 0 else fallback_kg
+    from api.services.aquaculture_transfer_cost import production_denominator_kg
+    from api.services.internal_trade_elimination import _pond_biomass_on_hand_kg
+
+    on_hand = _pond_biomass_on_hand_kg(company_id, pond_id)
+    # Transfer pricing reads denominator_kg as sale kg and adds on-hand itself.
+    denom_kg = sale_kg
+    display_kg, _display_note = production_denominator_kg(sale_kg, on_hand, None)
+    if display_kg <= 0:
+        display_kg = sale_kg
 
     buckets_dec = pond_bucket_amounts_for_period(
         company_id=company_id,
@@ -884,8 +893,8 @@ def build_pond_cost_per_kg_block(
         if amt == 0:
             continue
         per_kg: str | None
-        if denom_kg > 0:
-            per_kg = str(_money_q(amt / denom_kg))
+        if display_kg > 0:
+            per_kg = str(_money_q(amt / display_kg))
         else:
             per_kg = None
         lines.append(
@@ -897,9 +906,9 @@ def build_pond_cost_per_kg_block(
             }
         )
 
-    total_per_kg = str(_money_q(total_costs / denom_kg)) if denom_kg > 0 else None
-    opex_per_kg = str(_money_q(operating_expenses_total / denom_kg)) if denom_kg > 0 else None
-    pay_per_kg = str(_money_q(payroll_allocated / denom_kg)) if denom_kg > 0 else None
+    total_per_kg = str(_money_q(total_costs / display_kg)) if display_kg > 0 else None
+    opex_per_kg = str(_money_q(operating_expenses_total / display_kg)) if display_kg > 0 else None
+    pay_per_kg = str(_money_q(payroll_allocated / display_kg)) if display_kg > 0 else None
 
     from api.services.aquaculture_transfer_cost import (
         _biological_production_cost_total,
@@ -930,7 +939,14 @@ def build_pond_cost_per_kg_block(
         transfer_cost_per_kg = total_per_kg
         transfer_cost_basis_note = None
 
-    if basis == "harvest_sale":
+    if basis == "sale_plus_on_hand":
+        basis_note = (
+            "Per kg uses harvest or biological sale kg in this period plus fish still in the pond. "
+            "That is the same production quantity the biological-asset relief uses."
+        )
+    elif basis == "on_hand":
+        basis_note = "No sale kg in scope; per kg uses fish still in the pond."
+    elif basis == "harvest_sale":
         basis_note = (
             "Per kg uses kg from fish harvest sales (income_type=fish_harvest_sale) in this period and scope."
         )
@@ -949,6 +965,7 @@ def build_pond_cost_per_kg_block(
         "biological_sale_weight_kg": str(fallback_kg),
         "weight_basis": basis,
         "denominator_kg": str(denom_kg),
+        "production_denominator_kg": str(display_kg),
         "basis_note": basis_note,
         "total_costs": str(_money_q(total_costs)),
         "total_cost_per_kg": total_per_kg,

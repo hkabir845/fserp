@@ -374,7 +374,16 @@ def _transfer_denominator_kg(
     if not candidates:
         return Decimal("0"), ""
 
-    denom, note = production_denominator_kg(sale_denom, on_hand, xfer_kg)
+    # The cost card's sale_plus_on_hand / on_hand bases already include standing kg.
+    already_includes_on_hand = str(cpk.get("weight_basis") or "") in (
+        "sale_plus_on_hand",
+        "on_hand",
+    )
+    denom, note = production_denominator_kg(
+        sale_denom,
+        Decimal("0") if already_includes_on_hand else on_hand,
+        xfer_kg,
+    )
     if denom > 0:
         return denom, note
     if not candidates:
@@ -535,7 +544,7 @@ def _nursing_fry_pool_for_pond_batch(
         end=end,
         cycle_filter_id=None,
     )
-    return _money_q(max(fry_exp, fry_gl))
+    return _money_q(fry_exp + fry_gl)
 
 
 def _nursing_uncycled_other_production_total(

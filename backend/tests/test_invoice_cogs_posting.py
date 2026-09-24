@@ -18,9 +18,8 @@ from api.services.reporting import report_income_statement
 pytestmark = pytest.mark.django_db
 
 
-def test_invoice_cogs_falls_back_to_selling_price_when_no_cost(company_tenant_with_gl):
-    """Every sale must post COGS. With no cost, no purchase history, and no opening cost,
-    COGS uses the last-resort selling-price fallback so a COGS amount always shows."""
+def test_invoice_cogs_skips_selling_price_when_no_cost(company_tenant_with_gl):
+    """A sale with no cost, purchase, or opening cost must not credit inventory at the selling price."""
     st = Station.objects.create(
         company_id=company_tenant_with_gl.id, station_name="COGS Test Stn", is_active=True
     )
@@ -64,16 +63,15 @@ def test_invoice_cogs_falls_back_to_selling_price_when_no_cost(company_tenant_wi
         amount=Decimal("50"),
     )
     post_invoice_sale_journal(company_tenant_with_gl.id, inv, payment_method="cash")
-    assert post_invoice_cogs_journal(company_tenant_with_gl.id, inv) is True
-    assert JournalEntry.objects.filter(
+    assert post_invoice_cogs_journal(company_tenant_with_gl.id, inv) is False
+    assert not JournalEntry.objects.filter(
         company_id=company_tenant_with_gl.id, entry_number=f"AUTO-INV-{inv.id}-COGS"
     ).exists()
 
-    # No cost/purchase/opening data → last-resort selling-price fallback: 2 x 25 = 50.
     pl = report_income_statement(
         company_tenant_with_gl.id, date(2026, 4, 1), date(2026, 4, 30)
     )
-    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("50.00")
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")
 
 
 def test_invoice_cogs_posts_at_item_cost_when_set(company_tenant_with_gl):
@@ -338,9 +336,8 @@ def test_cogs_posts_even_when_standard_accounts_missing(company_tenant_with_gl):
     assert ChartOfAccount.objects.filter(company_id=cid, account_code="1220", is_active=True).exists()
 
 
-def test_non_stock_item_with_cost_still_posts_cogs(company_tenant_with_gl):
-    """A sold item that is NOT physical-stock (e.g. non-inventory) but carries a real cost
-    must still post COGS so the P&L shows it. With no cost basis it stays out of COGS."""
+def test_non_inventory_item_does_not_credit_shop_inventory(company_tenant_with_gl):
+    """Non-inventory goods are expensed on purchase. A sale must not credit shop inventory."""
     cid = company_tenant_with_gl.id
     st = Station.objects.create(company_id=cid, station_name="NonStock COGS", is_active=True)
     cust = Customer.objects.create(
@@ -375,11 +372,10 @@ def test_non_stock_item_with_cost_still_posts_cogs(company_tenant_with_gl):
         quantity=Decimal("3"), unit_price=Decimal("12"), amount=Decimal("36"),
     )
     post_invoice_sale_journal(cid, inv, payment_method="cash")
-    assert post_invoice_cogs_journal(cid, inv) is True
+    assert post_invoice_cogs_journal(cid, inv) is False
 
     pl = report_income_statement(cid, date(2026, 4, 1), date(2026, 4, 30))
-    # 3 x 7 cost = 21 even though the item does not track physical stock.
-    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("21.00")
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")
 
 
 def test_non_stock_item_without_cost_basis_skips_cogs(company_tenant_with_gl):
@@ -421,9 +417,8 @@ def test_non_stock_item_without_cost_basis_skips_cogs(company_tenant_with_gl):
     assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")
 
 
-def test_income_statement_self_heals_missing_cogs(company_tenant_with_gl):
-    """A posted sale whose COGS journal is missing must still show COGS in the P&L for the
-    sale's period — the report self-heals by posting AUTO-INV-*-COGS, no manual backfill."""
+def test_income_statement_does_not_post_missing_cogs(company_tenant_with_gl):
+    """Opening the income statement must not create a missing COGS journal."""
     cid = company_tenant_with_gl.id
     st = Station.objects.create(company_id=cid, station_name="Heal Stn", is_active=True)
     cust = Customer.objects.create(
@@ -458,17 +453,14 @@ def test_income_statement_self_heals_missing_cogs(company_tenant_with_gl):
     JournalEntry.objects.filter(company_id=cid, entry_number=f"AUTO-INV-{inv.id}-COGS").delete()
 
     pl = report_income_statement(cid, date(2026, 4, 1), date(2026, 4, 30))
-    # 3 x 10 cost is posted by the report itself and shows as COGS.
-    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("30.00")
-    assert JournalEntry.objects.filter(
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")
+    assert not JournalEntry.objects.filter(
         company_id=cid, entry_number=f"AUTO-INV-{inv.id}-COGS"
     ).exists()
 
 
-def test_non_inventory_goods_relieve_cogs(company_tenant_with_gl):
-    """Gap closure: non-inventory goods (item_type="non_inventory") must show COGS for every
-    sale. With no cost basis, the selling-price last resort still yields a COGS amount, unlike
-    services which carry no COGS."""
+def test_non_inventory_goods_do_not_relieve_cogs_at_selling_price(company_tenant_with_gl):
+    """A non-inventory sale with no cost must not post COGS at the selling price."""
     cid = company_tenant_with_gl.id
     st = Station.objects.create(company_id=cid, station_name="NonInv Stn", is_active=True)
     cust = Customer.objects.create(
@@ -499,8 +491,7 @@ def test_non_inventory_goods_relieve_cogs(company_tenant_with_gl):
         quantity=Decimal("2"), unit_price=Decimal("40"), amount=Decimal("80"),
     )
     post_invoice_sale_journal(cid, inv, payment_method="cash")
-    assert post_invoice_cogs_journal(cid, inv) is True
+    assert post_invoice_cogs_journal(cid, inv) is False
 
     pl = report_income_statement(cid, date(2026, 4, 1), date(2026, 4, 30))
-    # 2 x 40 selling-price last resort → COGS shows for the non-inventory goods sold.
-    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("80.00")
+    assert Decimal(str(pl["cost_of_goods_sold"]["total"])) == Decimal("0.00")

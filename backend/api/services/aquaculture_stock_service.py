@@ -225,7 +225,10 @@ def compute_fish_stock_position_rows(
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
     # A cleared link (transfer deleted) must not turn those rows into a second harvest.
-    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True).exclude(
+    sale_q = sale_q.filter(
+        source_fish_pond_transfer_line_id__isnull=True,
+        invoice_id__isnull=False,
+    ).exclude(
         memo__startswith="Inter-pond sale (from transfer"
     )
 
@@ -693,7 +696,10 @@ def compute_fish_stock_position_breakdown_rows(
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
     # The memo survives after delete clears source_fish_pond_transfer_line (SET_NULL).
-    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True).exclude(
+    sale_q = sale_q.filter(
+        source_fish_pond_transfer_line_id__isnull=True,
+        invoice_id__isnull=False,
+    ).exclude(
         memo__startswith="Inter-pond sale (from transfer"
     )
     cycle_cache: dict = {}
@@ -1022,6 +1028,40 @@ def _outbound_totals_from_sale(
     return int(s.fish_count), _d(s.weight_kg)
 
 
+def _pending_sale_reservation(
+    company_id: int,
+    pond_id: int,
+    *,
+    production_cycle_id: int | None,
+    fish_species: str,
+    exclude_sale_id: int | None,
+) -> tuple[int, Decimal]:
+    """Head count and kg on harvest drafts that are not yet invoiced."""
+    sp_code, _ = normalize_fish_species(fish_species)
+    qs = AquacultureFishSale.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        invoice_id__isnull=True,
+        source_fish_pond_transfer_line_id__isnull=True,
+    )
+    if exclude_sale_id is not None:
+        qs = qs.exclude(pk=exclude_sale_id)
+    if production_cycle_id is not None:
+        qs = qs.filter(Q(production_cycle_id=production_cycle_id) | Q(production_cycle_id__isnull=True))
+    heads = 0
+    kg = Decimal("0")
+    for sale in qs.only("fish_count", "weight_kg", "income_type", "fish_species"):
+        if income_type_is_non_biological_for_company(company_id, sale.income_type or ""):
+            continue
+        sp, _ = normalize_fish_species(sale.fish_species)
+        if sp != sp_code:
+            continue
+        if sale.fish_count:
+            heads += int(sale.fish_count)
+        kg += _d(sale.weight_kg)
+    return heads, kg
+
+
 def assert_outbound_fish_within_implied_stock(
     company_id: int,
     pond_id: int,
@@ -1045,6 +1085,17 @@ def assert_outbound_fish_within_implied_stock(
         production_cycle_id=production_cycle_id,
         fish_species=fish_species,
     )
+    # Booked stock ignores drafts. A draft still reserves the fish so two
+    # unfinalized sales cannot both pass.
+    pend_c, pend_w = _pending_sale_reservation(
+        company_id,
+        pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species=fish_species,
+        exclude_sale_id=exclude_sale_id,
+    )
+    avail_c -= pend_c
+    avail_w -= pend_w
     if exclude_transfer_id is not None:
         exc_c, exc_w = _outbound_totals_from_transfer(company_id, exclude_transfer_id, pond_id)
         avail_c += exc_c

@@ -96,7 +96,11 @@ def _internal_kg_bought_by_pond(company_id: int, end: date) -> dict[int, Decimal
         ).values_list("pos_customer_id", "id")
     }
     for cust_id, linked_pond_id, kg in AquacultureFishSale.objects.filter(
-        company_id=company_id, sale_date__lte=end, invoice__customer__isnull=False
+        company_id=company_id,
+        sale_date__lte=end,
+        invoice__customer__isnull=False,
+        # A mirrored transfer is also counted from the transfer line below.
+        source_fish_pond_transfer_line_id__isnull=True,
     ).values_list(
         "invoice__customer_id", "invoice__customer__internal_pond_id", "weight_kg"
     ):

@@ -144,8 +144,7 @@ def test_cogs_unit_cost_falls_back_to_opening_then_price(company_tenant_with_gl)
     assert item_cogs_unit_cost(cid, opening) == Decimal("6")
 
     bare = _item(cid, cost=Decimal("0"), unit_price=Decimal("20"))
-    # Nothing else available → last-resort selling-price guarantee so COGS still posts.
-    assert item_cogs_unit_cost(cid, bare) == Decimal("20")
+    assert item_cogs_unit_cost(cid, bare) == Decimal("0")
 
 
 def test_recompute_corrects_resave_drift_and_is_idempotent(company_tenant_with_gl):

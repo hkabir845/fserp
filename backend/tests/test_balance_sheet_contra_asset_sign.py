@@ -93,3 +93,46 @@ def test_balance_sheet_with_depreciation_needs_no_plug(company_tenant):
         "Nothing should need plugging."
     )
     assert bs["is_balanced"] is True
+
+
+def test_station_and_pond_sheets_subtract_accumulated_depreciation(company_tenant):
+    from api.models import AquaculturePond, JournalEntry, Station
+    from api.services.reporting import report_balance_sheet
+
+    cid = company_tenant.id
+    equip = _acc(cid, "1500", "Equipment", "asset", "machinery_and_equipment")
+    accum = _acc(cid, "1550", "Accumulated Depreciation", "asset", "accumulated_depreciation")
+    station = Station.objects.create(company_id=cid, station_name="Dep Bay", is_active=True)
+    pond = AquaculturePond.objects.create(company_id=cid, name="Dep Pond", is_active=True)
+
+    def entry(number, station_id=None, pond_id=None):
+        je = JournalEntry.objects.create(
+            company_id=cid,
+            entry_number=number,
+            entry_date=date(2026, 3, 31),
+            description=number,
+            is_posted=True,
+            station_id=station_id,
+        )
+        from api.models import JournalEntryLine
+
+        JournalEntryLine.objects.create(
+            journal_entry=je, account=equip, debit=Decimal("100000"), credit=Decimal("0"),
+            aquaculture_pond_id=pond_id,
+        )
+        JournalEntryLine.objects.create(
+            journal_entry=je, account=accum, debit=Decimal("0"), credit=Decimal("30000"),
+            aquaculture_pond_id=pond_id,
+        )
+
+    entry("TEST-SITE-DEP", station_id=station.id)
+    site = report_balance_sheet(cid, date(2026, 1, 1), date(2026, 12, 31), station_id=station.id)
+    site_accum = next(r for r in site["assets"]["accounts"] if r["account_code"] == "1550")
+    assert site_accum["balance"] == "-30000.00"
+    assert site["assets"]["total"] == "70000.00"
+
+    entry("TEST-POND-DEP", pond_id=pond.id)
+    pond_bs = report_balance_sheet(cid, date(2026, 1, 1), date(2026, 12, 31), pond_id=pond.id)
+    pond_accum = next(r for r in pond_bs["assets"]["accounts"] if r["account_code"] == "1550")
+    assert pond_accum["balance"] == "-30000.00"
+    assert pond_bs["assets"]["total"] == "70000.00"

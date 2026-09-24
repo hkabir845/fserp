@@ -165,47 +165,14 @@ def _parse_opening_meter_intent(company_id: int, station_id, raw) -> tuple[list[
     return to_apply, None
 
 
-def _apply_opening_meter_intent(company_id: int, station_id, to_apply: list[tuple[int, Decimal]]) -> list[dict]:
-    """
-    Apply validated (meter_id, reading) rows and return snapshot. Call inside transaction.atomic().
-    """
-    if not to_apply:
-        return []
-    want_sid = int(station_id) if station_id else None
-    snapshot: list[dict] = []
-    for mid, r in to_apply:
-        m = (
-            Meter.objects.filter(id=mid, company_id=company_id, is_active=True)
-            .select_for_update()
-            .select_related("dispenser", "dispenser__island", "dispenser__island__station")
-            .first()
-        )
-        if not m:
-            raise ValueError(f"Meter {mid} not found or inactive")
-        m_sid = m.dispenser.island.station_id if m.dispenser and m.dispenser.island_id else None
-        if want_sid is not None and m_sid != want_sid:
-            raise ValueError(
-                f"Meter {mid} is not on the selected station (station_id={m_sid}, expected {want_sid})"
-            )
-        prev = m.current_reading
-        m.current_reading = r
-        m.save(update_fields=["current_reading", "updated_at"])
-        snapshot.append(
-            {
-                "meter_id": m.id,
-                "reading": str(r),
-                "previous_reading": str(prev),
-                "meter_name": (m.meter_name or m.meter_code or str(m.id)),
-                "dispenser_name": m.dispenser.dispenser_name if m.dispenser_id else "",
-            }
-        )
-    return snapshot
-
-
 def _build_closing_meter_snapshot(
     company_id: int, station_id, to_apply: list[tuple[int, Decimal]]
 ) -> list[dict]:
-    """Validate closing readings and return snapshot without mutating meter registers."""
+    """Validate meter readings and return a snapshot. Does not write the live register.
+
+    Opening and closing both store this snapshot. Writing the typed figure onto
+    the meter would rebase the pump.
+    """
     if not to_apply:
         return []
     want_sid = int(station_id) if station_id else None

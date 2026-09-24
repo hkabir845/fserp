@@ -155,7 +155,7 @@ def _reverse_tank_book_for_deleted_dip(dip: TankDip) -> None:
 
 
 def _reconcile_tank_book_stock(tank_id: int, company_id: int, volume: Decimal) -> None:
-    """Set tank book stock to the physically measured volume (clamped to capacity)."""
+    """Set tank book stock to the given liters (clamped to capacity)."""
     tank = Tank.objects.filter(id=tank_id, company_id=company_id).first()
     if not tank:
         return
@@ -195,21 +195,24 @@ def reconcile_all_tanks_to_latest_dip(company_id: int) -> list[dict]:
 def _maybe_reconcile_tank_from_dip(dip: TankDip) -> None:
     """
     Update book stock only when this row is the latest dip for the tank (by dip_date, then id).
-    Avoids historical edits overwriting current inventory.
+    Book liters are the stick reading plus receipts and minus sales saved after the dip,
+    the same rule as the bulk sync. A mid-day edit must not put sold fuel back in the tank.
     """
     latest = (
         TankDip.objects.filter(tank_id=dip.tank_id, company_id=dip.company_id)
         .order_by("-dip_date", "-id")
         .first()
     )
-    if latest and latest.id == dip.id:
-        _reconcile_tank_book_stock(dip.tank_id, dip.company_id, dip.volume)
-        # Item.quantity_on_hand mirrors tank stock; a dip that moves the tank must move it too.
-        product_id = (
-            Tank.objects.filter(pk=dip.tank_id).values_list("product_id", flat=True).first()
-        )
-        if product_id:
-            refresh_item_quantity_on_hand_from_tanks(dip.company_id, int(product_id))
+    if not latest or latest.id != dip.id:
+        return
+    tank = Tank.objects.filter(id=dip.tank_id, company_id=dip.company_id).first()
+    if not tank:
+        return
+    _reconcile_tank_book_stock(
+        dip.tank_id, dip.company_id, book_liters_from_latest_dip(tank, dip)
+    )
+    if tank.product_id:
+        refresh_item_quantity_on_hand_from_tanks(dip.company_id, int(tank.product_id))
 
 
 @csrf_exempt

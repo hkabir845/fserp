@@ -39,7 +39,7 @@ server {
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' 'https://nobinagro.sascorporationbd.com' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, X-Requested-With, x-selected-company-id, x-tenant-subdomain, x-request-id, idempotency-key' always;
+            add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, X-Requested-With, X-CSRFToken, x-selected-company-id, x-selected-station-id, x-tenant-subdomain, x-request-id, idempotency-key, x-auth-client' always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Max-Age' 86400 always;
             add_header 'Content-Type' 'text/plain; charset=utf-8' always;

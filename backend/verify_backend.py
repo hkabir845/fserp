@@ -62,7 +62,8 @@ def verify_backend():
                 "Origin": "http://localhost:3000",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": (
-                    "authorization, content-type, x-selected-company-id, x-selected-station-id"
+                    "authorization, content-type, x-selected-company-id, "
+                    "x-selected-station-id, x-auth-client"
                 ),
             },
             timeout=8,
@@ -84,6 +85,10 @@ def verify_backend():
             print(f"   {OK} Preflight allows x-selected-station-id")
         else:
             print(f"   {FAIL} Preflight missing x-selected-station-id in Access-Control-Allow-Headers")
+        if "x-auth-client" in allow:
+            print(f"   {OK} Preflight allows x-auth-client")
+        else:
+            print(f"   {FAIL} Preflight missing x-auth-client in Access-Control-Allow-Headers")
     except Exception as e:
         print(f"   [WARN] CORS test failed: {e}")
 

@@ -31,7 +31,10 @@ from api.models import (
 from api.services.aquaculture_data_bank_service import fiscal_period_for_end_date
 from api.services.aquaculture_fish_transfer_as_sale import ensure_fish_sale_for_transfer_line
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
-from api.services.aquaculture_internal_transfer_price import apply_internal_prices_to_transfer
+from api.services.aquaculture_internal_transfer_price import (
+    apply_internal_prices_to_transfer,
+    internal_transfer_margin_per_kg,
+)
 from api.services.aquaculture_pl_service import compute_aquaculture_pl_summary_dict
 from api.services.aquaculture_transfer_cost import resync_nursing_pond_transfer_costs
 
@@ -200,6 +203,47 @@ def _distribute_cost_delta(
     return changes
 
 
+def _irreducible_transfer_income(company_id: int, lines: list) -> Decimal:
+    """
+    Minimum transfer income after cost_amount → 0 under the margin rule.
+
+    sale = cost + margin/kg × kg, so at cost 0 income floors at margin × kg.
+    Head-only / zero-kg lines have no margin floor (sale tracks cost).
+    """
+    margin = internal_transfer_margin_per_kg(company_id)
+    total = Decimal("0")
+    for ln in lines:
+        kg = Decimal(str(ln.weight_kg or "0"))
+        if kg > 0:
+            total += margin * kg
+    return _money_q(total)
+
+
+def _surplus_cannot_close(
+    company_id: int,
+    lines: list,
+    *,
+    income: Decimal,
+    expense: Decimal,
+    xfer_income: Decimal,
+) -> str | None:
+    """
+    When nursing income already exceeds expense, cost can only fall to zero.
+    If expense sits below margin-only transfer income (+ other income), refuse.
+    """
+    other = _money_q(income - xfer_income)
+    margin_floor = _irreducible_transfer_income(company_id, lines)
+    floor = _money_q(other + margin_floor)
+    if expense + _GAP_TOL < floor:
+        return (
+            f"Cannot balance surplus: expense {expense} is below irreducible income "
+            f"{floor} (other {other} + margin-only transfer floor {margin_floor}). "
+            f"Set aquaculture_internal_transfer_margin_per_kg to 0, or raise nursing "
+            f"expenses / lower transfer weights — refusing so costs are not zeroed."
+        )
+    return None
+
+
 class Command(BaseCommand):
     help = (
         "Balance nursing pond income vs expense by adjusting fingerling transfer "
@@ -312,6 +356,24 @@ class Command(BaseCommand):
             self.stdout.write("Before reprice — line sale vs IPT mirror (P&L uses mirror when present):")
             _log_line_vs_mirror(self.stdout, lines)
 
+            # Refuse early when surplus cannot close under the margin rule (avoids
+            # margin reprice widening income, then zeroing costs on apply).
+            if gap < -_GAP_TOL:
+                income_now = _money_q(Decimal(str(row.get("income_total") or "0")))
+                expense_now = _money_q(Decimal(str(row.get("expense_total") or "0")))
+                xfer_now = _money_q(sum((_pl_effective_amount(ln) for ln in lines), Decimal("0")))
+                reason = _surplus_cannot_close(
+                    company_id,
+                    lines,
+                    income=income_now,
+                    expense=expense_now,
+                    xfer_income=xfer_now,
+                )
+                if reason:
+                    self.stderr.write(self.style.ERROR(reason))
+                    transaction.set_rollback(True)
+                    return
+
             touched = _reprice_and_mirror(company_id, lines)
             self.stdout.write(
                 f"Repriced + mirrored {len(lines)} line(s) across {len(touched)} transfer(s)"
@@ -347,6 +409,21 @@ class Command(BaseCommand):
                 f"Outgoing transfer lines in period: {len(lines)}, "
                 f"total cost_amount={total_xfer_cost}, total pl_effective={total_pl_amt}"
             )
+
+            if gap < -_GAP_TOL:
+                income_now = _money_q(Decimal(str(row.get("income_total") or "0")))
+                expense_now = _money_q(Decimal(str(row.get("expense_total") or "0")))
+                reason = _surplus_cannot_close(
+                    company_id,
+                    lines,
+                    income=income_now,
+                    expense=expense_now,
+                    xfer_income=total_pl_amt,
+                )
+                if reason:
+                    self.stderr.write(self.style.ERROR(reason))
+                    transaction.set_rollback(True)
+                    return
 
             gap_before_distribute = gap
             changes = _distribute_cost_delta(lines, gap)
@@ -409,6 +486,19 @@ class Command(BaseCommand):
                 )
                 transaction.set_rollback(True)
                 return
+
+            # Fail closed on residual surplus after costs were floored at zero.
+            if gap_after < -_GAP_TOL:
+                floored = any(new_c == Decimal("0.00") for _, _, new_c in changes)
+                if floored:
+                    self.stderr.write(
+                        self.style.ERROR(
+                            f"Residual surplus gap {gap_after} after flooring cost_amount at 0; "
+                            "margin-only income remains — rolling back."
+                        )
+                    )
+                    transaction.set_rollback(True)
+                    return
 
             if dry:
                 transaction.set_rollback(True)

@@ -4,7 +4,7 @@ Thorough aquaculture + GL audit for VPS/live data.
 Checks accounting rules:
   - Net profit = income − expenses (per pond and company)
   - Nursing ponds: transfer-out income ≈ expenses (unallocated cost gap)
-  - Grow-out: transfer-in costs match transfer line cost_amount
+  - Grow-out: transfer-in matches sale/mirror amounts (same basis as P&L fish_transfer_cost_in)
   - Lease payments vs implied annual (area × rate)
   - Duplicate landlord payments (same pond/date/amount)
   - Missing auto-posted GL journals (gl_posting_audit)
@@ -27,6 +27,7 @@ from django.core.management.base import BaseCommand
 from api.models import (
     AquacultureFishPondTransfer,
     AquacultureFishPondTransferLine,
+    AquacultureFishSale,
     AquacultureLandlordLedgerEntry,
     AquaculturePond,
     Company,
@@ -77,6 +78,19 @@ def _transfer_sale_posted(company_id: int, transfer_id: int) -> bool:
     if all(internal_trade_documents_posted(company_id, transfer_id, ln.id) for ln in priced):
         return True
     return bool(transfer_gl_status(company_id, transfer_id).get("gl_posted"))
+
+
+def _transfer_line_pl_amount(line: AquacultureFishPondTransferLine, mirror_amt: Decimal | None) -> Decimal:
+    """
+    Same amount basis as aquaculture_pl_service transfer-in: mirror total when present,
+    else sale_amount, else cost_amount.
+    """
+    sale = MONEY(line.sale_amount or 0)
+    cost = MONEY(line.cost_amount or 0)
+    amount = sale if sale > 0 else cost
+    if mirror_amt is not None and mirror_amt > 0:
+        amount = mirror_amt
+    return amount
 
 
 class Command(BaseCommand):
@@ -258,6 +272,12 @@ class Command(BaseCommand):
                 if gl_amt > 0 and gl_amt < line_total:
                     entry["note"] = "Likely 1581 bio-asset GL cap at source pond (management cost > book balance)"
                     warnings.append(entry)
+                elif gl_amt > line_total:
+                    entry["note"] = (
+                        "Cr 1581 on IPT/legacy journals exceeds current line cost_amount — "
+                        "stale GL after cost edit; review then --fix-transfer-gl"
+                    )
+                    issues.append(entry)
                 else:
                     issues.append(entry)
                 if fix_gl:
@@ -271,20 +291,32 @@ class Command(BaseCommand):
                             }
                         )
 
-        # 6) Grow-out transfer-in vs lines
+        # 6) Grow-out transfer-in vs lines (sale/mirror basis — matches P&L, not book cost)
+        in_lines = list(
+            AquacultureFishPondTransferLine.objects.filter(
+                transfer__company_id=company_id,
+                to_pond__pond_role="grow_out",
+                transfer__transfer_date__gte=period_start,
+                transfer__transfer_date__lte=period_end,
+            ).select_related("to_pond")
+        )
+        mirror_amt_by_line = {
+            int(row["source_fish_pond_transfer_line_id"]): MONEY(row["total_amount"] or 0)
+            for row in AquacultureFishSale.objects.filter(
+                company_id=company_id,
+                source_fish_pond_transfer_line_id__in=[ln.id for ln in in_lines],
+            ).values("source_fish_pond_transfer_line_id", "total_amount")
+            if row["source_fish_pond_transfer_line_id"] is not None
+        }
+        line_sum_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+        for ln in in_lines:
+            line_sum_by_pond[int(ln.to_pond_id)] += _transfer_line_pl_amount(
+                ln, mirror_amt_by_line.get(int(ln.id))
+            )
         for pond in AquaculturePond.objects.filter(company_id=company_id, pond_role="grow_out"):
             row = next((r for r in pl["ponds"] if r["pond_id"] == pond.id), {})
             t_in = MONEY(row.get("fish_transfer_cost_in") or 0)
-            line_sum = MONEY(
-                sum(
-                    MONEY(ln.cost_amount or 0)
-                    for ln in AquacultureFishPondTransferLine.objects.filter(
-                        to_pond_id=pond.id,
-                        transfer__transfer_date__gte=period_start,
-                        transfer__transfer_date__lte=period_end,
-                    )
-                )
-            )
+            line_sum = MONEY(line_sum_by_pond.get(pond.id, Decimal("0")))
             if abs(t_in - line_sum) > Decimal("0.05"):
                 issues.append(
                     {
@@ -293,6 +325,7 @@ class Command(BaseCommand):
                         "pond_code": pond.code,
                         "pl_transfer_in": str(t_in),
                         "line_sum": str(line_sum),
+                        "note": "Compared on sale/mirror amounts (P&L basis), not cost_amount",
                     }
                 )
 

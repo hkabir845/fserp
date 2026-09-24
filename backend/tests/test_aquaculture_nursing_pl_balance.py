@@ -444,3 +444,112 @@ def test_reconcile_nursing_pl_syncs_stale_mirror_then_cuts_surplus(company_tenan
     after_row = next(p for p in after["ponds"] if p["pond_id"] == nursing.id)
     assert abs(Decimal(after_row["income_total"]) - Decimal(after_row["expense_total"])) <= Decimal("0.01")
     assert abs(Decimal(after_row["net_profit"])) <= Decimal("0.01")
+
+
+@pytest.mark.django_db
+def test_reconcile_nursing_pl_refuses_irreducible_margin_surplus(company_tenant, capsys):
+    """
+    When expense is below margin×kg (cost→0 still leaves surplus), refuse and leave costs intact.
+    """
+    from django.core.management import call_command
+
+    from api.services.aquaculture_fish_transfer_as_sale import ensure_fish_sale_for_transfer_line
+
+    _enable(company_tenant)
+    cid = company_tenant.id
+    Company.objects.filter(pk=cid).update(aquaculture_internal_transfer_margin_per_kg=Decimal("20"))
+    nursing = AquaculturePond.objects.create(
+        company_id=cid,
+        name="Surplus Nursing",
+        code="PN-SUR",
+        pond_role="nursing",
+        is_active=True,
+    )
+    grow = AquaculturePond.objects.create(
+        company_id=cid,
+        name="Surplus Grow",
+        code="PG-SUR",
+        pond_role="grow_out",
+        is_active=True,
+    )
+    # Expense far below margin floor for 100 kg × 20 = 2000, and below transfer cost.
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=nursing,
+        expense_date=date(2026, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("500.00"),
+    )
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=nursing,
+        transfer_date=date(2026, 5, 1),
+        fish_species="tilapia",
+    )
+    line = AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=grow,
+        weight_kg=Decimal("100"),
+        fish_count=50000,
+        cost_amount=Decimal("50000.00"),
+        sale_amount=Decimal("0.00"),
+    )
+    ensure_fish_sale_for_transfer_line(line, transfer=tr)
+
+    call_command(
+        "reconcile_nursing_pond_pl_balance",
+        company_id=cid,
+        pond_code="PN-SUR",
+        period_start="2026-04-01",
+        period_end="2026-05-31",
+        skip_resync=True,
+    )
+
+    line.refresh_from_db()
+    assert line.cost_amount == Decimal("50000.00")
+    err = capsys.readouterr().err
+    assert "Cannot balance surplus" in err
+    assert "irreducible income" in err
+
+
+@pytest.mark.django_db
+def test_audit_transfer_in_uses_sale_mirror_not_cost(company_tenant):
+    """Grow-out transfer_in_mismatch must not flag cost vs sale/margin drift."""
+    from api.management.commands.audit_aquaculture_accounting import _transfer_line_pl_amount
+    from api.services.aquaculture_fish_transfer_as_sale import ensure_fish_sale_for_transfer_line
+
+    _enable(company_tenant)
+    cid = company_tenant.id
+    nursing = AquaculturePond.objects.create(
+        company_id=cid,
+        name="Audit Nursing",
+        code="PN-AU",
+        pond_role="nursing",
+        is_active=True,
+    )
+    grow = AquaculturePond.objects.create(
+        company_id=cid,
+        name="Audit Grow",
+        code="PG-AU",
+        pond_role="grow_out",
+        is_active=True,
+    )
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=nursing,
+        transfer_date=date(2026, 5, 1),
+        fish_species="tilapia",
+    )
+    line = AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=grow,
+        weight_kg=Decimal("10"),
+        fish_count=1000,
+        cost_amount=Decimal("1000.00"),
+        sale_amount=Decimal("1200.00"),
+    )
+    sale = ensure_fish_sale_for_transfer_line(line, transfer=tr)
+    assert sale is not None
+    assert _transfer_line_pl_amount(line, Decimal(str(sale.total_amount))) == Decimal("1200.00")
+    # Cost-only comparison would wrongly disagree with P&L transfer-in.
+    assert Decimal(str(line.cost_amount)) != Decimal("1200.00")

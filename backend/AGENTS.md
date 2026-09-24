@@ -27,3 +27,4 @@
 - Historical null-cycle sales: `repair_aquaculture_null_cycle_sales --company-id N --dry-run` then apply.
 - Species mistags: `repair_aquaculture_species_mistags --company-id N --dry-run` (auto-fix only when memo names cycle species).
 - Leftover IPT double BIO: `repair_aquaculture_ipt_double_bio --company-id N --dry-run` then apply.
+- VPS one-shot (company 2): after `deploy-vps.sh`, `bash scripts/repair-aqua-company2-vps.sh` then `--apply`.

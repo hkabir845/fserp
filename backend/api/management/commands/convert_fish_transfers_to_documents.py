@@ -46,7 +46,10 @@ from api.services.aquaculture_fish_transfer_gl_service import (
     sync_aquaculture_fish_pond_transfer_gl,
 )
 from api.services.aquaculture_internal_trade_posting import internal_trade_documents_posted
-from api.services.aquaculture_internal_transfer_price import internal_transfer_margin_per_kg
+from api.services.aquaculture_internal_transfer_price import (
+    apply_internal_prices_to_transfer,
+    internal_transfer_margin_per_kg,
+)
 
 WATCHED_CODES = ("1581", "1585", "1595", "4245", "5245")
 
@@ -193,6 +196,7 @@ class Command(BaseCommand):
                     # trade posted before (the retired transfer journal, or an earlier run of
                     # this command), prices the lines, raises the documents and posts them. That
                     # is what makes re-running this safe.
+                    apply_internal_prices_to_transfer(cid, t, reprice=True)
                     gl = sync_aquaculture_fish_pond_transfer_gl(cid, t)
                     from api.services.aquaculture_fish_transfer_as_sale import (
                         materialize_fish_sales_for_transfer,

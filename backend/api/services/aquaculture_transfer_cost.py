@@ -1580,7 +1580,7 @@ def _sync_transfer_batch_gl(
 
     for tr in qs.order_by("transfer_date", "id"):
         # Cost just moved, so the internal price (cost/kg + margin) has to move with it.
-        apply_internal_prices_to_transfer(company_id, tr)
+        apply_internal_prices_to_transfer(company_id, tr, reprice=True)
         sync_aquaculture_fish_pond_transfer_gl(company_id, tr)
 
 

@@ -98,7 +98,7 @@ def _reprice_and_mirror(company_id: int, lines: list) -> set[int]:
         touched.add(int(ln.transfer_id))
     for tid in sorted(touched):
         tr = AquacultureFishPondTransfer.objects.prefetch_related("lines").get(pk=tid)
-        apply_internal_prices_to_transfer(company_id, tr)
+        apply_internal_prices_to_transfer(company_id, tr, reprice=True)
         for line in tr.lines.select_related("to_pond", "transfer").all():
             ensure_fish_sale_for_transfer_line(line, transfer=tr)
     return touched

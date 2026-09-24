@@ -108,9 +108,9 @@ def sync_aquaculture_fish_pond_transfer_gl(company_id: int, transfer) -> dict:
     from api.services.aquaculture_internal_transfer_price import apply_internal_prices_to_transfer
 
     delete_aquaculture_fish_pond_transfer_journal(company_id, transfer.id)
-    # Price before posting, whoever the caller is: an unpriced line has nothing to invoice, and
-    # the seam — not each caller — is what guarantees the sale carries a price.
-    apply_internal_prices_to_transfer(company_id, transfer)
+    # Sale before posting: missing sale_amount defaults to cost (not auto-margin). Callers that
+    # want cost/kg + company margin (reconcile / convert / new trade UI) must reprice first.
+    apply_internal_prices_to_transfer(company_id, transfer, reprice=False)
     lines = list(transfer.lines.select_related("to_pond", "to_production_cycle").all())
     total_requested = _money_q(
         sum(

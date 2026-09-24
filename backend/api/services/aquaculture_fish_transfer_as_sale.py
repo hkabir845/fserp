@@ -28,7 +28,7 @@ def _d(value) -> Decimal:
 
 
 def sale_amount_for_transfer_line(line: AquacultureFishPondTransferLine) -> Decimal:
-    """Prefer internal sale price; fall back to book cost moved with the line."""
+    """Prefer internal sale price; if missing, treat cost as the sale price."""
     sale = _money_q(_d(getattr(line, "sale_amount", None)))
     if sale > 0:
         return sale
@@ -46,8 +46,16 @@ def ensure_fish_sale_for_transfer_line(
     Returns None when there is neither weight nor heads (nothing to sell).
     Head-only nursing lines (weight_kg <= 0, fish_count > 0) still materialize a
     P&L sale mirror so fingerling revenue / transfer cost is not invisible.
+    Missing ``sale_amount`` is filled at cost on the line before the mirror is written.
     """
     transfer = transfer or line.transfer
+    # Persist cost-as-sale when the line was never priced.
+    if _money_q(_d(getattr(line, "sale_amount", None))) <= 0:
+        from api.services.aquaculture_internal_transfer_price import fill_missing_sale_at_cost
+
+        fill_missing_sale_at_cost(transfer)
+        line.refresh_from_db()
+
     weight = _d(line.weight_kg)
     heads = int(getattr(line, "fish_count", None) or 0)
     if weight <= 0 and heads <= 0:

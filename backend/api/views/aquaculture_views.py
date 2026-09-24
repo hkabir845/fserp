@@ -5681,7 +5681,7 @@ def aquaculture_fish_pond_transfers(request):
             sync_gl=True,
         )
         # Price the move before it posts: the source pond sells at cost/kg + the company margin.
-        apply_internal_prices_to_transfer(cid, xfer)
+        apply_internal_prices_to_transfer(cid, xfer, reprice=True)
         gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, xfer)
         # Evidence of the internal sale: an invoice for the seller, a bill for each buyer.
         doc_result = sync_internal_trade_documents(cid, xfer)
@@ -5767,7 +5767,7 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
                 sync_gl=True,
             )
             # Price the move before it posts: the source pond sells at cost/kg + the company margin.
-            apply_internal_prices_to_transfer(cid, t)
+            apply_internal_prices_to_transfer(cid, t, reprice=True)
             gl_result = sync_aquaculture_fish_pond_transfer_gl(cid, t)
             # Evidence of the internal sale: an invoice for the seller, a bill for each buyer.
             doc_result = sync_internal_trade_documents(cid, t)

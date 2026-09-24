@@ -327,17 +327,51 @@ def test_repricing_follows_a_changed_cost(company_tenant):
         to_pond=grow, weight_kg=Decimal("100"), fish_count=5000, cost_amount=Decimal("10000.00")
     )
 
-    apply_internal_prices_to_transfer(cid, xfer)
+    apply_internal_prices_to_transfer(cid, xfer, reprice=True)
     line.refresh_from_db()
     assert line.sale_rate_per_kg == Decimal("120.0000")
     assert line.sale_amount == Decimal("12000.00")
 
     line.cost_amount = Decimal("15000.00")
     line.save(update_fields=["cost_amount"])
-    apply_internal_prices_to_transfer(cid, xfer)
+    apply_internal_prices_to_transfer(cid, xfer, reprice=True)
     line.refresh_from_db()
     assert line.sale_rate_per_kg == Decimal("170.0000")  # 150/kg cost + 20 margin
     assert line.sale_amount == Decimal("17000.00")
+
+
+@pytest.mark.django_db
+def test_missing_sale_price_defaults_to_cost(company_tenant):
+    """Unpriced lines sell at cost; existing sale prices are left alone."""
+    from api.services.aquaculture_internal_transfer_price import fill_missing_sale_at_cost
+
+    _enable(company_tenant)
+    cid = company_tenant.id
+    nursing = AquaculturePond.objects.create(
+        company_id=cid, name="Nurse Cost Default", pond_role="nursing", is_active=True
+    )
+    grow = AquaculturePond.objects.create(
+        company_id=cid, name="Grow Cost Default", pond_role="grow_out", is_active=True
+    )
+    xfer = AquacultureFishPondTransfer.objects.create(
+        company_id=cid, from_pond=nursing, transfer_date=date(2026, 5, 18), fish_species="tilapia"
+    )
+    line = xfer.lines.create(
+        to_pond=grow, weight_kg=Decimal("50"), fish_count=1000, cost_amount=Decimal("5000.00")
+    )
+
+    n = apply_internal_prices_to_transfer(cid, xfer)  # default: fill at cost
+    line.refresh_from_db()
+    assert n == 1
+    assert line.sale_amount == Decimal("5000.00")
+    assert line.sale_rate_per_kg == Decimal("100.0000")
+    assert "sold at cost" in (line.price_basis or "").lower()
+
+    # Second pass is a no-op; does not apply margin on top.
+    assert apply_internal_prices_to_transfer(cid, xfer) == 0
+    assert fill_missing_sale_at_cost(xfer) == 0
+    line.refresh_from_db()
+    assert line.sale_amount == Decimal("5000.00")
 
 
 @pytest.mark.django_db

@@ -1,11 +1,16 @@
 """
 Interim pricing for fish moving between ponds: cost per kg plus a fixed margin.
 
-Each pond is run as its own entity / profit centre, so a nursing pond that raises fingerlings
-and sells them to a grow-out pond should earn the value it created instead of passing cost
-along when operators explicitly reprice (``reprice=True``):
+**Locked policy (Model A — profit centre):** each pond is run as its own entity /
+profit centre, so a nursing pond that raises fingerlings and sells them to a
+grow-out pond earns the value it created when operators reprice
+(``reprice=True``):
 
     sale rate per kg = cost per kg + Company.aquaculture_internal_transfer_margin_per_kg
+
+Nursing surplus (IPT income > expense) is accepted; do not force nursing net to
+zero. Company consolidation eliminates unrealized inter-pond margin until the
+buyer sells externally. See ``docs/AQUACULTURE_ACCOUNTING_POLICY.md``.
 
 If a historical line has **no sale price**, the default is simpler: **sale = cost**
 (``fill_missing_sale_at_cost`` / ``apply_internal_prices_to_transfer`` with ``reprice=False``).
@@ -15,8 +20,8 @@ This applies to **inter-pond trades only**. A genuine sale to an outside custome
 whatever that customer actually paid — nothing here touches ``AquacultureFishSale`` pricing
 for external harvests.
 
-Set the company margin to 0 when repricing to move fish at cost, which reproduces the old
-behaviour exactly.
+Set the company margin to 0 when repricing to move fish at cost (Model B / cost-centre
+hatchery style), which reproduces transfer-at-cost behaviour.
 """
 from __future__ import annotations
 

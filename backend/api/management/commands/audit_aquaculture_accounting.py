@@ -1,15 +1,17 @@
 """
 Thorough aquaculture + GL audit for VPS/live data.
 
-Checks accounting rules:
+Checks accounting rules (locked policy: docs/AQUACULTURE_ACCOUNTING_POLICY.md):
   - Net profit = income − expenses (per pond and company)
-  - Nursing ponds: deficit is an issue; irreducible IPT surplus is accepted (profit centre)
+  - Nursing ponds: deficit is an issue; IPT surplus is accepted (Model A profit centre)
   - Grow-out: transfer-in matches sale/mirror amounts (same basis as P&L fish_transfer_cost_in)
   - Lease payments vs implied annual (area × rate) — cash-basis shortfall is accepted
   - Duplicate landlord payments (same pond/date/amount)
   - Missing auto-posted GL journals (gl_posting_audit)
   - Transfer priced lines must have AUTO-IPT invoice/bill journals (legacy XFER fallback)
   - Stale Cr 1581 > line cost is an issue (fix with --fix-transfer-gl); bio-asset cap is accepted
+  - Bio-cap unrelieved share > 5% → ops warning (still accepted; investigate capitalization)
+  - Book vs sample biomass bands (≤15% normal / 15–25% review / >25% investigate)
 
 Usage:
   python manage.py audit_aquaculture_accounting --company-id 2
@@ -32,6 +34,14 @@ from api.models import (
     AquacultureLandlordLedgerEntry,
     AquaculturePond,
     Company,
+)
+from api.services.aquaculture_accounting_policy import (
+    BIO_CAP_POLICY,
+    BIOMASS_DUAL_TRUTH_POLICY,
+    NURSING_SURPLUS_POLICY,
+    bio_cap_needs_ops_warning,
+    biomass_divergence_ratio,
+    classify_biomass_band,
 )
 from api.services.aquaculture_data_bank_service import fiscal_period_for_end_date
 from api.services.aquaculture_fish_transfer_gl_service import sync_aquaculture_fish_pond_transfer_gl
@@ -175,13 +185,9 @@ class Command(BaseCommand):
             elif net < Decimal("-500"):
                 issues.append(entry)
             else:
-                # Policy: nursing ponds are profit centres; IPT sale income may exceed
-                # operating expense. reconcile_nursing_pond_pl_balance must not apply.
+                # Model A: nursing ponds are profit centres; IPT surplus is accepted.
                 entry["type"] = "nursing_profit_centre_surplus"
-                entry["note"] = (
-                    "Accepted policy: profit-centre surplus (IPT income > expense). "
-                    "Do not run reconcile_nursing_pond_pl_balance apply."
-                )
+                entry["note"] = NURSING_SURPLUS_POLICY
                 accepted.append(entry)
 
         # 3) Lease vs implied annual per grow-out pond
@@ -284,11 +290,28 @@ class Command(BaseCommand):
                 }
                 if gl_amt > 0 and gl_amt < line_total:
                     entry["type"] = "transfer_gl_bio_cap"
-                    entry["note"] = (
-                        "Accepted: 1581 bio-asset GL cap at source pond "
-                        "(management cost > book balance on transfer date)"
-                    )
+                    entry["note"] = BIO_CAP_POLICY
+                    warn, share = bio_cap_needs_ops_warning(line_total, gl_amt)
+                    if share is not None:
+                        entry["unrelieved_share"] = str(share)
+                        entry["unrelieved_amount"] = str(MONEY(line_total - gl_amt))
                     accepted.append(entry)
+                    if warn:
+                        warnings.append(
+                            {
+                                "type": "transfer_gl_bio_cap_ops",
+                                "transfer_id": tr.id,
+                                "transfer_date": tr.transfer_date.isoformat(),
+                                "line_total": str(line_total),
+                                "gl_amount": str(gl_amt),
+                                "unrelieved_share": entry.get("unrelieved_share"),
+                                "note": (
+                                    "Ops: bio-cap unrelieved share > 5% of line cost — "
+                                    "review inventoriable capitalization at source pond "
+                                    "(cap itself remains correct policy)."
+                                ),
+                            }
+                        )
                 elif gl_amt > line_total:
                     entry["note"] = (
                         "Cr 1581 on IPT/legacy journals exceeds current line cost_amount — "
@@ -455,6 +478,45 @@ class Command(BaseCommand):
                     ],
                 }
             )
+
+        # 11) Book vs sample biomass bands (dual-truth policy — not a GL defect)
+        from api.services.aquaculture_partial_harvest import effective_biomass_kg_from_position_row
+        from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+
+        for pond in AquaculturePond.objects.filter(
+            company_id=company_id, is_active=True
+        ).only("id", "code", "name", "pond_role"):
+            rows = compute_fish_stock_position_rows(company_id, pond_id=pond.id)
+            if not rows:
+                continue
+            book = sum(
+                (Decimal(str(r.get("implied_net_weight_kg") or 0)) for r in rows),
+                Decimal("0"),
+            )
+            eff = sum(
+                (effective_biomass_kg_from_position_row(r) for r in rows),
+                Decimal("0"),
+            )
+            band = classify_biomass_band(book, eff)
+            if band in ("skip", "normal"):
+                continue
+            ratio = biomass_divergence_ratio(book, eff)
+            entry = {
+                "type": "biomass_book_vs_sample",
+                "pond_id": pond.id,
+                "pond_code": pond.code,
+                "pond_name": pond.name,
+                "book_kg": str(book.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                "effective_kg": str(eff.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
+                "divergence_ratio": str(ratio) if ratio is not None else None,
+                "band": band,
+                "note": BIOMASS_DUAL_TRUTH_POLICY,
+            }
+            if band == "investigate":
+                warnings.append(entry)
+            else:
+                # review band — still a warning for ops visibility
+                warnings.append(entry)
 
         report = {
             "company_id": company_id,

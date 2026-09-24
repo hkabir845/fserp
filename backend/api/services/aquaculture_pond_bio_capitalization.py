@@ -4,6 +4,10 @@ Pond production cost capitalization into GL 1581 (Biological Inventory).
 When ``Company.aquaculture_capitalize_pond_consumption_to_bioasset`` is enabled, direct pond
 inputs (fry, feed, medicine, pond care, equipment, etc.) accumulate as a pond liability/asset
 on 1581 and are relieved on harvest, transfer-out, or mortality — aligned with management P&L.
+
+**Locked policy:** IPT cost relief is capped at the source pond's 1581 balance (never invent
+inventory). Large unrelieved shares are ops capitalization warnings, not journal bugs — see
+``docs/AQUACULTURE_ACCOUNTING_POLICY.md``.
 """
 from __future__ import annotations
 

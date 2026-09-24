@@ -4,8 +4,12 @@ World-class aquaculture systems revalue biological inventory when fish grow.
 Fry bills record tiny stocking kg; transfers leave at fingerling kg. Without
 revaluation, book kg goes negative even when live heads remain.
 
-This service upserts one non-GL stock-ledger adjustment per pond+species so
-implied book kg matches effective (sample) biomass for current live fish.
+**Locked policy (dual truth):** this service upserts one **non-GL** stock-ledger
+adjustment per pond+species so implied book kg matches effective (sample) biomass
+for current live fish. GL 1581 stays on the cost model — never mark-to-sample.
+Book vs sample divergence within published sample noise is expected; see
+``docs/AQUACULTURE_ACCOUNTING_POLICY.md`` and
+``api.services.aquaculture_accounting_policy``.
 """
 from __future__ import annotations
 

@@ -389,7 +389,6 @@ class Command(BaseCommand):
             )
 
         # 9) Biological sales missing production_cycle (null-cycle debt)
-        from api.models import AquacultureFishSale
         from api.services.tenant_reporting_categories import (
             income_type_is_non_biological_for_company,
         )

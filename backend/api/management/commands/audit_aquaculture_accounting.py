@@ -3,12 +3,13 @@ Thorough aquaculture + GL audit for VPS/live data.
 
 Checks accounting rules:
   - Net profit = income − expenses (per pond and company)
-  - Nursing ponds: transfer-out income ≈ expenses (unallocated cost gap)
+  - Nursing ponds: deficit is an issue; irreducible IPT surplus is accepted (profit centre)
   - Grow-out: transfer-in matches sale/mirror amounts (same basis as P&L fish_transfer_cost_in)
-  - Lease payments vs implied annual (area × rate)
+  - Lease payments vs implied annual (area × rate) — cash-basis shortfall is accepted
   - Duplicate landlord payments (same pond/date/amount)
   - Missing auto-posted GL journals (gl_posting_audit)
   - Transfer priced lines must have AUTO-IPT invoice/bill journals (legacy XFER fallback)
+  - Stale Cr 1581 > line cost is an issue (fix with --fix-transfer-gl); bio-asset cap is accepted
 
 Usage:
   python manage.py audit_aquaculture_accounting --company-id 2
@@ -120,6 +121,7 @@ class Command(BaseCommand):
 
         issues: list[dict] = []
         warnings: list[dict] = []
+        accepted: list[dict] = []
 
         pl = compute_aquaculture_pl_summary_dict(
             company_id, period_start, period_end, None, None, None, False
@@ -173,8 +175,14 @@ class Command(BaseCommand):
             elif net < Decimal("-500"):
                 issues.append(entry)
             else:
-                entry["note"] = "Transfer income exceeds nursing expenses (cost pool not fully allocated)"
-                warnings.append(entry)
+                # Policy: nursing ponds are profit centres; IPT sale income may exceed
+                # operating expense. reconcile_nursing_pond_pl_balance must not apply.
+                entry["type"] = "nursing_profit_centre_surplus"
+                entry["note"] = (
+                    "Accepted policy: profit-centre surplus (IPT income > expense). "
+                    "Do not run reconcile_nursing_pond_pl_balance apply."
+                )
+                accepted.append(entry)
 
         # 3) Lease vs implied annual per grow-out pond
         for pond in AquaculturePond.objects.filter(company_id=company_id, pond_role="grow_out"):
@@ -193,13 +201,18 @@ class Command(BaseCommand):
                     }
                 )
             elif annual and lease_pl < annual - Decimal("50000") and lease_pl > 0:
-                warnings.append(
+                accepted.append(
                     {
                         "type": "lease_under_annual",
                         "pond_id": pond.id,
                         "pond_code": pond.code,
                         "lease_pl": str(lease_pl),
                         "implied_annual": str(annual),
+                        "shortfall": str(MONEY(annual - lease_pl)),
+                        "note": (
+                            "Accepted: P&L lease is cash-basis (landlord payments). "
+                            "Shortfall vs area×rate is unpaid/installment timing, not a GL gap."
+                        ),
                     }
                 )
 
@@ -270,8 +283,12 @@ class Command(BaseCommand):
                     "gl_amount": str(gl_amt),
                 }
                 if gl_amt > 0 and gl_amt < line_total:
-                    entry["note"] = "Likely 1581 bio-asset GL cap at source pond (management cost > book balance)"
-                    warnings.append(entry)
+                    entry["type"] = "transfer_gl_bio_cap"
+                    entry["note"] = (
+                        "Accepted: 1581 bio-asset GL cap at source pond "
+                        "(management cost > book balance on transfer date)"
+                    )
+                    accepted.append(entry)
                 elif gl_amt > line_total:
                     entry["note"] = (
                         "Cr 1581 on IPT/legacy journals exceeds current line cost_amount — "
@@ -457,8 +474,10 @@ class Command(BaseCommand):
             ],
             "issues": issues,
             "warnings": warnings,
+            "accepted": accepted,
             "issue_count": len(issues),
             "warning_count": len(warnings),
+            "accepted_count": len(accepted),
             "gl_gap_total": gl_audit.get("total_gaps", 0),
         }
 
@@ -488,5 +507,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"WARNINGS ({len(warnings)}):"))
             for w in warnings[:30]:
                 self.stdout.write(f"  [{w['type']}] {w}")
+        if accepted:
+            self.stdout.write(f"ACCEPTED ({len(accepted)}):")
+            for a in accepted[:30]:
+                self.stdout.write(f"  [{a['type']}] {a}")
         self.stdout.write("")
         self.stdout.write(f"GL posting gaps: {gl_audit.get('total_gaps', 0)}")

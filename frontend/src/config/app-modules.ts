@@ -80,7 +80,7 @@ export const erpMenuItems: AppMenuItem[] = [
       { title: 'Reports hub', href: '/reports', icon: '📑' },
       { title: 'Trial balance', href: '/reports?report=trial-balance', icon: '⚖️' },
       { title: 'Balance sheet', href: '/reports?report=balance-sheet', icon: '📊' },
-      { title: 'Journal entries', href: '/accounting/journal', icon: '📔', status: 'planned' },
+      { title: 'Journal entries', href: '/journal-entries', icon: '📔' },
     ],
   },
   { title: 'Livestock', href: '/livestock', icon: '🐄', status: 'planned' },
@@ -113,7 +113,7 @@ export const erpMenuItems: AppMenuItem[] = [
     href: '/accounting',
     children: [
       { title: 'Chart of Accounts', href: '/chart-of-accounts', icon: '📑' },
-      { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', status: 'planned' },
+      { title: 'Journal Entries', href: '/journal-entries', icon: '📔' },
       { title: 'Trial Balance', href: '/reports?report=trial-balance', icon: '⚖️' },
       { title: 'Balance Sheet', href: '/reports?report=balance-sheet', icon: '📊' },
       { title: 'Loans (facilities)', href: '/loans', icon: '🏦' },
@@ -279,7 +279,7 @@ export const accountingHub = {
   subtitle: 'Financial records and statements (sections under active development).',
   links: [
     { title: 'Chart of Accounts', href: '/chart-of-accounts', icon: '📑', description: 'GL account tree' },
-    { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', description: 'Manual journals', status: 'planned' },
+    { title: 'Journal Entries', href: '/journal-entries', icon: '📔', description: 'Manual journals' },
     { title: 'Trial Balance', href: '/reports?report=trial-balance', icon: '⚖️', description: 'Period TB' },
     { title: 'Balance Sheet', href: '/reports?report=balance-sheet', icon: '📊', description: 'Statement of position' },
     {
@@ -303,7 +303,7 @@ export const reportsHub = {
     },
     { title: 'Trial balance', href: '/reports?report=trial-balance', icon: '⚖️', description: 'GL trial balance' },
     { title: 'Balance sheet', href: '/reports?report=balance-sheet', icon: '📊', description: 'Statement of position' },
-    { title: 'Journal entries', href: '/accounting/journal', icon: '📔', description: 'Posted and draft journals', status: 'planned' },
+    { title: 'Journal entries', href: '/journal-entries', icon: '📔', description: 'Posted and draft journals' },
     { title: 'Stock positions', href: '/inventory', icon: '📦', description: 'Ledger-based warehouse stock' },
   ] satisfies HubLink[],
 }

@@ -79,9 +79,12 @@ export function formatPlBottomLineText(income: number, expenses: number, netProf
   return `Total income (${income.toFixed(2)}) − Total expenses (${expenses.toFixed(2)}) = Net profit (${netProfit.toFixed(2)})`
 }
 
-export function buildAquaculturePlBottomLineCsv(figures: AquaculturePlExportFigures): string {
+export function buildAquaculturePlBottomLineCsv(
+  figures: AquaculturePlExportFigures,
+  currency = 'BDT',
+): string {
   let out = '\nP&L summary (aquaculture register)\n'
-  out += 'Metric,Amount (BDT)\n'
+  out += `Metric,Amount (${currency})\n`
   out += `Total income,${figures.totalIncome}\n`
   out += `Total expenses,${figures.totalExpenses}\n`
   out += `Net profit,${figures.netProfit}\n`
@@ -102,10 +105,10 @@ export function buildAquaculturePlBottomLinePrintHtml(figures: AquaculturePlExpo
 <p><em>Total income − Total expenses = Net profit</em></p></div>`
 }
 
-function categoryTableHtml(title: string, categories: PlCategoryRow[]): string {
+function categoryTableHtml(title: string, categories: PlCategoryRow[], currency = 'BDT'): string {
   const active = categories.filter((c) => Number(c.amount ?? 0) !== 0)
   if (!active.length) return ''
-  let html = `<h3>${escapeHtml(title)}</h3><table><thead><tr><th>Category</th><th style="text-align:right">Amount (BDT)</th></tr></thead><tbody>`
+  let html = `<h3>${escapeHtml(title)}</h3><table><thead><tr><th>Category</th><th style="text-align:right">Amount (${escapeHtml(currency)})</th></tr></thead><tbody>`
   active.forEach((c) => {
     html += `<tr><td>${escapeHtml(c.label || c.category.replace(/_/g, ' '))}</td><td style="text-align:right">${fmtMoney(Number(c.amount ?? 0))}</td></tr>`
   })
@@ -113,10 +116,10 @@ function categoryTableHtml(title: string, categories: PlCategoryRow[]): string {
   return html
 }
 
-function categoryTableCsv(title: string, categories: PlCategoryRow[]): string {
+function categoryTableCsv(title: string, categories: PlCategoryRow[], currency = 'BDT'): string {
   const active = categories.filter((c) => Number(c.amount ?? 0) !== 0)
   if (!active.length) return ''
-  let out = `\n${title}\nCategory,Amount (BDT)\n`
+  let out = `\n${title}\nCategory,Amount (${currency})\n`
   active.forEach((c) => {
     out += `${escapeCsvValue(c.label || c.category)},${c.amount ?? 0}\n`
   })
@@ -125,8 +128,9 @@ function categoryTableCsv(title: string, categories: PlCategoryRow[]): string {
 
 export function buildAquaculturePlRegisterPrintHtml(
   figures: AquaculturePlExportFigures,
-  options?: { showIncome?: boolean; showExpenses?: boolean },
+  options?: { showIncome?: boolean; showExpenses?: boolean; currency?: string },
 ): string {
+  const currency = options?.currency || 'BDT'
   const showIncome = options?.showIncome !== false
   const showExpenses = options?.showExpenses !== false
   const heading = figures.pondName
@@ -134,11 +138,11 @@ export function buildAquaculturePlRegisterPrintHtml(
     : 'Profit & Loss (aquaculture register)'
   let html = `<h2>${heading}</h2>`
   if (showIncome && figures.incomeCategories.length) {
-    html += categoryTableHtml('Income', figures.incomeCategories)
+    html += categoryTableHtml('Income', figures.incomeCategories, currency)
     html += `<p><strong>Total income:</strong> ${fmtMoney(figures.totalIncome)}</p>`
   }
   if (showExpenses && figures.expenseCategories.length) {
-    html += categoryTableHtml('Expenses', figures.expenseCategories)
+    html += categoryTableHtml('Expenses', figures.expenseCategories, currency)
     html += `<p><strong>Total expenses:</strong> ${fmtMoney(figures.totalExpenses)}</p>`
   }
   html += buildAquaculturePlBottomLinePrintHtml(figures)
@@ -147,14 +151,15 @@ export function buildAquaculturePlRegisterPrintHtml(
 
 export function buildAquaculturePlRegisterCsv(
   figures: AquaculturePlExportFigures,
-  options?: { showIncome?: boolean; showExpenses?: boolean },
+  options?: { showIncome?: boolean; showExpenses?: boolean; currency?: string },
 ): string {
+  const currency = options?.currency || 'BDT'
   const showIncome = options?.showIncome !== false
   const showExpenses = options?.showExpenses !== false
   let out = ''
-  if (showIncome) out += categoryTableCsv('Income', figures.incomeCategories)
-  if (showExpenses) out += categoryTableCsv('Expenses', figures.expenseCategories)
-  out += buildAquaculturePlBottomLineCsv(figures)
+  if (showIncome) out += categoryTableCsv('Income', figures.incomeCategories, currency)
+  if (showExpenses) out += categoryTableCsv('Expenses', figures.expenseCategories, currency)
+  out += buildAquaculturePlBottomLineCsv(figures, currency)
   return out
 }
 

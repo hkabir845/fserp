@@ -2,8 +2,8 @@
 
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
 
-function MoneyBdt(amount: unknown) {
-  return <ReportAmountCell amount={Number(amount ?? 0)} currency="BDT" plain />
+function Money(amount: unknown, currency: string) {
+  return <ReportAmountCell amount={Number(amount ?? 0)} currency={currency || 'BDT'} plain />
 }
 
 export interface PlCategoryRow {
@@ -33,6 +33,8 @@ interface AquaculturePlCategoryMatricesProps {
   showFullCatalog?: boolean
   pondScopeLabel?: string
   combinedMode?: boolean
+  /** ISO 4217 company currency (default BDT). */
+  currency?: string
   rowTotalsByPond?: {
     pond_id: number
     income_total: string
@@ -104,6 +106,7 @@ function CategoryMatrixTable({
   scopeTotals,
   columnKeys,
   getLabel,
+  currency = 'BDT',
 }: {
   title: string
   description: string
@@ -111,6 +114,7 @@ function CategoryMatrixTable({
   scopeTotals: PlCategoryRow[]
   columnKeys: string[]
   getLabel: (key: string) => string
+  currency?: string
 }) {
   if (columnKeys.length === 0) {
     return (
@@ -161,11 +165,11 @@ function CategoryMatrixTable({
                         key={`${g.pond_id}-${key}`}
                         className={`px-3 py-2 text-right tabular-nums ${n === 0 ? 'text-muted-foreground/50' : ''}`}
                       >
-                        {MoneyBdt(amt)}
+                        {Money(amt, currency)}
                       </td>
                     )
                   })}
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">{MoneyBdt(String(rowSum))}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">{Money(String(rowSum), currency)}</td>
                 </tr>
               )
             })}
@@ -178,18 +182,19 @@ function CategoryMatrixTable({
                 const sum = scopeAmt != null ? Number(scopeAmt) : colTotal(key)
                 return (
                   <td key={`tot-${key}`} className="px-3 py-2 text-right font-bold tabular-nums text-foreground">
-                    {MoneyBdt(String(sum))}
+                    {Money(String(sum), currency)}
                   </td>
                 )
               })}
               <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">
-                {MoneyBdt(
+                {Money(
                   String(
                     columnKeys.reduce((s, k) => {
                       const scopeAmt = totalsMap.get(k)
                       return s + (scopeAmt != null ? Number(scopeAmt) : colTotal(k))
                     }, 0),
                   ),
+                  currency,
                 )}
               </td>
             </tr>
@@ -232,6 +237,7 @@ function CombinedIncomeExpenseMatrix({
   rowTotalsByPond,
   grandTotals,
   formulaNote,
+  currency = 'BDT',
 }: AquaculturePlCategoryMatricesProps) {
   const useFullCatalog = showFullCatalog !== false && Boolean(incomeColumns?.length || expenseColumns?.length)
   const incomeKeys = columnKeysFromSources(
@@ -396,13 +402,13 @@ function CombinedIncomeExpenseMatrix({
                         key={`${pond.id}-inc-${key}`}
                         className={`border-l border-border/30 px-3 py-2 text-right tabular-nums ${n === 0 ? 'text-muted-foreground/50' : ''}`}
                       >
-                        {MoneyBdt(amt)}
+                        {Money(amt, currency)}
                       </td>
                     )
                   })}
                   {incomeKeys.length > 0 ? (
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-emerald-900">
-                      {MoneyBdt(String(incRow))}
+                      {Money(String(incRow), currency)}
                     </td>
                   ) : null}
                   {expenseKeys.map((key) => {
@@ -414,17 +420,17 @@ function CombinedIncomeExpenseMatrix({
                         key={`${pond.id}-exp-${key}`}
                         className={`border-l border-border/30 px-3 py-2 text-right tabular-nums ${n === 0 ? 'text-muted-foreground/50' : n < 0 ? 'text-rose-800' : ''}`}
                       >
-                        {MoneyBdt(display)}
+                        {Money(display, currency)}
                       </td>
                     )
                   })}
                   {expenseKeys.length > 0 ? (
                     <td className="px-3 py-2 text-right tabular-nums font-medium text-rose-950">
-                      {MoneyBdt(String(expRow))}
+                      {Money(String(expRow), currency)}
                     </td>
                   ) : null}
                   <td className="border-l border-border px-3 py-2 text-right tabular-nums font-semibold text-primary">
-                    {MoneyBdt(String(net))}
+                    {Money(String(net), currency)}
                   </td>
                 </tr>
               )
@@ -441,13 +447,13 @@ function CombinedIncomeExpenseMatrix({
                     key={`gt-inc-${key}`}
                     className="border-l border-border/30 px-3 py-2 text-right font-bold tabular-nums text-foreground"
                   >
-                    {MoneyBdt(String(sum))}
+                    {Money(String(sum), currency)}
                   </td>
                 )
               })}
               {incomeKeys.length > 0 ? (
                 <td className="px-3 py-2 text-right font-bold tabular-nums text-emerald-900">
-                  {MoneyBdt(String(grandIncome))}
+                  {Money(String(grandIncome), currency)}
                 </td>
               ) : null}
               {expenseKeys.map((key) => {
@@ -460,17 +466,17 @@ function CombinedIncomeExpenseMatrix({
                     key={`gt-exp-${key}`}
                     className={`border-l border-border/30 px-3 py-2 text-right font-bold tabular-nums ${Number(display) < 0 ? 'text-rose-900' : 'text-foreground'}`}
                   >
-                    {MoneyBdt(display)}
+                    {Money(display, currency)}
                   </td>
                 )
               })}
               {expenseKeys.length > 0 ? (
                 <td className="px-3 py-2 text-right font-bold tabular-nums text-rose-950">
-                  {MoneyBdt(String(grandExpense))}
+                  {Money(String(grandExpense), currency)}
                 </td>
               ) : null}
               <td className="border-l border-border px-3 py-2 text-right font-bold tabular-nums text-primary">
-                {MoneyBdt(String(grandNet))}
+                {Money(String(grandNet), currency)}
               </td>
             </tr>
             <tr className="border-t border-border bg-muted/80">
@@ -479,9 +485,9 @@ function CombinedIncomeExpenseMatrix({
                 className="px-3 py-2 text-xs text-muted-foreground"
               >
                 <span className="font-semibold text-foreground">Formula: </span>
-                Net profit = Total income ({MoneyBdt(String(grandIncome))}) − Total costs &amp; expenses (
-                {MoneyBdt(String(grandExpense))}) ={' '}
-                <span className="font-semibold text-primary">{MoneyBdt(String(grandNet))}</span>
+                Net profit = Total income ({Money(String(grandIncome), currency)}) − Total costs &amp; expenses (
+                {Money(String(grandExpense), currency)}) ={' '}
+                <span className="font-semibold text-primary">{Money(String(grandNet), currency)}</span>
               </td>
             </tr>
           </tfoot>
@@ -501,6 +507,7 @@ export function AquaculturePlCategoryMatrices({
   showFullCatalog = false,
   pondScopeLabel,
   combinedMode = false,
+  currency = 'BDT',
   rowTotalsByPond,
   grandTotals,
   formulaNote,
@@ -519,6 +526,7 @@ export function AquaculturePlCategoryMatrices({
         rowTotalsByPond={rowTotalsByPond}
         grandTotals={grandTotals}
         formulaNote={formulaNote}
+        currency={currency}
       />
     )
   }
@@ -549,6 +557,7 @@ export function AquaculturePlCategoryMatrices({
 
       {hasPondRows && incomeByPond.length > 0 ? (
         <CategoryMatrixTable
+          currency={currency}
           title="Income by type — all ponds"
           description="Every pond income type in scope. Row total is the sum of income columns."
           groups={incomeByPond}
@@ -558,6 +567,7 @@ export function AquaculturePlCategoryMatrices({
         />
       ) : incomeByCategory.length > 0 ? (
         <CategoryMatrixTable
+          currency={currency}
           title="Income by type"
           description="All registered pond income types for the selected entity and period."
           groups={[{ pond_id: 0, pond_name: pondScopeLabel ?? 'Scope', categories: incomeByCategory }]}
@@ -569,6 +579,7 @@ export function AquaculturePlCategoryMatrices({
 
       {hasPondRows && expensesByPond.length > 0 ? (
         <CategoryMatrixTable
+          currency={currency}
           title="Expenses by category — all ponds"
           description="Operating expenses: feed, medicine, fry/fingerling, lease, soil cut, transport, salaries, and all other categories by pond."
           groups={expensesByPond}
@@ -578,6 +589,7 @@ export function AquaculturePlCategoryMatrices({
         />
       ) : expensesByCategory.length > 0 ? (
         <CategoryMatrixTable
+          currency={currency}
           title="Expenses by category"
           description="All expense categories for the selected entity and period."
           groups={[{ pond_id: 0, pond_name: pondScopeLabel ?? 'Scope', categories: expensesByCategory }]}
@@ -666,16 +678,18 @@ export function AquaculturePlBottomLine({
   income,
   expenses,
   netProfit,
+  currency = 'BDT',
 }: {
   income: number
   expenses: number
   netProfit: number
+  currency?: string
 }) {
   return (
     <div className="rounded-lg border-2 border-primary/30 bg-primary/5 px-4 py-4 text-center">
       <div className="text-sm font-semibold text-foreground tabular-nums">
-        Total income ({MoneyBdt(income)}) − Total expenses ({MoneyBdt(expenses)}) = Net profit (
-        <span className={netProfit >= 0 ? 'text-primary' : 'text-destructive'}>{MoneyBdt(netProfit)}</span>)
+        Total income ({Money(income, currency)}) − Total expenses ({Money(expenses, currency)}) = Net profit (
+        <span className={netProfit >= 0 ? 'text-primary' : 'text-destructive'}>{Money(netProfit, currency)}</span>)
       </div>
     </div>
   )
@@ -686,10 +700,12 @@ export function AquaculturePlNetSummary({
   totals,
   entityName,
   expenseCategories,
+  currency = 'BDT',
 }: {
   totals: PlTotalsLike
   entityName?: string | null
   expenseCategories?: PlCategoryRow[]
+  currency?: string
 }) {
   const { income, expenses, netProfit } = resolveAquaculturePlFigures(totals, expenseCategories)
 
@@ -704,14 +720,14 @@ export function AquaculturePlNetSummary({
       <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
         <div className="min-w-[8.5rem] shrink-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Income</p>
-          <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">{MoneyBdt(income)}</div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-900">{Money(income, currency)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           −
         </span>
         <div className="min-w-[8.5rem] shrink-0 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-rose-800">Expenses</p>
-          <div className="mt-1 text-2xl font-bold tabular-nums text-rose-900">{MoneyBdt(expenses)}</div>
+          <div className="mt-1 text-2xl font-bold tabular-nums text-rose-900">{Money(expenses, currency)}</div>
         </div>
         <span className="text-3xl font-light text-muted-foreground" aria-hidden>
           =
@@ -723,7 +739,7 @@ export function AquaculturePlNetSummary({
               netProfit >= 0 ? 'text-blue-900' : 'text-destructive'
             }`}
           >
-            {MoneyBdt(netProfit)}
+            {Money(netProfit, currency)}
           </div>
         </div>
       </div>
@@ -732,7 +748,7 @@ export function AquaculturePlNetSummary({
 }
 
 /** Summary KPI cards for pond P&L expense and profit lines. */
-export function AquaculturePlExpenseKpiGrid({ totals }: { totals: PlTotalsLike }) {
+export function AquaculturePlExpenseKpiGrid({ totals, currency = 'BDT' }: { totals: PlTotalsLike; currency?: string }) {
   const cards: [string, string | undefined][] = [
     ['Feed consumption', totals.feed_consumption_cost],
     ['Medicine consumption', totals.medicine_consumption_cost],
@@ -751,7 +767,7 @@ export function AquaculturePlExpenseKpiGrid({ totals }: { totals: PlTotalsLike }
       {cards.map(([label, val]) => (
         <div key={label} className="rounded-xl border border-border bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <div className="mt-1 text-lg font-semibold tabular-nums text-foreground">{MoneyBdt(val ?? '0')}</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums text-foreground">{Money(val ?? '0', currency)}</div>
         </div>
       ))}
     </div>
@@ -759,7 +775,13 @@ export function AquaculturePlExpenseKpiGrid({ totals }: { totals: PlTotalsLike }
 }
 
 /** Consumption costs always listed as operating expenses (feed, medicine, pond-care / supplies). */
-export function PlConsumptionCostsExpenses({ totals }: { totals: PlTotalsLike }) {
+export function PlConsumptionCostsExpenses({
+  totals,
+  currency = 'BDT',
+}: {
+  totals: PlTotalsLike
+  currency?: string
+}) {
   const rows: [string, string | undefined][] = [
     ['Feed consumption cost', totals.feed_consumption_cost],
     ['Medicine consumption cost', totals.medicine_consumption_cost],
@@ -780,21 +802,21 @@ export function PlConsumptionCostsExpenses({ totals }: { totals: PlTotalsLike })
           <thead className="bg-rose-50/80">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-rose-900/80">Expense</th>
-              <th className="px-3 py-2 text-right font-medium text-rose-900/80">Amount (BDT)</th>
+              <th className="px-3 py-2 text-right font-medium text-rose-900/80">Amount ({currency})</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-rose-100">
             {rows.map(([label, val]) => (
               <tr key={label}>
                 <td className="px-3 py-2 text-foreground">{label}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium">{MoneyBdt(val ?? '0')}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{Money(val ?? '0', currency)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot className="bg-rose-50/90">
             <tr>
               <td className="px-3 py-2 font-bold text-rose-950">Total consumption costs</td>
-              <td className="px-3 py-2 text-right font-bold tabular-nums text-rose-950">{MoneyBdt(String(total))}</td>
+              <td className="px-3 py-2 text-right font-bold tabular-nums text-rose-950">{Money(String(total), currency)}</td>
             </tr>
           </tfoot>
         </table>
@@ -810,6 +832,7 @@ export function PlActiveExpenseCategoriesList({
   emptyMessage = 'No pond expenses recorded in this period.',
   authoritativeTotal,
   totalLabel = 'Total — listed categories',
+  currency = 'BDT',
 }: {
   categories?: PlCategoryRow[]
   title?: string
@@ -817,6 +840,7 @@ export function PlActiveExpenseCategoriesList({
   /** When set, footer uses this total instead of summing visible rows. */
   authoritativeTotal?: string | number
   totalLabel?: string
+  currency?: string
 }) {
   const active = (categories ?? [])
     .filter((c) => Number(c.amount ?? 0) !== 0)
@@ -842,21 +866,21 @@ export function PlActiveExpenseCategoriesList({
           <thead className="bg-muted/40">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-muted-foreground">Expense category</th>
-              <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount (BDT)</th>
+              <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount ({currency})</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70 bg-white">
             {active.map((c) => (
               <tr key={c.category}>
                 <td className="px-3 py-2 text-foreground">{c.label || c.category.replace(/_/g, ' ')}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium">{MoneyBdt(c.amount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{Money(c.amount, currency)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot className="bg-muted">
             <tr>
               <td className="px-3 py-2 font-bold text-foreground">{totalLabel}</td>
-              <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(String(total))}</td>
+              <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{Money(String(total), currency)}</td>
             </tr>
           </tfoot>
         </table>
@@ -865,7 +889,7 @@ export function PlActiveExpenseCategoriesList({
       Math.abs(Number(authoritativeTotal) - listedTotal) > 0.02 ? (
         <p className="mt-1 text-xs text-muted-foreground">
           Listed categories sum to{' '}
-          <span className="tabular-nums">{MoneyBdt(String(listedTotal))}</span>; total includes rounding and categories
+          <span className="tabular-nums">{Money(String(listedTotal), currency)}</span>; total includes rounding and categories
           without line detail.
         </p>
       ) : null}
@@ -880,12 +904,14 @@ export function PlActiveIncomeCategoriesList({
   emptyMessage = 'No pond income recorded in this period.',
   authoritativeTotal,
   totalLabel = 'Total — listed income types',
+  currency = 'BDT',
 }: {
   categories?: PlCategoryRow[]
   title?: string
   emptyMessage?: string
   authoritativeTotal?: string | number
   totalLabel?: string
+  currency?: string
 }) {
   const active = (categories ?? [])
     .filter((c) => Number(c.amount ?? 0) !== 0)
@@ -909,21 +935,21 @@ export function PlActiveIncomeCategoriesList({
           <thead className="bg-muted/40">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-muted-foreground">Income type</th>
-              <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount (BDT)</th>
+              <th className="px-3 py-2 text-right font-medium text-muted-foreground">Amount ({currency})</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/70 bg-white">
             {active.map((c) => (
               <tr key={c.category}>
                 <td className="px-3 py-2 text-foreground">{c.label || c.category.replace(/_/g, ' ')}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium">{MoneyBdt(c.amount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium">{Money(c.amount, currency)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot className="bg-muted">
             <tr>
               <td className="px-3 py-2 font-bold text-foreground">{totalLabel}</td>
-              <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{MoneyBdt(String(total))}</td>
+              <td className="px-3 py-2 text-right font-bold tabular-nums text-foreground">{Money(String(total), currency)}</td>
             </tr>
           </tfoot>
         </table>
@@ -935,6 +961,7 @@ export function PlActiveIncomeCategoriesList({
 /** Collapsed GL P&L numbers for pond scope — reference only, not added to register totals. */
 export function GlPlReferencePanel({
   data,
+  currency = 'BDT',
 }: {
   data?: {
     income?: { total?: number }
@@ -943,6 +970,7 @@ export function GlPlReferencePanel({
     gross_profit?: number
     net_income?: number
   } | null
+  currency?: string
 }) {
   if (!data) return null
   const income = Number(data.income?.total ?? 0)
@@ -977,7 +1005,7 @@ export function GlPlReferencePanel({
         {rows.map(([label, val]) => (
           <div key={label} className="rounded-md border border-border/80 bg-white px-3 py-2">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <div className="font-semibold tabular-nums text-foreground">{MoneyBdt(val)}</div>
+            <div className="font-semibold tabular-nums text-foreground">{Money(val, currency)}</div>
           </div>
         ))}
       </div>
@@ -1007,9 +1035,11 @@ export interface PlPondRowLike {
 export function PlPondByPondExpenseTable({
   ponds,
   totals,
+  currency = 'BDT',
 }: {
   ponds?: PlPondRowLike[]
   totals?: PlTotalsLike
+  currency?: string
 }) {
   const rows = ponds ?? []
   if (rows.length === 0) return null
@@ -1059,7 +1089,7 @@ export function PlPondByPondExpenseTable({
                 <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-foreground">{p.pond_name}</td>
                 {columns.map((c) => (
                   <td key={`${p.pond_id}-${c.key}`} className="px-3 py-2 text-right tabular-nums">
-                    {MoneyBdt(cellVal(p, c.key))}
+                    {Money(cellVal(p, c.key), currency)}
                   </td>
                 ))}
               </tr>
@@ -1078,7 +1108,7 @@ export function PlPondByPondExpenseTable({
                   else if (c.totalKey) val = String(totals[c.totalKey] ?? '0')
                   return (
                     <td key={`tot-${c.key}`} className="px-3 py-2 text-right font-bold tabular-nums text-foreground">
-                      {MoneyBdt(val)}
+                      {Money(val, currency)}
                     </td>
                   )
                 })}

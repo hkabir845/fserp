@@ -1259,6 +1259,7 @@ export function AquaculturePlManagementPanel({
             </div>
           )}
           <AquaculturePlNetSummary
+            currency={currency}
             totals={data.totals}
             expenseCategories={expensesByCategory}
             entityName={
@@ -1270,16 +1271,17 @@ export function AquaculturePlManagementPanel({
             }
           />
 
-          <PlConsumptionCostsExpenses totals={data.totals} />
+          <PlConsumptionCostsExpenses totals={data.totals} currency={currency} />
           {data.ponds.length !== 1 ? (
-            <PlPondByPondExpenseTable ponds={data.ponds} totals={data.totals} />
+            <PlPondByPondExpenseTable ponds={data.ponds} totals={data.totals} currency={currency} />
           ) : null}
-          <PlActiveExpenseCategoriesList categories={expensesByCategory} />
+          <PlActiveExpenseCategoriesList categories={expensesByCategory} currency={currency} />
 
           <div>
             <h2 className="text-lg font-semibold text-foreground">P&amp;L — every income &amp; expense</h2>
             <div className="mt-3">
               <AquaculturePlCategoryMatrices
+                currency={currency}
                 incomeByPond={incomeByPond}
                 incomeByCategory={incomeByCategory}
                 expensesByPond={expensesByPond}
@@ -1314,6 +1316,7 @@ export function AquaculturePlManagementPanel({
 
           {data.totals ? (
             <AquaculturePlBottomLine
+              currency={currency}
               {...resolveAquaculturePlFigures(data.totals, expensesByCategory)}
             />
           ) : null}

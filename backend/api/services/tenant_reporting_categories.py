@@ -205,7 +205,7 @@ AQUACULTURE_INCOME_TYPE_HINTS: dict[str, str] = {
     "fish_harvest_sale": "Primary table-fish or market harvest revenue from the pond.",
     "fingerling_sale": "Sales of fry or fingerlings produced or held at the pond.",
     "inter_pond_fingerling_transfer": (
-        "Internal nursing-to-grow-out fingerling transfer at fully loaded cost (nursing income)."
+        "Sale of fry or fingerlings from this pond to another pond."
     ),
     "processing_value_add": "Smoked, filleted, or otherwise processed fish sold at a premium.",
     "feed_sale": (

@@ -79,7 +79,14 @@ def ensure_fish_sale_for_transfer_line(
         "company_id": transfer.company_id,
         "pond_id": transfer.from_pond_id,
         "production_cycle_id": transfer.from_production_cycle_id,
-        "income_type": "fingerling_sale",
+        "income_type": (
+            "fingerling_sale"
+            if (getattr(getattr(transfer, "from_pond", None), "pond_role", "") or "")
+            .strip()
+            .lower()
+            in ("nursing", "broodstock")
+            else "fish_harvest_sale"
+        ),
         "fish_species": transfer.fish_species or "tilapia",
         "fish_species_other": (transfer.fish_species_other or "").strip()[:120],
         "sale_date": transfer.transfer_date,

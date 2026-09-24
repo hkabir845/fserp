@@ -23,7 +23,6 @@ from api.services.aquaculture_constants import (
     AQUACULTURE_EXPENSE_CATEGORY_CHOICES,
     AQUACULTURE_INCOME_TYPE_CHOICES,
     FISH_STOCK_LEDGER_PL_NOTE,
-    INTER_POND_FINGERLING_TRANSFER_INCOME,
     INTER_POND_FISH_TRANSFER_PL_NOTE,
     SHARED_OPERATING_COST_RULE,
 )
@@ -51,6 +50,13 @@ def _money_q(d: Decimal) -> Decimal:
 
 
 PL_FISH_INCOME_TYPES: frozenset[str] = frozenset({"fish_harvest_sale", "fingerling_sale"})
+
+
+def _internal_fish_sale_income_type(pond_role: str) -> str:
+    """Fry and fingerlings leave a nursing or broodstock pond. Table fish leave grow-out."""
+    if (pond_role or "").strip().lower() in ("nursing", "broodstock"):
+        return "fingerling_sale"
+    return "fish_harvest_sale"
 PL_EMPTY_SACK_INCOME_TYPES: frozenset[str] = frozenset({"empty_feed_sack_sale"})
 
 PL_SUPPLEMENTAL_EXPENSE_KEYS: tuple[tuple[str, str], ...] = (
@@ -425,42 +431,56 @@ def compute_aquaculture_pl_summary_dict(
             "transfer__from_production_cycle_id",
         )
     )
+    line_ids = [int(xr["id"]) for xr in xfer_rows]
     mirrored_sale_by_line = {
         int(row["source_fish_pond_transfer_line_id"]): row
         for row in AquacultureFishSale.objects.filter(
             company_id=cid,
-            source_fish_pond_transfer_line_id__isnull=False,
-            sale_date__gte=start,
-            sale_date__lte=end,
-        ).values("source_fish_pond_transfer_line_id", "total_amount")
+            source_fish_pond_transfer_line_id__in=line_ids,
+        ).values("source_fish_pond_transfer_line_id", "total_amount", "invoice_id")
         if row["source_fish_pond_transfer_line_id"] is not None
+    }
+    from_pond_ids = {
+        int(xr["transfer__from_pond_id"])
+        for xr in xfer_rows
+        if xr["transfer__from_pond_id"] is not None
+    }
+    role_by_from_pond = {
+        p.id: (p.pond_role or "").strip().lower()
+        for p in AquaculturePond.objects.filter(pk__in=from_pond_ids).only("id", "pond_role")
     }
     transfer_in_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     transfer_out_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
     trans_cycle_in: dict[tuple[int, int | None], Decimal] = defaultdict(lambda: Decimal("0"))
     trans_cycle_out: dict[tuple[int, int | None], Decimal] = defaultdict(lambda: Decimal("0"))
+    # Seller income for fish, fingerlings, and fry. Company statements subtract this
+    # so an internal sale is not outside revenue.
+    internal_sale_by_pond: dict[int, dict[str, Decimal]] = defaultdict(
+        lambda: defaultdict(lambda: Decimal("0"))
+    )
     for xr in xfer_rows:
         line_id = int(xr["id"])
         cost = _money_q(Decimal(str(xr["cost_amount"] or 0)))
         sale_amt = _money_q(Decimal(str(xr["sale_amount"] or 0)))
         mirrored = mirrored_sale_by_line.get(line_id)
-        if mirrored is None:
-            # No pond-to-pond sale yet. Nursing cost stays on the source pond until
-            # the transfer is materialized as a sale (see materialize_fish_sales_for_company).
-            continue
-        # Commercial view is the mirrored AquacultureFishSale (seller revenue).
-        # Buyer still carries the purchase price as transfer-in cost.
-        amount = _money_q(Decimal(str(mirrored["total_amount"] or 0)))
-        if amount <= 0:
-            amount = sale_amt if sale_amt > 0 else cost
-        if amount == 0:
+        amount = sale_amt if sale_amt > 0 else cost
+        if mirrored is not None:
+            mirrored_amt = _money_q(Decimal(str(mirrored["total_amount"] or 0)))
+            if mirrored_amt > 0:
+                amount = mirrored_amt
+        if amount <= 0 or xr["to_pond_id"] is None or xr["transfer__from_pond_id"] is None:
             continue
         tp = int(xr["to_pond_id"])
         tc = xr["to_production_cycle_id"]
         tc_key: int | None = int(tc) if tc is not None else None
         transfer_in_by_pond[tp] += amount
         trans_cycle_in[(tp, tc_key)] += amount
-        # Do not add transfer_out — seller income comes from AquacultureFishSale.
+        # An invoiced mirror is already in pond revenue. Do not book the sale twice.
+        if mirrored is not None and mirrored.get("invoice_id"):
+            continue
+        from_id = int(xr["transfer__from_pond_id"])
+        income_code = _internal_fish_sale_income_type(role_by_from_pond.get(from_id, ""))
+        internal_sale_by_pond[from_id][income_code] += amount
 
     def _rev_q(pond_id: int):
         q = AquacultureFishSale.objects.filter(
@@ -595,9 +615,9 @@ def compute_aquaculture_pl_summary_dict(
             - consumption_journals
         )
         period_rev = _rev_q(pond.id).aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
-        rev = _money_q(Decimal(str(period_rev)) + prior_income)
-        if nursing_pond and t_out > 0:
-            rev = _money_q(rev + t_out)
+        internal_sales = internal_sale_by_pond.get(pond.id) or {}
+        internal_sale_total = _money_q(sum(internal_sales.values(), Decimal("0")))
+        rev = _money_q(Decimal(str(period_rev)) + prior_income + internal_sale_total)
         if cycle_filter_id is not None:
             pay = Decimal("0")
         else:
@@ -618,8 +638,8 @@ def compute_aquaculture_pl_summary_dict(
             merged_rev[code] += _money_q(Decimal(str(row["t"] or 0)))
         for code, amt in prior_income_by.items():
             merged_rev[code] += _money_q(amt)
-        if nursing_pond and t_out > 0:
-            merged_rev[INTER_POND_FINGERLING_TRANSFER_INCOME] += t_out
+        for code, amt in internal_sales.items():
+            merged_rev[code] += _money_q(amt)
         rev_fish, rev_empty, rev_other = _income_breakdown(dict(merged_rev))
         fry_cost = _fry_fingerling_cost_for_pond(
             cid, pond.id, start, end, cycle_filter_id, t_in
@@ -644,7 +664,9 @@ def compute_aquaculture_pl_summary_dict(
         pond_income = dict(merged_rev)
         pond_income_amounts.append((pond.id, pond.name, pond_income))
         for code, amt in pond_income.items():
-            company_income_dec[code] += _money_q(amt)
+            company_amt = _money_q(amt) - _money_q(internal_sales.get(code, Decimal("0")))
+            if company_amt:
+                company_income_dec[code] += company_amt
 
         pond_exp = _pond_expense_amounts_dict(
             cid,
@@ -995,13 +1017,23 @@ def compute_aquaculture_pl_summary_dict(
         "cycle_scope_note": scope_note,
         "shared_operating_cost_rule": SHARED_OPERATING_COST_RULE,
         "inter_pond_fish_transfer_note": INTER_POND_FISH_TRANSFER_PL_NOTE,
+        "internal_pond_sales": [
+            {
+                "pond_id": pid,
+                "income_type": code,
+                "amount": str(_money_q(amt)),
+            }
+            for pid, by_type in internal_sale_by_pond.items()
+            for code, amt in by_type.items()
+            if amt
+        ],
         "fish_stock_ledger_note": FISH_STOCK_LEDGER_PL_NOTE,
         "pl_show_full_catalog": show_full_catalog,
         "pl_formula_note": (
             "Net profit = Total income − Total costs & expenses. "
             "Every registered income type and expense category is listed; zeros where none in the period. "
             "Feed, medicine, and shop-issued consumption appear in their own columns; "
-            "inter-pond transfer out reduces expenses."
+            "fish, fingerlings, and fry sold to another pond are sales, not transfers."
         ),
         "pl_grand_totals": {
             "total_income": str(_money_q(total_income)),

@@ -109,7 +109,7 @@ def test_nursing_pond_income_equals_expense_when_batch_emptied(company_tenant):
     assert net == Decimal("0.00")
 
     income_types = {r["income_type"]: Decimal(r["amount"]) for r in pond_row["revenue_by_income_type"]}
-    assert income_types.get("inter_pond_fingerling_transfer", Decimal("0")) > 0
+    assert income_types.get("fingerling_sale", Decimal("0")) > 0
 
 
 @pytest.mark.django_db

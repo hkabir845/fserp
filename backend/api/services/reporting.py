@@ -4608,7 +4608,22 @@ def _aquaculture_management_snapshot(
         "expenses_by_pond": mgmt.get("expenses_by_pond") or [],
         "income_by_pond": mgmt.get("income_by_pond") or [],
         "income_by_category": mgmt.get("income_by_category") or [],
+        "internal_pond_sales": mgmt.get("internal_pond_sales") or [],
     }
+
+
+def _internal_pond_sale_amount(mgmt: dict[str, Any], pond_id, income_type: str) -> Decimal:
+    """Fish, fingerling, and fry sold to another pond. Not company revenue."""
+    total = Decimal("0")
+    for row in mgmt.get("internal_pond_sales") or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("pond_id") != pond_id:
+            continue
+        if str(row.get("income_type") or "") != income_type:
+            continue
+        total += _d(row.get("amount"))
+    return total
 
 
 def _fold_aquaculture_register_into_pl_sections(
@@ -4729,6 +4744,9 @@ def _fold_aquaculture_register_into_pl_sections(
                     if not cat or amt <= 0:
                         continue
                     if cat in _AQ_INTERNAL_TRANSFER_INCOME_CATS:
+                        continue
+                    amt -= _internal_pond_sale_amount(mgmt, pid, cat)
+                    if amt <= 0:
                         continue
                     code = f"AQ-INC-{cat}"
                     key = (code, "pond", pid)

@@ -3325,6 +3325,16 @@ def aquaculture_sales_list_or_create(request):
             cycle_obj = resolve_movement_production_cycle(
                 cid, pond.id, fish_species=fs, as_of_date=sd
             )
+        if cycle_obj is None:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "production_cycle_id is required for fish sales. "
+                        "Open or select a production cycle for this pond before recording harvest."
+                    )
+                },
+                status=400,
+            )
         from api.services.aquaculture_biomass_book_revaluation_service import (
             accrue_book_growth_before_outbound,
         )
@@ -3441,6 +3451,15 @@ def aquaculture_sale_detail(request, sale_id: int):
         if "production_cycle_id" in body:
             raw_cy = body.get("production_cycle_id")
             if raw_cy in (None, ""):
+                if not income_type_is_non_biological_for_company(cid, s.income_type):
+                    return JsonResponse(
+                        {
+                            "detail": (
+                                "production_cycle_id is required for fish sales and cannot be cleared."
+                            )
+                        },
+                        status=400,
+                    )
                 s.production_cycle = None
             else:
                 try:
@@ -3453,6 +3472,16 @@ def aquaculture_sale_detail(request, sale_id: int):
                 if cy.pond_id != s.pond_id:
                     return JsonResponse({"detail": "production_cycle_id does not belong to the sale pond"}, status=400)
                 s.production_cycle = cy
+        if not income_type_is_non_biological_for_company(cid, s.income_type) and not s.production_cycle_id:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "production_cycle_id is required for fish sales. "
+                        "Open or select a production cycle for this pond before saving."
+                    )
+                },
+                status=400,
+            )
         if "sale_date" in body:
             sd = _parse_date(body.get("sale_date"))
             if not sd:

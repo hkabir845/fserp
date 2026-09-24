@@ -1207,14 +1207,18 @@ def _create_posted_entry(
         assert_period_open(company_id, entry_date, action="post")
     total_debit = sum(_unpack_gl_line(x)[1] for x in lines)
     total_credit = sum(_unpack_gl_line(x)[2] for x in lines)
-    if total_debit != total_credit or total_debit <= 0:
-        logger.warning(
-            "skip journal %s: unbalanced or zero (debit=%s credit=%s)",
-            entry_number,
-            total_debit,
-            total_credit,
+    # Fail closed: never let a subledger document succeed while its AUTO journal is skipped.
+    # Callers that used to check `is not None` will now roll back with GlPostingError.
+    if total_debit != total_credit:
+        raise GlPostingError(
+            f"G/L: Journal {entry_number} is unbalanced "
+            f"(debit={total_debit} credit={total_credit}). Check chart of accounts and line amounts."
         )
-        return None
+    if total_debit <= 0:
+        raise GlPostingError(
+            f"G/L: Journal {entry_number} has no amount to post "
+            f"(debit={total_debit} credit={total_credit})."
+        )
     with transaction.atomic():
         if JournalEntry.objects.filter(
             company_id=company_id, entry_number=entry_number

@@ -14,6 +14,8 @@ from api.models import (
     AquaculturePond,
     ChartOfAccount,
     Company,
+    Customer,
+    Invoice,
     Item,
     JournalEntry,
     JournalEntryLine,
@@ -66,6 +68,27 @@ def test_pl_breaks_out_feed_medicine_and_other_expenses(company_tenant):
         amount=Decimal("400.00"),
     )
 
+    cust = Customer.objects.create(
+        company_id=cid,
+        display_name="Market Buyer",
+        customer_number="C-PL-1",
+    )
+    inv_fish = Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        invoice_number="INV-PL-FISH",
+        invoice_date=date(2026, 5, 10),
+        status="sent",
+        total=Decimal("50000.00"),
+    )
+    inv_sack = Invoice.objects.create(
+        company_id=cid,
+        customer=cust,
+        invoice_number="INV-PL-SACK",
+        invoice_date=date(2026, 5, 11),
+        status="sent",
+        total=Decimal("250.00"),
+    )
     AquacultureFishSale.objects.create(
         company_id=cid,
         pond=pond,
@@ -73,6 +96,7 @@ def test_pl_breaks_out_feed_medicine_and_other_expenses(company_tenant):
         income_type="fish_harvest_sale",
         weight_kg=Decimal("100"),
         total_amount=Decimal("50000.00"),
+        invoice=inv_fish,
     )
     AquacultureFishSale.objects.create(
         company_id=cid,
@@ -81,6 +105,7 @@ def test_pl_breaks_out_feed_medicine_and_other_expenses(company_tenant):
         income_type="empty_feed_sack_sale",
         weight_kg=Decimal("5"),
         total_amount=Decimal("250.00"),
+        invoice=inv_sack,
     )
 
     payload = compute_aquaculture_pl_summary_dict(

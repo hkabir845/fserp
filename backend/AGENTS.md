@@ -1,0 +1,26 @@
+# FSERP backend — agent notes
+
+## Database
+
+- PostgreSQL only (`DATABASE_URL`). Never `FSERP_USE_SQLITE=1` or `db.sqlite3` for app data.
+
+## GL posting
+
+- Auto journals funnel through `gl_posting._create_posted_entry`. Unbalanced or zero-amount AUTO journals **raise `GlPostingError`** (fail closed) — do not soft-return `None` for unbalanced lines.
+- Inter-pond fish trades: seller `AUTO-IPT-INV-*` (Dr 5245 / Cr 1581). Do **not** also post `AUTO-AQ-SALE-*-BIO` for mirrored sales (`source_fish_pond_transfer_line_id` set).
+
+## Aquaculture P&L / CPK
+
+- Company P&L eliminates IPT-invoiced mirror revenue and buyer `fish_transfer_cost_in` (align with GL 4245/5245 elimination). Pond rows keep full profit-centre amounts.
+- `pl_grand_totals` / `totals` net income follow **company category nets**, not raw pond sums.
+- Cost/kg harvest denominators exclude mirrored transfer sales (`source_fish_pond_transfer_line_id__isnull=True`).
+- Elimination on-hand kg uses **effective biomass** (sample × heads), not fry book weight.
+
+## Permissions / tenancy
+
+- Mutating company-scoped views: stack `@auth_required` → `@require_company_id` → `@require_permission(...)`.
+- Shifts: `app.page.shift_management`. Vendor purchase terms/credits: `app.page.vendors`.
+
+## Audits
+
+- Prefer `manage.py audit_aquaculture_accounting` / `audit_gl_posting_gaps` over ad-hoc `scripts/_tmp_*` VPS patches for recurring checks.

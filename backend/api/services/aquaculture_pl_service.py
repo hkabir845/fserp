@@ -175,6 +175,19 @@ def _category_amount_rows(
     ]
 
 
+def _merged_internal_sales_for_payload(
+    synthetic: dict[int, dict[str, Decimal]],
+    ipt_invoiced: dict[int, dict[str, Decimal]],
+) -> dict[int, dict[str, Decimal]]:
+    """Combine synthetic + IPT-invoiced internal sales for the elimination disclosure list."""
+    out: dict[int, dict[str, Decimal]] = defaultdict(lambda: defaultdict(lambda: Decimal("0")))
+    for src in (synthetic, ipt_invoiced):
+        for pid, by_type in src.items():
+            for code, amt in by_type.items():
+                out[pid][code] += _money_q(amt)
+    return out
+
+
 def _pond_expense_amounts_dict(
     company_id: int,
     pond_id: int,
@@ -458,6 +471,11 @@ def compute_aquaculture_pl_summary_dict(
     internal_sale_by_pond: dict[int, dict[str, Decimal]] = defaultdict(
         lambda: defaultdict(lambda: Decimal("0"))
     )
+    # IPT-invoiced mirrors already sit in pond revenue via AquacultureFishSale; track them
+    # separately so company consolidation can eliminate without double-counting on the pond.
+    ipt_invoiced_sale_by_pond: dict[int, dict[str, Decimal]] = defaultdict(
+        lambda: defaultdict(lambda: Decimal("0"))
+    )
     for xr in xfer_rows:
         line_id = int(xr["id"])
         cost = _money_q(Decimal(str(xr["cost_amount"] or 0)))
@@ -475,11 +493,13 @@ def compute_aquaculture_pl_summary_dict(
         tc_key: int | None = int(tc) if tc is not None else None
         transfer_in_by_pond[tp] += amount
         trans_cycle_in[(tp, tc_key)] += amount
-        # An invoiced mirror is already in pond revenue. Do not book the sale twice.
-        if mirrored is not None and mirrored.get("invoice_id"):
-            continue
         from_id = int(xr["transfer__from_pond_id"])
         income_code = _internal_fish_sale_income_type(role_by_from_pond.get(from_id, ""))
+        # An invoiced mirror is already in pond revenue. Do not book the sale twice on the pond,
+        # but still eliminate it from company income (matches GL 4245 elimination).
+        if mirrored is not None and mirrored.get("invoice_id"):
+            ipt_invoiced_sale_by_pond[from_id][income_code] += amount
+            continue
         internal_sale_by_pond[from_id][income_code] += amount
 
     def _rev_q(pond_id: int):
@@ -663,8 +683,13 @@ def compute_aquaculture_pl_summary_dict(
 
         pond_income = dict(merged_rev)
         pond_income_amounts.append((pond.id, pond.name, pond_income))
+        ipt_invoiced = ipt_invoiced_sale_by_pond.get(pond.id) or {}
         for code, amt in pond_income.items():
-            company_amt = _money_q(amt) - _money_q(internal_sales.get(code, Decimal("0")))
+            company_amt = (
+                _money_q(amt)
+                - _money_q(internal_sales.get(code, Decimal("0")))
+                - _money_q(ipt_invoiced.get(code, Decimal("0")))
+            )
             if company_amt:
                 company_income_dec[code] += company_amt
 
@@ -690,7 +715,8 @@ def compute_aquaculture_pl_summary_dict(
                 if nursing_pond:
                     continue
                 company_expense_dec[code] -= signed
-            elif nursing_pond and code == "fish_transfer_cost_in":
+            elif code == "fish_transfer_cost_in":
+                # Company consolidation eliminates buyer IPT cost (matches GL 5245).
                 continue
             else:
                 company_expense_dec[code] += signed
@@ -826,7 +852,13 @@ def compute_aquaculture_pl_summary_dict(
             total_direct += unalloc_total
             total_shared += unalloc_total
 
-    total_profit = _money_q(total_income - total_exp)
+    # Company P&L totals must match category columns after IPT elimination — not raw pond
+    # sums that still include inter-pond revenue and buyer transfer-in cost.
+    company_income_total = _money_q(sum(company_income_dec.values(), Decimal("0")))
+    company_expense_total = _money_q(sum(company_expense_dec.values(), Decimal("0")))
+    total_profit = _money_q(company_income_total - company_expense_total)
+    total_income = company_income_total
+    total_exp = company_expense_total
 
     # Always expose the full income/expense catalog as matrix columns (zeros where no activity).
     show_full_catalog = True
@@ -1023,7 +1055,9 @@ def compute_aquaculture_pl_summary_dict(
                 "income_type": code,
                 "amount": str(_money_q(amt)),
             }
-            for pid, by_type in internal_sale_by_pond.items()
+            for pid, by_type in _merged_internal_sales_for_payload(
+                internal_sale_by_pond, ipt_invoiced_sale_by_pond
+            ).items()
             for code, amt in by_type.items()
             if amt
         ],

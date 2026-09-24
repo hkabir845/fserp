@@ -361,12 +361,12 @@ function redirectToLoginIfNeeded(): void {
   window.location.assign(`/login${next}`)
 }
 
-/** True for expired session / auth errors — UI should not toast; interceptor redirects. */
+/** True for expired session / auth errors — UI should not toast; interceptor redirects.
+ * 403 is permission denied, not a dead session — leave that to the caller. */
 export function isApiSessionError(error: unknown): boolean {
   if (axios.isCancel(error)) return true
   if (axios.isAxiosError(error)) {
-    const status = error.response?.status
-    return status === 401 || status === 403
+    return error.response?.status === 401
   }
   return false
 }

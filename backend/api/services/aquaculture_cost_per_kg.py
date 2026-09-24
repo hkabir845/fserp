@@ -692,11 +692,14 @@ def harvest_weight_denominator_kg(
 
     basis_code: harvest_sale | bio_sales | none
     """
+    # Mirrored inter-pond transfer sales are not harvest production — including them
+    # inflates kg and understates ৳/kg. Match stock / FCR / elimination exclusions.
     base = AquacultureFishSale.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
         sale_date__gte=start,
         sale_date__lte=end,
+        source_fish_pond_transfer_line_id__isnull=True,
     )
     if cycle_filter_id is not None:
         base = base.filter(production_cycle_id=cycle_filter_id)

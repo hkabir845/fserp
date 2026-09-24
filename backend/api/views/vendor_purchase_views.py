@@ -15,7 +15,7 @@ from api.services.vendor_purchase_terms import (
     vendor_credit_to_json,
 )
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 
 
 def _vendor(request, vendor_id: int) -> Vendor | None:
@@ -25,6 +25,7 @@ def _vendor(request, vendor_id: int) -> Vendor | None:
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors")
 def vendor_purchase_terms(request, vendor_id: int):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -37,6 +38,7 @@ def vendor_purchase_terms(request, vendor_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors", methods=("POST", "PUT", "PATCH", "DELETE"))
 def vendor_rate_cards_list_or_create(request, vendor_id: int):
     v = _vendor(request, vendor_id)
     if not v:
@@ -60,6 +62,7 @@ def vendor_rate_cards_list_or_create(request, vendor_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors", methods=("PUT", "PATCH", "DELETE"))
 def vendor_rate_card_detail(request, vendor_id: int, card_id: int):
     v = _vendor(request, vendor_id)
     if not v:
@@ -95,6 +98,7 @@ def vendor_rate_card_detail(request, vendor_id: int, card_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors", methods=("POST", "PUT", "PATCH", "DELETE"))
 def vendor_credits_list_or_create(request, vendor_id: int):
     v = _vendor(request, vendor_id)
     if not v:
@@ -116,6 +120,7 @@ def vendor_credits_list_or_create(request, vendor_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors", methods=("DELETE",))
 def vendor_credit_detail(request, vendor_id: int, credit_id: int):
     v = _vendor(request, vendor_id)
     if not v:
@@ -136,6 +141,7 @@ def vendor_credit_detail(request, vendor_id: int, credit_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors")
 def vendor_apply_monthly_scheme(request, vendor_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -154,6 +160,7 @@ def vendor_apply_monthly_scheme(request, vendor_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors")
 def vendor_apply_yearly_scheme(request, vendor_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -172,6 +179,7 @@ def vendor_apply_yearly_scheme(request, vendor_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.vendors")
 def vendor_apply_mill_term(request, vendor_id: int):
     """Post pending discount or lorry mill credit notes (credit-lane bills)."""
     if request.method != "POST":

@@ -55,7 +55,7 @@ import {
   type ErpAppMenuItem,
 } from '@/navigation/erpAppMenu'
 import { safeLogError } from '@/utils/connectionError'
-import { readStoredAccessToken } from '@/lib/authSession'
+import { requireSession } from '@/lib/authSession'
 import {
   getRoleDashboardConfig,
   getLocalizedDashboardFocus,
@@ -153,26 +153,27 @@ export default function RoleDashboard() {
   const companyName = selectedCompany?.name
 
   useEffect(() => {
-    const token = readStoredAccessToken()
-    if (!token?.trim()) {
-      router.replace('/login')
-      return
-    }
-
-    const userStr = localStorage.getItem('user')
-    if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-      try {
-        const parsed = JSON.parse(userStr) as StoredUser
-        setUser(parsed)
-        setRole(getCurrentUserRole())
-        setPermissions(getCurrentUserPermissions())
-      } catch {
-        /* ignore */
-      }
-    }
-
     let cancelled = false
-    const load = async () => {
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled) return
+      if (!token?.trim()) {
+        router.replace('/login')
+        return
+      }
+
+      const userStr = localStorage.getItem('user')
+      if (userStr && userStr !== 'undefined' && userStr !== 'null') {
+        try {
+          const parsed = JSON.parse(userStr) as StoredUser
+          setUser(parsed)
+          setRole(getCurrentUserRole())
+          setPermissions(getCurrentUserPermissions())
+        } catch {
+          /* ignore */
+        }
+      }
+
       try {
         const [statsRes, companyRes, broadcastRes] = await Promise.all([
           api.get<DashboardStats>('/dashboard/stats'),
@@ -204,7 +205,7 @@ export default function RoleDashboard() {
         if (!cancelled) setLoading(false)
       }
     }
-    void load()
+    void boot()
     return () => {
       cancelled = true
     }

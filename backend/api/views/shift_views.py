@@ -8,7 +8,7 @@ from django.utils import timezone as django_timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import Employee, Meter, ShiftTemplate, ShiftSession, Station
 from api.services.shift_template_defaults import seed_standard_24_7_shift_templates
 from api.services.station_policy import active_station_count
@@ -208,8 +208,12 @@ def _active_shift_exists(company_id: int, station_id: int | None) -> bool:
     if station_id:
         return qs.filter(station_id=station_id).exists()
     return qs.filter(station_id__isnull=True).exists()
+
+
+@csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management", methods=("POST", "PUT", "PATCH", "DELETE"))
 def shift_templates_list_or_create(request):
     if request.method == "GET":
         qs = ShiftTemplate.objects.filter(company_id=request.company_id).order_by("id")
@@ -238,6 +242,7 @@ def shift_templates_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management")
 def shift_templates_seed_standard_247(request):
     """Create Day / Evening / Night templates (8h each) if not already present."""
     if request.method != "POST":
@@ -256,6 +261,7 @@ def shift_templates_seed_standard_247(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management", methods=("PUT", "PATCH", "DELETE"))
 def shift_template_detail(request, template_id: int):
     t = ShiftTemplate.objects.filter(id=template_id, company_id=request.company_id).first()
     if not t:
@@ -296,6 +302,7 @@ def shift_template_detail(request, template_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management")
 def shifts_list(request):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -308,6 +315,7 @@ def shifts_list(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management")
 def shifts_sessions_active(request):
     if request.method != "GET":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -329,6 +337,7 @@ def shifts_sessions_active(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management")
 def shifts_sessions_open(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -411,6 +420,7 @@ def shifts_sessions_open(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.shift_management")
 def shifts_sessions_close(request, session_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)

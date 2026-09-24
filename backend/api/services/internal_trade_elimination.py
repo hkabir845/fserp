@@ -118,8 +118,16 @@ def _internal_kg_bought_by_pond(company_id: int, end: date) -> dict[int, Decimal
 
 
 def _pond_biomass_on_hand_kg(company_id: int, pond_id: int) -> Decimal:
-    """Live biomass still in a pond, or zero when it cannot be determined."""
+    """Live (effective) biomass still in a pond, or zero when it cannot be determined.
+
+    Uses sample × heads (or species-combined biomass) rather than fry book weight.
+    Book kg is often negative or stale after transfers; clamping that to zero released
+    unrealized inter-pond margin too early.
+    """
     try:
+        from api.services.aquaculture_partial_harvest import (
+            effective_biomass_kg_from_position_row,
+        )
         from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
     except Exception:  # pragma: no cover - defensive: reporting must not crash on this
         return Decimal("0")
@@ -130,7 +138,7 @@ def _pond_biomass_on_hand_kg(company_id: int, pond_id: int) -> Decimal:
     total = Decimal("0")
     for r in rows or []:
         try:
-            total += Decimal(str(r.get("implied_net_weight_kg") or 0))
+            total += effective_biomass_kg_from_position_row(r)
         except Exception:  # pragma: no cover
             continue
     return max(total, Decimal("0"))

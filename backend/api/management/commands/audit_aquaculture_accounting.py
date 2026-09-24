@@ -311,26 +311,78 @@ class Command(BaseCommand):
                     }
                 )
 
-        # 8) Company totals vs pond sum
-        gt = pl.get("totals") or {}
-        sum_income = MONEY(sum(MONEY(r.get("income_total") or 0) for r in pl.get("ponds") or []))
-        sum_exp = MONEY(sum(MONEY(r.get("expense_total") or 0) for r in pl.get("ponds") or []))
+        # 8) Company grand totals must match category columns (after IPT elimination).
+        # Pond-row sums intentionally include inter-pond sales; do not equate them to company NI.
+        gt = pl.get("pl_grand_totals") or pl.get("totals") or {}
         co_income = MONEY(gt.get("total_income") or 0)
         co_exp = MONEY(gt.get("total_costs_and_expenses") or 0)
-        if abs(sum_income - co_income) > Decimal("0.05"):
+        co_net = MONEY(gt.get("net_profit") or 0)
+        if abs(MONEY(co_income - co_exp) - co_net) > Decimal("0.05"):
             issues.append(
                 {
-                    "type": "company_income_mismatch",
-                    "pond_sum": str(sum_income),
-                    "company_total": str(co_income),
+                    "type": "company_pl_formula",
+                    "income": str(co_income),
+                    "expense": str(co_exp),
+                    "net": str(co_net),
                 }
             )
-        if abs(sum_exp - co_exp) > Decimal("0.05"):
+        cat_income = MONEY(
+            sum(
+                MONEY(c.get("amount") or 0)
+                for c in (pl.get("income_by_category") or [])
+            )
+        )
+        cat_exp = MONEY(
+            sum(
+                MONEY(c.get("amount") or 0)
+                for c in (pl.get("expenses_by_category") or [])
+            )
+        )
+        if abs(cat_income - co_income) > Decimal("0.05"):
             issues.append(
                 {
-                    "type": "company_expense_mismatch",
-                    "pond_sum": str(sum_exp),
-                    "company_total": str(co_exp),
+                    "type": "company_income_vs_categories",
+                    "category_sum": str(cat_income),
+                    "grand_total": str(co_income),
+                }
+            )
+        if abs(cat_exp - co_exp) > Decimal("0.05"):
+            issues.append(
+                {
+                    "type": "company_expense_vs_categories",
+                    "category_sum": str(cat_exp),
+                    "grand_total": str(co_exp),
+                }
+            )
+
+        # 9) Biological sales missing production_cycle (null-cycle debt)
+        from api.models import AquacultureFishSale
+        from api.services.tenant_reporting_categories import (
+            income_type_is_non_biological_for_company,
+        )
+
+        null_cycle = 0
+        null_cycle_heads = 0
+        for sale in AquacultureFishSale.objects.filter(
+            company_id=company_id,
+            production_cycle_id__isnull=True,
+            sale_date__gte=period_start,
+            sale_date__lte=period_end,
+        ).only("id", "income_type", "fish_count", "pond_id"):
+            if income_type_is_non_biological_for_company(company_id, sale.income_type):
+                continue
+            null_cycle += 1
+            null_cycle_heads += int(sale.fish_count or 0)
+        if null_cycle:
+            issues.append(
+                {
+                    "type": "null_cycle_biological_sales",
+                    "count": null_cycle,
+                    "fish_count_sum": null_cycle_heads,
+                    "detail": (
+                        "Biological sales in period with no production_cycle_id — "
+                        "retag before relying on cycle-scoped P&L / FCR."
+                    ),
                 }
             )
 

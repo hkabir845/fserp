@@ -508,21 +508,27 @@ export function AquacultureSaleFormModal({
         await api.put(`/aquaculture/sales/${editing.id}/`, buildPayload(header, lines[0], incomeTypes))
         toast.success('Sale updated')
       } else {
-        const results = await Promise.allSettled(
-          lines.map((line) => api.post('/aquaculture/sales/', buildPayload(header, line, incomeTypes)))
-        )
-        const ok = results.filter((r) => r.status === 'fulfilled').length
-        const fail = results.length - ok
-        if (fail === 0) {
-          toast.success(ok === 1 ? 'Sale saved' : `${ok} sale lines saved`)
-        } else if (ok > 0) {
-          setLines(lines.filter((_, index) => results[index].status === 'rejected'))
-          toast.error(`${ok} line(s) saved. ${fail} failed line(s) remain below for correction and retry.`)
-          onSaved()
-          return
-        } else {
-          const first = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined
-          throw first?.reason
+        // Sequential creates + compensating deletes — never leave a partial multi-line sale.
+        const createdIds: number[] = []
+        try {
+          for (const line of lines) {
+            const res = await api.post<{ id: number }>(
+              '/aquaculture/sales/',
+              buildPayload(header, line, incomeTypes)
+            )
+            const id = Number(res.data?.id)
+            if (Number.isFinite(id) && id > 0) createdIds.push(id)
+          }
+          toast.success(createdIds.length === 1 ? 'Sale saved' : `${createdIds.length} sale lines saved`)
+        } catch (err) {
+          for (const id of [...createdIds].reverse()) {
+            try {
+              await api.delete(`/aquaculture/sales/${id}/`)
+            } catch {
+              /* best-effort rollback */
+            }
+          }
+          throw err
         }
       }
       onSaved()

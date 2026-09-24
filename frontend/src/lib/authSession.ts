@@ -124,3 +124,13 @@ export function hasStoredSession(): boolean {
     return false
   }
 }
+
+/**
+ * Ensure a usable access token (silent refresh via cookie when needed).
+ * Returns the token, or null after clearing storage when the session is gone.
+ * Prefer this over bare `readStoredAccessToken()` for page gates.
+ */
+export async function requireSession(): Promise<string | null> {
+  const { ensureAccessTokenFresh } = await import('@/lib/api')
+  return ensureAccessTokenFresh()
+}

@@ -283,3 +283,81 @@ def test_nursing_resync_includes_expense_after_last_transfer(company_tenant):
     assert Decimal(pond_row["income_total"]) == Decimal("575000.00")
     assert Decimal(pond_row["expense_total"]) == Decimal("575000.00")
     assert Decimal(pond_row["net_profit"]) == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_reconcile_nursing_pl_raises_sale_amount_not_only_cost(company_tenant):
+    """
+    When lines are IPT-priced (sale_amount set), P&L income follows sale — not cost.
+    Reconcile must bump sale_amount (and refresh the mirror) or the gap never closes.
+    """
+    from django.core.management import call_command
+
+    from api.services.aquaculture_fish_transfer_as_sale import ensure_fish_sale_for_transfer_line
+
+    _enable(company_tenant)
+    cid = company_tenant.id
+    nursing = AquaculturePond.objects.create(
+        company_id=cid,
+        name="SaleLock Nursing",
+        code="PN-SL",
+        pond_role="nursing",
+        is_active=True,
+    )
+    grow = AquaculturePond.objects.create(
+        company_id=cid,
+        name="SaleLock Grow",
+        code="PG-SL",
+        pond_role="grow_out",
+        is_active=True,
+    )
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=nursing,
+        expense_date=date(2026, 4, 1),
+        expense_category="fry_stocking",
+        amount=Decimal("100000.00"),
+    )
+    tr = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=nursing,
+        transfer_date=date(2026, 5, 1),
+        fish_species="tilapia",
+    )
+    line = AquacultureFishPondTransferLine.objects.create(
+        transfer=tr,
+        to_pond=grow,
+        weight_kg=Decimal("100"),
+        fish_count=50000,
+        cost_amount=Decimal("40000.00"),
+        sale_amount=Decimal("40000.00"),
+    )
+    ensure_fish_sale_for_transfer_line(line, transfer=tr)
+
+    before = compute_aquaculture_pl_summary_dict(
+        cid, date(2026, 4, 1), date(2026, 5, 31), nursing.id, None, None, include_cycle_breakdown=False
+    )
+    before_row = next(p for p in before["ponds"] if p["pond_id"] == nursing.id)
+    assert Decimal(before_row["net_profit"]) < Decimal("-500")
+
+    call_command(
+        "reconcile_nursing_pond_pl_balance",
+        company_id=cid,
+        pond_code="PN-SL",
+        period_start="2026-04-01",
+        period_end="2026-05-31",
+        skip_resync=True,
+    )
+
+    line.refresh_from_db()
+    assert line.cost_amount == Decimal("100000.00")
+    # Sale must move with the gap; GL/internal pricing may then add margin on top.
+    assert line.sale_amount >= Decimal("100000.00")
+
+    after = compute_aquaculture_pl_summary_dict(
+        cid, date(2026, 4, 1), date(2026, 5, 31), nursing.id, None, None, include_cycle_breakdown=False
+    )
+    after_row = next(p for p in after["ponds"] if p["pond_id"] == nursing.id)
+    # Gap closed (income caught expense); tiny surplus OK if margin reprice ran after bump.
+    assert Decimal(after_row["income_total"]) >= Decimal(after_row["expense_total"])
+    assert Decimal(after_row["net_profit"]) >= Decimal("0.00")

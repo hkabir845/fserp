@@ -23,7 +23,7 @@ from api.services.aquaculture_data_bank_service import (
     user_may_manage_aquaculture_data_bank,
 )
 from api.views.aquaculture_views import _aquaculture_access, _pond_for_company
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_aquaculture_module, require_company_id
 from api.utils.auth import auth_required
 
 
@@ -55,6 +55,7 @@ def _parse_date_field(raw, field_name: str, required: bool = True) -> tuple[date
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_list(request):
     err = _aquaculture_access(request)
     if err:
@@ -66,6 +67,7 @@ def aquaculture_data_bank_list(request):
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_preview_pond_close(request):
     """Preview period range for one pond before close."""
     err = _aquaculture_access(request)
@@ -100,6 +102,7 @@ def aquaculture_data_bank_preview_pond_close(request):
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_readiness_overview(request):
     """Fleet readiness for year close (open ponds only scored)."""
     err = _aquaculture_access(request)
@@ -118,6 +121,7 @@ def aquaculture_data_bank_readiness_overview(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_return_warehouse(request):
     """Return all pond-warehouse stock to shop (confirmed year-close prep helper)."""
     err = _data_bank_admin_required(request)
@@ -164,6 +168,7 @@ def aquaculture_data_bank_return_warehouse(request):
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_preview_station_close(request):
     """Preview fiscal close for all ponds linked to a shop station."""
     err = _aquaculture_access(request)
@@ -198,6 +203,7 @@ def aquaculture_data_bank_preview_station_close(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_close_pond(request):
     """Close a single pond for its own year-end date."""
     err = _data_bank_admin_required(request)
@@ -245,6 +251,7 @@ def aquaculture_data_bank_close_pond(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_close_station(request):
     """Close all ponds linked to one shop station for the same period end."""
     err = _data_bank_admin_required(request)
@@ -284,6 +291,7 @@ def aquaculture_data_bank_close_station(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_reopen_close(request, close_id: int):
     err = _data_bank_admin_required(request)
     if err:
@@ -311,6 +319,7 @@ def aquaculture_data_bank_reopen_close(request, close_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_unlock_close(request, close_id: int):
     """Remove operational lock from a pond close (reverses test or mistaken year close)."""
     err = _data_bank_admin_required(request)
@@ -339,6 +348,7 @@ def aquaculture_data_bank_unlock_close(request, close_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.data_bank")
 def aquaculture_data_bank_relock_close(request, close_id: int):
     err = _data_bank_admin_required(request)
     if err:

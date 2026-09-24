@@ -123,3 +123,43 @@ def require_permission(*need: str, methods: tuple[str, ...] | None = None):
         return wrapped
 
     return decorator
+
+
+def require_aquaculture_module(*module_ids: str, methods: tuple[str, ...] | None = None):
+    """
+    Gate aquaculture API writes by submodule (``app.aquaculture.sales``, etc.).
+
+    Platform super-admin and tenant Admin always pass (same coarse rule as
+    ``user_may_access_aquaculture_api``). Others need ``app.aquaculture`` or one of
+    ``module_ids``. Keep ``_aquaculture_access`` inside the view for company enablement.
+    Stack after ``@require_company_id``.
+    """
+    if not module_ids:
+        raise ValueError("require_aquaculture_module needs at least one module id")
+
+    def decorator(view_func):
+        def wrapped(request, *args, **kwargs):
+            if methods is not None:
+                m = (getattr(request, "method", "") or "").upper()
+                if m not in {x.upper() for x in methods}:
+                    return view_func(request, *args, **kwargs)
+            from api.services.permission_service import (
+                has_permission,
+                normalize_role_key,
+                resolve_user_permissions,
+                user_may_access_aquaculture_api,
+            )
+            from api.utils.auth import user_is_super_admin
+
+            user = getattr(request, "api_user", None)
+            if not user_may_access_aquaculture_api(user):
+                return JsonResponse({"detail": "Permission denied"}, status=403)
+            if user_is_super_admin(user) or normalize_role_key(getattr(user, "role", None)) == "admin":
+                return view_func(request, *args, **kwargs)
+            if has_permission(resolve_user_permissions(user), *module_ids):
+                return view_func(request, *args, **kwargs)
+            return JsonResponse({"detail": "Permission denied"}, status=403)
+
+        return wrapped
+
+    return decorator

@@ -4,6 +4,8 @@ from django.views.decorators.http import require_GET
 
 from api.models import Item, User
 from api.services.permission_service import can_access_report, resolve_user_permissions
+from api.utils.auth import auth_required
+from api.views.common import require_company_id, require_permission
 from api.services.reporting import (
     parse_report_dates,
     report_balance_sheet,
@@ -57,8 +59,6 @@ from api.services.reporting import (
     report_vendor_balances,
 )
 from api.services.vendor_purchase_terms import report_mill_dealer_terms
-from api.utils.auth import auth_required
-from api.views.common import require_company_id
 from api.services.station_scope import effective_report_station_id
 
 _REPORT_HANDLERS = {
@@ -528,6 +528,7 @@ def report_by_id(request, report_id: str):
 @require_GET
 @auth_required
 @require_company_id
+@require_permission("app.page.reports")
 def report_drill_invoices(request):
     cid = request.company_id
     start, end = parse_report_dates(request)
@@ -548,6 +549,7 @@ def report_drill_invoices(request):
 @require_GET
 @auth_required
 @require_company_id
+@require_permission("app.page.reports")
 def report_drill_bills(request):
     cid = request.company_id
     start, end = parse_report_dates(request)

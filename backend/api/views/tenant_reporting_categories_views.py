@@ -25,7 +25,7 @@ from api.services.tenant_reporting_categories import (
     validate_tenant_code_not_builtin_conflict,
 )
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 
 
 def _db_error_response(exc: Exception) -> JsonResponse:
@@ -111,6 +111,7 @@ def reporting_category_map_targets(request):
 @auth_required
 @require_http_methods(["GET", "POST"])
 @require_company_id
+@require_permission("app.page.reporting_categories", methods=("POST",))
 def reporting_categories_list_or_create(request):
     api = _api_user(request)
     cid = request.company_id
@@ -199,6 +200,7 @@ def reporting_categories_list_or_create(request):
 @auth_required
 @require_http_methods(["GET", "PUT", "DELETE"])
 @require_company_id
+@require_permission("app.page.reporting_categories", methods=("PUT", "DELETE"))
 def reporting_category_detail(request, category_id: int):
     api = _api_user(request)
     cid = request.company_id

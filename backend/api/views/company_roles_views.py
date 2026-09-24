@@ -20,7 +20,8 @@ from api.services.tenant_job_types import (
     tenant_job_types_for_api,
 )
 from api.utils.auth import auth_required, get_user_from_request, user_is_super_admin
-from api.views.common import require_company_id
+from api.views.common import require_company_id, require_permission
+
 
 def _api_user(request) -> User | None:
     return getattr(request, "api_user", None) or get_user_from_request(request)
@@ -87,6 +88,7 @@ def permission_catalog(request):
 @auth_required
 @require_http_methods(["GET", "POST"])
 @require_company_id
+@require_permission("app.page.roles", methods=("POST",))
 def company_roles_list_or_create(request):
     api = _api_user(request)
     if not api or not _tenants_can_edit_roles(api):
@@ -150,6 +152,7 @@ def company_roles_list_or_create(request):
 @auth_required
 @require_http_methods(["GET", "PUT", "DELETE"])
 @require_company_id
+@require_permission("app.page.roles", methods=("PUT", "DELETE"))
 def company_role_detail(request, role_id: int):
     api = _api_user(request)
     if not api or not _tenants_can_edit_roles(api):

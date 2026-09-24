@@ -268,7 +268,7 @@ from api.services.aquaculture_constants import (
 )
 from api.services.permission_service import user_may_access_aquaculture_api
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id, _serialize_quantity
+from api.views.common import parse_json_body, require_company_id, _serialize_quantity, require_aquaculture_module
 
 
 def _decimal(val, default="0") -> Decimal:
@@ -1152,6 +1152,7 @@ def aquaculture_fish_species(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.cycles", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_production_cycles_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -1236,6 +1237,7 @@ def aquaculture_production_cycles_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.cycles", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_production_cycle_detail(request, cycle_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -1315,6 +1317,7 @@ def aquaculture_production_cycle_detail(request, cycle_id: int):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.ponds", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_ponds_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -1442,6 +1445,7 @@ def aquaculture_ponds_list_or_create(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.ponds", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_ponds_create_site_pair(request):
     """
     Create nursing-phase + grow-out-phase profit centers for one physical pond site
@@ -1533,6 +1537,7 @@ def aquaculture_ponds_create_site_pair(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.ponds", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_ponds_provision_pos_customers(request):
     """Create missing Aquaculture — [pond] POS customers for on-account sales at the shop hub."""
     err = _aquaculture_access(request)
@@ -1549,6 +1554,7 @@ def aquaculture_ponds_provision_pos_customers(request):
 @require_http_methods(["GET", "PUT"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.ponds", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_ponds_opening_balances(request):
     """
     GET: per-pond P&L openings (income/expense categories) + balance-sheet parties.
@@ -1915,6 +1921,7 @@ def aquaculture_ponds_opening_balances(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.medicine", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_medicine_catalog_ensure(request):
     """Ensure built-in pond-care / medicine SKUs (AQ-MED-*) exist for the treatment form dropdown."""
     err = _aquaculture_access(request)
@@ -1930,6 +1937,7 @@ def aquaculture_medicine_catalog_ensure(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.ponds", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_detail(request, pond_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -2128,6 +2136,7 @@ def _expense_to_json(x: AquacultureExpense) -> dict:
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_expenses_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -2203,6 +2212,7 @@ def aquaculture_expenses_list_or_create(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_shop_stock_issue(request):
     """
     Advanced / optional: issue perpetual-inventory shop stock from a station to a pond at average cost
@@ -2337,6 +2347,7 @@ def aquaculture_pond_warehouse_stock_overview(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_warehouse_transfer(request):
     """
     Move station shop stock to the pond warehouse (no COGS yet). Use Premium Agro (or any station) as source.
@@ -2385,6 +2396,7 @@ def aquaculture_pond_warehouse_transfer(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_warehouse_return(request):
     """
     Move pond warehouse stock back to a shop station bin (no COGS — still company inventory).
@@ -2442,6 +2454,7 @@ def aquaculture_pond_warehouse_return(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_warehouse_consume(request):
     """
     Record feed or medicine used from the pond warehouse: Dr COGS / Cr inventory (same pattern as feeding-advice apply).
@@ -2650,6 +2663,7 @@ def _warehouse_group_member_ponds_json(company_id: int, group_id: int) -> list[d
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_warehouse_groups_list_or_create(request):
     """List or create shared pond warehouse groups (e.g. Ashari canal shed)."""
     err = _aquaculture_access(request)
@@ -2687,6 +2701,7 @@ def aquaculture_warehouse_groups_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_warehouse_group_detail(request, group_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -2757,6 +2772,7 @@ def aquaculture_warehouse_group_pool(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_warehouse_inter_pond_transfers(request):
     """List or create pond-to-pond warehouse reallocations (no GL)."""
     err = _aquaculture_access(request)
@@ -2811,6 +2827,7 @@ def aquaculture_pond_warehouse_inter_pond_transfers(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_warehouse_inter_pond_transfer_detail(request, transfer_id: int):
     """View, amend, or reverse a pond-to-pond warehouse transfer."""
     err = _aquaculture_access(request)
@@ -2890,6 +2907,7 @@ def aquaculture_pond_warehouse_inter_pond_transfer_detail(request, transfer_id: 
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_expense_detail(request, expense_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -3237,6 +3255,7 @@ def aquaculture_biomass_sample_last_reference(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sales", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_sales_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -3399,6 +3418,7 @@ def aquaculture_sales_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sales", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_sale_detail(request, sale_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -3602,6 +3622,7 @@ def aquaculture_sale_detail(request, sale_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sales", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_sale_finalize(request, sale_id: int):
     """Create Invoice + GL for a pond sale (idempotent if already finalized)."""
     err = _aquaculture_access(request)
@@ -3740,6 +3761,7 @@ def _sample_to_json(b: AquacultureBiomassSample) -> dict:
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sampling", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_samples_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -3867,6 +3889,7 @@ def aquaculture_samples_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sampling", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_sample_detail(request, sample_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -4553,6 +4576,7 @@ def aquaculture_pond_warehouse_consumption_ledger(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.stock", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_fish_stock_ledger_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -4775,6 +4799,7 @@ def aquaculture_fish_stock_ledger_list_or_create(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.stock", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_fish_stock_ledger_detail(request, ledger_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -5028,6 +5053,7 @@ def _profit_transfer_to_json(t: AquaculturePondProfitTransfer, *, include_journa
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.expenses", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_pond_profit_transfers(request):
     """
     GET: recent pond-scoped profit transfers (each posts Dr/Cr to chosen GL accounts).
@@ -5526,6 +5552,7 @@ def _fish_transfer_retired_response():
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sales", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_fish_pond_transfers(request):
     err = _aquaculture_access(request)
     if err:
@@ -5686,6 +5713,7 @@ def aquaculture_fish_pond_transfers(request):
 @require_http_methods(["GET", "DELETE", "PUT"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.sales", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -5902,6 +5930,7 @@ def aquaculture_feeding_advice_list(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.feeding", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_feeding_advice_generate(request):
     err = _aquaculture_access(request)
     if err:
@@ -5977,6 +6006,7 @@ def aquaculture_feeding_advice_generate(request):
 @require_http_methods(["GET", "PUT", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.feeding", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_feeding_advice_detail(request, advice_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -6047,6 +6077,7 @@ def aquaculture_feeding_advice_detail(request, advice_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.feeding", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_feeding_advice_approve(request, advice_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -6083,6 +6114,7 @@ def _clear_feeding_advice_approval(a: AquacultureFeedingAdvice) -> None:
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.feeding", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_feeding_advice_disapprove(request, advice_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -6107,6 +6139,7 @@ def aquaculture_feeding_advice_disapprove(request, advice_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.feeding", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_feeding_advice_cancel(request, advice_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -6138,6 +6171,7 @@ def aquaculture_feeding_advice_cancel(request, advice_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.feeding", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_feeding_advice_apply(request, advice_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -6829,6 +6863,7 @@ def _replace_pond_shares_from_body(
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.landlords", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_landlords_list_or_create(request):
     err = _aquaculture_access(request)
     if err:
@@ -6979,6 +7014,7 @@ def aquaculture_landlords_list_or_create(request):
 @require_http_methods(["GET", "PATCH", "DELETE"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.landlords", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_landlord_detail(request, landlord_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -7031,6 +7067,7 @@ def aquaculture_landlord_detail(request, landlord_id: int):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.landlords", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_landlord_ledger_create(request, landlord_id: int):
     err = _aquaculture_access(request)
     if err:
@@ -7196,6 +7233,7 @@ def aquaculture_landlord_ledger_create(request, landlord_id: int):
 @require_http_methods(["DELETE", "PATCH"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.landlords", methods=("POST", "PUT", "PATCH", "DELETE"))
 def aquaculture_landlord_ledger_entry_detail(request, landlord_id: int, entry_id: int):
     err = _aquaculture_access(request)
     if err:

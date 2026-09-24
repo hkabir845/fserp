@@ -16,7 +16,7 @@ from api.services.aquaculture_financing_service import (
 )
 from api.utils.auth import auth_required
 from api.views.aquaculture_views import _aquaculture_access, _parse_date
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_aquaculture_module, require_company_id
 
 
 def _parse_positive_decimal(val, field: str = "amount") -> Decimal | None:
@@ -35,6 +35,7 @@ def _parse_positive_decimal(val, field: str = "amount") -> Decimal | None:
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.financing")
 def aquaculture_financing_overview(request):
     err = _aquaculture_access(request)
     if err:
@@ -46,6 +47,7 @@ def aquaculture_financing_overview(request):
 @require_http_methods(["GET"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.financing")
 def aquaculture_financing_repayment_worksheet(request):
     err = _aquaculture_access(request)
     if err:
@@ -85,6 +87,7 @@ def aquaculture_financing_repayment_worksheet(request):
 @require_http_methods(["POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.financing")
 def aquaculture_financing_repayment_apply(request):
     err = _aquaculture_access(request)
     if err:
@@ -133,6 +136,7 @@ def aquaculture_financing_repayment_apply(request):
 @require_http_methods(["GET", "POST"])
 @auth_required
 @require_company_id
+@require_aquaculture_module("app.aquaculture.financing")
 def aquaculture_financing_allocations(request):
     err = _aquaculture_access(request)
     if err:

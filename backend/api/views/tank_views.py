@@ -6,7 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from api.services.gl_posting import refresh_item_quantity_on_hand_from_tanks
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import Tank, Station, Item
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
@@ -66,6 +66,7 @@ def _tank_capacity_detail_error(t) -> JsonResponse | None:
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tanks", methods=("POST",))
 def tanks_list_or_create(request):
     if request.method == "GET":
         qs = Tank.objects.filter(company_id=request.company_id).select_related("station", "product").order_by("id")
@@ -131,6 +132,7 @@ def tanks_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.tanks", methods=("PUT", "PATCH", "DELETE"))
 def tank_detail(request, tank_id: int):
     t = Tank.objects.filter(id=tank_id, company_id=request.company_id).select_related("station", "product").first()
     if not t:

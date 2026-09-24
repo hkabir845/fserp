@@ -220,6 +220,7 @@ export default function InvoicesPage() {
   const [companyName, setCompanyName] = useState('')
   /** Line numbers where the user explicitly picked a revenue account (do not auto-overwrite). */
   const invoiceLineRevenueTouchedRef = useRef(new Set<number>())
+  const invoiceCreateLock = useRef(false)
   const [formData, setFormData] = useState({
     customer_id: 0,
     invoice_date: new Date().toISOString().split('T')[0],
@@ -697,14 +698,18 @@ export default function InvoicesPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (invoiceCreateLock.current) return
+    invoiceCreateLock.current = true
     
     if (!formData.customer_id || formData.customer_id === 0) {
+      invoiceCreateLock.current = false
       toast.error(tr('selectCustomer'))
       return
     }
 
     if (formData.lines.length === 0) {
       toast.error(tr('addLineItem'))
+      invoiceCreateLock.current = false
       return
     }
 
@@ -721,6 +726,7 @@ export default function InvoicesPage() {
 
     if (validLines.length !== formData.lines.length) {
       toast.error('Please ensure all line items have an item selected (or description), quantity > 0, and unit price > 0')
+      invoiceCreateLock.current = false
       return
     }
 
@@ -757,6 +763,8 @@ export default function InvoicesPage() {
     } catch (error: unknown) {
       console.error('Error creating invoice:', error)
       toast.error(extractErrorMessage(error, tr('requestFailed')))
+    } finally {
+      invoiceCreateLock.current = false
     }
   }
 

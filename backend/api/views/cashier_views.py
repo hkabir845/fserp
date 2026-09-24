@@ -367,6 +367,30 @@ def _parse_optional_amount_paid_now(body: dict) -> tuple[Decimal | None, JsonRes
     return d, None
 
 
+def _pos_sales_tax(company_id: int, subtotal: Decimal) -> Decimal:
+    """VAT from the company's active tax rate. Zero when no rate is in force."""
+    from api.models import TaxRate
+
+    today = timezone.localdate()
+    rate = (
+        TaxRate.objects.filter(tax__company_id=company_id, tax__is_active=True)
+        .order_by("-effective_from", "-id")
+        .first()
+    )
+    if rate is None:
+        return Decimal("0.00")
+    start = rate.effective_from
+    end = rate.effective_to
+    if start is not None and today < start:
+        return Decimal("0.00")
+    if end is not None and today > end:
+        return Decimal("0.00")
+    pct = rate.rate or Decimal("0")
+    if pct <= 0 or subtotal <= 0:
+        return Decimal("0.00")
+    return (subtotal * pct / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _cashier_pos_unified(
     company_id: int,
     body: dict,
@@ -444,7 +468,9 @@ def _cashier_pos_unified(
     subtotal = sum(d["amount"] for d in lines_data) + sum(
         fe["amount"] for fe in fuel_entries
     )
-    total = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    subtotal = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    tax_total = _pos_sales_tax(company_id, subtotal)
+    total = (subtotal + tax_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     split_tender = False
     if not on_account and amount_paid_now is not None and amount_paid_now > 0:
@@ -597,7 +623,7 @@ def _cashier_pos_unified(
                 due_date=due_date,
                 status=inv_status,
                 subtotal=subtotal,
-                tax_total=Decimal("0"),
+                tax_total=tax_total,
                 total=total,
                 payment_method=inv_pm,
                 idempotency_key=idempotency_key or "",

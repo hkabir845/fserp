@@ -17,6 +17,7 @@ from api.views.common import (
     query_include_inactive,
     query_include_internal,
     require_company_id,
+    require_permission,
 )
 from api.models import Customer
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
@@ -141,6 +142,7 @@ def _customer_list_stats(qs, company_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.customers", methods=("POST",))
 def customers_list(request):
     if request.method == "GET":
         qs = Customer.objects.filter(company_id=request.company_id).select_related("default_station")
@@ -251,6 +253,7 @@ def customers_list(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.customers", methods=("POST",))
 def customers_add_dummy(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -288,6 +291,7 @@ def customers_add_dummy(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.customers", methods=("PUT", "PATCH", "DELETE"))
 def customer_detail(request, customer_id: int):
     c = (
         Customer.objects.filter(id=customer_id, company_id=request.company_id)

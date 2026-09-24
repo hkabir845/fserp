@@ -1348,12 +1348,15 @@ def loan_repay(request, loan_id: int):
         return JsonResponse({"detail": "positive amount required"}, status=400)
     if (p + i - total).copy_abs() > Decimal("0.02"):
         return JsonResponse({"detail": "principal_amount + interest_amount must equal amount"}, status=400)
-    if p > lo.outstanding_principal + Decimal("0.01"):
-        return JsonResponse({"detail": "principal exceeds outstanding"}, status=400)
     post_gl = bool(body.get("post_to_gl", True))
     r_date = _parse_date(body.get("repayment_date")) or timezone.localdate()
     try:
         with transaction.atomic():
+            lo = Loan.objects.select_for_update().filter(id=loan_id, company_id=cid).first()
+            if not lo:
+                return JsonResponse({"detail": "Not found"}, status=404)
+            if p > (lo.outstanding_principal or Decimal("0")) + Decimal("0.01"):
+                return JsonResponse({"detail": "principal exceeds outstanding"}, status=400)
             r = LoanRepayment.objects.create(
                 loan=lo,
                 repayment_date=r_date,

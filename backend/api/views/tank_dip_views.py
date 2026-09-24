@@ -6,12 +6,13 @@ from typing import Optional
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
 from api.views.common import parse_json_body, require_company_id, require_permission
-from api.models import TankDip, Tank
+from api.models import BillLine, InvoiceLine, TankDip, Tank
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.gl_posting import (
     refresh_item_quantity_on_hand_from_tanks,
@@ -84,25 +85,88 @@ def _decimal(val, default=0):
         return default
 
 
+def _clamp_tank_volume(tank: Tank, volume: Decimal) -> Decimal:
+    vol = volume if volume > 0 else Decimal("0")
+    cap = tank.capacity or Decimal("0")
+    if cap > 0 and vol > cap:
+        vol = cap
+    return vol
+
+
+def _liters_moved_after_dip(company_id: int, tank_id: int, dip: TankDip) -> Decimal:
+    """Receipts minus sales recorded after this dip was saved.
+
+    A mid-day sync must keep those movements. Resetting the tank to the stick
+    reading alone puts fuel that was already sold back into the tank, and drops
+    receipts that arrived after the dip.
+    """
+    cutoff = dip.created_at
+    sold = (
+        InvoiceLine.objects.filter(
+            invoice__company_id=company_id,
+            nozzle__tank_id=tank_id,
+            invoice__created_at__gt=cutoff,
+        )
+        .exclude(invoice__status__in=("void", "draft"))
+        .aggregate(s=Sum("quantity"))["s"]
+        or Decimal("0")
+    )
+    received = (
+        BillLine.objects.filter(
+            bill__company_id=company_id,
+            tank_id=tank_id,
+            bill__stock_receipt_applied=True,
+            bill__created_at__gt=cutoff,
+        )
+        .exclude(bill__status__in=("void", "draft"))
+        .aggregate(s=Sum("quantity"))["s"]
+        or Decimal("0")
+    )
+    return Decimal(received) - Decimal(sold)
+
+
+def book_liters_from_latest_dip(tank: Tank, dip: TankDip) -> Decimal:
+    """Stick reading plus every receipt and sale that happened after the dip."""
+    return _clamp_tank_volume(tank, _decimal(dip.volume) + _liters_moved_after_dip(tank.company_id, tank.id, dip))
+
+
+def _reverse_tank_book_for_deleted_dip(dip: TankDip) -> None:
+    """Put the tank back to the book that existed before this dip, keeping later movements.
+
+    Only the latest dip rewrote live stock. Deleting an older dip removes its
+    variance journal and leaves the tank on the newer reading.
+    """
+    newer = (
+        TankDip.objects.filter(tank_id=dip.tank_id, company_id=dip.company_id)
+        .exclude(pk=dip.pk)
+        .order_by("-dip_date", "-id")
+        .first()
+    )
+    if newer and (newer.dip_date, newer.id) > (dip.dip_date, dip.id):
+        return
+    tank = Tank.objects.select_for_update().filter(pk=dip.tank_id, company_id=dip.company_id).first()
+    if not tank or dip.book_stock_before is None:
+        return
+    adjustment = _decimal(dip.volume) - _decimal(dip.book_stock_before)
+    tank.current_stock = _clamp_tank_volume(tank, _decimal(tank.current_stock) - adjustment)
+    tank.save(update_fields=["current_stock"])
+    if tank.product_id:
+        refresh_item_quantity_on_hand_from_tanks(dip.company_id, int(tank.product_id))
+
+
 def _reconcile_tank_book_stock(tank_id: int, company_id: int, volume: Decimal) -> None:
     """Set tank book stock to the physically measured volume (clamped to capacity)."""
     tank = Tank.objects.filter(id=tank_id, company_id=company_id).first()
     if not tank:
         return
-    vol = _decimal(volume, Decimal("0"))
-    if vol < 0:
-        vol = Decimal("0")
-    cap = tank.capacity or Decimal("0")
-    if cap > 0 and vol > cap:
-        vol = cap
-    tank.current_stock = vol
+    tank.current_stock = _clamp_tank_volume(tank, _decimal(volume, Decimal("0")))
     tank.save(update_fields=["current_stock"])
 
 
 def reconcile_all_tanks_to_latest_dip(company_id: int) -> list[dict]:
     """
-    For each tank that has at least one dip, set book stock (current_stock) to the latest dip's measured volume.
-    Use after importing historical dips or if book drifted; POS sales / receipts after the dip will still move book.
+    For each tank that has at least one dip, set book stock to the latest stick
+    reading plus receipts and minus sales saved after that dip.
     """
     results: list[dict] = []
     for tank in Tank.objects.filter(company_id=company_id).order_by("id"):
@@ -113,7 +177,9 @@ def reconcile_all_tanks_to_latest_dip(company_id: int) -> list[dict]:
         )
         if not latest:
             continue
-        _reconcile_tank_book_stock(tank.id, company_id, latest.volume)
+        _reconcile_tank_book_stock(
+            tank.id, company_id, book_liters_from_latest_dip(tank, latest)
+        )
         tank.refresh_from_db()
         results.append(
             {
@@ -262,7 +328,17 @@ def tank_dip_detail(request, dip_id: int):
         out["gl_variance"] = gl_info
         return JsonResponse(out)
     if request.method == "DELETE":
-        delete_tank_dip_variance_journal(request.company_id, dip_id)
-        d.delete()
+        with transaction.atomic():
+            locked = (
+                TankDip.objects.select_for_update()
+                .filter(id=dip_id, company_id=request.company_id)
+                .select_related("tank")
+                .first()
+            )
+            if not locked:
+                return JsonResponse({"detail": "Tank dip not found"}, status=404)
+            _reverse_tank_book_for_deleted_dip(locked)
+            delete_tank_dip_variance_journal(request.company_id, dip_id)
+            locked.delete()
         return JsonResponse({"detail": "Deleted"}, status=200)
     return JsonResponse({"detail": "Method not allowed"}, status=405)

@@ -727,7 +727,12 @@ def _topo_loans(company_id: int) -> list[Loan]:
 
 
 def _serialize_many(records: list[dict[str, Any]], iterable: Iterable) -> None:
-    records.extend(serializers.serialize("python", iterable))
+    rows = serializers.serialize("python", iterable)
+    for row in rows:
+        if row.get("model") == "api.user":
+            fields = row.get("fields") or {}
+            fields["password_hash"] = ""
+    records.extend(rows)
 
 
 def _append_tenant_records(records: list[dict[str, Any]], company_id: int) -> None:

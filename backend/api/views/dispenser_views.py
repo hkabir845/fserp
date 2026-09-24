@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import Dispenser, Island
 from api.services.station_capabilities import require_island_on_fuel_forecourt
 
@@ -28,6 +28,7 @@ def _dispenser_to_json(d):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.dispensers", methods=("POST",))
 def dispensers_list_or_create(request):
     if request.method == "GET":
         qs = Dispenser.objects.filter(company_id=request.company_id).select_related("island", "island__station").order_by("id")
@@ -73,6 +74,7 @@ def dispensers_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.dispensers", methods=("PUT", "PATCH", "DELETE"))
 def dispenser_detail(request, dispenser_id: int):
     d = Dispenser.objects.filter(id=dispenser_id, company_id=request.company_id).select_related("island", "island__station").first()
     if not d:

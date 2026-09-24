@@ -7,6 +7,8 @@ from collections import defaultdict
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.db.models import Q
+
 from api.models import (
     AquacultureBiomassSample,
     AquacultureFishPondTransferLine,
@@ -80,6 +82,28 @@ def _infer_fish_species_code_from_fish_item(item: Item) -> str:
     if "pangas" in name or "basa" in name:
         return "pangas"
     return "tilapia"
+
+
+def _attributed_sale_cycle_id(
+    company_id: int,
+    pond_id: int,
+    species: str,
+    explicit_cycle_id: int | None,
+    as_of: date | None,
+    cache: dict,
+) -> int | None:
+    """A sale saved with no cycle belongs to the cycle that was stocked, not an empty bucket."""
+    if explicit_cycle_id is not None:
+        return explicit_cycle_id
+    key = (pond_id, species, as_of)
+    if key not in cache:
+        from api.services.aquaculture_production_cycle_service import resolve_movement_production_cycle
+
+        hit = resolve_movement_production_cycle(
+            company_id, pond_id, fish_species=species, as_of_date=as_of
+        )
+        cache[key] = hit.id if hit else None
+    return cache[key]
 
 
 def _stock_bucket_key(pond_id: int, cycle_id: int | None, species_raw) -> StockBucketKey:
@@ -196,16 +220,35 @@ def compute_fish_stock_position_rows(
     if pond_id is not None:
         sale_q = sale_q.filter(pond_id=pond_id)
     if cy_id is not None:
-        sale_q = sale_q.filter(production_cycle_id=cy_id)
+        sale_q = sale_q.filter(Q(production_cycle_id=cy_id) | Q(production_cycle_id__isnull=True))
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
-    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True)
+    # A cleared link (transfer deleted) must not turn those rows into a second harvest.
+    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True).exclude(
+        memo__startswith="Inter-pond sale (from transfer"
+    )
 
     sale_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
-    for s in sale_q.only("pond_id", "weight_kg", "fish_count", "income_type", "fish_species", "sale_date"):
+    cycle_cache: dict = {}
+    for s in sale_q.only(
+        "pond_id",
+        "production_cycle_id",
+        "weight_kg",
+        "fish_count",
+        "income_type",
+        "fish_species",
+        "sale_date",
+    ):
         if income_type_is_non_biological_for_company(cid, getattr(s, "income_type", None) or ""):
             continue
+        if cy_id is not None:
+            sp_sale, _ = normalize_fish_species(getattr(s, "fish_species", None))
+            attributed = _attributed_sale_cycle_id(
+                cid, s.pond_id, sp_sale, s.production_cycle_id, getattr(s, "sale_date", None), cycle_cache
+            )
+            if attributed != cy_id:
+                continue
         if species_filter_code is not None:
             sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
             if sp != species_filter_code:
@@ -643,15 +686,19 @@ def compute_fish_stock_position_breakdown_rows(
     if pond_id is not None:
         sale_q = sale_q.filter(pond_id=pond_id)
     if cy_id is not None:
-        sale_q = sale_q.filter(production_cycle_id=cy_id)
+        sale_q = sale_q.filter(Q(production_cycle_id=cy_id) | Q(production_cycle_id__isnull=True))
     if as_of_date is not None:
         sale_q = sale_q.filter(sale_date__lte=as_of_date)
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
-    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True)
+    # The memo survives after delete clears source_fish_pond_transfer_line (SET_NULL).
+    sale_q = sale_q.filter(source_fish_pond_transfer_line_id__isnull=True).exclude(
+        memo__startswith="Inter-pond sale (from transfer"
+    )
+    cycle_cache: dict = {}
     for s in sale_q.only(
-        "pond_id", "production_cycle_id", "weight_kg", "fish_count", "income_type", "fish_species"
+        "pond_id", "production_cycle_id", "weight_kg", "fish_count", "income_type", "fish_species", "sale_date"
     ):
         if s.pond_id not in pond_by_id:
             continue
@@ -660,7 +707,9 @@ def compute_fish_stock_position_breakdown_rows(
         sp, _ = normalize_fish_species(getattr(s, "fish_species", None))
         if not _species_ok(sp):
             continue
-        cyc = s.production_cycle_id
+        cyc = _attributed_sale_cycle_id(
+            cid, s.pond_id, sp, s.production_cycle_id, getattr(s, "sale_date", None), cycle_cache
+        )
         if not _cycle_ok(cyc):
             continue
         key = _stock_bucket_key(s.pond_id, cyc, sp)

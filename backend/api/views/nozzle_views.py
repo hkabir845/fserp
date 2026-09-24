@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import Nozzle, Meter, Tank, User
 from api.services.station_capabilities import require_fuel_forecourt_station
 from api.services.reference_code import assign_string_code_if_empty, user_supplied_code_or_auto
@@ -92,6 +92,7 @@ def _nozzles_forecourt_qs(company_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.nozzles", methods=("POST",))
 def nozzles_list_or_create(request):
     if request.method == "GET":
         qs = _nozzles_forecourt_qs(request.company_id).order_by("id")
@@ -133,6 +134,7 @@ def nozzles_details(request):
     return JsonResponse([_nozzle_to_pos_json(n) for n in qs], safe=False)
 
 
+@require_permission("app.page.nozzles", methods=("POST",))
 def nozzles_list_post(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -211,6 +213,7 @@ def nozzles_list_post(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.nozzles", methods=("PUT", "PATCH", "DELETE"))
 def nozzle_detail(request, nozzle_id: int):
     n = (
         Nozzle.objects.filter(id=nozzle_id, company_id=request.company_id)

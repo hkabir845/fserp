@@ -212,7 +212,7 @@ def test_company_backup_download_forbidden_for_cashier(api_client, company_tenan
     assert r.status_code == 403
 
 
-def test_company_backup_download_allowed_for_manager(api_client, company_tenant):
+def test_company_backup_download_forbidden_for_manager(api_client, company_tenant):
     u = User(
         username="manager_backup@test.com",
         email="manager_backup@test.com",
@@ -231,9 +231,7 @@ def test_company_backup_download_allowed_for_manager(api_client, company_tenant)
     token = json.loads(login.content)["access_token"]
     h = {"HTTP_AUTHORIZATION": f"Bearer {token}"}
     r = api_client.get("/api/company/backup/", **h)
-    assert r.status_code == 200
-    assert r["Content-Type"].startswith("application/json")
-    assert len(r.content) > 100
+    assert r.status_code == 403
 
 
 def test_company_backup_restore_roundtrip_customer(api_client, auth_admin_headers, company_tenant):

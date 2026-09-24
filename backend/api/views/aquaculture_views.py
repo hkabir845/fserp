@@ -3325,6 +3325,16 @@ def aquaculture_sales_list_or_create(request):
             cycle_obj = resolve_movement_production_cycle(
                 cid, pond.id, fish_species=fs, as_of_date=sd
             )
+        from api.services.aquaculture_biomass_book_revaluation_service import (
+            accrue_book_growth_before_outbound,
+        )
+
+        accrue_book_growth_before_outbound(
+            company_id=cid,
+            pond_id=pond.id,
+            fish_species=fs,
+            production_cycle_id=cycle_obj.id if cycle_obj else None,
+        )
         stock_err = assert_outbound_fish_within_implied_stock(
             cid,
             pond.id,
@@ -3351,6 +3361,18 @@ def aquaculture_sales_list_or_create(request):
     )
     try:
         with transaction.atomic():
+            AquaculturePond.objects.select_for_update().filter(pk=pond.id, company_id=cid).first()
+            if not income_type_is_non_biological_for_company(cid, it):
+                stock_err = assert_outbound_fish_within_implied_stock(
+                    cid,
+                    pond.id,
+                    production_cycle_id=cycle_obj.id if cycle_obj else None,
+                    fish_species=fs,
+                    fish_count=fc_int or 0,
+                    weight_kg=wk,
+                )
+                if stock_err:
+                    return JsonResponse({"detail": stock_err}, status=400)
             s.save()
             if is_empty_feed_sack_sale_income(it):
                 deduct_empty_sacks_for_sale(cid, pond.id, wk)
@@ -5556,6 +5578,33 @@ def aquaculture_fish_pond_transfers(request):
         return lock_err
 
     with transaction.atomic():
+        list(
+            AquaculturePond.objects.select_for_update()
+            .filter(company_id=cid, pk__in=pond_ids)
+            .order_by("id")
+        )
+        from api.services.aquaculture_biomass_book_revaluation_service import (
+            accrue_book_growth_before_outbound,
+        )
+
+        accrue_book_growth_before_outbound(
+            company_id=cid,
+            pond_id=data["from_pond"].id,
+            fish_species=data["sp"],
+            production_cycle_id=data["from_cycle_obj"].id if data["from_cycle_obj"] else None,
+        )
+        total_fish = sum(int(ln.fish_count or 0) for ln in data["line_models"])
+        total_weight = sum((ln.weight_kg or Decimal("0") for ln in data["line_models"]), Decimal("0"))
+        stock_err = assert_outbound_fish_within_implied_stock(
+            cid,
+            data["from_pond"].id,
+            production_cycle_id=data["from_cycle_obj"].id if data["from_cycle_obj"] else None,
+            fish_species=data["sp"],
+            fish_count=total_fish,
+            weight_kg=total_weight,
+        )
+        if stock_err:
+            return JsonResponse({"detail": stock_err}, status=400)
         xfer = AquacultureFishPondTransfer(
             company_id=cid,
             from_pond=data["from_pond"],
@@ -5690,8 +5739,14 @@ def aquaculture_fish_pond_transfer_detail(request, transfer_id: int):
     lock_err = _ponds_write_lock_response(cid, pond_ids, t.transfer_date)
     if lock_err:
         return lock_err
-    _delete_fish_transfer_gl(cid, t.id)
-    t.delete()
+    with transaction.atomic():
+        line_ids = list(t.lines.values_list("id", flat=True))
+        # SET_NULL on delete would leave these mirrors looking like outside harvests.
+        AquacultureFishSale.objects.filter(
+            company_id=cid, source_fish_pond_transfer_line_id__in=line_ids
+        ).delete()
+        _delete_fish_transfer_gl(cid, t.id)
+        t.delete()
     return JsonResponse({"detail": "Deleted"}, status=200)
 
 

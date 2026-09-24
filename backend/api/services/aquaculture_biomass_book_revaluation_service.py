@@ -58,16 +58,22 @@ def clear_biomass_book_revaluations(
     company_id: int,
     pond_id: int,
     fish_species: str,
+    production_cycle_id: int | None = None,
 ) -> int:
-    """Remove prior auto revaluation adjustments for this pond+species."""
+    """Remove prior auto revaluation adjustments for this pond, species, and cycle."""
     sp, _ = normalize_fish_species(fish_species)
-    deleted, _ = AquacultureFishStockLedger.objects.filter(
+    qs = AquacultureFishStockLedger.objects.filter(
         company_id=company_id,
         pond_id=pond_id,
         entry_kind="adjustment",
         fish_species=sp,
         memo__startswith=REVAL_MEMO_PREFIX,
-    ).delete()
+    )
+    if production_cycle_id is None:
+        qs = qs.filter(production_cycle_id__isnull=True)
+    else:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+    deleted, _ = qs.delete()
     return int(deleted or 0)
 
 
@@ -85,12 +91,19 @@ def sync_biomass_book_weight_from_sample(
     pond_id = int(sample.pond_id)
     sp, _ = normalize_fish_species(getattr(sample, "fish_species", None) or "tilapia")
     sample_id = int(sample.pk)
+    cycle_id = sample.production_cycle_id
 
-    clear_biomass_book_revaluations(company_id=company_id, pond_id=pond_id, fish_species=sp)
+    clear_biomass_book_revaluations(
+        company_id=company_id,
+        pond_id=pond_id,
+        fish_species=sp,
+        production_cycle_id=cycle_id,
+    )
 
     rows = compute_fish_stock_position_rows(
         company_id,
         pond_id=pond_id,
+        production_cycle_id=cycle_id,
         fish_species_filter=sp,
     )
     if not rows:
@@ -132,6 +145,34 @@ def sync_biomass_book_weight_from_sample(
         post_to_books=False,
         memo=_reval_memo(pond_id=pond_id, sample_id=sample_id, target_kg=target)[:5000],
     )
+
+
+def accrue_book_growth_before_outbound(
+    *,
+    company_id: int,
+    pond_id: int,
+    fish_species: str,
+    production_cycle_id: int | None,
+) -> AquacultureFishStockLedger | None:
+    """Put sample growth onto this cycle's book kg before a harvest or transfer is saved.
+
+    The sample check allows a grown-fish sale. Without this accrual, book kilograms
+    (stocked minus sold) go negative because the growth was never written.
+    """
+    sp, _ = normalize_fish_species(fish_species)
+    qs = AquacultureBiomassSample.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        fish_species=sp,
+    )
+    if production_cycle_id is None:
+        qs = qs.filter(production_cycle_id__isnull=True)
+    else:
+        qs = qs.filter(production_cycle_id=production_cycle_id)
+    sample = qs.order_by("-sample_date", "-id").first()
+    if sample is None:
+        return None
+    return sync_biomass_book_weight_from_sample(sample)
 
 
 def sync_biomass_book_weight_for_pond(

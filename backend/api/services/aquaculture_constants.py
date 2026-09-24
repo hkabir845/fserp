@@ -616,7 +616,7 @@ def coa_account_code_for_aquaculture_income_type(income_type: str, company_id: i
     if it in NON_BIOLOGICAL_POND_SALE_INCOME_TYPES:
         return "4244"
     if it == "biological_count_gain":
-        return "4244"
+        return "4246"
     if it in ("subsidy_grant", "commission_income", "pond_rental_income"):
         return "4243"
     return "4243"

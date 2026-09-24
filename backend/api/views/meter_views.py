@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id, _serialize_datetime
+from api.views.common import parse_json_body, require_company_id, require_permission, _serialize_datetime
 from api.models import Meter, Dispenser
 from api.services.permission_service import has_permission, resolve_user_permissions
 from api.services.station_capabilities import require_island_on_fuel_forecourt
@@ -47,6 +47,7 @@ def _decimal(val, default=0):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.meters", methods=("POST",))
 def meters_list_or_create(request):
     if request.method == "GET":
         qs = Meter.objects.filter(company_id=request.company_id).select_related("dispenser", "dispenser__island", "dispenser__island__station").order_by("id")
@@ -97,6 +98,7 @@ def meters_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.meters", methods=("PUT", "PATCH", "DELETE"))
 def meter_detail(request, meter_id: int):
     m = Meter.objects.filter(id=meter_id, company_id=request.company_id).select_related("dispenser", "dispenser__island", "dispenser__island__station").first()
     if not m:
@@ -144,6 +146,7 @@ def meter_detail(request, meter_id: int):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.meters", methods=("POST",))
 def meter_reset(request, meter_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)

@@ -315,6 +315,7 @@ CODE_CASH = "1010"
 CODE_UNDEPOSITED = "1020"
 CODE_BANK_OP = "1030"
 CODE_AR = "1100"
+CODE_CUSTOMER_DEPOSITS = "2030"
 CODE_CARD_CLEARING = "1120"
 CODE_AP = "2000"
 CODE_VAT = "2100"
@@ -388,6 +389,15 @@ _CORE_POSTING_GL_ACCOUNTS: dict[str, tuple[str, str, str]] = {
     # could always post a purchase but never a sale, so moving an invoice to sent/paid failed
     # with "no revenue accounts" and the document was stuck out of the ledger.
     CODE_FUEL_REV: ("Fuel Sales", "income", "sales_of_product_income"),
+    "4110": ("Fuel Sales — Diesel", "income", "sales_of_product_income"),
+    "4120": ("Fuel Sales — Premium", "income", "sales_of_product_income"),
+    "4130": ("Fuel Sales — Other grades", "income", "sales_of_product_income"),
+    "4140": ("Fuel Sales — Fleet & Commercial", "income", "sales_of_product_income"),
+    CODE_CUSTOMER_DEPOSITS: (
+        "Customer Deposits & Prepayments",
+        "liability",
+        "other_current_liability",
+    ),
     CODE_SHOP_REV: ("Shop & Merchandise Sales", "income", "sales_of_product_income"),
     # Supplier rebates and other miscellaneous income land here. Without it a mill credit
     # could not post its journal, and the vendor A/P decrement had nothing behind it.
@@ -1020,6 +1030,36 @@ def bulk_sync_tank_dip_variance_journals(company_id: int) -> dict[str, Any]:
     }
 
 
+def _fuel_grade_revenue_code(item, inv=None) -> str:
+    """4100 petrol, 4110 diesel, 4120 premium, 4130 other grades, 4140 fleet (on account)."""
+    pm = (getattr(inv, "payment_method", None) or "").strip().lower()
+    if pm == "on_account":
+        return "4140"
+    blob = " ".join(
+        [
+            (getattr(item, "name", None) or ""),
+            (getattr(item, "category", None) or ""),
+            (getattr(item, "pos_category", None) or ""),
+        ]
+    ).lower()
+    if "diesel" in blob:
+        return "4110"
+    if "premium" in blob or "octane" in blob:
+        return "4120"
+    if any(tok in blob for tok in ("petrol", "gasoline", "mogas", "gasohol")):
+        return "4100"
+    return "4130"
+
+
+def _revenue_account_for_fuel_grade(company_id: int, item, inv=None) -> Optional[ChartOfAccount]:
+    code = _fuel_grade_revenue_code(item, inv)
+    return (
+        _coa(company_id, code)
+        or _coa(company_id, CODE_FUEL_REV)
+        or _ensure_core_posting_account(company_id, code)
+    )
+
+
 def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]:
     if item is not None and getattr(item, "revenue_account_id", None):
         acc = ChartOfAccount.objects.filter(
@@ -1030,11 +1070,7 @@ def _revenue_account_for_item(company_id: int, item) -> Optional[ChartOfAccount]
     if item:
         pos_cat = (item.pos_category or "").lower()
         if _is_fuel_item(item):
-            return (
-                _coa(company_id, CODE_FUEL_REV)
-                or _coa(company_id, CODE_OTHER_REV)
-                or _ensure_core_posting_account(company_id, CODE_FUEL_REV)
-            )
+            return _revenue_account_for_fuel_grade(company_id, item)
         if pos_cat in ("shop", "c-store", "convenience", "general", "feed"):
             return (
                 _coa(company_id, CODE_SHOP_REV)
@@ -1131,6 +1167,8 @@ def _build_revenue_splits(company_id: int, inv: Invoice) -> dict[int, Decimal]:
             ).first()
             if ra and is_pl_credit_normal_type(ra.account_type):
                 acc = ra
+        if acc is None and _is_fuel_item(line.item):
+            acc = _revenue_account_for_fuel_grade(company_id, line.item, inv)
         if acc is None:
             acc = _revenue_account_for_item(company_id, line.item)
         if acc:
@@ -1728,7 +1766,7 @@ def post_aquaculture_fish_stock_ledger_journal(
     Idempotent entry_number AUTO-AQ-BIOSTK-{ledger_id}.
 
     Write-down (mortality / negative adjustment with value): Dr 6726 / Cr 1581.
-    Count gain (positive adjustment with value): Dr 1581 / Cr 4244.
+    Count gain (positive adjustment with value): Dr 1581 / Cr 4246.
     Go-live / opening biomass (credit_opening_equity=True): Dr 1581 / Cr 3200 Opening Balance Equity.
     """
     entry_number = f"AUTO-AQ-BIOSTK-{ledger_id}"
@@ -1741,7 +1779,12 @@ def post_aquaculture_fish_stock_ledger_journal(
 
     bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
     exp = ChartOfAccount.objects.filter(company_id=company_id, account_code="6726", is_active=True).first()
-    gain = ChartOfAccount.objects.filter(company_id=company_id, account_code="4244", is_active=True).first()
+    gain = ChartOfAccount.objects.filter(company_id=company_id, account_code="4246", is_active=True).first()
+    if gain is None and not is_write_down and not credit_opening_equity:
+        from api.services.aquaculture_coa_seed import ensure_aquaculture_chart_accounts
+
+        ensure_aquaculture_chart_accounts(company_id)
+        gain = ChartOfAccount.objects.filter(company_id=company_id, account_code="4246", is_active=True).first()
     equity = None
     if credit_opening_equity and not is_write_down:
         from api.services.loan_counterparty_opening import resolve_opening_balance_equity
@@ -1753,7 +1796,7 @@ def post_aquaculture_fish_stock_ledger_journal(
         logger.warning(
             "skip aquaculture fish stock journal %s: missing COA (1581%s)",
             entry_number,
-            ", 6726" if is_write_down else (", 3200" if credit_opening_equity else ", 4244"),
+            ", 6726" if is_write_down else (", 3200" if credit_opening_equity else ", 4246"),
         )
         return None
 
@@ -2403,10 +2446,28 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
             "G/L: No debit (cash) account for this payment method. Ensure account 1010 (Cash on Hand) "
             "or 1020/1120, or a bank/till register linked to a G/L line, is available."
         )
-    lines = [
-        (cash_bank, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
-        (ar, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
-    ]
+    applied = (
+        PaymentInvoiceAllocation.objects.filter(payment_id=p.id).aggregate(s=Sum("amount"))["s"]
+        or Decimal("0")
+    )
+    if applied < 0:
+        applied = Decimal("0")
+    if applied > p.amount:
+        applied = p.amount
+    unapplied = (p.amount - applied).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    applied = applied.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    memo = p.reference or f"PAY-{p.id}"
+    lines = [(cash_bank, p.amount, Decimal("0"), memo)]
+    if applied > 0:
+        lines.append((ar, Decimal("0"), applied, memo))
+    if unapplied > 0:
+        deposits = _ensure_core_posting_account(company_id, CODE_CUSTOMER_DEPOSITS)
+        if not deposits:
+            raise GlPostingError(
+                "G/L: Customer Deposits (code 2030) is missing. Add it before recording a receipt "
+                "that is not applied to an invoice."
+            )
+        lines.append((deposits, Decimal("0"), unapplied, memo))
     pst = _gl_station_id(company_id, p.station_id)
     je = _create_posted_entry(
         company_id,
@@ -2423,9 +2484,10 @@ def post_payment_received_journal(company_id: int, p: Payment) -> bool:
     if je and p.customer_id and not _is_walkin_customer(
         Customer.objects.filter(pk=p.customer_id).first()
     ):
-        Customer.objects.filter(pk=p.customer_id).update(
-            current_balance=F("current_balance") - p.amount
-        )
+        if applied > 0:
+            Customer.objects.filter(pk=p.customer_id).update(
+                current_balance=F("current_balance") - applied
+            )
     return True
 
 
@@ -2445,12 +2507,18 @@ def reverse_payment_received_posting(company_id: int, p: Payment) -> tuple[bool,
         company_id=company_id, entry_number=entry_number
     ).first()
     had_je = je is not None
+    ar_credit = Decimal("0")
     if je:
+        ar = _coa(company_id, CODE_AR)
+        if ar:
+            for ln in je.lines.all():
+                if ln.account_id == ar.id:
+                    ar_credit += ln.credit or Decimal("0")
         je.delete()
     cust = Customer.objects.filter(pk=p.customer_id).first() if p.customer_id else None
-    if had_je and p.customer_id and not _is_walkin_customer(cust):
+    if had_je and p.customer_id and not _is_walkin_customer(cust) and ar_credit > 0:
         Customer.objects.filter(pk=p.customer_id).update(
-            current_balance=F("current_balance") + (p.amount or Decimal("0"))
+            current_balance=F("current_balance") + ar_credit
         )
     return True, ""
 
@@ -2576,33 +2644,22 @@ def _normalize_label(s: str) -> str:
 
 def _pick_tank_for_bill_line(line: BillLine, item: Item, tanks_qs):
     """
-    Prefer line.tank_id when valid; else tank whose name starts with / contains the product name
-    (e.g. Diesel -> Diesel Tank 1); else first tank by tank_name then id.
+    Use the tank on the line. With no tank chosen, use the only tank of this
+    product at the bill's station. Never guess a tank at another station.
     """
     if line.tank_id:
-        t = tanks_qs.filter(pk=line.tank_id).first()
-        if t:
-            return t
-    name = _normalize_label(item.name or "")
-    ordered = list(tanks_qs.order_by("tank_name", "id"))
-    if not ordered:
-        return None
-    if name:
-        for t in ordered:
-            tn = _normalize_label(t.tank_name or "")
-            if tn.startswith(name):
-                return t
-        for t in ordered:
-            tn = _normalize_label(t.tank_name or "")
-            if name in tn:
-                return t
-        words = [w for w in name.replace("-", " ").split() if len(w) > 1]
-        for t in ordered:
-            tn = _normalize_label(t.tank_name or "")
-            for w in words:
-                if w in tn:
-                    return t
-    return ordered[0]
+        return tanks_qs.filter(pk=line.tank_id).first()
+    station_id = getattr(line, "receipt_station_id", None)
+    if not station_id:
+        bill = getattr(line, "bill", None)
+        station_id = getattr(bill, "receipt_station_id", None) if bill is not None else None
+    scoped = tanks_qs.filter(station_id=station_id) if station_id else tanks_qs.none()
+    if not station_id:
+        # One tank in the company is unambiguous. Two stations of the same grade are not.
+        ordered = list(tanks_qs.order_by("id")[:2])
+        return ordered[0] if len(ordered) == 1 else None
+    ordered = list(scoped.order_by("id")[:2])
+    return ordered[0] if len(ordered) == 1 else None
 
 
 def _item_receives_physical_stock(item: Optional[Item]) -> bool:
@@ -2736,9 +2793,15 @@ def receipt_inventory_from_posted_bill(
         tanks_qs = _tanks_for_stock_receipt(company_id, item)
         if tanks_qs.exists():
             tank = _pick_tank_for_bill_line(line, item, tanks_qs)
-            if tank:
-                Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") + qty)
-                refresh_item_quantity_on_hand_from_tanks(company_id, item.id)
+            if tank is None:
+                from api.exceptions import StockBusinessError
+
+                raise StockBusinessError(
+                    f"Choose the receiving tank for {item.name}. "
+                    "A fuel purchase with no tank is not posted into another station's tank."
+                )
+            Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") + qty)
+            refresh_item_quantity_on_hand_from_tanks(company_id, item.id)
         else:
             from api.services.station_stock import (
                 add_station_stock,
@@ -2786,9 +2849,14 @@ def reverse_receipt_inventory_from_posted_bill(bill: Bill) -> None:
         tanks_qs = _tanks_for_stock_receipt(company_id, item)
         if tanks_qs.exists():
             tank = _pick_tank_for_bill_line(line, item, tanks_qs)
-            if tank:
-                Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") - qty)
-                refresh_item_quantity_on_hand_from_tanks(company_id, item.id)
+            if tank is None:
+                from api.exceptions import StockBusinessError
+
+                raise StockBusinessError(
+                    f"Choose the receiving tank for {item.name} before reversing this receipt."
+                )
+            Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") - qty)
+            refresh_item_quantity_on_hand_from_tanks(company_id, item.id)
         else:
             if not item_uses_station_bins(company_id, item):
                 if _is_fish_item(item):

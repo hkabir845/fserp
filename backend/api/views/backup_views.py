@@ -38,9 +38,12 @@ def _actor_audit_fields(request):
 
 
 def _user_can_backup(user) -> bool:
-    """Tenant backup download requires ``app.backup`` (Admin, Manager, or custom role)."""
+    """Tenant backup download is Admin (or super admin). Manager does not get it by default."""
     if user_is_super_admin(user):
         return True
+    role = (getattr(user, "role", None) or "").strip().lower()
+    if role == "manager":
+        return False
     return has_permission(resolve_user_permissions(user), "app.backup")
 
 

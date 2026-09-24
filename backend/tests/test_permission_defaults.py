@@ -51,6 +51,13 @@ def test_fuel_only_user_denied_aquaculture_api():
     assert user_may_access_aquaculture_api(_User()) is False
 
 
+def test_manager_default_perms_exclude_backup():
+    perms = default_permissions_for_role("manager")
+    assert "app.backup" not in perms
+    assert "app.page.backup" not in perms
+    assert "app.users" not in perms
+
+
 def test_manager_with_default_perms_may_access_aquaculture():
     class _User:
         role = "manager"

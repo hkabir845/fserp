@@ -1752,20 +1752,7 @@ def report_income_statement(
             pk=pond_id, company_id=company_id
         ).only("name").first()
         pond_name = (pond.name or "").strip() if pond else None
-    # Cost of the goods actually sold in this period (subledger: qty x best-available unit cost).
-    est_cogs = _estimated_cogs_from_invoice_lines(
-        company_id, start, end, station_id=station_id, pond_id=pond_id
-    )
-    # Self-heal: every sale must show COGS. If the sold-goods cost exceeds the COGS already posted
-    # to the GL for this scope, post the missing AUTO-INV-*-COGS journals (idempotent, dated at the
-    # sale date) so the P&L never shows goods sold without matching Cost of Goods Sold. Keeping it in
-    # the GL means the Balance Sheet and Trial Balance stay consistent with the P&L.
-    if est_cogs > 0 and pond_id is None:
-        posted_cogs_pre = _period_income_statement_totals(
-            company_id, start, end, station_id
-        )["cogs"]
-        if est_cogs > posted_cogs_pre + Decimal("0.02"):
-            backfill_invoice_cogs_journals(company_id, start, end)
+    # Opening this report must not post journals. Missing COGS is a backfill command, not a read.
     # Include inactive accounts: journals may still post to them; omitting them understates P&L.
     # Company scope consolidates the ponds, so inter-pond trade is eliminated; a pond- or
     # site-scoped statement keeps it, because from that pond's side the sale really happened.
@@ -5212,7 +5199,18 @@ def _shift_meter_reconciliation(session: ShiftSession, inv_ids: list[int]) -> li
         opening = opening_map.get(mid, Decimal("0"))
         closing = closing_map.get(mid, Decimal("0"))
         sold = liters_by_meter.get(mid, Decimal("0"))
-        meter_delta = closing - opening if mid in closing_map and mid in opening_map else Decimal("0")
+        if mid in closing_map and mid in opening_map:
+            from api.models import Meter
+            from api.services.meter_reading import meter_quantity_from_readings
+
+            max_reading = (
+                Meter.objects.filter(pk=mid).values_list("max_reading", flat=True).first()
+            )
+            meter_delta = meter_quantity_from_readings(
+                opening, closing, max_reading=max_reading
+            )
+        else:
+            meter_delta = Decimal("0")
         variance = meter_delta - sold if mid in closing_map and mid in opening_map else Decimal("0")
         out.append(
             {

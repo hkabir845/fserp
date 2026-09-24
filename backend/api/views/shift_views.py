@@ -421,7 +421,9 @@ def shifts_sessions_open(request):
         return JsonResponse({"detail": merr}, status=400)
     try:
         with transaction.atomic():
-            snap = _apply_opening_meter_intent(request.company_id, station_id, to_apply)
+            # Opening is a snapshot only. Writing the typed figure onto the live
+            # meter rebases the pump; closing already stores a snapshot and does not.
+            snap = _build_closing_meter_snapshot(request.company_id, station_id, to_apply)
             s = ShiftSession(
                 company_id=request.company_id,
                 station_id=station_id or None,

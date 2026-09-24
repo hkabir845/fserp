@@ -32,7 +32,8 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import F
 
-from api.models import Invoice, InvoiceLine, Item
+from api.exceptions import StockBusinessError
+from api.models import Invoice, InvoiceLine, Item, Tank
 from api.services.inventory_validation import assert_pos_general_lines_within_qoh
 from api.services.item_catalog import item_tracks_physical_stock
 from api.services.station_stock import (
@@ -82,6 +83,76 @@ def invoice_stock_lines(company_id: int, invoice_id: int) -> list[dict]:
     return rows
 
 
+def _unique_station_tank(company_id: int, item_id: int, station_id: int | None) -> Tank | None:
+    """The one active tank of this product at the invoice station, or None when there is no tank."""
+    qs = Tank.objects.filter(company_id=company_id, product_id=item_id, is_active=True)
+    if not qs.exists():
+        return None
+    scoped = qs.filter(station_id=station_id) if station_id else qs
+    rows = list(scoped.order_by("id")[:2])
+    if len(rows) == 1:
+        return rows[0]
+    raise StockBusinessError(
+        "This fuel invoice needs a station with exactly one tank of that grade. "
+        "Liters are not taken from another station's tank, and they are not left in the tank after the sale."
+    )
+
+
+def _relieve_office_fuel_tanks(company_id: int, inv: Invoice) -> bool:
+    """Office diesel/petrol invoices have no nozzle. Take the liters out of that station's tank."""
+    from api.services.gl_posting import _is_fuel_item, refresh_item_quantity_on_hand_from_tanks
+
+    moved = False
+    product_ids: set[int] = set()
+    for line in InvoiceLine.objects.filter(invoice_id=inv.id).select_related("item"):
+        it = line.item
+        qty = line.quantity or Decimal("0")
+        if it is None or line.nozzle_id or qty <= 0 or not _is_fuel_item(it):
+            continue
+        tank = _unique_station_tank(company_id, int(it.id), inv.station_id)
+        if tank is None:
+            continue
+        if (tank.current_stock or Decimal("0")) < qty:
+            raise StockBusinessError(
+                f"Not enough {it.name} in {tank.tank_name} for this invoice ({qty} L)."
+            )
+        Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") - qty)
+        InvoiceLine.objects.filter(pk=line.pk).update(
+            stock_relieved_quantity=qty,
+            stock_relieved_station_id=tank.station_id,
+        )
+        product_ids.add(int(it.id))
+        moved = True
+    for pid in product_ids:
+        refresh_item_quantity_on_hand_from_tanks(company_id, pid)
+    return moved
+
+
+def _restore_office_fuel_tanks(company_id: int, invoice_id: int, station_id: int | None) -> None:
+    from api.services.gl_posting import _is_fuel_item, refresh_item_quantity_on_hand_from_tanks
+
+    product_ids: set[int] = set()
+    lines = InvoiceLine.objects.filter(
+        invoice_id=invoice_id, stock_relieved_quantity__gt=0, nozzle_id__isnull=True
+    ).select_related("item")
+    for line in lines:
+        it = line.item
+        qty = line.stock_relieved_quantity or Decimal("0")
+        if it is None or qty <= 0 or not _is_fuel_item(it):
+            continue
+        sid = line.stock_relieved_station_id or station_id
+        tank = _unique_station_tank(company_id, int(it.id), sid)
+        if tank is None:
+            continue
+        Tank.objects.filter(pk=tank.pk).update(current_stock=F("current_stock") + qty)
+        product_ids.add(int(it.id))
+        InvoiceLine.objects.filter(pk=line.pk).update(
+            stock_relieved_quantity=0, stock_relieved_station_id=None
+        )
+    for pid in product_ids:
+        refresh_item_quantity_on_hand_from_tanks(company_id, pid)
+
+
 def apply_invoice_stock_relief(company_id: int, inv: Invoice) -> bool:
     """Decrement stock for a posted invoice. Idempotent; returns True when it moved stock.
 
@@ -104,12 +175,13 @@ def apply_invoice_stock_relief(company_id: int, inv: Invoice) -> bool:
         )
         if locked is None or locked.stock_relieved:
             return False
+        fuel_moved = _relieve_office_fuel_tanks(company_id, locked)
         lines_data = invoice_stock_lines(company_id, locked.id)
         if not lines_data:
             # Nothing physical on this invoice. The zero line evidence prevents a later
             # catalog edit (for example adding cost) from inventing a reversal movement.
             Invoice.all_objects.filter(pk=locked.id).update(stock_relieved=True)
-            return False
+            return fuel_moved
 
         station_id = locked.station_id
         # Raises StockBusinessError when a line exceeds what is on hand.
@@ -127,6 +199,8 @@ def apply_invoice_stock_relief(company_id: int, inv: Invoice) -> bool:
                 quantity_on_hand=F("quantity_on_hand") - d["quantity"]
             )
         for line in InvoiceLine.objects.filter(invoice_id=locked.id):
+            if (line.stock_relieved_quantity or Decimal("0")) > 0:
+                continue
             relieved = line.quantity if _line_moves_stock(company_id, line) else Decimal("0")
             station_evidence = (
                 int(station_id)
@@ -139,7 +213,7 @@ def apply_invoice_stock_relief(company_id: int, inv: Invoice) -> bool:
             )
         Invoice.all_objects.filter(pk=locked.id).update(stock_relieved=True)
         inv.stock_relieved = True
-        return True
+        return True or fuel_moved
 
 
 def mark_pos_stock_relieved(company_id: int, inv: Invoice) -> None:
@@ -191,6 +265,7 @@ def undo_invoice_stock_relief(company_id: int, invoice_id: int) -> bool:
         if locked is None or not locked.stock_relieved:
             return False
         station_id = locked.station_id
+        _restore_office_fuel_tanks(company_id, invoice_id, station_id)
         lines = InvoiceLine.objects.filter(
             invoice_id=invoice_id, stock_relieved_quantity__gt=0
         ).select_related("item")

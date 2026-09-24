@@ -517,7 +517,7 @@ _DEFAULT_ROLE_PERMS: dict[str, list[str]] = {
     "manager": [
         p["id"]
         for p in PERMISSION_CATALOG
-        if p["id"] != "app.users"
+        if p["id"] not in ("app.users", "app.backup", "app.page.backup")
     ],
     "cashier": [
         "app.launcher",

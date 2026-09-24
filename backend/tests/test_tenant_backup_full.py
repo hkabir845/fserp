@@ -52,6 +52,9 @@ def test_backup_bundle_schema_v2(company_tenant):
     assert bundle["schema_version"] == BACKUP_SCHEMA_VERSION == 2
     assert "model_labels" in bundle
     assert bundle["records"]
+    for row in bundle["records"]:
+        if row.get("model") == "api.user":
+            assert row["fields"].get("password_hash") == ""
 
 
 def test_backup_includes_aquaculture_and_inventory_models(company_tenant):

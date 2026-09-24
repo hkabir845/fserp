@@ -165,7 +165,7 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
         "asset",
         "other_current_assets",
         "Live fish biomass in ponds when capitalized; reduced on mortality (paired with 6726) or harvest, "
-        "increased on positive count reconciliation (paired with 4244).",
+        "increased on positive count reconciliation (paired with 4246).",
     ),
     (
         "6726",
@@ -175,7 +175,7 @@ AQUACULTURE_COA_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
         "Deaths, snake or predator losses, birds, theft, escapes, and similar shrinkage (Dr expense / Cr 1581).",
     ),
     (
-        "4244",
+        "4246",
         "Aquaculture — Biological Inventory Count Gain",
         "income",
         "other_income",

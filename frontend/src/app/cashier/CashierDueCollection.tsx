@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { CompanyDateInput } from '@/components/CompanyDateInput'
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import api from "@/lib/api"
 import { isOffsetPagedPayload } from "@/lib/pagination"
 import { formatBankRegisterLabel } from "@/lib/bankAccountDisplay"
@@ -120,6 +120,7 @@ export function CashierDueCollection({
   const [cashEntry, setCashEntry] = useState("")
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const idempotencyKeyRef = useRef<string | null>(null)
 
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [listLoading, setListLoading] = useState(true)
@@ -297,9 +298,13 @@ export function CashierDueCollection({
       if (linkToShift && autoShiftId != null) {
         payload.shift_session_id = autoShiftId
       }
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = makeIdempotencyKey()
+      }
       const res = await api.post("/payments/received/", payload, {
-        headers: { "Idempotency-Key": makeIdempotencyKey() },
+        headers: { "Idempotency-Key": idempotencyKeyRef.current },
       })
+      idempotencyKeyRef.current = null
       toast.success("Payment recorded: A/R reduced and bank/cash debited per GL rules.")
       const saved = res.data as PaymentRow | undefined
       if (saved?.id) setLastRecorded(saved)

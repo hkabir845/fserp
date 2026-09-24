@@ -2034,6 +2034,7 @@ export default function BillsPage() {
   }, [resolvedVendorDefaultExpenseId, billExpenseCoaOptions])
 
   const billLineExpenseTouchedRef = useRef(new Set<number>())
+  const billCreateLock = useRef(false)
   const showBillEntityColumn = stations.length > 0 || aquaculturePonds.length > 0
 
   const selectedVendorReceivingHint = useMemo(() => {
@@ -3482,6 +3483,9 @@ export default function BillsPage() {
   }
 
   const performCreate = async (confirm?: { acknowledgeTankOverfill: boolean }) => {
+    if (billCreateLock.current) return
+    billCreateLock.current = true
+    try {
     const linesToSave = finalizeBillLinesForSave(formData.lines, items)
     const { subtotal, taxAmount, total } = calculateTotals(linesToSave)
 
@@ -3540,6 +3544,9 @@ export default function BillsPage() {
     setStockReviewPayload(null)
     resetForm()
     void refreshAll()
+    } finally {
+      billCreateLock.current = false
+    }
   }
 
   const handleCreate = async (e: React.FormEvent) => {

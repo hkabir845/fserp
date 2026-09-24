@@ -24,14 +24,14 @@ import { formatCurrency, formatNumber } from '@/utils/currency'
 import { formatDateOnly } from '@/utils/date'
 import { readStoredAccessToken } from '@/lib/authSession'
 
-/** Variance BDT uses item cost (৳/L) when set, else unit_price. */
+/** Variance BDT uses item cost (৳/L) only. Selling price is not a stock value. */
 const VARIANCE_CURRENCY = 'BDT'
 
 function varianceRatePerLiter(product: Product | undefined): number {
   if (!product) return 0
   const c = Number(product.cost)
   if (Number.isFinite(c) && c > 0) return c
-  return Number(product.unit_price) || 0
+  return 0
 }
 
 interface Tank {
@@ -398,7 +398,7 @@ export default function TankDipsPage() {
   const handleResyncAllVarianceGl = async () => {
     if (
       !confirm(
-        'Re-post variance GL for all saved dips? Each AUTO-TANKDIP-{id}-VAR entry is replaced using current item cost (or unit price). Fuel inventory (1200) and COGS/shrinkage amounts update accordingly. Dips with no variance or no cost still skip.'
+        'Re-post variance GL for all saved dips? Each AUTO-TANKDIP-{id}-VAR entry is replaced using current item cost. Fuel inventory (1200) and COGS/shrinkage amounts update accordingly. Dips with no variance or no cost still skip.'
       )
     ) {
       return
@@ -702,7 +702,7 @@ export default function TankDipsPage() {
                 if (p && varianceRatePerLiter(p) > 0) return null
                 return (
                   <p className="text-xs text-warning-foreground mb-3">
-                    Item has no cost (and no unit price): variance reports show ৳0 until you set cost on the product or
+                    Item has no cost: the screen and the journal both show ৳0 until you set cost on the product or
                     run <code className="bg-amber-100 px-1 rounded">backfill_tank_product_costs</code>.
                   </p>
                 )
@@ -759,8 +759,8 @@ export default function TankDipsPage() {
           sale; it only measures what is already on hand. When measured liters differ from book at the dip time, the
           system posts a <strong>variance journal</strong>: gains <strong>debit inventory</strong> and{' '}
           <strong>credit COGS</strong> (reduces expense); losses <strong>debit shrinkage / COGS</strong> and{' '}
-          <strong>credit inventory</strong>. The BDT amount is variance liters × the tank product&apos;s cost (or unit
-          price if cost is unset). Diesel, petrol, octane, etc. all use the same wet-stock accounts so behavior matches
+          <strong>credit inventory</strong>. The BDT amount is variance liters × the tank product&apos;s cost.
+          When cost is zero, nothing is posted. Diesel, petrol, octane, etc. all use the same wet-stock accounts so behavior matches
           across tanks.
         </p>
       </div>
@@ -992,8 +992,8 @@ export default function TankDipsPage() {
           <p className="text-sm text-muted-foreground mt-1">
             <strong>Book (at dip)</strong> is the system stock captured when the dip was saved. Variance is measured
             minus that snapshot, so gains/losses stay visible after book is reconciled to the stick reading.{' '}
-            <strong>Value (BDT)</strong> is variance liters × the fuel item&apos;s cost (৳/L) when set, else unit
-            price, in Bangladesh Taka (৳).
+            <strong>Value (BDT)</strong> is variance liters × the fuel item&apos;s cost (৳/L). A blank cost
+            values the gain or loss at zero, the same as the journal.
           </p>
         </div>
         <div className="overflow-x-auto">

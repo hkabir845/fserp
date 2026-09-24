@@ -111,17 +111,9 @@ def _head_from(weight_kg: Decimal, raw_count, raw_pcs_per_kg) -> int | None:
 
 def _upsert(*, lookup: dict, defaults: dict) -> None:
     obj, _created = AquacultureBiomassSample.objects.update_or_create(**lookup, defaults=defaults)
-    # Stock reference, extrapolation and valuation are derived snapshots over deep stock / P&L
-    # lookups. A failure there must leave the base sampling row in place.
-    try:
-        apply_aquaculture_biomass_sample_extrapolation(obj)
-        apply_biomass_sample_valuation(obj)
-        obj.save()
-    except Exception:
-        logger.exception(
-            "Biomass enrichment failed for auto sample #%s; base row kept without full snapshot.",
-            obj.id,
-        )
+    apply_aquaculture_biomass_sample_extrapolation(obj)
+    apply_biomass_sample_valuation(obj)
+    obj.save()
 
 
 def sync_biomass_samples_from_bill(company_id: int, bill) -> None:
@@ -188,9 +180,10 @@ def sync_biomass_samples_from_bill(company_id: int, bill) -> None:
             )
     except Exception:
         logger.exception(
-            "Auto biomass sampling failed for bill #%s; the bill itself is unaffected.",
+            "Auto biomass sampling failed for bill #%s; the bill is rolled back.",
             getattr(bill, "id", None),
         )
+        raise
 
 
 def sync_biomass_samples_from_fish_pond_transfer(
@@ -284,6 +277,7 @@ def sync_biomass_samples_from_fish_pond_transfer(
         )
     except Exception:
         logger.exception(
-            "Auto biomass sampling failed for pond transfer #%s; the transfer itself is unaffected.",
+            "Auto biomass sampling failed for pond transfer #%s; the transfer is rolled back.",
             getattr(transfer, "id", None),
         )
+        raise

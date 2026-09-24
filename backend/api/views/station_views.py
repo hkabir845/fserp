@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import AquaculturePond, Company, Island, Station, Tank
 from api.services.station_business_kind import station_business_kind, station_business_kind_label
 from api.services.station_policy import (
@@ -44,6 +44,7 @@ def _station_to_json(s):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.stations", methods=("POST",))
 def stations_list_or_create(request):
     if request.method == "GET":
         qs = (
@@ -105,6 +106,7 @@ def stations_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.stations", methods=("PUT", "PATCH", "DELETE"))
 def station_detail(request, station_id: int):
     s = (
         Station.objects.filter(id=station_id, company_id=request.company_id)

@@ -140,6 +140,7 @@ export default function AquacultureExpensesPage() {
   ])
   const [shopCycles, setShopCycles] = useState<CycleRow[]>([])
   const [shopIssueBusy, setShopIssueBusy] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [shopFeedSackCount, setShopFeedSackCount] = useState('')
   const [shopFeedWeightKg, setShopFeedWeightKg] = useState('')
   const [vendors, setVendors] = useState<VendorSuggestion[]>([])
@@ -402,6 +403,7 @@ export default function AquacultureExpensesPage() {
   }
 
   const save = async () => {
+    if (saving) return
     if (!form.expense_category || !form.expense_date) {
       toast.error('Category and date are required')
       return
@@ -437,6 +439,7 @@ export default function AquacultureExpensesPage() {
         payload[apiKey] = n
       }
     }
+    setSaving(true)
     try {
       if (form.cost_mode !== 'direct') {
         if (form.cost_mode === 'shared_equal') {
@@ -504,6 +507,8 @@ export default function AquacultureExpensesPage() {
     } catch (e) {
       if (e instanceof Error && e.message === 'validation') return
       toast.error(extractErrorMessage(e, 'Save failed'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -523,6 +528,7 @@ export default function AquacultureExpensesPage() {
   }
 
   const submitShopStockIssue = async () => {
+    if (shopIssueBusy) return
     const sid = parseInt(shopStationId, 10)
     const pid = parseInt(shopPondId, 10)
     if (!Number.isFinite(sid) || !Number.isFinite(pid)) {
@@ -1349,10 +1355,11 @@ export default function AquacultureExpensesPage() {
               </button>
               <button
                 type="button"
+                disabled={saving}
                 onClick={() => void save()}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Save
+                {saving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

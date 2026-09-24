@@ -25,7 +25,7 @@ import {
   templateCoaOptionLabel,
 } from '@/lib/coaDefaults'
 import { syncBooleanFieldTouchedForAccountPick } from '@/lib/coaSuggestForm'
-import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
+import { requireSession, clearStoredAccessToken } from '@/lib/authSession'
 
 interface PayrollRun {
   id: number
@@ -501,8 +501,12 @@ export default function PayrollPage() {
   )
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !readStoredAccessToken()) return
-    void loadAquacultureContext()
+    if (typeof window === 'undefined') return
+    void (async () => {
+      const token = await requireSession()
+      if (!token?.trim()) return
+      void loadAquacultureContext()
+    })()
   }, [loadAquacultureContext, selectedCompany?.id])
 
   const showPondAllocationWarnings = useCallback(
@@ -575,16 +579,25 @@ export default function PayrollPage() {
 
   useEffect(() => {
     if (!isClientReady) return
-    if (typeof window === 'undefined' || !readStoredAccessToken()) {
-      router.push('/login')
-      return
+    let cancelled = false
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled) return
+      if (typeof window === 'undefined' || !token?.trim()) {
+        router.replace('/login')
+        return
+      }
+      setLoading(true)
+      fetchCompanyCurrency()
+      fetchPayrolls()
+      fetchBankAccounts()
+      fetchGlPayAccounts()
+      fetchStations()
     }
-    setLoading(true)
-    fetchCompanyCurrency()
-    fetchPayrolls()
-    fetchBankAccounts()
-    fetchGlPayAccounts()
-    fetchStations()
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [router, isClientReady, selectedCompany?.id])
 
   const fetchStations = async () => {

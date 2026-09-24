@@ -328,7 +328,15 @@ class User(models.Model):
     password_hash = models.CharField(max_length=255, blank=True)
     # Cashier/operator: what this login may sell at POS (enforced in /api/cashier/pos/). Others ignore (both).
     pos_sale_scope = models.CharField(max_length=16, default="both")
-    company_id = models.IntegerField(null=True, blank=True)
+    company = models.ForeignKey(
+        Company,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="users",
+        db_column="company_id",
+        help_text="Home tenant for this login. Null for platform super-admins only.",
+    )
     is_active = models.BooleanField(default=True)
     # When set, POS and station-scoped reports are limited to this site (cashier/operator, or a regional user).
     home_station = models.ForeignKey(
@@ -1980,6 +1988,15 @@ class Bill(models.Model):
         default=False,
         help_text="True once this bill's total was added to vendor.current_balance (A/P subledger).",
     )
+    idempotency_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "Client-supplied key (Idempotency-Key header) for bill create retries: "
+            "a repeat with the same key returns the original bill instead of duplicating it."
+        ),
+    )
     internal_fish_transfer_line = models.OneToOneField(
         "AquacultureFishPondTransferLine",
         null=True,
@@ -2006,6 +2023,11 @@ class Bill(models.Model):
         # Related-object lookups and cascade deletes must see every row, internal included.
         base_manager_name = "all_objects"
         constraints = [
+            models.UniqueConstraint(
+                fields=["company", "idempotency_key"],
+                condition=models.Q(idempotency_key__gt=""),
+                name="bill_company_idempotency_key_uniq",
+            ),
             models.CheckConstraint(
                 condition=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
                 name="bill_nonneg_amounts",

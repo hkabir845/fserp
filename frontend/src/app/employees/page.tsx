@@ -21,7 +21,7 @@ import { formatDateLong } from '@/utils/date'
 import api, { getApiBaseUrl, getBackendOrigin } from '@/lib/api'
 import { resolveAquacultureEnabled } from '@/lib/aquacultureCompanyFlags'
 import { ReferenceCodePicker } from '@/components/ReferenceCodePicker'
-import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
+import { requireSession, readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
 
 interface Employee {
   id: number
@@ -205,15 +205,23 @@ export default function EmployeesPage() {
   })
 
   useEffect(() => {
-    const token = readStoredAccessToken()
-    if (!token) {
-      router.push('/login')
-      return
+    let cancelled = false
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled) return
+      if (!token?.trim()) {
+        router.replace('/login')
+        return
+      }
+      fetchCompanyCurrency()
+      fetchStations()
+      fetchAquacultureContext()
+      fetchEmployees()
     }
-    fetchCompanyCurrency()
-    fetchStations()
-    fetchAquacultureContext()
-    fetchEmployees()
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   const fetchAquacultureContext = async () => {

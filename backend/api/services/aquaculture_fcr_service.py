@@ -568,13 +568,29 @@ def _sample_row_opening_closing(
         qs = qs.filter(production_cycle_id=production_cycle_id)
     if fish_species:
         qs = qs.filter(fish_species=fish_species)
-    usable: list[tuple[date, Decimal]] = []
+    # Merge duplicate same-day standing samples: keep the heaviest kg per
+    # (date, species) so a double-entry day does not invent fake first/last.
+    best_by_day_sp: dict[tuple[date, str], Decimal] = {}
     for s in qs.order_by("sample_date", "id"):
         if getattr(s, "source_fish_sale_id", None):
             continue
+        if getattr(s, "source_bill_line_id", None):
+            continue
+        if getattr(s, "source_fish_pond_transfer_line_id", None):
+            continue
         bio = _sample_biomass_kg(s)
-        if bio is not None and bio > 0:
-            usable.append((s.sample_date, bio))
+        if bio is None or bio <= 0:
+            continue
+        sp = (getattr(s, "fish_species", None) or "tilapia").strip() or "tilapia"
+        key = (s.sample_date, sp)
+        prev = best_by_day_sp.get(key)
+        if prev is None or bio > prev:
+            best_by_day_sp[key] = bio
+    # One mass per calendar day (sum species on multi-species vertical days).
+    by_day: dict[date, Decimal] = {}
+    for (day, _sp), kg in best_by_day_sp.items():
+        by_day[day] = by_day.get(day, Decimal("0")) + kg
+    usable = [(d, by_day[d]) for d in sorted(by_day.keys())]
     if len(usable) < 2:
         note = "Need at least two biomass samples in the period with positive estimated biomass."
         return Decimal("0"), Decimal("0"), Decimal("0"), note
@@ -583,7 +599,12 @@ def _sample_row_opening_closing(
     gain = last - first
     if gain <= 0:
         return first, last, Decimal("0"), "Biomass did not increase between first and last sample in period."
-    return first, last, _q4(gain), "Last sample biomass − first sample biomass (extrapolated or estimated total)."
+    return (
+        first,
+        last,
+        _q4(gain),
+        "Last sample biomass − first sample biomass (same-day duplicates merged).",
+    )
 
 
 def biomass_gain_from_samples_for_pond(

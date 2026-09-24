@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Package, Pill } from 'lucide-react'
 import { ReportAmountCell } from '@/components/reports/ReportAmountCell'
+import api from '@/lib/api'
 import { formatNumber } from '@/utils/currency'
 
-function MoneyBdt(amount: unknown) {
-  return <ReportAmountCell amount={Number(amount ?? 0)} currency="BDT" plain />
+function Money({ amount, currency }: { amount: unknown; currency: string }) {
+  return <ReportAmountCell amount={Number(amount ?? 0)} currency={currency} plain />
 }
 
 function Qty({ value, digits = 2 }: { value: unknown; digits?: number }) {
@@ -85,6 +86,8 @@ export type AquacultureFeedMedicineConsumptionPanelProps = {
   mode?: ConsumptionReportMode
   dateRange?: { startDate: string; endDate: string }
   pondScopeLabel?: string | null
+  /** Company currency code; loaded from /companies/current/ when omitted. */
+  currency?: string
 }
 
 function pondTotalLabel(pondName?: string | null) {
@@ -146,6 +149,7 @@ function DailyFeedTable({
   footerTons,
   footerAmount,
   showPondCount,
+  currency,
 }: {
   rows: DailyFeedRow[]
   footerLabel: string
@@ -154,6 +158,7 @@ function DailyFeedTable({
   footerTons?: string | number
   footerAmount?: string | number
   showPondCount?: boolean
+  currency: string
 }) {
   if (!rows.length) {
     return <p className="px-3 py-2 text-sm text-muted-foreground">No daily feed consumption in this period.</p>
@@ -168,7 +173,7 @@ function DailyFeedTable({
             <th className="px-2 py-1.5 text-right">Sacks</th>
             <th className="px-2 py-1.5 text-right">kg</th>
             <th className="px-2 py-1.5 text-right">Tons (t)</th>
-            <th className="px-2 py-1.5 text-right">Cost (BDT)</th>
+            <th className="px-2 py-1.5 text-right">Cost ({currency})</th>
             <th className="px-2 py-1.5 text-right">Entries</th>
           </tr>
         </thead>
@@ -188,7 +193,9 @@ function DailyFeedTable({
               <td className="px-2 py-1.5 text-right">
                 <Qty value={row.tons} digits={4} />
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(row.amount)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                <Money amount={row.amount} currency={currency} />
+              </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                 {row.entry_count ?? '—'}
               </td>
@@ -209,7 +216,9 @@ function DailyFeedTable({
             <td className="px-2 py-2 text-right text-xs font-bold">
               <Qty value={footerTons} digits={4} />
             </td>
-            <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">{MoneyBdt(footerAmount)}</td>
+            <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
+              <Money amount={footerAmount} currency={currency} />
+            </td>
             <td className="px-2 py-2" />
           </tr>
         </tfoot>
@@ -218,7 +227,7 @@ function DailyFeedTable({
   )
 }
 
-function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
+function EntryDetailTable({ lines, currency }: { lines: ConsumptionLine[]; currency: string }) {
   if (!lines.length) return null
   const showBatch = lines.some((l) => (l.production_cycle_name || '').trim() || l.production_cycle_id != null)
   return (
@@ -234,7 +243,7 @@ function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
             <th className="px-2 py-1 text-right">Sacks</th>
             <th className="px-2 py-1 text-right">kg</th>
             <th className="px-2 py-1 text-right">Tons</th>
-            <th className="px-2 py-1 text-right">Cost (BDT)</th>
+            <th className="px-2 py-1 text-right">Cost ({currency})</th>
             <th className="px-2 py-1">Source / memo</th>
           </tr>
         </thead>
@@ -264,7 +273,9 @@ function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
                 <td className="px-2 py-1.5 text-right">
                   <Qty value={tons || null} digits={4} />
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(ln.amount)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  <Money amount={ln.amount} currency={currency} />
+                </td>
                 <td className="px-2 py-1.5 text-muted-foreground">{ln.source_doc || ln.memo || '—'}</td>
               </tr>
             )
@@ -275,7 +286,15 @@ function EntryDetailTable({ lines }: { lines: ConsumptionLine[] }) {
   )
 }
 
-function PondSection({ group, mode }: { group: ConsumptionGroup; mode: ConsumptionReportMode }) {
+function PondSection({
+  group,
+  mode,
+  currency,
+}: {
+  group: ConsumptionGroup
+  mode: ConsumptionReportMode
+  currency: string
+}) {
   const [showDetail, setShowDetail] = useState(false)
   const showFeed = mode === 'feed' || mode === 'both'
   const showMed = mode === 'medicine' || mode === 'both'
@@ -299,13 +318,13 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
                 Feed: <Qty value={group.subtotal_feed_sacks} /> sacks · <Qty value={group.subtotal_feed_kg} /> kg ·{' '}
                 <Qty value={group.subtotal_feed_tons} digits={4} /> t
               </span>
-              <span>Feed cost: {MoneyBdt(group.subtotal_feed_amount)}</span>
+              <span>Feed cost: <Money amount={group.subtotal_feed_amount} currency={currency} /></span>
               <span>{group.feed_day_count ?? dailyFeed.length} feed day(s)</span>
             </>
           ) : null}
           {showMed ? (
             <>
-              <span>Medicine: {MoneyBdt(group.subtotal_medicine_amount)}</span>
+              <span>Medicine: <Money amount={group.subtotal_medicine_amount} currency={currency} /></span>
               <span>{group.medicine_day_count ?? dailyMed.length} medicine day(s)</span>
             </>
           ) : null}
@@ -325,6 +344,7 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
               footerKg={group.subtotal_feed_kg}
               footerTons={group.subtotal_feed_tons}
               footerAmount={group.subtotal_feed_amount}
+              currency={currency}
             />
           </div>
         ) : null}
@@ -340,7 +360,7 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
                       <th className="px-2 py-1.5">Date</th>
-                      <th className="px-2 py-1.5 text-right">Cost (BDT)</th>
+                      <th className="px-2 py-1.5 text-right">Cost ({currency})</th>
                       <th className="px-2 py-1.5 text-right">Entries</th>
                     </tr>
                   </thead>
@@ -348,7 +368,9 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
                     {dailyMed.map((row) => (
                       <tr key={`med-${row.date}`}>
                         <td className="px-2 py-1.5 whitespace-nowrap font-medium">{row.date}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{MoneyBdt(row.amount)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          <Money amount={row.amount} currency={currency} />
+                        </td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                           {row.entry_count ?? '—'}
                         </td>
@@ -359,7 +381,7 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
                     <tr>
                       <td className="px-2 py-2 text-xs font-semibold">Medicine total — {group.pond_name}</td>
                       <td className="px-2 py-2 text-right text-xs font-bold tabular-nums">
-                        {MoneyBdt(group.subtotal_medicine_amount)}
+                        <Money amount={group.subtotal_medicine_amount} currency={currency} />
                       </td>
                       <td className="px-2 py-2" />
                     </tr>
@@ -370,7 +392,7 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
             {medLines.length > 0 ? (
               <div className="rounded border border-violet-100 bg-violet-50/30 p-2">
                 <p className="mb-1 text-[11px] font-medium text-violet-900/80">Medicine entries</p>
-                <EntryDetailTable lines={medLines} />
+                <EntryDetailTable lines={medLines} currency={currency} />
               </div>
             ) : null}
           </div>
@@ -388,7 +410,7 @@ function PondSection({ group, mode }: { group: ConsumptionGroup; mode: Consumpti
           </button>
           {showDetail ? (
             <div className="mt-2 rounded border border-border/70 bg-muted/20 p-2">
-              <EntryDetailTable lines={detailLines} />
+              <EntryDetailTable lines={detailLines} currency={currency} />
             </div>
           ) : null}
         </div>
@@ -405,7 +427,26 @@ export function AquacultureFeedMedicineConsumptionPanel({
   mode = 'both',
   dateRange,
   pondScopeLabel,
+  currency: currencyProp,
 }: AquacultureFeedMedicineConsumptionPanelProps) {
+  const [companyCurrency, setCompanyCurrency] = useState('BDT')
+  useEffect(() => {
+    if (currencyProp) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const co = await api.get<Record<string, unknown>>('/companies/current/')
+        if (!cancelled) setCompanyCurrency(String(co.data?.currency || 'BDT').slice(0, 3))
+      } catch {
+        /* keep default */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [currencyProp])
+  const currency = (currencyProp || companyCurrency || 'BDT').slice(0, 3).toUpperCase() || 'BDT'
+
   const period = (data.period as { start_date?: string; end_date?: string }) || {}
   const groups = (Array.isArray(data.groups) ? data.groups : []) as ConsumptionGroup[]
   const farmDaily = (Array.isArray(data.farm_daily_feed) ? data.farm_daily_feed : []) as DailyFeedRow[]
@@ -436,10 +477,10 @@ export function AquacultureFeedMedicineConsumptionPanel({
         : 'Daily feed by pond in sacks, kg, and metric tons (1 t = 1,000 kg). Optional pond, batch, feed, and medicine filters narrow the ledger.'
   const intro =
     mode === 'medicine'
-      ? 'Pond medicine consumption — daily totals and entry detail at inventory cost (BDT).'
+      ? `Pond medicine consumption — daily totals and entry detail at inventory cost (${currency}).`
       : mode === 'feed'
-        ? 'Pond feed consumption — daily ledger with sacks, kg, tons, and cost (BDT at inventory value).'
-        : 'Standard pond feed & medicine consumption — daily feed ledger with sacks, kg, tons, and cost (BDT at inventory value).'
+        ? `Pond feed consumption — daily ledger with sacks, kg, tons, and cost (${currency} at inventory value).`
+        : `Standard pond feed & medicine consumption — daily feed ledger with sacks, kg, tons, and cost (${currency} at inventory value).`
   const emptyLabel =
     mode === 'medicine'
       ? 'No medicine consumption in this period.'
@@ -483,7 +524,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
                 Feed cost
               </div>
               <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-amber-950 sm:text-lg">
-                {MoneyBdt(totalFeed)}
+                <Money amount={totalFeed} currency={currency} />
               </p>
             </div>
             <div className="min-w-0 overflow-hidden rounded-lg border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
@@ -514,7 +555,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
               Medicine cost
             </div>
             <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-violet-950 sm:text-lg">
-              {MoneyBdt(totalMed)}
+              <Money amount={totalMed} currency={currency} />
             </p>
           </div>
         ) : null}
@@ -522,7 +563,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
           <div className="min-w-0 overflow-hidden rounded-lg border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Total cost</p>
             <p className="mt-2 break-words text-base font-bold leading-tight tracking-tight tabular-nums text-rose-950 sm:text-lg">
-              {MoneyBdt(totalAmount)}
+              <Money amount={totalAmount} currency={currency} />
             </p>
           </div>
         ) : null}
@@ -569,6 +610,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
               footerTons={totalFeedTons}
               footerAmount={totalFeed}
               showPondCount
+              currency={currency}
             />
           </div>
         </div>
@@ -580,7 +622,7 @@ export function AquacultureFeedMedicineConsumptionPanel({
         <div className="space-y-6">
           <h3 className="text-sm font-semibold text-foreground">{sectionTitle}</h3>
           {groups.map((g) => (
-            <PondSection key={`fmc-${g.pond_id}`} group={g} mode={mode} />
+            <PondSection key={`fmc-${g.pond_id}`} group={g} mode={mode} currency={currency} />
           ))}
         </div>
       )}
@@ -589,17 +631,24 @@ export function AquacultureFeedMedicineConsumptionPanel({
         <div className="flex flex-wrap justify-between gap-2 text-sm font-bold text-foreground">
           <span>{pondTotalLabel(groups.length === 1 ? groups[0]?.pond_name : pondScopeLabel)}</span>
           <span className="tabular-nums">
-            {MoneyBdt(mode === 'feed' ? totalFeed : mode === 'medicine' ? totalMed : totalAmount)}
+            <Money
+              amount={mode === 'feed' ? totalFeed : mode === 'medicine' ? totalMed : totalAmount}
+              currency={currency}
+            />
           </span>
         </div>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
           {showFeed ? (
             <span>
               Feed: <Qty value={totalFeedSacks} /> sacks · <Qty value={totalFeedKg} /> kg ·{' '}
-              <Qty value={totalFeedTons} digits={4} /> t · {MoneyBdt(totalFeed)}
+              <Qty value={totalFeedTons} digits={4} /> t · <Money amount={totalFeed} currency={currency} />
             </span>
           ) : null}
-          {showMed ? <span>Medicine: {MoneyBdt(totalMed)}</span> : null}
+          {showMed ? (
+            <span>
+              Medicine: <Money amount={totalMed} currency={currency} />
+            </span>
+          ) : null}
           <span>{lineCount} consumption line(s)</span>
         </div>
       </div>

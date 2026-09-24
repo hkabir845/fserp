@@ -81,18 +81,22 @@ export default function AquacultureSalesPage() {
     }
   }, [toast, lang])
 
-  const loadRows = useCallback(async () => {
+  const loadRows = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
       const params = filterPond ? { pond_id: filterPond } : undefined
-      const { data } = await api.get<SaleRow[]>('/aquaculture/sales/', { params })
+      const { data } = await api.get<SaleRow[]>('/aquaculture/sales/', { params, signal })
+      if (signal?.aborted) return
       setRows(Array.isArray(data) ? data : [])
     } catch (e) {
+      if (signal?.aborted) return
+      const err = e as { code?: string; name?: string }
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return
       toast.error(extractErrorMessage(e, aquacultureT('couldNotLoadSales', lang)))
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
-  }, [toast, filterPond])
+  }, [toast, filterPond, lang])
 
   useEffect(() => {
     void loadPonds()
@@ -111,7 +115,9 @@ export default function AquacultureSalesPage() {
   }, [searchParams])
 
   useEffect(() => {
-    void loadRows()
+    const ac = new AbortController()
+    void loadRows(ac.signal)
+    return () => ac.abort()
   }, [loadRows])
 
   const sym = getCurrencySymbol(currency)

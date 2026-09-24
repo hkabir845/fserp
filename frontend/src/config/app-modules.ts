@@ -21,7 +21,7 @@ export const erpMenuItems: AppMenuItem[] = [
     children: [
       { title: 'Items', href: '/items', icon: '📦' },
       { title: 'Warehouses', href: '/warehouses', icon: '🏭', status: 'planned' },
-      { title: 'Suppliers', href: '/suppliers', icon: '🏢', status: 'planned' },
+      { title: 'Suppliers', href: '/vendors', icon: '🏢' },
       { title: 'Customers', href: '/customers', icon: '👥' },
     ],
   },
@@ -34,7 +34,7 @@ export const erpMenuItems: AppMenuItem[] = [
       { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', status: 'planned' },
       { title: 'Purchase Orders', href: '/purchase/orders', icon: '📝', status: 'planned' },
       { title: 'Goods Receipt', href: '/purchase/grn', icon: '📥', status: 'planned' },
-      { title: 'Vendor Bills', href: '/purchase/bills', icon: '💰', status: 'planned' },
+      { title: 'Vendor Bills', href: '/bills', icon: '💰' },
     ],
   },
   {
@@ -53,8 +53,8 @@ export const erpMenuItems: AppMenuItem[] = [
     children: [
       { title: 'Sales requisitions', href: '/sales/requisitions', icon: '📋', status: 'planned' },
       { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', status: 'planned' },
-      { title: 'Sales Invoices', href: '/sales/invoices', icon: '🧾', status: 'planned' },
-      { title: 'Receipts', href: '/sales/receipts', icon: '💵', status: 'planned' },
+      { title: 'Sales Invoices', href: '/invoices', icon: '🧾' },
+      { title: 'Receipts', href: '/payments', icon: '💵' },
     ],
   },
   {
@@ -78,8 +78,8 @@ export const erpMenuItems: AppMenuItem[] = [
     href: '/reports',
     children: [
       { title: 'Reports hub', href: '/reports', icon: '📑' },
-      { title: 'Trial balance', href: '/accounting/trial-balance', icon: '⚖️', status: 'planned' },
-      { title: 'Balance sheet', href: '/accounting/balance-sheet', icon: '📊', status: 'planned' },
+      { title: 'Trial balance', href: '/reports?report=trial-balance', icon: '⚖️' },
+      { title: 'Balance sheet', href: '/reports?report=balance-sheet', icon: '📊' },
       { title: 'Journal entries', href: '/accounting/journal', icon: '📔', status: 'planned' },
     ],
   },
@@ -112,10 +112,10 @@ export const erpMenuItems: AppMenuItem[] = [
     icon: '💳',
     href: '/accounting',
     children: [
-      { title: 'Chart of Accounts', href: '/accounting/accounts', icon: '📑', status: 'planned' },
+      { title: 'Chart of Accounts', href: '/chart-of-accounts', icon: '📑' },
       { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', status: 'planned' },
-      { title: 'Trial Balance', href: '/accounting/trial-balance', icon: '⚖️', status: 'planned' },
-      { title: 'Balance Sheet', href: '/accounting/balance-sheet', icon: '📊', status: 'planned' },
+      { title: 'Trial Balance', href: '/reports?report=trial-balance', icon: '⚖️' },
+      { title: 'Balance Sheet', href: '/reports?report=balance-sheet', icon: '📊' },
       { title: 'Loans (facilities)', href: '/loans', icon: '🏦' },
     ],
   },
@@ -125,8 +125,8 @@ export const erpMenuItems: AppMenuItem[] = [
     href: '/payroll',
     children: [
       { title: 'Overview', href: '/payroll', icon: '📋' },
-      { title: 'Employees', href: '/payroll/employees', icon: '👤', status: 'planned' },
-      { title: 'Payroll runs', href: '/payroll/runs', icon: '📅', status: 'planned' },
+      { title: 'Employees', href: '/employees', icon: '👤' },
+      { title: 'Payroll runs', href: '/payroll', icon: '📅' },
     ],
   },
   {
@@ -148,7 +148,7 @@ export const masterDataHub = {
   links: [
     { title: 'Items', href: '/items', icon: '📦', description: 'Products, SKUs, stock flags' },
     { title: 'Warehouses', href: '/warehouses', icon: '🏭', description: 'Storage locations', status: 'planned' },
-    { title: 'Suppliers', href: '/suppliers', icon: '🏢', description: 'Vendor master', status: 'planned' },
+    { title: 'Suppliers', href: '/vendors', icon: '🏢', description: 'Vendor master' },
     { title: 'Customers', href: '/customers', icon: '👥', description: 'Customer master' },
   ] satisfies HubLink[],
 }
@@ -165,7 +165,7 @@ export const procurementHub = {
     { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', description: 'Department and executive queues', status: 'planned' },
     { title: 'Purchase Orders', href: '/purchase/orders', icon: '📝', description: 'Create and track POs', status: 'planned' },
     { title: 'Goods Receipt (GRN)', href: '/purchase/grn', icon: '📥', description: 'Receive against POs', status: 'planned' },
-    { title: 'Vendor Bills', href: '/purchase/bills', icon: '💰', description: 'Accounts payable bills', status: 'planned' },
+    { title: 'Vendor Bills', href: '/bills', icon: '💰', description: 'Accounts payable bills' },
     {
       title: 'Letters of credit',
       href: '/trade-finance/lc',
@@ -202,8 +202,8 @@ export const salesHub = {
       icon: '📋',
       description: 'Commercial approval chain before invoicing', status: 'planned' },
     { title: 'Approvals inbox', href: '/requisitions/inbox', icon: '✅', description: 'Sales head and executive queues', status: 'planned' },
-    { title: 'Sales Invoices', href: '/sales/invoices', icon: '🧾', description: 'Customer billing', status: 'planned' },
-    { title: 'Receipts', href: '/sales/receipts', icon: '💵', description: 'Payment receipts', status: 'planned' },
+    { title: 'Sales Invoices', href: '/invoices', icon: '🧾', description: 'Customer billing' },
+    { title: 'Receipts', href: '/payments', icon: '💵', description: 'Payment receipts' },
   ] satisfies HubLink[],
 }
 
@@ -278,10 +278,10 @@ export const accountingHub = {
   title: 'Accounting',
   subtitle: 'Financial records and statements (sections under active development).',
   links: [
-    { title: 'Chart of Accounts', href: '/accounting/accounts', icon: '📑', description: 'GL account tree', status: 'planned' },
+    { title: 'Chart of Accounts', href: '/chart-of-accounts', icon: '📑', description: 'GL account tree' },
     { title: 'Journal Entries', href: '/accounting/journal', icon: '📔', description: 'Manual journals', status: 'planned' },
-    { title: 'Trial Balance', href: '/accounting/trial-balance', icon: '⚖️', description: 'Period TB', status: 'planned' },
-    { title: 'Balance Sheet', href: '/accounting/balance-sheet', icon: '📊', description: 'Statement of position', status: 'planned' },
+    { title: 'Trial Balance', href: '/reports?report=trial-balance', icon: '⚖️', description: 'Period TB' },
+    { title: 'Balance Sheet', href: '/reports?report=balance-sheet', icon: '📊', description: 'Statement of position' },
     {
       title: 'Operational reports hub',
       href: '/reports',
@@ -301,8 +301,8 @@ export const reportsHub = {
       icon: '📊',
       description: 'Warehouse + silo + commitments, production schedule, sales velocity, naive demand vs stock',
     },
-    { title: 'Trial balance', href: '/accounting/trial-balance', icon: '⚖️', description: 'GL trial balance', status: 'planned' },
-    { title: 'Balance sheet', href: '/accounting/balance-sheet', icon: '📊', description: 'Statement of position', status: 'planned' },
+    { title: 'Trial balance', href: '/reports?report=trial-balance', icon: '⚖️', description: 'GL trial balance' },
+    { title: 'Balance sheet', href: '/reports?report=balance-sheet', icon: '📊', description: 'Statement of position' },
     { title: 'Journal entries', href: '/accounting/journal', icon: '📔', description: 'Posted and draft journals', status: 'planned' },
     { title: 'Stock positions', href: '/inventory', icon: '📦', description: 'Ledger-based warehouse stock' },
   ] satisfies HubLink[],

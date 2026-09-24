@@ -124,7 +124,7 @@ import {
 } from '@/utils/aquaculturePlExport'
 import { AquacultureFeedMedicineConsumptionPanel } from '@/app/reports/aquaculture/AquacultureFeedMedicineConsumptionPanel'
 import { extractErrorMessage } from '@/utils/errorHandler'
-import { readStoredAccessToken, clearStoredAccessToken } from '@/lib/authSession'
+import { clearStoredAccessToken, requireSession } from '@/lib/authSession'
 
 const SALES_PURCHASE_REPORT_IDS = new Set<ReportType>([
   'sales-report',
@@ -1629,6 +1629,7 @@ function ReportsPageContent() {
   const salesPurchaseDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reportDisplayRef = useRef<HTMLDivElement>(null)
   const reportListRef = useRef<HTMLElement>(null)
+  const reportFetchAbortRef = useRef<AbortController | null>(null)
   const [userHasHomeStation, setUserHasHomeStation] = useState(false)
   const [homeStationMeta, setHomeStationMeta] = useState<{
     id: number | null
@@ -1788,20 +1789,20 @@ function ReportsPageContent() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const t = readStoredAccessToken()
-    if (!t) return
     let cancelled = false
-    api
-      .get<
-        {
-          id: number
-          station_name: string
-          station_number?: string
-          operates_fuel_retail?: boolean
-          is_active?: boolean
-        }[]
-      >('/stations/')
-      .then((res) => {
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled || !token?.trim()) return
+      try {
+        const res = await api.get<
+          {
+            id: number
+            station_name: string
+            station_number?: string
+            operates_fuel_retail?: boolean
+            is_active?: boolean
+          }[]
+        >('/stations/')
         if (cancelled) return
         const rows = Array.isArray(res.data) ? res.data : []
         const mapped = rows.map((s) => ({
@@ -1824,10 +1825,11 @@ function ReportsPageContent() {
             setReportStationId('')
           }
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setReportStationList([])
-      })
+      }
+    }
+    void boot()
     return () => {
       cancelled = true
     }
@@ -2291,9 +2293,14 @@ function ReportsPageContent() {
     const segmentForFetch = opts?.businessSegment ?? businessSegment
     const spRangeForFetch = opts?.salesPurchaseDateRange ?? salesPurchaseDateRange
 
+    reportFetchAbortRef.current?.abort()
+    const ac = new AbortController()
+    reportFetchAbortRef.current = ac
+
     if (reportId === 'analytics-kpi') {
-      const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
-      if (!token) {
+      const token = await requireSession()
+      if (ac.signal.aborted) return
+      if (!token?.trim()) {
         alert('Your session has expired. Please log in again.')
         router.push('/login')
         return
@@ -2306,8 +2313,9 @@ function ReportsPageContent() {
     }
 
     if (reportId === 'aquaculture-pl-management') {
-      const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
-      if (!token) {
+      const token = await requireSession()
+      if (ac.signal.aborted) return
+      if (!token?.trim()) {
         alert('Your session has expired. Please log in again.')
         router.push('/login')
         return
@@ -2453,8 +2461,9 @@ function ReportsPageContent() {
     }
 
     try {
-      const token = typeof window !== 'undefined' ? readStoredAccessToken() : null
-      if (!token) {
+      const token = await requireSession()
+      if (ac.signal.aborted) return
+      if (!token?.trim()) {
         alert('Your session has expired. Please log in again.')
         router.push('/login')
         return
@@ -2463,7 +2472,10 @@ function ReportsPageContent() {
       const response = await api.get(`/reports/${reportId}`, {
         params,
         timeout: REPORT_API_TIMEOUT_MS,
+        signal: ac.signal,
       })
+
+      if (ac.signal.aborted) return
 
       // Ensure we have valid data structure
       if (response.data) {
@@ -2474,6 +2486,9 @@ function ReportsPageContent() {
         throw new Error('Invalid response data')
       }
     } catch (error: any) {
+      if (ac.signal.aborted || error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
+        return
+      }
       const reqUrl =
         error?.config?.baseURL && error?.config?.url
           ? `${String(error.config.baseURL).replace(/\/+$/, '')}/${String(error.config.url).replace(/^\/+/, '')}`
@@ -2501,7 +2516,9 @@ function ReportsPageContent() {
                 const retry = await api.get(`/reports/${reportId}`, {
                   params,
                   timeout: REPORT_API_TIMEOUT_MS,
+                  signal: ac.signal,
                 })
+                if (ac.signal.aborted) return
                 if (retry.data) {
                   setReportData(retry.data)
                   setSelectedReport(reportId)
@@ -2543,7 +2560,7 @@ function ReportsPageContent() {
       setReportLoadError(errorMessage)
       setReportData(null)
     } finally {
-      setLoading(false)
+      if (!ac.signal.aborted) setLoading(false)
     }
   }, [
     dateRange,

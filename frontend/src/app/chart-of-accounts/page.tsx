@@ -32,7 +32,7 @@ import {
   confirmDeletePaymentDialog,
   deletePaymentRequest,
 } from '@/app/payments/paymentMutations'
-import { readStoredAccessToken } from '@/lib/authSession'
+import { requireSession } from '@/lib/authSession'
 import {
   hasTransactionTextSearch,
   transactionDateParams,
@@ -530,13 +530,21 @@ export default function ChartOfAccountsPage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
-    const token = readStoredAccessToken()
-    if (!token) {
-      console.warn('No access token found, redirecting to login')
-      router.push('/login')
-      return
+    let cancelled = false
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled) return
+      if (!token?.trim()) {
+        console.warn('No access token found, redirecting to login')
+        router.replace('/login')
+        return
+      }
+      fetchAccounts()
     }
-    fetchAccounts()
+    void boot()
+    return () => {
+      cancelled = true
+    }
     // Refetch when selected company changes (e.g. switch to Master Filling Station)
   }, [router, selectedCompany?.id])
 
@@ -557,7 +565,9 @@ export default function ChartOfAccountsPage() {
   useEffect(() => {
     let cancelled = false
     const loadMeta = async () => {
-      if (typeof window === 'undefined' || !readStoredAccessToken()) return
+      if (typeof window === 'undefined') return
+      const token = await requireSession()
+      if (cancelled || !token?.trim()) return
       try {
         const res = await api.get('/chart-of-accounts/templates/fuel-station/')
         if (!cancelled) setFuelTemplateMeta(res.data)

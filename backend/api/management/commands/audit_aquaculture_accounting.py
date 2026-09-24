@@ -386,6 +386,27 @@ class Command(BaseCommand):
                 }
             )
 
+        # 10) Leftover AUTO-AQ-SALE-*-BIO on IPT mirrors (double Cr 1581)
+        from api.services.aquaculture_ipt_bio_relief_cleanup_service import (
+            find_ipt_double_bio_relief_journals,
+        )
+
+        ipt_bio = find_ipt_double_bio_relief_journals(company_id)
+        if ipt_bio.get("count"):
+            issues.append(
+                {
+                    "type": "ipt_double_bio_relief_journals",
+                    "count": ipt_bio["count"],
+                    "detail": (
+                        "AUTO-AQ-SALE-*-BIO journals exist for IPT-mirrored sales; "
+                        "run repair_aquaculture_ipt_double_bio --dry-run then apply."
+                    ),
+                    "sample_entry_numbers": [
+                        j["entry_number"] for j in (ipt_bio.get("journals") or [])[:10]
+                    ],
+                }
+            )
+
         report = {
             "company_id": company_id,
             "company_name": company.name,

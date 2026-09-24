@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from api.utils.auth import auth_required
-from api.views.common import parse_json_body, require_company_id
+from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import Island, Station
 from api.services.station_capabilities import require_fuel_forecourt_station
 
@@ -26,6 +26,7 @@ def _island_to_json(i):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.stations", methods=("POST", "PUT", "PATCH", "DELETE"))
 def islands_list_or_create(request):
     if request.method == "GET":
         qs = Island.objects.filter(company_id=request.company_id).select_related("station").order_by("id")
@@ -67,6 +68,7 @@ def islands_list_or_create(request):
 @csrf_exempt
 @auth_required
 @require_company_id
+@require_permission("app.page.stations", methods=("PUT", "PATCH", "DELETE"))
 def island_detail(request, island_id: int):
     i = Island.objects.filter(id=island_id, company_id=request.company_id).select_related("station").first()
     if not i:

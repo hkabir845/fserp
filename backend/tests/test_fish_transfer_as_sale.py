@@ -95,3 +95,34 @@ def test_mirrored_sale_does_not_double_count_stock(company_tenant):
     assert Decimal(rows[src.id]["transfer_out_weight_kg"]) == Decimal("50.0000")
     assert Decimal(rows[src.id]["sale_weight_kg"]) == Decimal("0")
     assert Decimal(rows[dst.id]["transfer_in_weight_kg"]) == Decimal("50.0000")
+
+
+def test_materialize_head_only_nursing_line(company_tenant):
+    _enable(company_tenant)
+    cid = company_tenant.id
+    src = AquaculturePond.objects.create(
+        company_id=cid, name="Nursing Heads", pond_role="nursing", is_active=True
+    )
+    dst = AquaculturePond.objects.create(
+        company_id=cid, name="Grow Heads", pond_role="grow_out", is_active=True
+    )
+    xfer = AquacultureFishPondTransfer.objects.create(
+        company_id=cid,
+        from_pond=src,
+        transfer_date=date(2026, 6, 1),
+        fish_species="tilapia",
+    )
+    line = AquacultureFishPondTransferLine.objects.create(
+        transfer=xfer,
+        to_pond=dst,
+        weight_kg=Decimal("0"),
+        fish_count=110000,
+        cost_amount=Decimal("55000.00"),
+        sale_amount=Decimal("60000.00"),
+    )
+    out = materialize_fish_sales_for_company(cid)
+    assert out["sales_created"] == 1
+    sale = AquacultureFishSale.objects.get(source_fish_pond_transfer_line_id=line.id)
+    assert sale.fish_count == 110000
+    assert sale.total_amount == Decimal("60000.00")
+    assert sale.income_type == "fingerling_sale"

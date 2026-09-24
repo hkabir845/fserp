@@ -24,3 +24,6 @@
 ## Audits
 
 - Prefer `manage.py audit_aquaculture_accounting` / `audit_gl_posting_gaps` over ad-hoc `scripts/_tmp_*` VPS patches for recurring checks.
+- Historical null-cycle sales: `repair_aquaculture_null_cycle_sales --company-id N --dry-run` then apply.
+- Species mistags: `repair_aquaculture_species_mistags --company-id N --dry-run` (auto-fix only when memo names cycle species).
+- Leftover IPT double BIO: `repair_aquaculture_ipt_double_bio --company-id N --dry-run` then apply.

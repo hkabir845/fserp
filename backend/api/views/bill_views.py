@@ -114,6 +114,13 @@ from api.services.tenant_reporting_categories import (
 )
 
 
+def _read_idempotency_key(request, body: dict) -> str:
+    key = request.headers.get("Idempotency-Key") or (
+        body.get("idempotency_key") if isinstance(body, dict) else ""
+    )
+    return (str(key).strip() if key else "")[:64]
+
+
 def _next_bill_number(company_id: int) -> str:
     """Next BILL-n: lowest free suffix (reuses gaps when a bill number is deleted)."""
     from api.services.reference_code import next_available_code
@@ -1041,6 +1048,27 @@ def bills_create(request):
     body, err = parse_json_body(request)
     if err:
         return err
+    idempotency_key = _read_idempotency_key(request, body)
+    if idempotency_key:
+        existing = (
+            Bill.objects.filter(
+                company_id=request.company_id,
+                idempotency_key=idempotency_key,
+            )
+            .select_related("vendor", "receipt_station")
+            .prefetch_related(
+                "lines__item",
+                "lines__tank",
+                "lines__aquaculture_pond",
+                "lines__aquaculture_production_cycle",
+                "lines__expense_account",
+                "lines__tenant_reporting_category",
+                "payment_allocations",
+            )
+            .first()
+        )
+        if existing:
+            return JsonResponse(_bill_to_json(existing), status=200)
     vendor_id = body.get("vendor_id")
     vendor = (
         Vendor.objects.filter(id=vendor_id, company_id=request.company_id).first()
@@ -1139,6 +1167,7 @@ def bills_create(request):
                 truck_transport_amount=truck_amount,
                 actual_lorry_fare=parse_actual_lorry_fare(body),
                 mill_settlement=mill_lane or "",
+                idempotency_key=idempotency_key or "",
             )
             b.save()
             assign_auto_production_cycles_for_parsed_bill_lines(request.company_id, b, parsed_lines)
@@ -1202,6 +1231,26 @@ def bills_create(request):
     except StockBusinessError as e:
         return JsonResponse({"detail": e.detail}, status=400)
     except IntegrityError:
+        if idempotency_key:
+            winner = (
+                Bill.objects.filter(
+                    company_id=request.company_id,
+                    idempotency_key=idempotency_key,
+                )
+                .select_related("vendor", "receipt_station")
+                .prefetch_related(
+                    "lines__item",
+                    "lines__tank",
+                    "lines__aquaculture_pond",
+                    "lines__aquaculture_production_cycle",
+                    "lines__expense_account",
+                    "lines__tenant_reporting_category",
+                    "payment_allocations",
+                )
+                .first()
+            )
+            if winner:
+                return JsonResponse(_bill_to_json(winner), status=200)
         return JsonResponse(
             {
                 "detail": (

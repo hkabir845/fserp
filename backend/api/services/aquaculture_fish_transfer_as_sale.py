@@ -42,12 +42,18 @@ def ensure_fish_sale_for_transfer_line(
 ) -> AquacultureFishSale | None:
     """
     Create or refresh the seller-side AquacultureFishSale for one transfer line.
-    Returns None when weight is missing/zero (nothing to sell).
+
+    Returns None when there is neither weight nor heads (nothing to sell).
+    Head-only nursing lines (weight_kg <= 0, fish_count > 0) still materialize a
+    P&L sale mirror so fingerling revenue / transfer cost is not invisible.
     """
     transfer = transfer or line.transfer
     weight = _d(line.weight_kg)
-    if weight <= 0:
+    heads = int(getattr(line, "fish_count", None) or 0)
+    if weight <= 0 and heads <= 0:
         return None
+    if weight < 0:
+        weight = Decimal("0")
 
     amount = sale_amount_for_transfer_line(line)
     buyer = ""
@@ -91,7 +97,7 @@ def ensure_fish_sale_for_transfer_line(
         "fish_species_other": (transfer.fish_species_other or "").strip()[:120],
         "sale_date": transfer.transfer_date,
         "weight_kg": weight,
-        "fish_count": line.fish_count,
+        "fish_count": heads if heads > 0 else line.fish_count,
         "total_amount": amount,
         "buyer_name": buyer[:200],
         "memo": " — ".join(memo_bits)[:2000],

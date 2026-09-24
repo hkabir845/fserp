@@ -275,28 +275,13 @@ def get_company_id(request):
         first = Company.objects.filter(is_deleted=False).order_by("id").first()
         if first:
             return first.id
-        org = Organization.objects.create(
-            name="Master Filling Station",
-            legal_name="Master Filling Station (Development)",
+        # Do not auto-create Master Filling Station on the request path — empty
+        # DBs must be seeded explicitly (`create_default_company` / deploy seed).
+        logger.warning(
+            "Super-admin %s has no company context and the database has no companies; "
+            "refusing to auto-create Master Filling Station",
+            getattr(user, "id", None),
         )
-        default_company = Company.objects.create(
-            name="Master Filling Station",
-            legal_name="Master Filling Station (Development)",
-            currency="BDT",
-            is_active=True,
-            is_master="true",
-            organization=org,
-        )
-        try:
-            from api.chart_templates.fuel_station import seed_fuel_station_if_empty
-
-            seed_fuel_station_if_empty(default_company.id, profile="full")
-        except Exception as exc:
-            logger.warning(
-                "Could not seed chart of accounts for master company %s: %s",
-                default_company.id,
-                exc,
-            )
-        return default_company.id
+        return None
 
     return None

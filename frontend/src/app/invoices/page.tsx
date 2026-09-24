@@ -64,7 +64,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { TransactionListEmptyState } from '@/components/TransactionListEmptyState'
 import { OffsetPaginationControls } from '@/components/ui/OffsetPaginationControls'
 import { fetchEntityScopeDirectory } from '@/lib/entityScopeDirectory'
-import { readStoredAccessToken } from '@/lib/authSession'
+import { requireSession, readStoredAccessToken } from '@/lib/authSession'
 
 interface InvoiceLineItem extends InvoiceFormLine {}
 
@@ -358,22 +358,37 @@ export default function InvoicesPage() {
   ])
 
   useEffect(() => {
-    const token = readStoredAccessToken()
-    if (!token) {
-      router.push('/login')
-      return
+    let cancelled = false
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled) return
+      if (!token?.trim()) {
+        router.replace('/login')
+        return
+      }
+      void loadInvoices()
     }
-    void loadInvoices()
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [router, loadInvoices])
 
   useEffect(() => {
-    const token = readStoredAccessToken()
-    if (!token) {
-      router.push('/login')
-      return
+    let cancelled = false
+    const boot = async () => {
+      const token = await requireSession()
+      if (cancelled) return
+      if (!token?.trim()) {
+        router.replace('/login')
+        return
+      }
+      fetchReferenceData()
     }
-
-    fetchReferenceData()
+    void boot()
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   // Fetch customers and items when modal opens

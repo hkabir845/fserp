@@ -25,6 +25,7 @@
 
 - Prefer `manage.py audit_aquaculture_accounting` / `audit_gl_posting_gaps` over ad-hoc `scripts/_tmp_*` VPS patches for recurring checks.
 - Historical null-cycle sales: `repair_aquaculture_null_cycle_sales --company-id N --dry-run` then apply.
-- Species mistags: `repair_aquaculture_species_mistags --company-id N --dry-run` (auto-fix only when memo names cycle species).
+- Species mistags: `repair_aquaculture_species_mistags --company-id N --dry-run` (BD polyculture companions excluded; auto-fix when memo names a correcting species).
+- Nursing P&L gap (expense ≫ transfer income): `reconcile_nursing_pond_pl_balance --company-id N --pond-code P08 --dry-run` then apply.
 - Leftover IPT double BIO: `repair_aquaculture_ipt_double_bio --company-id N --dry-run` then apply.
 - VPS one-shot (company 2): after `deploy-vps.sh`, `bash scripts/repair-aqua-company2-vps.sh` then `--apply`.

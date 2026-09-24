@@ -25,7 +25,9 @@ from api.services.aquaculture_ipt_bio_relief_cleanup_service import (
 )
 from api.services.aquaculture_null_cycle_retag_service import (
     apply_null_cycle_sales,
+    apply_species_mistags,
     preview_null_cycle_sales,
+    preview_species_mistags,
 )
 from api.services.gl_posting import _create_posted_entry
 
@@ -318,3 +320,79 @@ def test_mynuddin_c02_style_opening_reconcile_prefers_pre_harvest_heads(company_
     # With no live eod heads, opening = mean * sold_n = 0.5 * 4176 = 2088
     assert kg is not None
     assert kg == Decimal("2088.0000")
+
+
+@pytest.mark.django_db
+def test_species_mistag_skips_polyculture_companions(company_tenant):
+    _enable(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Poly", is_active=True)
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=cid,
+        pond=pond,
+        name="C24",
+        code="C24",
+        start_date=date(2025, 7, 1),
+        fish_species="tilapia",
+    )
+    AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        sale_date=date(2026, 1, 7),
+        income_type="fish_harvest_sale",
+        fish_species="silver_carp",
+        fish_count=5,
+        weight_kg=Decimal("10"),
+        total_amount=Decimal("5000"),
+    )
+    AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        sale_date=date(2026, 1, 7),
+        income_type="fish_harvest_sale",
+        fish_species="rui",
+        fish_count=240,
+        weight_kg=Decimal("100"),
+        total_amount=Decimal("50000"),
+    )
+    preview = preview_species_mistags(cid, pond_id=pond.id)
+    assert preview["mistag_count"] == 0
+    assert preview["expected_polyculture_count"] == 2
+
+
+@pytest.mark.django_db
+def test_species_mistag_auto_fix_from_memo(company_tenant):
+    """Silver Carp billed as tilapia — memo names the real species."""
+    _enable(company_tenant)
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Mistag", is_active=True)
+    cy = AquacultureProductionCycle.objects.create(
+        company_id=cid,
+        pond=pond,
+        name="C01",
+        code="C01",
+        start_date=date(2025, 7, 1),
+        fish_species="tilapia",
+    )
+    sale = AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cy,
+        sale_date=date(2025, 10, 10),
+        income_type="fish_harvest_sale",
+        fish_species="tilapia",
+        fish_count=20,
+        weight_kg=Decimal("30"),
+        total_amount=Decimal("15000"),
+        memo="Silver Carp lot A",
+    )
+    preview = preview_species_mistags(cid, pond_id=pond.id)
+    assert preview["mistag_count"] == 1
+    assert preview["auto_fixable_count"] == 1
+    assert preview["mistags"][0]["inferred_from_memo"] == "silver_carp"
+    out = apply_species_mistags(cid, pond_id=pond.id, only_auto=True)
+    assert out["fixed"] == 1
+    sale.refresh_from_db()
+    assert sale.fish_species == "silver_carp"

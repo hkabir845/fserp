@@ -19,8 +19,9 @@ from api.services.aquaculture_null_cycle_retag_service import (
 
 class Command(BaseCommand):
     help = (
-        "List sales whose species disagrees with the cycle primary species. "
-        "Apply only auto-fixable rows (memo/buyer names the cycle species)."
+        "List sales whose species disagrees with the cycle primary species "
+        "(BD polyculture companions are excluded). "
+        "Apply only auto-fixable rows (memo/buyer names a correcting species)."
     )
 
     def add_arguments(self, parser):
@@ -50,7 +51,8 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"Species mistag DRY RUN — {company.name!r} "
                 f"mistags={result['mistag_count']} "
-                f"auto_fixable={result['auto_fixable_count']}"
+                f"auto_fixable={result['auto_fixable_count']} "
+                f"expected_polyculture={result.get('expected_polyculture_count', 0)}"
             )
             for row in (result.get("mistags") or [])[:40]:
                 flag = "AUTO" if row["auto_fixable"] else "REVIEW"
@@ -60,10 +62,16 @@ class Command(BaseCommand):
                     f"{row['cycle_species']} (cy={row['cycle_id']}) "
                     f"memo→{row['inferred_from_memo']} n={row['fish_count']}"
                 )
+            ep = int(result.get("expected_polyculture_count") or 0)
+            if ep:
+                self.stdout.write(
+                    f"  (omitted {ep} BD polyculture companion harvests — not mistags)"
+                )
         else:
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Species mistags fixed={result['fixed']} "
-                    f"left_for_manual={result['left_for_manual']}"
+                    f"left_for_manual={result['left_for_manual']} "
+                    f"expected_polyculture={result.get('expected_polyculture_count', 0)}"
                 )
             )

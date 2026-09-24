@@ -44,11 +44,67 @@ def _append_note(obj: Any, note: str, field: str = "memo") -> None:
 
 
 def _species_key(raw: str | None) -> str:
-    return (raw or "tilapia").strip().lower() or "tilapia"
+    from api.services.aquaculture_constants import _FISH_SPECIES_ALIASES
+
+    sp = (raw or "tilapia").strip().lower().replace(" ", "_").replace("-", "_") or "tilapia"
+    # Legacy free-text typo still seen in older rows / memos.
+    if sp == "katla":
+        sp = "catla"
+    return _FISH_SPECIES_ALIASES.get(sp, sp)
 
 
 def _cycle_species_open(sp: str) -> bool:
     return sp in ("", "mixed", "polyculture", "other", "multi")
+
+
+# BD grow-out: cycle primary (often tilapia) with companion harvest lines is normal.
+# When sale species is a known companion of the cycle primary, it is not a mistag.
+_POLYCULTURE_COMPANIONS: dict[str, frozenset[str]] = {
+    "tilapia": frozenset(
+        {
+            "rui",
+            "catla",
+            "mrigal",
+            "common_carp",
+            "silver_carp",
+            "bighead_carp",
+            "grass_carp",
+            "puti",
+            "kalibaush",
+            "pangas",
+            "other",
+        }
+    ),
+    "rui": frozenset(
+        {
+            "tilapia",
+            "catla",
+            "mrigal",
+            "common_carp",
+            "silver_carp",
+            "bighead_carp",
+            "grass_carp",
+            "puti",
+            "kalibaush",
+            "pangas",
+            "other",
+        }
+    ),
+}
+
+
+def _is_expected_polyculture(cycle_sp: str, sale_sp: str) -> bool:
+    if not cycle_sp or not sale_sp or cycle_sp == sale_sp:
+        return False
+    if _cycle_species_open(cycle_sp):
+        return True
+    companions = _POLYCULTURE_COMPANIONS.get(cycle_sp)
+    if companions is not None:
+        return sale_sp in companions
+    # Unknown primary: treat any other known harvest species as polyculture, not a mistag.
+    from api.services.aquaculture_constants import FISH_SPECIES_CODES
+
+    return sale_sp in FISH_SPECIES_CODES and sale_sp != "not_applicable"
 
 
 def _build_cycle_windows(company_id: int, pond_id: int | None) -> dict[int, list[_CycleWindow]]:
@@ -270,23 +326,21 @@ def preview_species_mistags(company_id: int, *, pond_id: int | None = None) -> d
     """
     Flag biological sales whose fish_species disagrees with the cycle primary species.
 
-    Auto-fix only when memo/buyer clearly names another known species code.
+    BD polyculture companion harvests (e.g. rui/silver carp on a tilapia-primary cycle)
+    are expected and excluded — not REVIEW noise.
+
+    Auto-fix when memo/buyer clearly names:
+      - the cycle primary while the sale line differs, or
+      - a known species different from the sale line (e.g. "Silver Carp" billed as tilapia).
     """
     from api.models import AquacultureProductionCycle
+    from api.services.aquaculture_constants import FISH_SPECIES_CODES
 
     KNOWN = {
-        "tilapia",
-        "silver_carp",
-        "common_carp",
-        "grass_carp",
-        "bighead_carp",
-        "rui",
-        "katla",
-        "mrigal",
-        "kalibaush",
-        "pangas",
-        "other",
-    }
+        c
+        for c in FISH_SPECIES_CODES
+        if c not in ("not_applicable",)
+    } | {"katla"}  # legacy typo still seen in free text
     ALIASES = {
         "silver carp": "silver_carp",
         "silvercarp": "silver_carp",
@@ -294,6 +348,8 @@ def preview_species_mistags(company_id: int, *, pond_id: int | None = None) -> d
         "grass carp": "grass_carp",
         "bighead carp": "bighead_carp",
         "big head carp": "bighead_carp",
+        "rohu": "rui",
+        "katla": "catla",
     }
 
     cycles = {
@@ -307,6 +363,7 @@ def preview_species_mistags(company_id: int, *, pond_id: int | None = None) -> d
         qs = qs.filter(pond_id=pond_id)
 
     mistags: list[dict] = []
+    expected_polyculture: list[dict] = []
     for sale in qs.select_related("production_cycle").order_by("sale_date", "id"):
         if income_type_is_non_biological_for_company(company_id, sale.income_type or ""):
             continue
@@ -314,25 +371,68 @@ def preview_species_mistags(company_id: int, *, pond_id: int | None = None) -> d
         if not cy:
             continue
         cy_sp = _species_key(getattr(cy, "fish_species", None))
-        if _cycle_species_open(cy_sp):
-            continue
         sale_sp = _species_key(sale.fish_species)
-        if sale_sp == cy_sp:
-            continue
 
         text = f"{sale.memo or ''} {sale.buyer_name or ''}".lower()
         inferred = None
         for alias, code in ALIASES.items():
             if alias in text:
-                inferred = code
+                inferred = _species_key(code)
                 break
         if inferred is None:
-            for code in KNOWN:
-                if code.replace("_", " ") in text or code in text.replace(" ", "_"):
-                    if code != sale_sp:
-                        inferred = code
-                        break
+            # Prefer longer / underscored codes so "carp" alone does not match first.
+            for code in sorted(KNOWN, key=lambda c: (-len(c), c)):
+                needle = code.replace("_", " ")
+                if needle in text or code in text.replace(" ", "_"):
+                    inferred = _species_key(code)
+                    break
 
+        # Memo names a concrete species that differs from the sale line → real mistag
+        # (covers "Silver Carp billed as tilapia" even when cycle primary is also tilapia).
+        memo_corrects_sale = inferred is not None and inferred != sale_sp
+        memo_confirms_cycle = (
+            inferred is not None and inferred == cy_sp and sale_sp != cy_sp
+        )
+        auto_fixable = memo_corrects_sale or memo_confirms_cycle
+
+        if auto_fixable:
+            mistags.append(
+                {
+                    "sale_id": sale.id,
+                    "pond_id": sale.pond_id,
+                    "sale_date": sale.sale_date.isoformat(),
+                    "current_species": sale_sp,
+                    "cycle_id": cy.id,
+                    "cycle_species": cy_sp,
+                    "inferred_from_memo": inferred,
+                    "auto_fixable": True,
+                    "fish_count": int(sale.fish_count or 0),
+                    "expected_polyculture": False,
+                }
+            )
+            continue
+
+        if _cycle_species_open(cy_sp) or sale_sp == cy_sp:
+            continue
+
+        if _is_expected_polyculture(cy_sp, sale_sp):
+            expected_polyculture.append(
+                {
+                    "sale_id": sale.id,
+                    "pond_id": sale.pond_id,
+                    "sale_date": sale.sale_date.isoformat(),
+                    "current_species": sale_sp,
+                    "cycle_id": cy.id,
+                    "cycle_species": cy_sp,
+                    "inferred_from_memo": inferred,
+                    "auto_fixable": False,
+                    "fish_count": int(sale.fish_count or 0),
+                    "expected_polyculture": True,
+                }
+            )
+            continue
+
+        # Differ from cycle, not a known companion, no memo cue → manual REVIEW.
         mistags.append(
             {
                 "sale_id": sale.id,
@@ -342,8 +442,9 @@ def preview_species_mistags(company_id: int, *, pond_id: int | None = None) -> d
                 "cycle_id": cy.id,
                 "cycle_species": cy_sp,
                 "inferred_from_memo": inferred,
-                "auto_fixable": inferred is not None and inferred == cy_sp,
+                "auto_fixable": False,
                 "fish_count": int(sale.fish_count or 0),
+                "expected_polyculture": False,
             }
         )
 
@@ -353,7 +454,9 @@ def preview_species_mistags(company_id: int, *, pond_id: int | None = None) -> d
         "pond_id": pond_id,
         "mistag_count": len(mistags),
         "auto_fixable_count": len(auto),
+        "expected_polyculture_count": len(expected_polyculture),
         "mistags": mistags,
+        "expected_polyculture": expected_polyculture,
     }
 
 
@@ -369,8 +472,11 @@ def apply_species_mistags(
     for row in preview["mistags"]:
         if only_auto and not row["auto_fixable"]:
             continue
-        target = row["inferred_from_memo"] or row["cycle_species"]
-        if only_auto:
+        inferred = row.get("inferred_from_memo")
+        # Prefer memo species when it corrects the line; else align to cycle primary.
+        if inferred and inferred != row["current_species"]:
+            target = inferred
+        else:
             target = row["cycle_species"]
         sale = AquacultureFishSale.objects.filter(
             pk=row["sale_id"], company_id=company_id
@@ -391,5 +497,6 @@ def apply_species_mistags(
         "company_id": company_id,
         "fixed": fixed,
         "reviewed_mistags": preview["mistag_count"],
+        "expected_polyculture_count": preview.get("expected_polyculture_count", 0),
         "left_for_manual": preview["mistag_count"] - fixed,
     }

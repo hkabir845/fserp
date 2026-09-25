@@ -522,6 +522,10 @@ function AquacultureMedicinePageInner() {
           expense_date: medDate,
           memo,
         }
+        const wd = treatment.withdrawalDays.trim()
+        if (wd !== '' && Number.isFinite(Number(wd))) {
+          body.withdrawal_days = Number.parseInt(wd, 10)
+        }
         if (medCycleId.trim() !== '') {
           const c = Number.parseInt(medCycleId, 10)
           if (Number.isFinite(c)) body.production_cycle_id = c
@@ -580,6 +584,7 @@ function AquacultureMedicinePageInner() {
     expense_date: string
     production_cycle_id: number | null
     memo: string
+    withdrawal_days?: number | null
   }) => {
     if (!editRow) return
     setActionBusy(true)
@@ -589,6 +594,7 @@ function AquacultureMedicinePageInner() {
         expense_date: payload.expense_date,
         production_cycle_id: payload.production_cycle_id,
         memo: payload.memo,
+        withdrawal_days: payload.withdrawal_days ?? null,
       })
       toast.success('Treatment updated')
       setEditRow(null)

@@ -32,6 +32,7 @@ export function MedicineTreatmentEditModal(props: {
     expense_date: string
     production_cycle_id: number | null
     memo: string
+    withdrawal_days?: number | null
   }) => void
 }) {
   const { row, cycles, saving, onClose, onSave } = props
@@ -58,7 +59,10 @@ export function MedicineTreatmentEditModal(props: {
       const c = Number.parseInt(cycleId, 10)
       if (Number.isFinite(c)) production_cycle_id = c
     }
-    onSave({ expense_date: date, production_cycle_id, memo })
+    const wdRaw = fields.withdrawalDays.trim()
+    const withdrawal_days =
+      wdRaw === '' ? null : Number.isFinite(Number(wdRaw)) ? Number.parseInt(wdRaw, 10) : null
+    onSave({ expense_date: date, production_cycle_id, memo, withdrawal_days })
   }
 
   return (

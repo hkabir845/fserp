@@ -234,6 +234,12 @@ export function AquacultureSaleFormModal({
   const [sampleByScope, setSampleByScope] = useState<Record<string, LastSampleReference>>({})
   const skipAutoPcsLine = useRef<Set<string>>(new Set())
   const autoCycleFromSampleDone = useRef<Set<string>>(new Set())
+  const [clearance, setClearance] = useState<{
+    cleared: boolean
+    earliest_clear_to_sell_on?: string | null
+    blocking?: { clear_to_sell_on: string; expense_date: string }[]
+  } | null>(null)
+  const [clearanceLoading, setClearanceLoading] = useState(false)
 
   const speciesOptionsForFish = useMemo(
     () =>
@@ -259,6 +265,32 @@ export function AquacultureSaleFormModal({
   }, [lines])
 
   const sellingPondId = header.pond_id
+
+  useEffect(() => {
+    if (!open || !header.pond_id || !header.sale_date) {
+      setClearance(null)
+      return
+    }
+    let cancelled = false
+    setClearanceLoading(true)
+    void api
+      .get('/aquaculture/sale-clearance/', {
+        params: { pond_id: header.pond_id, sale_date: header.sale_date },
+      })
+      .then(({ data }) => {
+        if (!cancelled) setClearance(data)
+      })
+      .catch(() => {
+        if (!cancelled) setClearance(null)
+      })
+      .finally(() => {
+        if (!cancelled) setClearanceLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, header.pond_id, header.sale_date])
+
   const otherPondBuyers = useMemo(() => {
     return ponds
       .filter((p) => String(p.id) !== sellingPondId && p.pos_customer_id != null)
@@ -495,6 +527,13 @@ export function AquacultureSaleFormModal({
       toast.error('Pond and sale date are required')
       return
     }
+    const hasFishLine = lines.some((l) => !lineIsNonFish(l, incomeTypes))
+    if (hasFishLine && clearance && !clearance.cleared) {
+      toast.error(
+        `Pond not cleared for food-fish sale until ${clearance.earliest_clear_to_sell_on ?? '—'}`
+      )
+      return
+    }
     for (let i = 0; i < lines.length; i++) {
       const err = validateLine(lines[i], i, incomeTypes)
       if (err) {
@@ -584,6 +623,25 @@ export function AquacultureSaleFormModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+          {clearanceLoading ? (
+            <p className="mb-3 text-xs text-muted-foreground">Checking medicine withdrawal clearance…</p>
+          ) : clearance && !clearance.cleared ? (
+            <div
+              className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
+              role="alert"
+            >
+              <p className="font-medium">Not cleared for food-fish sale</p>
+              <p className="mt-1 text-xs opacity-90">
+                Treatment withdrawal runs until{' '}
+                <strong>{clearance.earliest_clear_to_sell_on ?? '—'}</strong>. Change the sale date or wait for
+                clearance — save will be blocked.
+              </p>
+            </div>
+          ) : clearance?.cleared ? (
+            <p className="mb-3 text-xs text-emerald-700 dark:text-emerald-400">
+              Medicine withdrawal clearance OK for this pond and date.
+            </p>
+          ) : null}
           <section className="rounded-xl border border-border bg-muted/40/60 p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-foreground">Sale header</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">Shared for every line on this ticket.</p>

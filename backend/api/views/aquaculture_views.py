@@ -2128,6 +2128,12 @@ def _expense_to_json(x: AquacultureExpense) -> dict:
         ),
         "feed_weight_kg": _serialize_quantity(x.feed_weight_kg) if getattr(x, "feed_weight_kg", None) is not None else None,
         "funding_account_code": getattr(x, "funding_account_code", "") or "",
+        "withdrawal_days": getattr(x, "withdrawal_days", None),
+        "clear_to_sell_on": (
+            x.clear_to_sell_on.isoformat()
+            if getattr(x, "clear_to_sell_on", None) is not None
+            else None
+        ),
         "created_at": x.created_at.isoformat() if x.created_at else "",
     }
 
@@ -2610,6 +2616,12 @@ def aquaculture_pond_warehouse_consume(request):
                     sack_size_kg=sack_sz_consume if cat == "feed_consumed" else None,
                 )
             expense_obj = expenses[0]
+            if cat == "medicine_consumed":
+                from api.services.aquaculture_sale_clearance_service import apply_withdrawal_to_expense
+
+                for ex in expenses:
+                    apply_withdrawal_to_expense(ex, withdrawal_days=body.get("withdrawal_days"))
+                expense_obj = expenses[0]
             rows = pond_warehouse_stock_rows(cid, pond_id)
             return JsonResponse(
                 {
@@ -2637,6 +2649,11 @@ def aquaculture_pond_warehouse_consume(request):
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
     except GlPostingError as ex:
         return JsonResponse({"detail": getattr(ex, "detail", str(ex))}, status=400)
+
+    if cat == "medicine_consumed" and expense_obj is not None:
+        from api.services.aquaculture_sale_clearance_service import apply_withdrawal_to_expense
+
+        apply_withdrawal_to_expense(expense_obj, withdrawal_days=body.get("withdrawal_days"))
 
     rows = pond_warehouse_stock_rows(cid, pond_id)
     return JsonResponse(
@@ -3039,6 +3056,21 @@ def aquaculture_expense_detail(request, expense_id: int):
         if fer:
             return JsonResponse({"detail": fer}, status=400)
 
+        from api.services.aquaculture_sale_clearance_service import apply_withdrawal_to_expense
+
+        if (
+            "withdrawal_days" in body
+            or "memo" in body
+            or "expense_date" in body
+            or getattr(x, "withdrawal_days", None) is not None
+            or "Withdrawal:" in (x.memo or "")
+        ):
+            apply_withdrawal_to_expense(
+                x,
+                withdrawal_days=body.get("withdrawal_days") if "withdrawal_days" in body else None,
+                save=False,
+            )
+
         material_expense = must_reshare or any(
             k in body
             for k in (
@@ -3340,6 +3372,11 @@ def aquaculture_sales_list_or_create(request):
                 status=400,
             )
         fso = normalize_fish_species_other(body.get("fish_species_other"), fs)
+        from api.services.aquaculture_sale_clearance_service import assert_pond_cleared_for_sale
+
+        clear_err = assert_pond_cleared_for_sale(cid, pond.id, sd)
+        if clear_err:
+            return JsonResponse({"detail": clear_err, "code": "sale_clearance_required"}, status=400)
         if cycle_obj is None:
             cycle_obj = resolve_movement_production_cycle(
                 cid, pond.id, fish_species=fs, as_of_date=sd
@@ -3558,6 +3595,11 @@ def aquaculture_sale_detail(request, sale_id: int):
         elif s.fish_count is None or s.fish_count <= 0:
             return JsonResponse({"detail": "fish_count is required and must be greater than zero"}, status=400)
         if not income_type_is_non_biological_for_company(cid, s.income_type):
+            from api.services.aquaculture_sale_clearance_service import assert_pond_cleared_for_sale
+
+            clear_err = assert_pond_cleared_for_sale(cid, s.pond_id, s.sale_date)
+            if clear_err:
+                return JsonResponse({"detail": clear_err, "code": "sale_clearance_required"}, status=400)
             stock_err = assert_outbound_fish_within_implied_stock(
                 cid,
                 s.pond_id,

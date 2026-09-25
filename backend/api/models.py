@@ -3378,6 +3378,23 @@ class AquacultureExpense(models.Model):
             "Blank keeps the row register-only (cost flows to GL via Bills or inventory instead)."
         ),
     )
+    withdrawal_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Medicine/treatment withdrawal period in days from expense_date. "
+            "Used for food-fish sale clearance; prefer this over memo-only Withdrawal: N d."
+        ),
+    )
+    clear_to_sell_on = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Earliest calendar date food-fish from this pond may be sold after this treatment "
+            "(expense_date + withdrawal_days). Null when no withdrawal applies."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -3387,6 +3404,7 @@ class AquacultureExpense(models.Model):
         indexes = [
             models.Index(fields=["company", "pond", "expense_date"]),
             models.Index(fields=["company", "expense_date"]),
+            models.Index(fields=["company", "pond", "clear_to_sell_on"]),
         ]
 
 
@@ -3433,6 +3451,113 @@ class AquacultureExpensePondShare(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["expense", "pond"], name="aquaculture_exp_share_exp_pond_uniq"),
         ]
+
+
+class AquaculturePondDayLog(models.Model):
+    """
+    Daily pond ops sheet: water quality, mortality, feed, aeration, notes.
+    Complements stock/feed/medicine ledgers — one row per pond per calendar day.
+    """
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_pond_day_logs")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="day_logs")
+    log_date = models.DateField(db_index=True)
+    do_morning_mg_l = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    do_evening_mg_l = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    ph = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    temp_c = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    ammonia_mg_l = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    mortality_count = models.PositiveIntegerField(null=True, blank=True)
+    mortality_kg = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    feed_kg = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    aerator_hours = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    appetite = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text="normal | low | none | leftover — free text ok for field notes.",
+    )
+    weather = models.CharField(max_length=120, blank=True, default="")
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_pond_day_log"
+        ordering = ["-log_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "pond", "log_date"],
+                name="uq_aq_pond_day_log_company_pond_date",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "log_date"]),
+            models.Index(fields=["company", "pond", "log_date"]),
+        ]
+
+    def __str__(self):
+        return f"DayLog {self.pond_id} {self.log_date}"
+
+
+class AquacultureHarvestLotPlan(models.Model):
+    """
+    Planned harvest / sale lot window for continuous production sequencing.
+    Advisory calendar — does not post stock or GL until a real fish sale is recorded.
+    """
+
+    STATUS_PLANNED = "planned"
+    STATUS_CLEARED = "cleared"
+    STATUS_READY = "ready"
+    STATUS_PARTIAL = "partial"
+    STATUS_SOLD = "sold"
+    STATUS_DEFERRED = "deferred"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = (
+        (STATUS_PLANNED, "Planned"),
+        (STATUS_CLEARED, "Cleared to sell"),
+        (STATUS_READY, "Ready"),
+        (STATUS_PARTIAL, "Partially sold"),
+        (STATUS_SOLD, "Sold"),
+        (STATUS_DEFERRED, "Deferred"),
+        (STATUS_CANCELLED, "Cancelled"),
+    )
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="aquaculture_harvest_lot_plans")
+    pond = models.ForeignKey(AquaculturePond, on_delete=models.CASCADE, related_name="harvest_lot_plans")
+    production_cycle = models.ForeignKey(
+        AquacultureProductionCycle,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="harvest_lot_plans",
+    )
+    title = models.CharField(max_length=200, blank=True, default="")
+    planned_start = models.DateField(db_index=True)
+    planned_end = models.DateField(db_index=True)
+    target_avg_weight_g = models.DecimalField(max_digits=10, decimal_places=1, null=True, blank=True)
+    target_weight_kg = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    target_fish_count = models.PositiveIntegerField(null=True, blank=True)
+    priority = models.PositiveSmallIntegerField(default=100, help_text="Lower = earlier in the sequence.")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PLANNED, db_index=True)
+    depends_on_clearance = models.BooleanField(
+        default=True,
+        help_text="When true, sale clearance (withdrawal) must be met before marking ready/sold.",
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "aquaculture_harvest_lot_plan"
+        ordering = ["priority", "planned_start", "id"]
+        indexes = [
+            models.Index(fields=["company", "status", "planned_start"]),
+            models.Index(fields=["company", "pond", "planned_start"]),
+        ]
+
+    def __str__(self):
+        return self.title or f"Lot {self.pond_id} {self.planned_start}"
 
 
 class AquacultureFishSale(models.Model):

@@ -8,6 +8,7 @@ from fsms.release_info import health_payload, version_payload
 from api.views import (
     aquaculture_data_bank_views,
     aquaculture_financing_views,
+    aquaculture_ops_views,
     aquaculture_views,
     system_views,
     auth_views,
@@ -672,6 +673,26 @@ urlpatterns = [
         aquaculture_views.aquaculture_sale_finalize,
     ),
     path("aquaculture/sales/<int:sale_id>/", aquaculture_views.aquaculture_sale_detail),
+    path(
+        "aquaculture/sale-clearance/",
+        aquaculture_ops_views.aquaculture_sale_clearance,
+    ),
+    path(
+        "aquaculture/day-logs/",
+        aquaculture_ops_views.aquaculture_pond_day_logs_list_or_create,
+    ),
+    path(
+        "aquaculture/day-logs/<int:log_id>/",
+        aquaculture_ops_views.aquaculture_pond_day_log_detail,
+    ),
+    path(
+        "aquaculture/harvest-lot-plans/",
+        aquaculture_ops_views.aquaculture_harvest_lot_plans_list_or_create,
+    ),
+    path(
+        "aquaculture/harvest-lot-plans/<int:plan_id>/",
+        aquaculture_ops_views.aquaculture_harvest_lot_plan_detail,
+    ),
     path(
         "aquaculture/biomass-samples/last-reference/",
         aquaculture_views.aquaculture_biomass_sample_last_reference,

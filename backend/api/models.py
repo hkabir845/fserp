@@ -3404,7 +3404,10 @@ class AquacultureExpense(models.Model):
         indexes = [
             models.Index(fields=["company", "pond", "expense_date"]),
             models.Index(fields=["company", "expense_date"]),
-            models.Index(fields=["company", "pond", "clear_to_sell_on"]),
+            models.Index(
+                fields=["company", "pond", "clear_to_sell_on"],
+                name="aq_exp_clear_sell_idx",
+            ),
         ]
 
 
@@ -3492,8 +3495,11 @@ class AquaculturePondDayLog(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["company", "log_date"]),
-            models.Index(fields=["company", "pond", "log_date"]),
+            models.Index(fields=["company", "log_date"], name="aq_daylog_date_idx"),
+            models.Index(
+                fields=["company", "pond", "log_date"],
+                name="aq_daylog_pond_date_idx",
+            ),
         ]
 
     def __str__(self):
@@ -3552,8 +3558,14 @@ class AquacultureHarvestLotPlan(models.Model):
         db_table = "aquaculture_harvest_lot_plan"
         ordering = ["priority", "planned_start", "id"]
         indexes = [
-            models.Index(fields=["company", "status", "planned_start"]),
-            models.Index(fields=["company", "pond", "planned_start"]),
+            models.Index(
+                fields=["company", "status", "planned_start"],
+                name="aq_harvest_status_idx",
+            ),
+            models.Index(
+                fields=["company", "pond", "planned_start"],
+                name="aq_harvest_pond_idx",
+            ),
         ]
 
     def __str__(self):

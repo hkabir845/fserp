@@ -22,11 +22,12 @@ import {
   filterAquacultureMenuWhenDisabled,
   filterTenantBackupMenuItem,
   getSectionDefinitions,
-  type ErpAppMenuItem,
   type ErpAppSection,
 } from '@/navigation/erpAppMenu'
 import { useCompanyLocale } from '@/contexts/CompanyLocaleContext'
 import { readStoredAccessToken } from '@/lib/authSession'
+import { navLabelsForSearch } from '@/lib/erpNavI18n'
+import { rankNavMenuItems } from '@/lib/navMenuSearch'
 
 type UseErpNavigationMenuOptions = {
   /** Hide entries (e.g. `/apps` on the app launcher page). */
@@ -205,37 +206,20 @@ export function useErpNavigationMenu(options: UseErpNavigationMenuOptions = {}) 
   ])
 
   const menuItemsForNav = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
+    const q = searchQuery.trim()
     if (!q) return filteredMenuItems
-    // Rank matches by relevance so the closest match surfaces first:
-    // exact label > label prefix > word-start > label substring > href > section hint.
-    const scored = filteredMenuItems
-      .map((item: ErpAppMenuItem) => {
-        const label = item.label.toLowerCase()
-        const labelPlain = label.replace(/\s*\(\d+\)\s*/g, ' ').replace(/\s+/g, ' ').trim()
-        const href = item.href.toLowerCase()
-        const hints = (MENU_SECTION_SEARCH_HINTS[item.section] || '').toLowerCase()
 
-        let score = 0
-        if (labelPlain === q || label === q) score = 100
-        else if (labelPlain.startsWith(q) || label.startsWith(q)) score = 80
-        else if (labelPlain.split(/\s+/).some((word) => word.startsWith(q))) score = 60
-        else if (label.includes(q)) score = 40
-        else if (href.includes(q)) score = 20
-        else if (hints.includes(q)) score = 10
-
-        return { item, score }
-      })
-      .filter((entry) => entry.score > 0)
-
-    scored.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score
-      // Tie-break: shorter (more specific) labels first, then alphabetical for stability.
-      if (a.item.label.length !== b.item.label.length) return a.item.label.length - b.item.label.length
-      return a.item.label.localeCompare(b.item.label)
+    const searchable = filteredMenuItems.map((item) => {
+      const alt = navLabelsForSearch(item.href, undefined, item.label)
+      const alts = alt.filter((l) => l.toLocaleLowerCase('en-US') !== item.label.toLocaleLowerCase('en-US'))
+      if (item.subGroupLabel) alts.push(item.subGroupLabel)
+      return {
+        ...item,
+        altLabels: alts,
+      }
     })
 
-    return scored.map((entry) => entry.item)
+    return rankNavMenuItems(searchable, q, MENU_SECTION_SEARCH_HINTS)
   }, [filteredMenuItems, searchQuery])
 
   const sections = useMemo(() => {

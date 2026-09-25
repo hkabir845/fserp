@@ -508,7 +508,7 @@ export default function Sidebar() {
               autoComplete="off"
               value={navSearchQuery}
               onChange={(e) => setNavSearchQuery(e.target.value)}
-              placeholder="Search…"
+              placeholder={t('searchMenu')}
               className="erp-sidebar-search w-full rounded-md py-1.5 pl-8 pr-7 text-xs"
             />
             {navSearchQuery ? (

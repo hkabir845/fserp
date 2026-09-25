@@ -17,7 +17,7 @@
     "prestart": "node scripts/free-port-3000.mjs",
     "start": "node scripts/start-production.mjs",
     "lint": "eslint .",
-    "test": "node scripts/test-financial-helpers.cjs && node scripts/test-session-logout.cjs"
+    "test": "node scripts/test-financial-helpers.cjs && node scripts/test-session-logout.cjs && node scripts/test-nav-menu-search.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.12",

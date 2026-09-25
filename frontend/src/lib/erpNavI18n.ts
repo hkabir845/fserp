@@ -144,6 +144,20 @@ export function navLabel(
   return fallback ?? href
 }
 
+/** Both locale strings for menu search (dedupe when identical). */
+export function navLabelsForSearch(
+  href: string,
+  vars?: Record<string, string | number>,
+  fallback?: string
+): string[] {
+  const row = NAV_BY_HREF[href]
+  if (!row) return fallback ? [fallback] : []
+  const en = applyVars(row.en, vars)
+  const bn = applyVars(row.bn, vars)
+  if (en === bn) return [en]
+  return [en, bn]
+}
+
 export function navSectionLabel(sectionId: ErpNavSectionId, lang: AppLanguage): string {
   const row = SECTION_LABELS[sectionId]
   return row ? pick(lang, row.en, row.bn) : sectionId

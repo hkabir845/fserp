@@ -54,20 +54,21 @@ function wordsFrom(...texts: string[]): string[] {
   return words
 }
 
+type ScoreTokenCtx = {
+  labels: string[]
+  words: string[]
+  hrefNorm: string
+  hrefSegments: string[]
+  hintWords: string[]
+}
+
 /**
  * Score how well one query token matches an item.
  * 0 = no match. Higher = better (exact word > word prefix > label prefix > …).
  */
-function scoreToken(
-  token: string,
-  *,
-  labels: string[],
-  words: string[],
-  hrefNorm: string,
-  hrefSegments: string[],
-  hintWords: string[],
-): number {
+function scoreToken(token: string, ctx: ScoreTokenCtx): number {
   if (!token) return 0
+  const { labels, words, hrefNorm, hrefSegments, hintWords } = ctx
 
   // Exact full label
   for (const label of labels) {

@@ -109,6 +109,12 @@ def _invoice_to_json(inv, company_id: int):
             else ""
         ),
         "payment_method": inv.payment_method or "",
+        "pos_amount_tendered": (
+            str(inv.pos_amount_tendered) if inv.pos_amount_tendered is not None else None
+        ),
+        "pos_change_due": (
+            str(inv.pos_change_due) if inv.pos_change_due is not None else None
+        ),
         "status": inv.status,
         "source": _derive_invoice_list_source(inv),
         "subtotal": str(inv.subtotal),

@@ -1833,6 +1833,23 @@ class Invoice(models.Model):
             "a repeat with the same key returns the original invoice instead of duplicating it."
         ),
     )
+    pos_amount_tendered = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Amount the customer handed over at POS (cash received). Receipt only: "
+            "the posted sale and cash journal stay at total."
+        ),
+    )
+    pos_change_due = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Change returned to the customer (POS amount minus invoice total).",
+    )
     all_objects = models.Manager()
 
     class Meta:
@@ -1849,6 +1866,13 @@ class Invoice(models.Model):
             models.CheckConstraint(
                 condition=models.Q(total__gte=0) & models.Q(subtotal__gte=0) & models.Q(tax_total__gte=0),
                 name="invoice_nonneg_amounts",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(pos_amount_tendered__isnull=True) | models.Q(pos_amount_tendered__gte=0)
+                )
+                & (models.Q(pos_change_due__isnull=True) | models.Q(pos_change_due__gte=0)),
+                name="invoice_pos_tender_nonneg",
             ),
         ]
         indexes = [

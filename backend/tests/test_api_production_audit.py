@@ -1929,6 +1929,63 @@ def test_cashier_pos_split_tender_cash_and_ar(
     pid = body["payment_id"]
     p = Payment.objects.get(pk=pid)
     assert p.amount == Decimal("3.00")
+    assert inv.pos_amount_tendered is None
+    assert inv.pos_change_due is None
+
+
+def test_cashier_pos_records_tender_and_change(
+    api_client: Client, auth_super_headers, company_master
+):
+    """Cash over the sale total is stored on the invoice; GL cash stays the sale total."""
+    from api.models import Invoice, Item, JournalEntry, JournalEntryLine, Payment
+
+    _audit_seed_min_gl_accounts(company_master)
+    h = _audit_master_headers(auth_super_headers, company_master)
+    item = Item.objects.create(
+        company=company_master,
+        name="Change SKU",
+        unit_price=Decimal("10.00"),
+        quantity_on_hand=Decimal("10"),
+    )
+    from api.services.station_stock import ensure_item_station_row_for_new_shop_item
+
+    ensure_item_station_row_for_new_shop_item(company_master.id, item)
+    r = api_client.post(
+        "/api/cashier/pos/",
+        data=json.dumps(
+            {
+                "payment_method": "cash",
+                "amount_paid_now": "15.00",
+                "items": [{"item_id": item.id, "quantity": "1", "unit_price": "10.00"}],
+            }
+        ),
+        content_type="application/json",
+        **h,
+    )
+    assert r.status_code == 201, r.content
+    body = json.loads(r.content)
+    assert body.get("pos_amount_tendered") == "15.00"
+    assert body.get("pos_change_due") == "5.00"
+    assert body.get("billing") != "split_cash_ar"
+    inv = Invoice.objects.get(pk=body["invoice_id"])
+    assert inv.status == "paid"
+    assert inv.total == Decimal("10.00")
+    assert inv.pos_amount_tendered == Decimal("15.00")
+    assert inv.pos_change_due == Decimal("5.00")
+    assert not Payment.objects.filter(reference=f"POS {inv.invoice_number}").exists()
+    detail = api_client.get(f"/api/invoices/{inv.id}/", **h)
+    assert detail.status_code == 200
+    dbody = json.loads(detail.content)
+    assert dbody["pos_amount_tendered"] == "15.00"
+    assert dbody["pos_change_due"] == "5.00"
+    sale = JournalEntry.objects.get(
+        company=company_master, entry_number=f"AUTO-INV-{inv.id}-SALE"
+    )
+    debited = sum(
+        (line.debit or Decimal("0"))
+        for line in JournalEntryLine.objects.filter(journal_entry=sale)
+    )
+    assert debited == Decimal("10.00")
 
 
 def test_cashier_sale_fuel_happy_path(api_client: Client, auth_super_headers, company_master):

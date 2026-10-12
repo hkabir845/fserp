@@ -83,6 +83,10 @@ interface Invoice {
   total_amount: number
   amount_paid?: number
   balance_due: number
+  /** Cash the customer handed over at POS. Null when not recorded. */
+  pos_amount_tendered?: number | null
+  /** Change returned at POS. Null when not recorded. */
+  pos_change_due?: number | null
   status: string
   source?: string
   pos_receipt_number?: string
@@ -166,6 +170,14 @@ function normalizeInvoiceFromApi(raw: Record<string, unknown>): Invoice {
     tax_amount: Number(r.tax_amount ?? r.tax_total ?? 0),
     total_amount: Number(r.total_amount ?? r.total ?? 0),
     balance_due: Number(r.balance_due ?? 0),
+    pos_amount_tendered:
+      r.pos_amount_tendered != null && r.pos_amount_tendered !== ''
+        ? Number(r.pos_amount_tendered)
+        : null,
+    pos_change_due:
+      r.pos_change_due != null && r.pos_change_due !== ''
+        ? Number(r.pos_change_due)
+        : null,
     customer_id: Number(r.customer_id ?? 0),
     customer_name:
       typeof r.customer_name === 'string' && r.customer_name.trim()
@@ -1644,6 +1656,12 @@ export default function InvoicesPage() {
                         <p className="text-sm text-muted-foreground">Discount:</p>
                       )}
                       <p className="text-lg font-semibold text-foreground">Total:</p>
+                      {viewingInvoice.pos_amount_tendered != null && (
+                        <>
+                          <p className="text-sm text-muted-foreground mt-2">POS amount:</p>
+                          <p className="text-sm text-muted-foreground">Customer change:</p>
+                        </>
+                      )}
                       {viewingInvoice.amount_paid && viewingInvoice.amount_paid > 0 && (
                         <>
                           <p className="text-sm text-muted-foreground mt-2">Amount Paid:</p>
@@ -1658,6 +1676,12 @@ export default function InvoicesPage() {
                         <p className="text-sm text-foreground">{currencySymbol}{formatNumber(Number(viewingInvoice.discount_amount))}</p>
                       )}
                       <p className="text-lg font-semibold text-foreground">{currencySymbol}{formatNumber(Number(viewingInvoice.total_amount || 0))}</p>
+                      {viewingInvoice.pos_amount_tendered != null && (
+                        <>
+                          <p className="text-sm text-foreground mt-2">{currencySymbol}{formatNumber(Number(viewingInvoice.pos_amount_tendered))}</p>
+                          <p className="text-sm font-medium text-foreground">{currencySymbol}{formatNumber(Number(viewingInvoice.pos_change_due || 0))}</p>
+                        </>
+                      )}
                       {viewingInvoice.amount_paid && viewingInvoice.amount_paid > 0 && (
                         <>
                           <p className="text-sm text-foreground mt-2">{currencySymbol}{formatNumber(Number(viewingInvoice.amount_paid))}</p>

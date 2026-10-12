@@ -95,6 +95,9 @@ def _pos_sale_payload_from_invoice(inv: Invoice) -> dict:
         "invoice_number": inv.invoice_number,
         "idempotent_replay": True,
     }
+    if getattr(inv, "pos_amount_tendered", None) is not None:
+        payload["pos_amount_tendered"] = str(inv.pos_amount_tendered)
+        payload["pos_change_due"] = str(inv.pos_change_due or Decimal("0.00"))
     if on_account:
         payload["invoice_status"] = "sent"
         payload["billing"] = "accounts_receivable"
@@ -405,7 +408,14 @@ def _cashier_pos_unified(
                 company_id=company_id,
                 idempotency_key=idempotency_key,
             )
-            .only("id", "invoice_number", "payment_method", "status")
+            .only(
+                "id",
+                "invoice_number",
+                "payment_method",
+                "status",
+                "pos_amount_tendered",
+                "pos_change_due",
+            )
             .first()
         )
         if existing is not None:
@@ -473,8 +483,16 @@ def _cashier_pos_unified(
     total = (subtotal + tax_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     split_tender = False
+    pos_amount_tendered = None
+    pos_change_due = None
     if not on_account and amount_paid_now is not None and amount_paid_now > 0:
         if amount_paid_now >= total:
+            # Over (or exact) tender is receipt detail. Cash posted stays the sale total;
+            # the difference is change handed back, not extra revenue.
+            pos_amount_tendered = amount_paid_now
+            pos_change_due = (amount_paid_now - total).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
             amount_paid_now = None
         else:
             split_tender = True
@@ -627,6 +645,8 @@ def _cashier_pos_unified(
                 total=total,
                 payment_method=inv_pm,
                 idempotency_key=idempotency_key or "",
+                pos_amount_tendered=pos_amount_tendered,
+                pos_change_due=pos_change_due,
             )
             inv.save()
             inv.invoice_number = f"INV-POS-{inv.id}"
@@ -757,6 +777,9 @@ def _cashier_pos_unified(
                 payload["amount_paid_now"] = str(amount_paid_now)
             if split_payment_id is not None:
                 payload["payment_id"] = split_payment_id
+        if pos_amount_tendered is not None:
+            payload["pos_amount_tendered"] = str(pos_amount_tendered)
+            payload["pos_change_due"] = str(pos_change_due)
         return JsonResponse(payload, status=201)
     except GlPostingError as e:
         return _cashier_pos_error(e.detail)
@@ -769,7 +792,14 @@ def _cashier_pos_unified(
                     company_id=company_id,
                     idempotency_key=idempotency_key,
                 )
-                .only("id", "invoice_number", "payment_method", "status")
+                .only(
+                    "id",
+                    "invoice_number",
+                    "payment_method",
+                    "status",
+                    "pos_amount_tendered",
+                    "pos_change_due",
+                )
                 .first()
             )
             if existing is not None:

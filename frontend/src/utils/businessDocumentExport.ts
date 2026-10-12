@@ -70,6 +70,8 @@ export type InvoiceExport = {
   total_amount?: number | string
   amount_paid?: number | string
   balance_due?: number | string
+  pos_amount_tendered?: number | string | null
+  pos_change_due?: number | string | null
   line_items?: InvoiceLineExport[]
   memo?: string
 }
@@ -119,6 +121,10 @@ export function buildInvoiceDetailCsv(inv: InvoiceExport, sym: string): string {
   out += `\nSubtotal,,,,${inv.subtotal ?? 0}\n`
   out += `Tax,,,,${inv.tax_amount ?? 0}\n`
   out += `Total,,,,${inv.total_amount ?? 0}\n`
+  if (inv.pos_amount_tendered != null && inv.pos_amount_tendered !== '') {
+    out += `POS amount,,,,${inv.pos_amount_tendered}\n`
+    out += `Customer change,,,,${inv.pos_change_due ?? 0}\n`
+  }
   if (inv.amount_paid != null && Number(inv.amount_paid) > 0) {
     out += `Paid,,,,${inv.amount_paid}\n`
     out += `Balance due,,,,${inv.balance_due ?? 0}\n`
@@ -192,6 +198,16 @@ export function buildInvoicePrintHtml(
         <tr class="row-total"><td colspan="4" class="right">Total</td><td class="right">${escapeHtml(sym)}${escapeHtml(
           opts.formatNumber(Number(inv.total_amount || 0)),
         )}</td></tr>
+        ${
+          inv.pos_amount_tendered != null && inv.pos_amount_tendered !== ''
+            ? `<tr><td colspan="4" class="right">POS amount</td><td class="right">${escapeHtml(sym)}${escapeHtml(
+                opts.formatNumber(Number(inv.pos_amount_tendered)),
+              )}</td></tr>
+        <tr><td colspan="4" class="right">Customer change</td><td class="right">${escapeHtml(sym)}${escapeHtml(
+          opts.formatNumber(Number(inv.pos_change_due || 0)),
+        )}</td></tr>`
+            : ''
+        }
       </tfoot>
     </table>
     ${paidBlock}

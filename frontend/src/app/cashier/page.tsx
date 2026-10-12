@@ -1090,6 +1090,16 @@ export default function CashierPOSPage() {
       ? roundTwo(grandTotal - parsedAmountPaidNow)
       : null
 
+  const posAmountTendered =
+    !isOnAccount &&
+    parsedAmountPaidNow !== null &&
+    grandTotal > 0 &&
+    parsedAmountPaidNow >= grandTotal
+      ? parsedAmountPaidNow
+      : null
+  const customerChange =
+    posAmountTendered !== null ? roundTwo(posAmountTendered - grandTotal) : null
+
   const displayPaymentMethodLabel = isSplitPayment
     ? `${PAYMENT_LABELS.MIXED} (${currencySymbol}${formatNumber(
         parsedAmountPaidNow ?? 0
@@ -1303,7 +1313,11 @@ export default function CashierPOSPage() {
       ) {
         payload.bank_account_id = depositBankId
       }
-      if (isSplitPayment && parsedAmountPaidNow !== null) {
+      if (
+        !isOnAccount &&
+        parsedAmountPaidNow !== null &&
+        parsedAmountPaidNow > 0
+      ) {
         payload.amount_paid_now = parsedAmountPaidNow
       }
       if (posStationId != null && Number.isFinite(posStationId)) {
@@ -1436,6 +1450,16 @@ export default function CashierPOSPage() {
       <tr class="row-total"><td>Total due</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
       formatNumber(grandTotal)
     )}</td></tr>
+      ${
+        posAmountTendered !== null
+          ? `<tr><td>POS amount</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
+              formatNumber(posAmountTendered)
+            )}</td></tr>
+      <tr><td>Customer change</td><td class="right">${escapeHtml(currencySymbol)}${escapeHtml(
+        formatNumber(customerChange ?? 0)
+      )}</td></tr>`
+          : ""
+      }
       </tbody></table>`
     void openPosPrintWindow(`Invoice draft ${inv}`, body, stationForPrint)
   }
@@ -2633,6 +2657,24 @@ export default function CashierPOSPage() {
                             {formatNumber(grandTotal)}
                           </span>
                         </div>
+                        {posAmountTendered !== null && customerChange !== null ? (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">POS amount</span>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {currencySymbol}
+                                {formatNumber(posAmountTendered)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Customer change</span>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {currencySymbol}
+                                {formatNumber(customerChange)}
+                              </span>
+                            </div>
+                          </>
+                        ) : null}
                         {cartEntries.length > 0 && cartTotals.hasNegativeTotal && (
                           <p className="text-xs text-destructive">
                             Total cannot be negative. Adjust discounts or deposits.
@@ -2768,7 +2810,7 @@ export default function CashierPOSPage() {
                               className="text-sm font-medium text-foreground"
                               htmlFor="pos-amount-paid-now"
                             >
-                              Pay now (optional — split tender)
+                              POS amount (cash received)
                             </label>
                             <input
                               id="pos-amount-paid-now"
@@ -2779,14 +2821,23 @@ export default function CashierPOSPage() {
                               onChange={event => setAmountPaidNow(event.target.value)}
                               placeholder={
                                 grandTotal > 0
-                                  ? `Blank = pay full ${currencySymbol}${formatNumber(grandTotal)} with method above`
-                                  : "Enter amount collected now"
+                                  ? `Blank = exact ${currencySymbol}${formatNumber(grandTotal)}`
+                                  : "Amount the customer handed over"
                               }
                               className={inputClassName}
                             />
-                            {isSplitPayment &&
-                            parsedAmountPaidNow !== null &&
-                            splitBalanceOnAR !== null ? (
+                            {posAmountTendered !== null && customerChange !== null ? (
+                              <p className="rounded-md border border-emerald-200/80 bg-emerald-50 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
+                                <strong>POS amount:</strong> {currencySymbol}
+                                {formatNumber(posAmountTendered)}.{" "}
+                                <strong>Customer change:</strong> {currencySymbol}
+                                {formatNumber(customerChange)}. Both are saved on the invoice.
+                                The sale posts for {currencySymbol}
+                                {formatNumber(grandTotal)}.
+                              </p>
+                            ) : isSplitPayment &&
+                              parsedAmountPaidNow !== null &&
+                              splitBalanceOnAR !== null ? (
                               <p className="rounded-md border border-sky-200/80 bg-sky-50 px-3 py-2 text-xs text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
                                 <strong>Split tender:</strong> {currencySymbol}
                                 {formatNumber(parsedAmountPaidNow)} taken now;{" "}
@@ -2796,8 +2847,9 @@ export default function CashierPOSPage() {
                               </p>
                             ) : (
                               <p className="text-xs text-muted-foreground">
-                                Less than total = charge the remainder on account (named customer
-                                required).
+                                More than the total records POS amount and customer change on the
+                                invoice. Less than the total charges the remainder on account (named
+                                customer required).
                               </p>
                             )}
                           </div>
@@ -3200,6 +3252,24 @@ export default function CashierPOSPage() {
                     {formatNumber(grandTotal)}
                   </span>
                 </div>
+                {posAmountTendered !== null && customerChange !== null ? (
+                  <>
+                    <div className="flex items-center justify-between gap-6">
+                      <span className="text-muted-foreground">POS amount</span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        {currencySymbol}
+                        {formatNumber(posAmountTendered)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-6">
+                      <span className="text-muted-foreground">Customer change</span>
+                      <span className="font-medium tabular-nums text-foreground">
+                        {currencySymbol}
+                        {formatNumber(customerChange)}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>

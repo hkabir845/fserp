@@ -1,0 +1,8 @@
+def cumulative_unrealized_margin(company_id: int, end: date) -> Decimal:
+    """The part of the lifetime internal margin that is still locked inside group inventory."""
+    gross = _net_credit(company_id, CODE_INTERNAL_REVENUE, None, end) + _net_credit(
+        company_id, CODE_INTERNAL_COGS, None, end
+    )
+    if gross == 0:
+        return Decimal("0")
+    return (gross * unrealized_fraction(com

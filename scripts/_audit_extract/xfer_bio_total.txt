@@ -1,0 +1,20 @@
+def _biological_production_cost_total(costing_lines: list[dict]) -> Decimal:
+    total = Decimal("0")
+    for row in costing_lines or []:
+        code = str(row.get("cost_bucket") or "")
+        if code not in _TRANSFER_COST_BUCKETS:
+            continue
+        total += Decimal(str(row.get("amount") or 0))
+    return _money_q(total)
+
+
+def _nursing_transferable_cost_total(costing_lines: list[dict]) -> Decimal:
+    """Fry + feed + medicine + labor + … movable with fingerlings; fixed pond overhead excluded."""
+    total = Decimal("0")
+    for row in costing_lines or []:
+        code = str(row.get("cost_bucket") or "")
+        if code not in _TRANSFER_COST_BUCKETS:
+            continue
+        if code in _NURSING_FIXED_POND_BUCKETS:
+            continue
+        total += Decimal(str(row.get("a

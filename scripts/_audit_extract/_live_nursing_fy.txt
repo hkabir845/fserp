@@ -1,0 +1,91 @@
+﻿==== P05 ====
+Company 2 ('Adib Filling Station'), pond 16 'Mynuddin Nursing Pond' code='P05', period 2025-07-01 .. 2026-06-30, dry_run=True
+Before: income=556624.37 expense=227749.60 net_profit=328874.77 gap(expense-income)=-328874.77
+Batch resync updated 0 transfer line(s)
+After resync: income=556624.37 expense=227749.60 net_profit=328874.77 gap=-328874.77
+Before reprice ù line sale vs IPT mirror (P&L uses mirror when present):
+  line 25: cost=333197.34 sale=0.00 mirror=333197.34 (no invoice) drift=0.00
+  line 28: cost=179308.58 sale=0.00 mirror=179308.58 (no invoice) drift=0.00
+  line 29: cost=44118.45 sale=0.00 mirror=44118.45 (no invoice) drift=0.00
+Line vs mirror totals: line_pl=556624.37 mirror=556624.37 drift=0.00 stale_lines=0
+Repriced + mirrored 3 line(s) across 3 transfer(s)
+After reprice/mirror ù line vs mirror:
+  line 25: cost=333197.34 sale=485868.84 mirror=485868.84 (no invoice) drift=0.00
+  line 28: cost=179308.58 sale=261468.00 mirror=261468.00 (no invoice) drift=0.00
+  line 29: cost=44118.45 sale=64333.66 mirror=64333.66 (no invoice) drift=0.00
+Line vs mirror totals: line_pl=811670.50 mirror=811670.50 drift=0.00 stale_lines=0
+After reprice/mirror: income=811670.50 expense=227749.60 net_profit=583920.90 gap=-583920.90
+Outgoing transfer lines in period: 3, total cost_amount=556624.37, total pl_effective=811670.50
+Lowering cost by 583920.90 across 3 line(s) (sale follows margin rule):
+  line 25 xfer#5 -> P02 fish=110000: cost 333197.34 -> 0.00
+  line 28 xfer#4 -> P04 fish=59196: cost 179308.58 -> 0.00
+  line 29 xfer#9 -> P02 fish=14565: cost 44118.45 -> 0.00
+  line 25: sale now 152671.80 (cost 0.00)
+  line 28: sale now 82159.60 (cost 0.00)
+  line 29: sale now 20215.20 (cost 0.00)
+After adjustment: income=255046.60 expense=227749.60 net_profit=27297.00 gap=-27297.00
+DRY RUN ù rolled back
+Remaining gap -27297.00 ù may need manual review (other income/expense outside transfer lines, or GL caps).
+
+==== P06 ====
+Company 2 ('Adib Filling Station'), pond 17 'Ashari - 3 Nursing Pond' code='P06', period 2025-07-01 .. 2026-06-30, dry_run=True
+Before: income=835386.98 expense=841788.56 net_profit=-6401.58 gap(expense-income)=6401.58
+Batch resync updated 0 transfer line(s)
+After resync: income=835386.98 expense=841788.56 net_profit=-6401.58 gap=6401.58
+Before reprice ù line sale vs IPT mirror (P&L uses mirror when present):
+  line 7: cost=458485.34 sale=466845.35 mirror=466845.35 invoice#6726 drift=0.00
+  line 14: cost=339165.12 sale=352491.93 mirror=352491.93 invoice#6727 drift=0.00
+Line vs mirror totals: line_pl=819337.28 mirror=819337.28 drift=0.00 stale_lines=0
+Repriced + mirrored 2 line(s) across 2 transfer(s)
+After reprice/mirror ù line vs mirror:
+  line 7: cost=458485.34 sale=466845.35 mirror=466845.35 invoice#6726 drift=0.00
+  line 14: cost=339165.12 sale=352491.93 mirror=352491.93 invoice#6727 drift=0.00
+Line vs mirror totals: line_pl=819337.28 mirror=819337.28 drift=0.00 stale_lines=0
+After reprice/mirror: income=835386.98 expense=841788.56 net_profit=-6401.58 gap=6401.58
+Outgoing transfer lines in period: 2, total cost_amount=797650.46, total pl_effective=819337.28
+Raising cost by 6401.58 across 2 line(s) (sale follows margin rule):
+  line 7 xfer#6 -> P01 fish=87780: cost 458485.34 -> 463376.80
+  line 14 xfer#8 -> P02 fish=27100: cost 339165.12 -> 340675.24
+  line 7: sale now 471736.78 (cost 463376.80)
+  line 14: sale now 354002.05 (cost 340675.24)
+After adjustment: income=841788.53 expense=841788.56 net_profit=-0.03 gap=0.03
+DRY RUN ù rolled back
+Nursing pond P&L balanced.
+
+==== P07 ====
+Company 2 ('Adib Filling Station'), pond 18 'Mynuddin Nursing Pond - 2' code='P07', period 2025-07-01 .. 2026-06-30, dry_run=True
+Before: income=0.00 expense=0.00 net_profit=0.00 gap(expense-income)=0.00
+Batch resync updated 0 transfer line(s)
+After resync: income=0.00 expense=0.00 net_profit=0.00 gap=0.00
+Before reprice ù line sale vs IPT mirror (P&L uses mirror when present):
+Line vs mirror totals: line_pl=0.00 mirror=0.00 drift=0.00 stale_lines=0
+Repriced + mirrored 0 line(s) across 0 transfer(s)
+After reprice/mirror ù line vs mirror:
+Line vs mirror totals: line_pl=0.00 mirror=0.00 drift=0.00 stale_lines=0
+After reprice/mirror: income=0.00 expense=0.00 net_profit=0.00 gap=0.00
+Pond P&L balanced after reprice/mirror.
+
+==== P08 ====
+Company 2 ('Adib Filling Station'), pond 19 'Digonto Nursing Pond' code='P08', period 2025-07-01 .. 2026-06-30, dry_run=True
+Before: income=1210831.93 expense=1210832.00 net_profit=-0.07 gap(expense-income)=0.07
+Batch resync updated 2 transfer line(s)
+After resync: income=1210831.93 expense=1210832.00 net_profit=-0.07 gap=0.07
+Before reprice ù line sale vs IPT mirror (P&L uses mirror when present):
+  line 33: cost=219469.40 sale=386317.50 mirror=386317.50 invoice#7191 drift=0.00
+  line 34: cost=469239.36 sale=824514.43 mirror=824514.43 invoice#7190 drift=0.00
+Line vs mirror totals: line_pl=1210831.93 mirror=1210831.93 drift=0.00 stale_lines=0
+Repriced + mirrored 2 line(s) across 2 transfer(s)
+After reprice/mirror ù line vs mirror:
+  line 33: cost=219469.40 sale=262217.83 mirror=262217.83 invoice#7191 drift=0.00
+  line 34: cost=469239.36 sale=562602.37 mirror=562602.37 invoice#7190 drift=0.00
+Line vs mirror totals: line_pl=824820.20 mirror=824820.20 drift=0.00 stale_lines=0
+After reprice/mirror: income=824820.20 expense=1210832.00 net_profit=-386011.80 gap=386011.80
+Outgoing transfer lines in period: 2, total cost_amount=688708.76, total pl_effective=824820.20
+Raising cost by 386011.80 across 2 line(s) (sale follows margin rule):
+  line 33 xfer#13 -> P03 fish=116853: cost 219469.40 -> 343569.09
+  line 34 xfer#14 -> P03 fish=246618: cost 469239.36 -> 731151.47
+  line 33: sale now 386317.50 (cost 343569.09)
+  line 34: sale now 824514.43 (cost 731151.47)
+After adjustment: income=1210831.93 expense=1210832.00 net_profit=-0.07 gap=0.07
+DRY RUN ù rolled back
+Nursing pond P&L balanced.

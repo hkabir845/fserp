@@ -1,0 +1,2 @@
+﻿Species mistag DRY RUN ù 'Adib Filling Station' mistags=0 auto_fixable=0 expected_polyculture=88
+  (omitted 88 BD polyculture companion harvests ù not mistags)

@@ -1,0 +1,38 @@
+assets, tax, reporting, aquaculture).
+| Item edit re-capitalized bill-received stock as opening stock | Inventory **and** equity overstated by the full stock value | `item_views.py` `_item_stock_already_capitalized` guard |
+| Harvest blocked by sub-gram rounding in derived biomass | A pond could not sell its own recorded stock | Tolerance equal to the 6 dp average-weight rounding envelope |
+| Party opening balances posted no journal at all | An opening entered on the Customers/Vendors screen never reached GL 1100 / 2000 | `apply_customer_opening_gl` / `apply_vendor_opening_gl` wired into CRUD; a changed opening now re-posts; 1100/2000/3200/4230 auto-provision |
+| Inter-pond sales posted to ordinary harvest revenue (4240) | Elimination never saw them — the report printed "No inter-pond trade" while the whole margin sat in group profit | Sales and bio-relief to a pond counterparty route to 4245 / 5245 |
+| Inter-pond margin was eliminated permanently | Once the buying pond sold the fish on, that profit was real but consolidated income never got it back, and 1585 wrote down inventory that was gone | Elimination is now proportional to internal-sourced biomass still on hand; realized margin flows back into consolidated profit |
+| Bio-asset cost/kg divided by `max()` of the candidate bases | A pond with 900 kg sold and 1,000 kg held relieved 90,000 instead of 47,368 | `production_denominator_kg` — sold **plus** still held |
+| The costing window opened on 1 January | A March harvest of fish fed since October was priced from January's costs alone | `pond_production_start_date` opens the window at the pond's first production cost |
+| Chart `opening_balance_date` ignored | Historical BS included future openings | Openings dated after `as_of` are excluded |
+`test_inter_pond_margin_realization.py` and `test_bio_asset_cost_basis.py`.
+### ✅ DONE — A0-2. Inter-pond trade elimination is never released — *needs a decision*
+with nothing tracking whether the buying pond has since sold the fish externally. Once it
+`FISH_POND_TRANSFERS_ENABLED = False` means today's documented pond-to-pond path is an
+prints *"No inter-pond trade in this period"* while 100% of the margin sits in group profit.
+### ✅ DONE — A0-3. Bio-asset cost/kg divides by `max()` of candidate denominators
+`aquaculture_transfer_cost.py:296` takes the largest of {period sale kg, on-hand kg, this
+line's kg} rather than sold + still held. A pond that spent 100,000 on 900 kg sold and 1,000
+### ✅ DONE — A0-4. Accumulated biological cost resets every 1 January
+`aquaculture_transfer_cost.py:61` starts the costing window at `date(year, 1, 1)`. A March
+harvest of fish fed since October is relieved at a cost/kg built from January onward only.
+`remit_payroll_deductions` Dr 2210 / Cr bank. Employee opening payables / manual HR ledger
+referenced only by opening balances. **Confidence: reported.**
+### ✅ DONE — A0-15. Party opening and current balances are writable with no GL
+`customer_views.py:323` and `vendor_views.py:299` accept `opening_balance` and
+`current_balance` straight from the request. `apply_customer_opening_gl` exists but is called
+only from the aquaculture views. **Confidence: reported.**
+  for payroll runs; opening employee payables (A0-10) are still open.
+- **A1-16.** ✅ DONE (negative qty) — Negative station/pond stock is refused instead of clamped.
+- **A1-17.** ✅ DONE — Item PUT and tank PUT refuse on-hand / current_stock changes. Opening qty
+  on create still posts through the existing opening-stock path. *verified*
+- **A1-18.** ✅ DONE (date gate) — Chart openings dated after `as_of` are excluded from BS and
+  control-account balances. The opening is still one-sided (no automatic OBE journal) — that
+  remains a P2 if users type openings on the chart instead of using the party/item opening flows.
+  Σ-P&L line. Typing last year's profit into `3100.opening_balance` (the natural user action)
+- **A2-7. FCR ignores harvest, mortality and restocking between samples**, biasing the farm's
+  main operational KPI in both directions. ✅ DONE (harvest + mortality/loss + transfers +
+| 8 — consolidation never releases inter-pond profit after external sale | **Fixed.** Same defect as A0-2; the elimination is now proportional to internal-sourced biomass still on hand. |
+`tests/test_vendor_bill_auto_aquaculture_cycle.py`, which is worth keeping in mind before touching

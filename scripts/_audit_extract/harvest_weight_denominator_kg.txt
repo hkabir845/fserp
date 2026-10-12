@@ -1,0 +1,28 @@
+def harvest_weight_denominator_kg(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+) -> tuple[Decimal, Decimal, str]:
+    """
+    Returns (primary_harvest_kg, fallback_bio_kg, basis_code).
+
+    basis_code: harvest_sale | bio_sales | none
+    """
+    base = AquacultureFishSale.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        sale_date__gte=start,
+        sale_date__lte=end,
+    )
+    if cycle_filter_id is not None:
+        base = base.filter(production_cycle_id=cycle_filter_id)
+
+    h = base.filter(income_type="fish_harvest_sale").aggregate(t=Sum("weight_kg"))["t"]
+    harvest_kg = _kg_q(Decimal(str(h or 0)))
+
+    bio_types = ("fish_harvest_sale", "fingerling_sale", "processing_value_add")
+    b = base.filter(income_type__in=bio_types).aggregate(t=Sum("weight_kg"))["t"]
+    bio_kg = _kg_q(Decimal

@@ -1,0 +1,104 @@
+﻿def _internal_kg_bought_by_pond(company_id: int, end: date) -> dict[int, Decimal]:
+    """Cumulative biomass each pond has bought from another pond, through ``end``."""
+    from api.models import AquacultureFishPondTransferLine, AquacultureFishSale
+
+    out: dict[int, Decimal] = {}
+
+    def _add(pond_id, kg):
+        if not pond_id:
+            return
+        out[int(pond_id)] = out.get(int(pond_id), Decimal("0")) + (kg or Decimal("0"))
+
+    # Current path: a pond sells to the buying pond's POS customer. The counterparty lives on
+    # the linked invoice, not on the sale row, and the pond it stands for is found either by
+    # the explicit internal_pond link or by being that pond's pos_customer.
+    from api.models import AquaculturePond
+
+    pond_by_customer: dict[int, int] = {
+        int(c): int(p)
+        for c, p in AquaculturePond.objects.filter(
+            company_id=company_id, pos_customer__isnull=False
+        ).values_list("pos_customer_id", "id")
+    }
+    for cust_id, linked_pond_id, kg in AquacultureFishSale.objects.filter(
+        company_id=company_id, sale_date__lte=end, invoice__customer__isnull=False
+    ).values_list(
+        "invoice__customer_id", "invoice__customer__internal_pond_id", "weight_kg"
+    ):
+        buyer_pond_id = linked_pond_id or pond_by_customer.get(int(cust_id))
+        _add(buyer_pond_id, kg)
+
+    # Retired path: historical inter-pond transfer documents still carry 4245/5245 postings.
+    for buyer_pond_id, kg in AquacultureFishPondTransferLine.objects.filter(
+        transfer__company_id=company_id,
+        transfer__transfer_date__lte=end,
+    ).values_list("to_pond_id", "weight_kg"):
+        _add(buyer_pond_id, kg)
+
+    return out
+
+
+==== FRY POOL ====
+def _nursing_fry_pool_for_pond_batch(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+) -> Decimal:
+    """
+    Fry purchase total for a nursing batch ù any production_cycle tag on the same pond.
+
+    Fry is usually bought once per batch before cycle tags are aligned; cycle-scoped P&L
+    alone often misses fry posted on sibling cycles or left untagged.
+    """
+    from django.db.models import Sum
+
+    from api.models import AquacultureExpense
+    from api.services.aquaculture_cost_per_kg import (
+        fry_stocking_capitalized_manual_expense_ids,
+        pond_fry_stocking_capitalized_journal_total,
+    )
+
+    start, end = pl_window_for_transfer_date(
+        transfer_date, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
+    capitalized_ids = fry_stocking_capitalized_manual_expense_ids(company_
+==== capitalized exclude ====
+ransfer_date, from_cycle, company_id=company_id, pond_id=from_pond_id
+    )
+    capitalized_ids = fry_stocking_capitalized_manual_expense_ids(company_id)
+    exp_total = (
+        AquacultureExpense.objects.filter(
+            company_id=company_id,
+            pond_id=from_pond_
+aquaculture_cost_per_kg.py mentions sale bio or JE writeoff
+==== OPENING GL LOOP ====
+for row in rows:
+        amt = _q(row.amount or Decimal("0"))
+        if amt == 0:
+            continue
+        code = row.category_code
+        if row.pl_kind == AquaculturePondPlOpening.KIND_INCOME:
+            acc = _account_for_income(company_id, code)
+            if not acc:
+                logger.warning("pond %s income %s: missing COA", pond_id, code)
+                return False
+            memo = f"Prior P&L income opening ù {pond_label} ù {code}"[:280]
+            lines.append((equity, amt, Decimal("0"), memo))
+            lines.append((acc, Decimal("0"), amt, memo))
+            bucket = f"rev_{code}"[:40]
+            meta.extend(
+                [
+                    {"pond_id": pond_id, "cost_bucket": bucket},
+                    {"pond_id": pond_id, "cost_bucket": bucket},
+                ]
+            )
+        else:
+            acc = _account_for_expense(company_id, code)
+            if not acc:
+                logger.warning("pond %s expense %s: missing COA", pond_id, code)
+                return False
+            memo = f"Prior P&L expense opening ù {pond_label} ù {code}"[:280]
+            lines.append((acc, amt, Decimal("0"), memo))
+            lines.append((equit

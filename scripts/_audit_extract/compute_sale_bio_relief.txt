@@ -1,0 +1,33 @@
+def compute_sale_bio_relief(
+    company_id: int,
+    sale,
+) -> tuple[Decimal, Decimal | None, str]:
+    """
+    Returns (relief_amount, cost_per_kg, basis_note) for an AquacultureFishSale.
+    """
+    from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
+
+    if income_type_is_non_biological_for_company(company_id, getattr(sale, "income_type", None) or ""):
+        return Decimal("0"), None, "Non-biological income type — no bio-asset relief."
+
+    wk = Decimal(str(sale.weight_kg or 0))
+    if wk <= 0:
+        return Decimal("0"), None, "No harvest weight."
+
+    cycle = getattr(sale, "production_cycle", None)
+    ref = lookup_bio_cost_per_kg(
+        company_id,
+        pond_id=sale.pond_id,
+        as_of_date=sale.sale_date,
+        production_cycle=cycle,
+        line_weight_kg=wk,
+    )
+    if not ref.get("found") or not ref.get("cost_per_kg"):
+        return Decimal("0"), None, ref.get("basis_note") or "No cost/kg available."
+
+    per_kg = Decimal(str(ref["cost_per_kg"]))
+    relief, cap_note = suggest_bio_asset_relief_amount(
+        cost_per_kg=per_kg,
+        weight_kg=wk,
+        bio_asset_balance=ref.get("bio_asset_balance"),
+    )

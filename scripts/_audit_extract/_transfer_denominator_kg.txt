@@ -1,0 +1,61 @@
+def _transfer_denominator_kg(
+    *,
+    company_id: int,
+    pond_id: int,
+    cycle_filter_id: int | None,
+    cpk: dict,
+    line_weight_kg: Decimal | None,
+    transfer_total_weight_kg: Decimal | None = None,
+) -> tuple[Decimal, str]:
+    """Kg basis for transfer cost — at least total transfer kg when sale kg is too small."""
+    sale_denom = Decimal(str(cpk.get("denominator_kg") or 0))
+    if sale_denom < 0:
+        sale_denom = Decimal("0")
+
+    on_hand = Decimal("0")
+    pos_rows = compute_fish_stock_position_rows(
+        company_id,
+        pond_id=pond_id,
+        production_cycle_id=cycle_filter_id,
+    )
+    if pos_rows:
+        on_hand = _money_q(Decimal(str(pos_rows[0].get("implied_net_weight_kg") or 0)))
+
+    xfer_kg = transfer_total_weight_kg if transfer_total_weight_kg and transfer_total_weight_kg > 0 else line_weight_kg
+
+    candidates: list[tuple[Decimal, str]] = []
+    if sale_denom > 0:
+        basis = str(cpk.get("weight_basis") or "sale")
+        if basis == "harvest_sale":
+            label = "harvest sale kg in period"
+        elif basis == "bio_sales":
+            label = "biological sale kg in period"
+        else:
+            label = "sale kg in period"
+        candidates.append((sale_denom, label))
+    if on_hand > 0:
+        candidates.append((on_hand, "on-hand fish kg (stock position)"))
+    if xfer_kg is not None and xfer_kg > 0:
+        label = (
+            "kg on this transfer (all lines)"
+            if transfer_total_weight_kg and transfer_total_weight_kg > 0
+            else "kg on this transfer line"
+        )
+        candidates.append((_money_q(xfer_kg), label))
+
+    if not candidates:
+        return Decimal("0"), ""
+
+    denom, note = production_denominator_kg(sale_denom, on_hand, xfer_kg)
+    if denom > 0:
+        return denom, note
+    if not candidates:
+        return Decimal("0"), ""
+    return max(candidates, key=lambda x: x[0])
+
+
+def lookup_transfer_cost_per_kg(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    tra

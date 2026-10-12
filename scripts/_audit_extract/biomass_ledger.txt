@@ -1,0 +1,115 @@
+"""
+Unified, read-only "everything that moved fish biomass" ledger.
+
+Aggregates rows from four real sources (no new table):
+  - vendor_bill: posted vendor bills with pond-tagged fish lines (stocking from outside).
+  - transfer_in / transfer_out: AquacultureFishPondTransfer lines (inter-pond moves).
+  - sale: AquacultureFishSale rows (excludes non-biological income types).
+  - ledger_loss / ledger_adjustment: AquacultureFishStockLedger rows
+    (mortality, predators, theft, manual count/weight adjustments).
+
+Sums per pond match compute_fish_stock_position_rows().
+"""
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from typing import Iterable
+
+from api.models import (
+    AquacultureFishPondTransferLine,
+    AquacultureFishSale,
+    AquacultureFishStockLedger,
+    AquaculturePond,
+    BillLine,
+    Item,
+)
+from api.services.aquaculture_constants import (
+    STOCK_LEDGER_ENTRY_KIND_LABELS,
+    STOCK_LEDGER_LOSS_REASON_LABELS,
+    fish_species_display_label,
+    normalize_fish_species,
+)
+from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
+from api.services.aquaculture_stock_service import (
+    _bill_line_matches_species_filter,
+    _bill_line_species_code,
+)
+
+
+SOURCE_LABELS: dict[str, str] = {
+    "vendor_bill": "Stocking (vendor bill)",
+    "transfer_in": "Transfer in",
+    "transfer_out": "Transfer out",
+    "sale": "Sale",
+    "ledger_loss": "Loss / mortality",
+    "ledger_adjustment": "Manual adjustment",
+}
+
+
+def _d(v) -> Decimal:
+    if v is None:
+        return Decimal("0")
+    return Decimal(str(v))
+
+
+def _pond_name_map(company_id: int, pond_ids: Iterable[int]) -> dict[int, str]:
+    ids = {int(p) for p in pond_ids if p is not None}
+    if not ids:
+        return {}
+    out: dict[int, str] = {}
+    for p in AquaculturePond.objects.filter(company_id=company_id, pk__in=ids).only("id", "name"):
+        out[p.id] = (p.name or "").strip() or f"Pond #{p.id}"
+    return out
+
+
+def _date_in_range(d: date, df: date | None, dt: date | None) -> bool:
+    if df is not None and d < df:
+        return False
+    if dt is not None and d > dt:
+        return False
+    return True
+
+
+def compute_fish_biomass_ledger_rows(
+    company_id: int,
+    *,
+    pond_id: int | None = None,
+    production_cycle_id: int | None = None,
+    fish_species_filter: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    sources: frozenset[str] | None = None,
+    limit: int = 500,
+) -> list[dict]:
+    """Return chronological (newest first) rows across all biomass-affecting sources."""
+    cid = company_id
+    species_code: str | None = None
+    if fish_species_filter is not None and str(fish_species_filter).strip() != "":
+        species_code, _ = normalize_fish_species(fish_species_filter)
+
+    want = sources or frozenset(SOURCE_LABELS.keys())
+    rows: list[dict] = []
+
+    # Inter-pond transfers (one source row produces one or two ledger rows: out + in[s]).
+    if "transfer_in" in want or "transfer_out" in want:
+        tlq = AquacultureFishPondTransferLine.objects.filter(
+            transfer__company_id=cid,
+        ).select_related("transfer", "to_pond", "transfer__from_pond")
+        for ln in tlq:
+            tr = ln.transfer
+            if not _date_in_range(tr.transfer_date, date_from, date_to):
+                continue
+            if species_code is not None:
+                sp, _err = normalize_fish_species(getattr(tr, "fish_species", None))
+                if sp != species_code:
+                    continue
+            sp_code, _ = normalize_fish_species(getattr(tr, "fish_species", None))
+            sp_label = fish_species_display_label(
+                getattr(tr, "fish_species", None), getattr(tr, "fish_species_other", None)
+            )
+            wkg = _d(ln.weight_kg)
+            fc = int(ln.fish_count or 0)
+            value = _d(ln.cost_amount)
+            base = {
+                "entry_date": tr.transfer_date.isoformat

@@ -1,0 +1,143 @@
+﻿def pl_window_for_transfer_date(
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+    *,
+    company_id: int | None = None,
+    pond_id: int | None = None,
+) -> tuple[date, date]:
+    """Costing window for a pond: its production cycle, else its whole production history.
+
+    Match frontend /aquaculture/transfers plWindowForTransferDate for the cycle case. Without a
+    cycle, pass ``company_id``/``pond_id`` so the window opens at the pond's first production
+    cost rather than at 1 January (see ``pond_production_start_date``).
+    """
+    if from_cycle and from_cycle.start_date:
+        start = from_cycle.start_date
+        end = transfer_date
+        if from_cycle.end_date and from_cycle.end_date < end:
+            end = from_cycle.end_date
+        if start > end:
+            start = end
+        return start, end
+    start = pond_production_start_date(company
+====
+def suggest_bio_asset_relief_amount(
+    *,
+    cost_per_kg: str | Decimal,
+    weight_kg: str | Decimal | float,
+    bio_asset_balance: str | Decimal | None = None,
+) -> tuple[Decimal, str]:
+    """
+    Relief = |weight| ╫ cost/kg, capped at 1581 pond balance when balance > 0.
+    """
+    try:
+        p = Decimal(str(cost_per_kg))
+        w = abs(Decimal(str(weight_kg)))
+    except Exception:
+        return Decimal("0"), ""
+    if p <= 0 or w <= 0:
+        return Decimal("0"), ""
+
+    raw = _money_q(w * p)
+    if bio_asset_balance is not None:
+        bal = Decimal(str(bio_asset_balance))
+   
+====
+def build_pond_cost_per_kg_block(
+    *,
+    company_id: int,
+    pond_id: int,
+    pond_name: str,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    operating_expenses_total: Decimal,
+    payroll_allocated: Decimal,
+    total_costs: Decimal,
+    shared_expenses: list,
+    transfer_in: Decimal,
+    transfer_out: Decimal,
+    biological_writeoff: Decimal,
+) -> dict:
+    primary_kg, fallback_kg, basis = harvest_weight_denominator_kg(
+        company_id=company_id,
+        pond_i
+---denom---
+d=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    )
+    denom_kg = primary_kg if primary_kg > 0 else fallback_kg
+
+    buckets_dec = pond_bucket_amounts_for_period(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        shared_expenses=shared_expenses,
+        transfer
+"""
+P&L aggregation helpers for AquacultureExpense rows.
+
+Pond-tagged COGS is also captured in vendor_bill_pond_operating_total via AUTO-AQ-POND-* and
+AUTO-AQ-SHOP-* journals. Summing raw expense.amount for those rows double-counts operating cost.
+"""
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.db.models import Exists, OuterRef, Q, QuerySet, Sum
+
+from api.models import AquacultureExpense, AquacultureExpenseInventoryLine
+from api.services.aquaculture_pond_stock_service import POND_WAREHOUSE_CONSUMPTION_CATEGORIES
+
+# Shop/bill feed & medicine purchases roll into consumption keys for P&L and cost buckets.
+PL_CONSUMPTION_ROLLUP: tuple[tuple[str, str], ...] = (
+    ("feed_purchase", "feed_consumed"),
+    ("medicine_purchase", "medicine_consumed"),
+)
+
+
+def _money_q(d: Decimal) -> Decimal:
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def pond_category_expense_sum(
+    company_id: int,
+    pond_id: int,
+    category: str,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+) -> Decimal:
+    q = AquacultureExpense.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        expense_category=category,
+        expense_date__gte=start,
+        expense_date__lte=end,
+    )
+    if cycle_filter_id is not None:
+        q = q.filter(production_cycle_id=cycle_filter_id)
+    return _money_q(q.aggregate(t=Sum("amount"))["t"] or Decimal("0"))
+
+
+def pond_consumption_amounts_by_category(
+    *,
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+) -> dict[str, Decimal]:
+    """
+    Feed/medicine consumption for one pond: pond-warehouse use plus shop stock issues
+    (feed_purchase / medicine_purchase rolled into feed_consumed / medicine_consumed).
+    """
+    out: dict[str, Decimal] = {}
+    out["feed_consumed"] = pond_category_expense_sum(
+        company_id, pond_id, "feed_consumed", start, end, cycle_filter_id
+

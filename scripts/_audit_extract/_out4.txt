@@ -1,0 +1,46 @@
+﻿HIT aquaculture_biological_asset_service.py
+  {"fish_transfer_out", "biological_writeoff"}
+  biological_writeoff=writeoff,
+HIT aquaculture_cost_per_kg.py
+  return "biological_writeoff"
+  "biological_writeoff": "biological_write_offs",
+  "biological_writeoff": "Biological write-offs (mortality book value)",
+  biological_writeoff: Decimal,
+  if biological_writeoff != 0:
+  out["biological_writeoff"] += _money_q(biological_writeoff)
+  biological_writeoff: Decimal,
+  biological_writeoff=biological_writeoff,
+  "biological_writeoff",
+HIT aquaculture_pond_bio_capitalization.py
+  {"lease", "shop_supplies", "biological_writeoff", "fisherman"}
+HIT gl_posting.py
+  "cost_bucket": "biological_writeoff" if is_write_down else "biological_gain",
+  "cost_bucket": "biological_writeoff",
+suggest signature has float True
+ITP Cr 4245  price   internal fish revenue
+ITP Dr 5245  cost    internal cost of sales
+ITP Consolidation still removes the margin: ``internal_trade_elimination`` nets 4245/5245 and writes
+ITP CODE_INTERNAL_REVENUE = "4245"
+ITP CODE_INTERNAL_COGS = "5245"
+ITP CODE_INTERNAL_REVENUE,
+ITP CODE_INTERNAL_COGS,
+ITP return {"line_id": line.id, "posted": False, "reason": "chart of accounts is missing 1581/1595/4245/5245"}
+ITP revenue = accounts[CODE_INTERNAL_REVENUE]
+ITP cogs = accounts[CODE_INTERNAL_COGS]
+def pl_window_for_transfer_date(
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+    *,
+    company_id: int | None = None,
+    pond_id: int | None = None,
+) -> tuple[date, date]:
+    """Costing window for a pond: its production cycle, else its whole production history.
+
+    Match frontend /aquaculture/transfers plWindowForTransferDate for the cycle case. Without a
+    cycle, pass ``company_id``/``pond_id`` so the window opens at the pond's first production
+    cost rather than at 1 January (see ``pond_production_start_date``).
+    """
+    if from_cycle and from_cycle.start_date:
+        start = from_cycle.start_date
+        end = transfer_date
+        if from_cycl

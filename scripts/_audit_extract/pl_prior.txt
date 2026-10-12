@@ -1,0 +1,18 @@
+= _pond_is_nursing(pond)
+        wo = _money_q(writeoff_by_pond.get(pond.id, Decimal("0")))
+        prior_income = prior_expense = Decimal("0")
+        prior_income_by: dict[str, Decimal] = {}
+        prior_expense_by: dict[str, Decimal] = {}
+        if cycle_filter_id is None:
+            prior_income, prior_expense, prior_income_by, prior_expense_by = pl_opening_totals_for_pond(
+                cid, pond.id
+            )
+        feed_cost = _pond_category_expense_sum(
+            cid, pond.id, "feed_consumed", start, end, cycle_filter_id
+        )
+        med_cost = _pond_category_expense_sum(
+            cid, pond.id, "medicine_consumed", start, end, cycle_filter_id
+        )
+        consumption_journals = pond_warehouse_consumption_cogs_journal_total(
+            company_id=cid,
+      

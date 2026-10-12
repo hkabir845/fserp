@@ -1,0 +1,22 @@
+def pl_window_for_transfer_date(
+    transfer_date: date,
+    from_cycle: AquacultureProductionCycle | None,
+    *,
+    company_id: int | None = None,
+    pond_id: int | None = None,
+) -> tuple[date, date]:
+    """Costing window for a pond: its production cycle, else its whole production history.
+
+    Match frontend /aquaculture/transfers plWindowForTransferDate for the cycle case. Without a
+    cycle, pass ``company_id``/``pond_id`` so the window opens at the pond's first production
+    cost rather than at 1 January (see ``pond_production_start_date``).
+    """
+    if from_cycle and from_cycle.start_date:
+        start = from_cycle.start_date
+        end = transfer_date
+        if from_cycle.end_date and from_cycle.end_date < end:
+            end = from_cycle.end_date
+        if start > end:
+            start = end
+        return start, end
+    start = pond_production_start_date(company

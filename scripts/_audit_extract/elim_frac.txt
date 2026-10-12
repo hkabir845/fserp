@@ -1,0 +1,9 @@
+def unrealized_fraction(company_id: int, end: date) -> Decimal:
+    """How much of the cumulative internal margin is still inside the group at ``end``.
+
+    Weighted across buying ponds by the biomass each of them bought internally, so a pond that
+    bought most of the internally traded fish dominates the answer. Returns 1 (nothing realized)
+    when there is nothing to go on, which is the prudent default.
+    """
+    bought = _internal_kg_bought_by_pond(company_id, end)
+    total_bought = sum(

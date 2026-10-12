@@ -1,0 +1,265 @@
+{
+  "company_id": 2,
+  "audit": {
+    "issue_count": 0,
+    "warning_count": 0,
+    "accepted_count": 8,
+    "gl_gap_total": 0,
+    "issues": [],
+    "warnings": [],
+    "accepted": [
+      {
+        "type": "nursing_profit_centre_surplus",
+        "pond_code": "P05",
+        "transfer_id": null,
+        "note": "Accepted policy: profit-centre surplus (IPT income > expense). Do not run reconcile_nursing_pond_pl_balance apply."
+      },
+      {
+        "type": "nursing_profit_centre_surplus",
+        "pond_code": "P06",
+        "transfer_id": null,
+        "note": "Accepted policy: profit-centre surplus (IPT income > expense). Do not run reconcile_nursing_pond_pl_balance apply."
+      },
+      {
+        "type": "nursing_profit_centre_surplus",
+        "pond_code": "P08",
+        "transfer_id": null,
+        "note": "Accepted policy: profit-centre surplus (IPT income > expense). Do not run reconcile_nursing_pond_pl_balance apply."
+      },
+      {
+        "type": "lease_under_annual",
+        "pond_code": "P01",
+        "transfer_id": null,
+        "note": "Accepted: P&L lease is cash-basis (landlord payments). Shortfall vs area\u00d7rate is unpaid/installment timing, not a GL gap"
+      },
+      {
+        "type": "lease_under_annual",
+        "pond_code": "P04",
+        "transfer_id": null,
+        "note": "Accepted: P&L lease is cash-basis (landlord payments). Shortfall vs area\u00d7rate is unpaid/installment timing, not a GL gap"
+      },
+      {
+        "type": "transfer_gl_bio_cap",
+        "pond_code": null,
+        "transfer_id": 8,
+        "note": "Accepted: 1581 bio-asset GL cap at source pond (management cost > book balance on transfer date)"
+      },
+      {
+        "type": "transfer_gl_bio_cap",
+        "pond_code": null,
+        "transfer_id": 9,
+        "note": "Accepted: 1581 bio-asset GL cap at source pond (management cost > book balance on transfer date)"
+      },
+      {
+        "type": "transfer_gl_bio_cap",
+        "pond_code": null,
+        "transfer_id": 14,
+        "note": "Accepted: 1581 bio-asset GL cap at source pond (management cost > book balance on transfer date)"
+      }
+    ]
+  },
+  "entity_pl_fy": [
+    {
+      "code": "P02",
+      "name": "Mynuddin Pond",
+      "role": "grow_out",
+      "net": "3277861.75",
+      "income": "11521358.51",
+      "expense": "8243496.76"
+    },
+    {
+      "code": "P01",
+      "name": "Ashari - 1 Pond",
+      "role": "grow_out",
+      "net": "2615984.72",
+      "income": "12575110.52",
+      "expense": "9959125.80"
+    },
+    {
+      "code": "P03",
+      "name": "Ashari - 2 Pond",
+      "role": "grow_out",
+      "net": "-2723074.54",
+      "income": "12204374.54",
+      "expense": "14927449.08"
+    },
+    {
+      "code": "P04",
+      "name": "Digonto Pond",
+      "role": "grow_out",
+      "net": "616687.54",
+      "income": "4888526.98",
+      "expense": "4271839.44"
+    },
+    {
+      "code": "P05",
+      "name": "Mynuddin Nursing Pond",
+      "role": "nursing",
+      "net": "384537.21",
+      "income": "612286.81",
+      "expense": "227749.60"
+    },
+    {
+      "code": "P06",
+      "name": "Ashari - 3 Nursing Pond",
+      "role": "nursing",
+      "net": "137465.95",
+      "income": "979254.51",
+      "expense": "841788.56"
+    },
+    {
+      "code": "P07",
+      "name": "Mynuddin Nursing Pond - 2",
+      "role": "nursing",
+      "net": "0.00",
+      "income": "0.00",
+      "expense": "0.00"
+    },
+    {
+      "code": "P08",
+      "name": "Digonto Nursing Pond",
+      "role": "nursing",
+      "net": "275419.63",
+      "income": "1486251.63",
+      "expense": "1210832.00"
+    }
+  ],
+  "entity_pl_ytd": [
+    {
+      "code": "P02",
+      "name": "Mynuddin Pond",
+      "role": "grow_out",
+      "net": "-1811.20",
+      "income": "13989590.27",
+      "expense": "13991401.47"
+    },
+    {
+      "code": "P01",
+      "name": "Ashari - 1 Pond",
+      "role": "grow_out",
+      "net": "1193945.52",
+      "income": "14893018.36",
+      "expense": "13699072.84"
+    },
+    {
+      "code": "P03",
+      "name": "Ashari - 2 Pond",
+      "role": "grow_out",
+      "net": "-5379036.40",
+      "income": "15116573.29",
+      "expense": "20495609.69"
+    },
+    {
+      "code": "P04",
+      "name": "Digonto Pond",
+      "role": "grow_out",
+      "net": "-529766.00",
+      "income": "5142808.44",
+      "expense": "5672574.44"
+    },
+    {
+      "code": "P05",
+      "name": "Mynuddin Nursing Pond",
+      "role": "nursing",
+      "net": "384537.21",
+      "income": "612286.81",
+      "expense": "227749.60"
+    },
+    {
+      "code": "P06",
+      "name": "Ashari - 3 Nursing Pond",
+      "role": "nursing",
+      "net": "-0.05",
+      "income": "979254.51",
+      "expense": "979254.56"
+    },
+    {
+      "code": "P07",
+      "name": "Mynuddin Nursing Pond - 2",
+      "role": "nursing",
+      "net": "0.00",
+      "income": "0.00",
+      "expense": "0.00"
+    },
+    {
+      "code": "P08",
+      "name": "Digonto Nursing Pond",
+      "role": "nursing",
+      "net": "-0.38",
+      "income": "2484179.30",
+      "expense": "2484179.68"
+    }
+  ],
+  "transfer_flags": [
+    {
+      "id": 8,
+      "date": "2025-12-06",
+      "from": "P06",
+      "cost": "373103.24",
+      "sale": "386430.02",
+      "gl": "202824.66",
+      "posted": true,
+      "capped": null,
+      "reason": null,
+      "flags": [
+        "bio_cap_or_under"
+      ]
+    },
+    {
+      "id": 9,
+      "date": "2025-07-25",
+      "from": "P05",
+      "cost": "44118.45",
+      "sale": "48530.30",
+      "gl": "43878.45",
+      "posted": true,
+      "capped": null,
+      "reason": null,
+      "flags": [
+        "bio_cap_or_under"
+      ]
+    },
+    {
+      "id": 14,
+      "date": "2026-06-02",
+      "from": "P08",
+      "cost": "918026.03",
+      "sale": "1011388.94",
+      "gl": "828857.87",
+      "posted": true,
+      "capped": null,
+      "reason": null,
+      "flags": [
+        "bio_cap_or_under"
+      ]
+    }
+  ],
+  "missing_ipt_je": [],
+  "null_cycle_bio_sales": [],
+  "null_cycle_samples": 0,
+  "negative_stock": [],
+  "ipt_double_bio": {
+    "company_id": 2,
+    "count": 0,
+    "journals": {
+      "count": 0,
+      "preview": []
+    }
+  },
+  "null_cycle_repair": {
+    "company_id": 2,
+    "pond_id": null,
+    "would_tag_count": 0,
+    "would_tag_heads": 0,
+    "skip_count": 0,
+    "skip_heads": 0,
+    "would_tag": {
+      "count": 0,
+      "preview": []
+    },
+    "skip": {
+      "count": 0,
+      "preview": []
+    }
+  }
+}

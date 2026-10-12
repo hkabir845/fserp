@@ -1,0 +1,13 @@
+ev = _rev_q(pond.id).aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+        rev = _money_q(Decimal(str(period_rev)) + prior_income)
+        if nursing_pond and t_out > 0:
+            rev = _money_q(rev + t_out)
+        if cycle_filter_id is not None:
+            pay = Decimal("0")
+        else:
+            pay = _money_q(
+                PayrollRunPondAllocation.objects.filter(
+                    pond_id=pond.id,
+                    payroll_run__company_id=cid,
+                    payroll_run__payment_date__gte=start,
+                  

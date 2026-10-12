@@ -1,0 +1,89 @@
+def compute_fcr_for_scope(
+    company_id: int,
+    start: date,
+    end: date,
+    *,
+    pond_id: int | None = None,
+    production_cycle_id: int | None = None,
+    fish_species: str | None = None,
+) -> dict:
+    """FCR metrics for one pond (or company-wide when pond_id is None)."""
+    feed_kg = sum_feed_kg_for_period(
+        company_id, start, end, pond_id=pond_id, production_cycle_id=production_cycle_id
+    )
+
+    first_bio = Decimal("0")
+    last_bio = Decimal("0")
+    gain_kg = Decimal("0")
+    gain_note = ""
+    events_after: date | None = None
+    include_opening_day_exits = False
+    if pond_id is not None:
+        standing = _opening_closing_live_standing(
+            company_id,
+            pond_id,
+            start,
+            end,
+            production_cycle_id=production_cycle_id,
+            fish_species=fish_species,
+        )
+        if standing is not None:
+            first_bio, last_bio, events_after, gain_note, include_opening_day_exits = standing
+            gain_kg = _q4(last_bio - first_bio)
+        else:
+            first_bio, last_bio, gain_kg, gain_note = _sample_row_opening_closing(
+                company_id,
+                pond_id,
+                start,
+                end,
+                production_cycle_id=production_cycle_id,
+                fish_species=fish_species,
+            )
+            if first_bio != 0 or last_bio != 0:
+                gain_kg = _q4(last_bio - first_bio)
+    else:
+        ponds = AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by("sort_order", "id")
+        gains: list[Decimal] = []
+        for p in ponds:
+            first, last, _, _ = biomass_gain_from_samples_for_pond(
+                company_id, p.id, start, end, production_cycle_id=production_cycle_id, fish_species=fish_species
+            )
+            if first != 0 or last != 0:
+                gains.append(last - first)
+        if gains:
+            gain_kg = _q4(sum(gains, Decimal("0")))
+            gain_note = f"Sum of per-pond live-crop present-weight changes ({len(gains)} pond(s))."
+
+    # Harvest / mortality / transfer-out: include opening day when opening is a
+    # pre-harvest standing sample (Ashari-2 11 Aug sale must count in 11→17 Sep).
+    # Stocking / transfer-in / manual in: still exclude opening day (already in open kg).
+    harvest_kg = sum_harvest_kg_for_period(
+        company_id,
+        start,
+        end,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        after_date=events_after,
+        include_after_date=include_opening_day_exits,
+    )
+    ledger_out_kg, ledger_in_kg = _sum_stock_ledger_adjustments_kg(
+        company_id,
+        start,
+        end,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        after_date=events_after,
+        # Outflows on opening day count with sample opening; inflows still use gt
+        # via a second pass below for in only — keep include for out+in together then
+        # zero the false inflows on opening day is hard. Split:
+        include_after_date=include_opening_day_exits,
+    )
+    if include_opening_day_exits and events_after is not None:
+        # Recompute inflows with opening day excluded (stocking that built the crop).
+        _out_ignored, ledger_in_kg = _sum_stock_ledger_adjustments_kg(
+            company_id,
+            start,
+            end,
+            pond_id=pond_id,
+            production_cycle_id=production_cycle_id,
+            after_date=events_after,

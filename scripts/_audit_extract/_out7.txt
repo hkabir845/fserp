@@ -1,0 +1,32 @@
+﻿defs ['api\\services\\aquaculture_fish_transfer_as_sale.py:ensure_fish_sale_for_transfer_line']
+source_fish_pond_transfer in itp False
+False True
+ None,
+            fish_species=fs,
+            fish_count=fc_int,
+            weight_kg=wk,
+        )
+        if stock_err:
+            return JsonResponse({"detail": stock_err}, status=400)
+    s = AquacultureFishSale(
+        company_id=cid,
+        pond=pond,
+        production_cycle=cycle_obj,
+        income_type=it,
+        fish_species=fs,
+        fish_species_other=fso,
+        sale_date=sd,
+        weight_kg=wk,
+        fish_count=fc_int,
+        total_amount=ta.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        buyer_name=(body.get("buyer_name") or "")[:200],
+        memo=(body.get("memo") or "")[:5000],
+    )
+    try:
+        with transaction.atomic():
+            AquaculturePond.objects.select_for_update().filter(pk=pond.id, company_id=cid).first()
+            if not income_type_is_non_biological_for_company(cid, it):
+                stock_err = assert_outbound_fish_within_implied_stock(
+                    cid,
+                    pond.id,
+                    produ

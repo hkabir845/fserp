@@ -1,0 +1,24 @@
+def _internal_kg_bought_by_pond(company_id: int, end: date) -> dict[int, Decimal]:
+    """Cumulative biomass each pond has bought from another pond, through ``end``."""
+    from api.models import AquacultureFishPondTransferLine, AquacultureFishSale
+
+    out: dict[int, Decimal] = {}
+
+    def _add(pond_id, kg):
+        if not pond_id:
+            return
+        out[int(pond_id)] = out.get(int(pond_id), Decimal("0")) + (kg or Decimal("0"))
+
+    # Current path: a pond sells to the buying pond's POS customer. The counterparty lives on
+    # the linked invoice, not on the sale row, and the pond it stands for is found either by
+    # the explicit internal_pond link or by being that pond's pos_customer.
+    from api.models import AquaculturePond
+
+    pond_by_customer: dict[int, int] = {
+        int(c): int(p)
+        for c, p in AquaculturePond.objects.filter(
+            company_id=company_id, pos_customer__isnull=False
+        ).values_list("pos_customer_id", "id")
+    }
+    for cust_id, linked_pond_id, kg in AquacultureFishSale.objects.filter(
+        company_id=company_id, sale_date__lte

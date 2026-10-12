@@ -1,0 +1,32 @@
+
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    uncycled_bill_lines_only: bool = False,
+) -> dict[str, Decimal]:
+    out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    qs = vendor_bill_pond_expense_lines_qs(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        uncycled_bill_lines_only=uncycled_bill_lines_only,
+    )
+    for row in qs.values("aquaculture_cost_bucket").annotate(s=Sum("debit")):
+        b = (row["aquaculture_cost_bucket"] or "").strip() or "ancillary"
+        out[b] += _money_q(Decimal(str(row["s"] or 0)))
+    return dict(out)
+
+
+def aquaculture_expense_category_to_cost_bucket(category: str, company_id: int | None = None) -> str:
+    """Maps AquacultureExpense.expense_category to a stable cost-bucket code (P&L + journal tagging)."""
+    c = (category or "").strip()
+    if company_id is not None:
+        from api.services.tenant_reporting_categories import resolve_aquaculture_expense_to_builtin
+
+        c = resolve_aquaculture_expense_to_builtin(company_id, c)
+    if c == "fry_stocking":
+        return "fry_s

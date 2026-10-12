@@ -1,0 +1,20 @@
+ = close − open. Production gain adds harvest/deaths/transfers
+    # and subtracts stocking/inflows. Headline biomass_gain_kg is production gain
+    # (what the farm expects for 11 Aug→17 Sep ≈ 3,720 kg on Ashari-2 C03).
+    net_sample_change_kg = gain_kg
+    event_add_kg = _q4(harvest_kg + ledger_out_kg + transfer_out_kg)
+    event_sub_kg = _q4(ledger_in_kg + transfer_in_kg + stocking_in_kg)
+    production_gain_kg = _q4(net_sample_change_kg + event_add_kg - event_sub_kg)
+
+    fcr_biomass: str | None = None
+    if production_gain_kg > 0 and feed_kg > 0:
+        fcr_biomass = str(_q2(feed_kg / production_gain_kg))
+
+    fcr_harvest: str | None = None
+    if harvest_kg > 0 and feed_kg > 0:
+        fcr_harvest = str(_q2(feed_kg / harvest_kg))
+
+    note_bits = [gain_note] if gain_note else []
+    if event_add_kg > 0 or event_sub_kg > 0:
+        note_bits.append(
+            "Adjusted for harv

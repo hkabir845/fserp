@@ -1,0 +1,22 @@
+ale_weight_kg": str(fallback_kg),
+        "weight_basis": basis,
+        "denominator_kg": str(denom_kg),
+        "basis_note": basis_note,
+        "total_costs": str(_money_q(total_costs)),
+        "total_cost_per_kg": total_per_kg,
+        "transfer_cost_per_kg": transfer_cost_per_kg,
+        "transfer_cost_basis_note": transfer_cost_basis_note,
+        "operating_expenses_per_kg": opex_per_kg,
+        "payroll_allocated_per_kg": pay_per_kg,
+        "costing_lines": lines,
+    }
+
+
+def aquaculture_pl_cost_basis_doc() -> str:
+    return (
+        "Pond cost per kg: total pond costs (operating expenses including shared allocation, inter-pond transfer "
+        "adjustments, biological write-offs, plus payroll allocated to the pond) divided by sale kg. "
+        "Expense categories map to buckets (fry, pond preparation, feed, medicine, labor, electricity, equipment, "
+        "repair & maintenance, lease, transportation, fisherman, miscellaneous, plus ancillary for unknown codes). "
+        "Labor includes worker_salary lines and PayrollRunPondAllocation. "
+        "Posted journals can

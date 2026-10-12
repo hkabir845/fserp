@@ -1,0 +1,57 @@
+def delete_aquaculture_fish_sale_bio_relief_journal(company_id: int, sale_id: int) -> int:
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id,
+        entry_number=f"AUTO-AQ-SALE-{sale_id}-BIO",
+    ).delete()
+    return deleted
+
+
+def delete_aquaculture_fish_pond_transfer_journal(company_id: int, transfer_id: int) -> int:
+    """
+    Clear every journal an inter-pond fish trade has posted.
+
+    Covers the seller invoice and buyer bill journals that carry the trade today, plus the
+    superseded transfer journal and its reclass. This is the seam both the delete endpoint and
+    the re-post path use, so a trade cannot leave posted money behind when it is edited away.
+    """
+    from api.services.aquaculture_internal_trade_posting import (
+        delete_internal_trade_journals_for_transfer,
+    )
+    from api.services.aquaculture_pond_bio_capitalization import delete_pond_expense_reclass_to_1581
+
+    n = delete_pond_expense_reclass_to_1581(
+        company_id, f"AUTO-AQ-FISH-XFER-{transfer_id}-RECLASS"
+    )
+    n += delete_internal_trade_journals_for_transfer(company_id, transfer_id)
+    deleted, _ = JournalEntry.objects.filter(
+        company_id=company_id,
+        entry_number=f"AUTO-AQ-FISH-XFER-{transfer_id}",
+    ).delete()
+    return n + deleted
+
+
+def post_aquaculture_fish_pond_transfer_journal(
+    company_id: int,
+    transfer_id: int,
+    entry_date: date,
+    *,
+    from_pond_id: int,
+    from_production_cycle_id: int | None,
+    from_pond_label: str,
+    line_posts: list[tuple],
+    memo: str = "",
+    gl_capped: bool = False,
+    total_requested: Decimal | None = None,
+) -> JournalEntry | None:
+    """
+    Idempotent entry_number AUTO-AQ-FISH-XFER-{transfer_id}.
+
+    Moves fish from the source pond to each destination pond. At zero inter-pond margin this is a
+    pure re-tag of biological inventory (1581):
+
+      Dr 1581 (to pond, fish_transfer_in) / Cr 1581 (from pond, fish_transfer_out) at cost.
+
+    When the line carries an internal sale price above its cost, the source pond sells rather than
+    hands over, and the same movement books that sale:
+
+      Dr 1581 (to pond)   sale price      the buying pond capitalizes what 

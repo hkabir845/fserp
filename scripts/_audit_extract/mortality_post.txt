@@ -1,0 +1,27 @@
+({"detail": "production_cycle_id must be an integer or null"}, status=400)
+        cycle_obj = _cycle_for_company(cid, cy_id)
+        if not cycle_obj:
+            return JsonResponse({"detail": "Production cycle not found"}, status=404)
+        if cycle_obj.pond_id != pond.id:
+            return JsonResponse({"detail": "production_cycle_id does not belong to the selected pond"}, status=400)
+
+    is_write_down = True
+    if kind == "adjustment":
+        if fcd >= 0 and wkd >= 0 and (fcd > 0 or wkd > 0):
+            is_write_down = False
+        elif fcd <= 0 and wkd <= 0 and (fcd < 0 or wkd < 0):
+            is_write_down = True
+        else:
+            return JsonResponse(
+                {"detail": "Manual adjustment cannot mix positive and negative signs across count and weight"},
+                status=400,
+            )
+    if post_books:
+        if kind == "adjustment" and not is_write_down and (fcd <= 0 or wkd <= 0):
+            return JsonResponse(
+                {"detail": "Count gain posting requires positive fish_count_delta and positive weight_kg_delta."},
+                status=400,
+            )
+        if is_write_down and (fcd >= 0 or wkd >= 0):
+            return JsonResponse(
+                {"detail": "Write-down posting requires negative fish_count_delta and

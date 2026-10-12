@@ -1,0 +1,50 @@
+def post_aquaculture_fish_sale_bio_relief_journal(
+    company_id: int,
+    sale_id: int,
+    entry_date: date,
+    *,
+    relief_amount: Decimal,
+    pond_id: int,
+    production_cycle_id: int | None,
+    pond_label: str,
+    weight_kg: Decimal,
+    cost_per_kg: Decimal,
+    memo: str = "",
+) -> JournalEntry | None:
+    """
+    Idempotent entry_number AUTO-AQ-SALE-{sale_id}-BIO.
+
+    Harvest bio-asset relief at accumulated production cost/kg: Dr 5240 / Cr 1581.
+
+    Selling fish is a cost of sale, not shrinkage. This used to debit 6726 "Mortality, Predation
+    & Shrinkage" because no aquaculture COGS account existed, which left harvest revenue in 4240
+    with no matching COGS - gross profit overstated by the whole cost of the fish, and a mortality
+    line inflated by every sale. 6726 is still used for genuine losses via the stock ledger.
+    """
+    entry_number = f"AUTO-AQ-SALE-{sale_id}-BIO"
+    if JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).exists():
+        return JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
+
+    amt = relief_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if amt <= 0:
+        return None
+
+    bio = ChartOfAccount.objects.filter(company_id=company_id, account_code="1581", is_active=True).first()
+    # A sale to another pond is an internal trade: its cost must land on 5245 so consolidation
+    # can net it against the 4245 revenue. Booking it to ordinary harvest COGS (5240) left the
+    # two legs of the same internal trade in different places and the elimination saw neither.
+    _sale = (
+        AquacultureFishSale.objects.filter(pk=sale_id, company_id=company_id)
+        .select_related("invoice")
+        .first()
+    )
+    if _sale is not None and _sale.invoice_id and invoice_customer_is_internal(
+        company_id, _sale.invoice
+    ):
+        exp = _ensure_internal_trade_account(company_id, CODE_INTERNAL_TRADE_COGS)
+    else:
+        exp = _ensure_aquaculture_harvest_cogs_account(company_id)
+    if not bio or not exp:
+        logger.warning(
+            "skip aquaculture fish sale bio relief %s: missing COA (1581, %s)",
+            entry_number,

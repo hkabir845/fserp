@@ -1,0 +1,96 @@
+prior_expense_by: dict[str, Decimal],
+    dexp_q_fn,
+) -> dict[str, Decimal]:
+    """All expense category amounts for one pond (register, bills, consumption, transfers, payroll)."""
+    out: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for row in dexp_q_fn(pond_id).values("expense_category").annotate(s=Sum("amount")):
+        out[str(
+====
+prior_expense_by.items():
+        out[code] += _money_q(amt)
+    out["fish_transfer_cost_in"] = _money_q(transfer_in)
+    out["fish_transfer_cost_out"] = _money_q(transfer_out)
+    out["biological_write_offs"] = _money_q(writeoff)
+    out["payroll_allocated"] = _money_q(payroll)
+    return dict(out)
+
+
+def _pond_income_total(merged_rev: dict[str, De
+====
+prior_expense = Decimal("0")
+        prior_income_by: dict[str, Decimal] = {}
+        prior_expense_by: dict[str, Decimal] = {}
+        if cycle_filter_id is None:
+            prior_income, prior_expense, prior_income_by, prior_expense_by = pl_opening_totals_for_pond(
+                cid, pond.id
+            )
+        feed_cost = _pond_category_exp
+====
+prior_expense_by: dict[str, Decimal] = {}
+        if cycle_filter_id is None:
+            prior_income, prior_expense, prior_income_by, prior_expense_by = pl_opening_totals_for_pond(
+                cid, pond.id
+            )
+        feed_cost = _pond_category_expense_sum(
+            cid, pond.id, "feed_consumed", start, end, cycle_filter_id
+     
+====
+prior_expense, prior_income_by, prior_expense_by = pl_opening_totals_for_pond(
+                cid, pond.id
+            )
+        feed_cost = _pond_category_expense_sum(
+            cid, pond.id, "feed_consumed", start, end, cycle_filter_id
+        )
+        med_cost = _pond_category_expense_sum(
+            cid, pond.id, "medicine_consumed", start
+====
+prior_expense_by = pl_opening_totals_for_pond(
+                cid, pond.id
+            )
+        feed_cost = _pond_category_expense_sum(
+            cid, pond.id, "feed_consumed", start, end, cycle_filter_id
+        )
+        med_cost = _pond_category_expense_sum(
+            cid, pond.id, "medicine_consumed", start, end, cycle_filter_id
+        )
+====
+prior_expense
+            + feed_cost
+            + med_cost
+            - consumption_journals
+        )
+        period_rev = _rev_q(pond.id).aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+        rev = _money_q(Decimal(str(period_rev)) + prior_income)
+        if nursing_pond and t_out > 0:
+            rev = _money_q(rev + t_out)
+        if
+====
+prior_expense_by=prior_expense_by,
+            dexp_q_fn=_dexp_q,
+        )
+        pond_expense_amounts.append((pond.id, pond.name, pond_exp))
+        for code, amt in pond_exp.items():
+            signed = _money_q(amt)
+            if code == "fish_transfer_cost_out":
+                if nursing_pond:
+                    continue
+                c
+====
+prior_expense_by,
+            dexp_q_fn=_dexp_q,
+        )
+        pond_expense_amounts.append((pond.id, pond.name, pond_exp))
+        for code, amt in pond_exp.items():
+            signed = _money_q(amt)
+            if code == "fish_transfer_cost_out":
+                if nursing_pond:
+                    continue
+                company_expense_de
+====
+prior_expense)),
+                "revenue_by_income_type": rev_by_type,
+                "direct_operating_expenses": str(exp_direct),
+                "shared_operating_expenses": str(exp_shared),
+                "feed_consumption_cost": str(feed_consumption_total),
+                "medicine_consumption_cost": str(medicine_consumption_total),
+      

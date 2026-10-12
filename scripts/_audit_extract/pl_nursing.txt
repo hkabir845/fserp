@@ -1,0 +1,86 @@
+ Decimal("0")))
+
+
+def _pond_is_nursing(pond: AquaculturePond) -> bool:
+    return (pond.pond_role or "").strip().lower() == "nursing"
+
+
+def _pond_expense_matrix_total(pond_exp: dict[str, Decimal], *, nursing_pond: bool = False) -> Decimal:
+    """Sum expense categories; nursing uses inter-pond income instead of transfer-out relief."""
+    total = Decimal("0")
+    for code, amt in pond_exp.items():
+        if nursing_pond and code in ("fish_transfer_cost_in", "fish_transfer_cost_out"):
+            continue
+        if code == "fish_transfer_cost_out" and not nursing_pond:
+            total -= _money_q(amt)
+        else:
+            total += _money_q(amt)
+    return _money_q(total)
+
+
+def _income_breakdown(merged_rev: dict[str, Decimal]) -> tuple[Decimal, Decimal, Decimal]:
+    fish = Decimal("0")
+    empty = Decimal("0")
+    other = Decimal("0")
+    for code, amt in merged_rev.items():
+        if code in PL_FISH_INCOME_TYPES:
+            fish += amt
+        elif code in PL_EMPTY_SACK_INCOME_TYPES:
+            empty += amt
+        else:
+            other += amt
+    return _money_q(fish), _money_q(empty), _money_q(other)
+
+
+def _fry_fingerling_cost_for_pond(
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    transfer_in: Decimal,
+) -> Decimal:
+    """Fry purchases, capitalized fingerling bills, and inter-pond transfer-in cost."""
+    capitalized_ids = fry_stocking_capitalized_manual_expense_ids(company_id)
+    fry_q = AquacultureExpense.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        expense_category="fry_stocking",
+        expense_date__gte=start,
+        expense_date__lte=end,
+    )
+    if cycle_filter_id is not None:
+        fry_q = fry_q.filter(production_cycle_id=cycle_filter_id)
+    if capitalized_ids:
+        fry_q = fry_q.exclude(pk__in=capitalized_ids)
+    fry_manual = _money_q(fry_q.aggregate(t=Sum("amount"))["t"] or Decimal("0"))
+    fry_journals = pond_fry_stocking_capitalized_journal_total(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    )
+    return _money_q(transfer_in + fry_manual + fry_journals)
+
+
+def _lease_cost_for_pond(
+    company_id: int,
+    pond_id: int,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    landlord_lease_total: Decimal,
+) -> Decimal:
+    lease_manual = _pond_category_expense_sum(
+        company_id, pond_id, "lease", start, end, cycle_filter_id
+    )
+    return _money_q(landlord_lease_total + lease_manual)
+
+
+def _pond_category_expense_sum(
+    company_id: int,
+    pond_id: int,
+    category: str,
+    start: date,
+    end: dat

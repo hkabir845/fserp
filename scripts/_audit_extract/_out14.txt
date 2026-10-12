@@ -1,0 +1,55 @@
+﻿ef _money_q(d: Decimal) -> Decimal:
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _kg_q(d: Decimal) -> Decimal:
+    return d.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+# Buckets that accumulate into biological asset value (excludes transfer-out and write-off).
+_DIRECT_BIO_ASSET_BUCKETS = frozenset(COST_BUCKET_LABELS.keys()) - frozenset(
+    {"fish_transfer_out", "biological_writeoff"}
+)
+
+
+def _harvest_bio_relief_total(
+    company_id: int,
+    *,
+    pond_id: int,
+    start: date,
+    end: date,
+    production_cycle_id: int | None,
+) -> Decimal:
+    """Sum of posted harvest bio-relief (Cr 1581) for finalized fish sales in scope."""
+    q = AquacultureFishSale.objects.filter(
+        company_id=company_id,
+        pond_id=pond_id,
+        sale_date__gte=start,
+        sale_date__lte=end,
+    ).select_related("pond")
+    if production_cycle_id is not None:
+====
+JournalEntryLine,
+)
+from api.services.aquaculture_cost_per_kg import (
+    COST_BUCKET_LABELS,
+    pond_bucket_amounts_for_period,
+)
+from api.services.aquaculture_data_bank_service import pond_biological_settlement
+from api.services.aquaculture_pond_pl_opening import pl_opening_totals_for_pond
+from api.services.aquaculture_stock_service import compute_fish_stock_position_rows
+from api.services.aquaculture_transfer_cost import pl_window_for_transfer_date
+from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
+
+
+def _money_q(d: Decimal) -> Decimal:
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _kg_q(d: Decimal) -> Decimal:
+    return d.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+# Buckets that accumulate into biological 
+==== bucket ====
+no

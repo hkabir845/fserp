@@ -1,0 +1,82 @@
+﻿house_when_empty
+from api.services.aquaculture_transfer_cost import (
+    backfill_missing_transfer_line_costs,
+    pond_uses_nursing_batch_costing,
+    preview_transfer_line_costs,
+    resync_nursing_pond_transfer_costs,
+    resolve_auto_transfer_line_cost,
+    split_transfer_line_cost_amount,
+    transfer_cost_pools_for_scope,
+)
+from api.services.aquaculture_fish_transfer_gl_service import (
+    delete_aquaculture_fish_pond_transfer_journal as _delete_fish_transfer_gl,
+    sync_aquaculture_fish_pond_transfer_gl,
+    transfer_gl_status,
+)
+from api.services.aquaculture_biomass_sample_service import apply_aquaculture_biomass_sample_extrapolation
+from api.services.aquaculture_biomass_sample_valuation_service import (
+    apply_biomass_sample_valuation,
+    compute_biomass_sample_valuation_dict,
+)
+from api.services.aquaculture_partial_harvest import compute_biomass_load_advice_dict, sample_load_advice_from_sample
+from api.services.aquaculture_i18n import company_language, stock_ledger_coa_note, stock_ledger_entry_kind_label, stock_ledger_loss_reason_label
+from api.services.aquaculture_s
+====
+ervices.aquaculture_constants import fish_species_display_label
+from api.services.aquaculture_transfer_cost import (
+    backfill_missing_transfer_line_costs,
+    split_transfer_line_cost_amount,
+    transfer_cost_pools_for_scope,
+)
+
+
+@dataclass(frozen=True)
+class FingerlingTransferReportFilters:
+    search_q: str = ""
+    species: str = ""
+    min_cost: Decimal | None = None
+    max_cost: Decimal | None = None
+    nursing_pond_id: int | None = None
+    growout_pond_id: int | None = None
+    balance: str = "all"  # all | balanced | unbalanced
+
+
+def parse_fingerling_transfer_report_filters(
+    *,
+    search_q: str | None = None,
+    species: str | None = None,
+    min_cost_raw: str | None = None,
+    max_cost_raw: str | None = None,
+    nursing_pond_id_raw: str | None = None,
+    growout_p
+==== RESYNC ====
+def resync_nursing_pond_transfer_costs(
+    *,
+    company_id: int,
+    from_pond_id: int,
+    from_production_cycle_id: int | None,
+    after_transfer_date: date | None = None,
+    sync_gl: bool = False,
+) -> int:
+    """
+    Recompute line costs on every inter-pond transfer out of this nursing pond/cycle.
+
+    Fry + feed + medicine on the nursing pond are spread across all fingerlings moved out:
+    line cost = fish_count ╫ (total batch bio-cost ≈ total fish moved). Uses the latest
+    transfer date in the batch for the cost pool so later expenses are included on every line.
+    """
+    pond = AquaculturePond.objects.filter(pk=from_pond_id, company_id=company_id).only("pond_role").first()
+    role = (pond.pond_role or "").strip().lower() if pond else ""
+    uses_batch = pond_uses_nursing_batch_costing(
+        company_id=company_id,
+        from_pond_id=from_pond_id,
+        from_production_cycle_id=from_production_cycle_id,
+    )
+
+    if uses_batch or role == "nursing":
+        from api.models import AquacultureFishPondTransfer
+
+        cycle_ids = AquacultureFishPondTransfer.objects.filter(
+            company_id=company_id,
+            from_pond_id=from_pond_id,
+        ).valu

@@ -1,0 +1,27 @@
+      )
+
+    loss_led_q = AquacultureFishStockLedger.objects.filter(
+        company_id=cid,
+        entry_date__gte=start,
+        entry_date__lte=end,
+        entry_kind="loss",
+    )
+    if pond_filter_id is not None:
+        loss_led_q = loss_led_q.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        loss_led_q = loss_led_q.filter(production_cycle_id=cycle_filter_id)
+    writeoff_by_pond: dict[int, Decimal] = {}
+    for row in loss_led_q.values("pond_id").annotate(t=Sum("book_value")):
+        writeoff_by_pond[int(row["pond_id"])] = _money_q(Decimal(str(row["t"] or 0)))
+
+    rows = []
+    total_rev = Decimal("0")
+    total_income = Decimal("0")
+    total_exp = Decimal("0")
+    total_pay = Decimal("0")
+    total_feed = Decimal("0")
+    total_med = Decimal("0")
+    total_fry = Decimal("0")
+    total_lease = Decimal("0")
+    total_rev_fish = Decimal("0")
+    total_

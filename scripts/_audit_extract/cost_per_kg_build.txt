@@ -1,0 +1,80 @@
+def build_pond_cost_per_kg_block(
+    *,
+    company_id: int,
+    pond_id: int,
+    pond_name: str,
+    start: date,
+    end: date,
+    cycle_filter_id: int | None,
+    operating_expenses_total: Decimal,
+    payroll_allocated: Decimal,
+    total_costs: Decimal,
+    shared_expenses: list,
+    transfer_in: Decimal,
+    transfer_out: Decimal,
+    biological_writeoff: Decimal,
+) -> dict:
+    primary_kg, fallback_kg, basis = harvest_weight_denominator_kg(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+    )
+    denom_kg = primary_kg if primary_kg > 0 else fallback_kg
+
+    buckets_dec = pond_bucket_amounts_for_period(
+        company_id=company_id,
+        pond_id=pond_id,
+        start=start,
+        end=end,
+        cycle_filter_id=cycle_filter_id,
+        shared_expenses=shared_expenses,
+        transfer_in=transfer_in,
+        transfer_out=transfer_out,
+        biological_writeoff=biological_writeoff,
+        payroll_allocated=payroll_allocated,
+    )
+
+    display_order = [
+        "fry_stocking",
+        "pond_preparation",
+        "feed",
+        "medicine",
+        "labor",
+        "electricity",
+        "equipment",
+        "repair_maintenance",
+        "lease",
+        "transportation",
+        "fisherman",
+        "day_labor",
+        "miscellaneous",
+        "shop_supplies",
+        "fish_transfer_in",
+        "fish_transfer_out",
+        "biological_writeoff",
+        "ancillary",
+    ]
+
+    lines: list[dict] = []
+    for code in display_order:
+        amt = _money_q(buckets_dec.get(code, Decimal("0")))
+        if amt == 0:
+            continue
+        per_kg: str | None
+        if denom_kg > 0:
+            per_kg = str(_money_q(amt / denom_kg))
+        else:
+            per_kg = None
+        lines.append(
+            {
+                "cost_bucket": code,
+                "label": COST_BUCKET_LABELS.get(code, code),
+                "amount": str(amt),
+                "cost_per_kg": per_kg,
+            }
+        )
+
+    total_per_kg = str(_money_q(total_costs / denom_kg)) if denom_kg > 0 else None
+    opex_per_kg = str(_money_q(operating_expenses_total / denom_kg)) if den

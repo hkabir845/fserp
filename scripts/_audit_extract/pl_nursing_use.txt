@@ -1,0 +1,26 @@
+if nursing_pond and code in ("fish_transfer_cost_in", "fish_transfer_cost_out"):
+            continue
+        if code == "fish_transfer_cost_out" and not nursing_pond:
+            total -= _money_q(amt)
+        else:
+            total += _money_q(amt)
+    return _money_q(total)
+
+
+def _income_breakdown(merged_rev: dict[str, Decimal]) -> tuple[Decimal, Decimal, Decimal]:
+    fish = Decimal("0")
+    empty = Decimal("0")
+    other = Decimal("0")
+    for code, amt in merged_rev.items():
+        if code in PL_FISH_INCOME_TYPES:
+            fish += amt
+        elif code in PL_EMPTY_SACK_INCOME_TYPES:
+            empty += amt
+        else:
+            other += amt
+    return _money_q(fish), _money_q(empty), _money_q(other)
+
+
+def _fry_fingerling_cost_for_pond(
+    company_id: int,
+    pond_id: int,

@@ -1,0 +1,26 @@
+d-tagged lines: aquaculture COA (or 1581 when capitalizing).
+    """
+    pond_id = getattr(line, "aquaculture_pond_id", None)
+    if not pond_id:
+        return fallback
+
+    bucket = (getattr(line, "aquaculture_cost_bucket", None) or "").strip()
+    if not bucket:
+        trc = getattr(line, "tenant_reporting_category", None)
+        if trc is not None and getattr(trc, "application", None) == "aquaculture":
+            from api.services.aquaculture_cost_per_kg import aquaculture_expense_category_to_cost_bucket
+
+            cat_code = (getattr(trc, "code", None) or "").strip()
+            if cat_code:
+                bucket = aquaculture_expense_category_to_cost_bucket(cat_code, company_id=company_id)
+    if not bucket:
+        bucket = "miscellaneous"
+
+    # Fry always capitalizes to biological inventory (1581), matching manual pond fry expenses.
+    if bucket == "fry_stocking":
+        bio = bio_inventory_account(company_id)
+        if bio:
+            return bio
+
+    if company_capitalizes_pond_production(company_id) and pond_cost_bucket_capitalizes_to_bio(bucket):
+        bio = b

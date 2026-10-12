@@ -1,0 +1,52 @@
+def pl_opening_totals_for_pond(company_id: int, pond_id: int) -> tuple[Decimal, Decimal, dict[str, Decimal], dict[str, Decimal]]:
+    """Return (income_total, expense_total, income_by_code, expense_by_code) for pond analytics."""
+    rows = pl_opening_rows_for_pond(company_id, pond_id)
+    income_by: dict[str, Decimal] = {}
+    expense_by: dict[str, Decimal] = {}
+    income_total = Decimal("0")
+    expense_total = Decimal("0")
+    for r in rows["income"]:
+        amt = _q(Decimal(r["amount"]))
+        if amt != 0:
+            income_by[r["category_code"]] = amt
+            income_total += amt
+    for r in rows["expense"]:
+        amt = _q(Decimal(r["amount"]))
+        if amt != 0:
+            expense_by[r["category_code"]] = amt
+            expense_total += amt
+    return income_total, expense_total, income_by, expense_by
+
+
+def sync_pond_pl_openings(
+    company_id: int,
+    pond_id: int,
+    *,
+    income: list[dict] | None = None,
+    expense: list[dict] | None = None,
+) -> str | None:
+    """Upsert P&L openings from API payload lists. Returns error message or None."""
+
+    def apply_rows(pl_kind: str, rows: list[dict] | None, allowed_codes: set[str]) -> str | None:
+        if rows is None:
+            return None
+        if not isinstance(rows, list):
+            return f"{pl_kind} must be a list"
+        seen: set[str] = set()
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            code = (raw.get("category_code") or raw.get("code") or "").strip()
+            if not code:
+                continue
+            if code not in allowed_codes:
+                return f"Unknown category_code for {pl_kind}: {code}"
+            if code in seen:
+                return f"Duplicate category_code {code} for {pl_kind}"
+            seen.add(code)
+            amt = _q(Decimal(str(raw.get("amount", 0))))
+            as_of = raw.get("as_of_date")
+            as_of_d: date | None = None
+            if as_of:
+                try:
+     

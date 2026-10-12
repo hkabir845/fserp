@@ -1,0 +1,167 @@
+﻿{
+  "company_id": 2,
+  "company_name": "Adib Filling Station",
+  "period_start": "2025-07-01",
+  "period_end": "2026-06-30",
+  "pond_pl": [
+    {
+      "pond_id": 2,
+      "pond_name": "Mynuddin Pond",
+      "role": "grow_out",
+      "income": "11521358.51",
+      "expense": "8171827.09",
+      "net": "3349531.42"
+    },
+    {
+      "pond_id": 13,
+      "pond_name": "Ashari - 1 Pond",
+      "role": "grow_out",
+      "income": "12575110.52",
+      "expense": "9849196.36",
+      "net": "2725914.16"
+    },
+    {
+      "pond_id": 14,
+      "pond_name": "Ashari - 2 Pond",
+      "role": "grow_out",
+      "income": "12204374.54",
+      "expense": "14652029.38",
+      "net": "-2447654.84"
+    },
+    {
+      "pond_id": 15,
+      "pond_name": "Digonto Pond",
+      "role": "grow_out",
+      "income": "4888526.98",
+      "expense": "4253908.58",
+      "net": "634618.40"
+    },
+    {
+      "pond_id": 16,
+      "pond_name": "Mynuddin Nursing Pond",
+      "role": "nursing",
+      "income": "556624.37",
+      "expense": "227749.60",
+      "net": "328874.77"
+    },
+    {
+      "pond_id": 17,
+      "pond_name": "Ashari - 3 Nursing Pond",
+      "role": "nursing",
+      "income": "835386.98",
+      "expense": "841788.56",
+      "net": "-6401.58"
+    },
+    {
+      "pond_id": 18,
+      "pond_name": "Mynuddin Nursing Pond - 2",
+      "role": "nursing",
+      "income": "0.00",
+      "expense": "0.00",
+      "net": "0.00"
+    },
+    {
+      "pond_id": 19,
+      "pond_name": "Digonto Nursing Pond",
+      "role": "nursing",
+      "income": "1210831.93",
+      "expense": "1210832.00",
+      "net": "-0.07"
+    }
+  ],
+  "issues": [
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 17,
+      "pond_code": "P06",
+      "pond_name": "Ashari - 3 Nursing Pond",
+      "income": "835386.98",
+      "expense": "841788.56",
+      "net": "-6401.58",
+      "gap_expense_minus_income": "6401.58",
+      "fy_transfer_lines_out": 2
+    },
+    {
+      "type": "transfer_gl_mismatch",
+      "transfer_id": 15,
+      "transfer_date": "2026-07-04",
+      "line_total": "270350.15",
+      "gl_amount": "350200.87"
+    },
+    {
+      "type": "transfer_gl_mismatch",
+      "transfer_id": 16,
+      "transfer_date": "2026-07-04",
+      "line_total": "261773.09",
+      "gl_amount": "339090.50"
+    },
+    {
+      "type": "transfer_in_mismatch",
+      "pond_id": 2,
+      "pond_code": "P02",
+      "pl_transfer_in": "729807.72",
+      "line_sum": "716480.91"
+    },
+    {
+      "type": "transfer_in_mismatch",
+      "pond_id": 13,
+      "pond_code": "P01",
+      "pl_transfer_in": "466845.35",
+      "line_sum": "458485.34"
+    },
+    {
+      "type": "transfer_in_mismatch",
+      "pond_id": 14,
+      "pond_code": "P03",
+      "pl_transfer_in": "1210831.93",
+      "line_sum": "1074720.70"
+    }
+  ],
+  "warnings": [
+    {
+      "type": "nursing_pl_gap",
+      "pond_id": 16,
+      "pond_code": "P05",
+      "pond_name": "Mynuddin Nursing Pond",
+      "income": "556624.37",
+      "expense": "227749.60",
+      "net": "328874.77",
+      "gap_expense_minus_income": "-328874.77",
+      "fy_transfer_lines_out": 3,
+      "note": "Transfer income exceeds nursing expenses (cost pool not fully allocated)"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 13,
+      "pond_code": "P01",
+      "lease_pl": "908150.00",
+      "implied_annual": "1176000.00"
+    },
+    {
+      "type": "lease_under_annual",
+      "pond_id": 15,
+      "pond_code": "P04",
+      "lease_pl": "690500.00",
+      "implied_annual": "769600.00"
+    },
+    {
+      "type": "transfer_gl_mismatch",
+      "transfer_id": 8,
+      "transfer_date": "2025-12-06",
+      "line_total": "339165.12",
+      "gl_amount": "202824.66",
+      "note": "Likely 1581 bio-asset GL cap at source pond (management cost > book balance)"
+    },
+    {
+      "type": "transfer_gl_mismatch",
+      "transfer_id": 9,
+      "transfer_date": "2025-07-25",
+      "line_total": "44118.45",
+      "gl_amount": "43878.45",
+      "note": "Likely 1581 bio-asset GL cap at source pond (management cost > book balance)"
+    }
+  ],
+  "issue_count": 6,
+  "warning_count": 5,
+  "gl_gap_total": 0
+}

@@ -1,0 +1,9 @@
+ultureExpense, AquacultureFishSale, BillLine, JournalEntry, JournalEntryLine
+---
+    q = JournalEntryLine.objects.filter(
+---
+    q = JournalEntryLine.objects.filter(
+---
+    q1581 = JournalEntryLine.objects.filter(
+---
+    q6715 = JournalEntryLine.objects.filter(

@@ -1,0 +1,25 @@
+﻿finalize_aquaculture_fish_sale_to_invoice 2
+sync_biomass_sample_from_fish_sale 3
+AquacultureFishSale( 1
+elim excludes transfer-sourced sales? False
+aquaculture_transfer_cost.py float( 0 round( 0
+aquaculture_bio_asset_cost_service.py float( 0 round( 0
+aquaculture_fcr_service.py float( 0 round( 0
+aquaculture_pl_service.py float( 0 round( 0
+    "transfer__from_pond_id",
+            "transfer__from_production_cycle_id",
+        )
+    )
+    mirrored_sale_by_line = {
+        int(row["source_fish_pond_transfer_line_id"]): row
+        for row in AquacultureFishSale.objects.filter(
+            company_id=cid,
+            source_fish_pond_transfer_line_id__isnull=False,
+            sale_date__gte=start,
+            sale_date__lte=end,
+        ).values("source_fish_pond_transfer_line_id", "total_amount")
+        if row["source_fish_pond_transfer_line_id"] is not None
+    }
+    transfer_in_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    transfer_out_by_pond: dict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+    

@@ -1,0 +1,395 @@
+{
+  "p05_lines": [
+    {
+      "line": 18,
+      "xfer": 3,
+      "date": "2025-06-18",
+      "to": "P01",
+      "cost": "232202.61",
+      "sale": "255422.87",
+      "margin": "23220.26",
+      "sale_eq_cost": false
+    },
+    {
+      "line": 21,
+      "xfer": 2,
+      "date": "2025-06-10",
+      "to": "P03",
+      "cost": "179146.31",
+      "sale": "197060.94",
+      "margin": "17914.63",
+      "sale_eq_cost": false
+    },
+    {
+      "line": 25,
+      "xfer": 5,
+      "date": "2025-07-14",
+      "to": "P02",
+      "cost": "333197.34",
+      "sale": "366517.07",
+      "margin": "33319.73",
+      "sale_eq_cost": false
+    },
+    {
+      "line": 27,
+      "xfer": 1,
+      "date": "2025-04-23",
+      "to": "P03",
+      "cost": "170676.71",
+      "sale": "187744.38",
+      "margin": "17067.67",
+      "sale_eq_cost": false
+    },
+    {
+      "line": 28,
+      "xfer": 4,
+      "date": "2025-07-14",
+      "to": "P04",
+      "cost": "179308.58",
+      "sale": "197239.44",
+      "margin": "17930.86",
+      "sale_eq_cost": false
+    },
+    {
+      "line": 29,
+      "xfer": 9,
+      "date": "2025-07-25",
+      "to": "P02",
+      "cost": "44118.45",
+      "sale": "48530.30",
+      "margin": "4411.85",
+      "sale_eq_cost": false
+    }
+  ],
+  "sale_eq_or_zero": [],
+  "species_mistags": {
+    "company_id": 2,
+    "pond_id": null,
+    "mistag_count": 0,
+    "auto_fixable_count": 0,
+    "expected_polyculture_count": 88,
+    "issue_preview": [],
+    "issue_count": 0
+  },
+  "year_close_fy": [
+    {
+      "code": "P02",
+      "ready": false,
+      "fish": 52874,
+      "blockers": [
+        "52,874 live fish remain (31440.9308 kg). Harvest or transfer all fish before year close so the pond is empty for renovation.",
+        "Feed/medicine still in pond warehouse: 8027-Starter Feed (New Hope) (0.07 sack), Empty sacks (3284.00 sack), Grower Feed (Nourish Company) (313.00 sack). Use, transfer, or adjust stock before close."
+      ]
+    },
+    {
+      "code": "P01",
+      "ready": false,
+      "fish": 112739,
+      "blockers": [
+        "112,739 live fish remain (27148.4226 kg). Harvest or transfer all fish before year close so the pond is empty for renovation.",
+        "Biological inventory (1581) balance 2549317.94 remains for this pond. Record harvest sales or bio-asset relief so the pond is financially empty.",
+        "Feed/medicine still in pond warehouse: Empty sacks (1784.00 sack), Grower Feed (Nourish Company) (277.74 sack). Use, transfer, or adjust stock before close."
+      ]
+    },
+    {
+      "code": "P03",
+      "ready": false,
+      "fish": 244880,
+      "blockers": [
+        "244,880 live fish remain (178913.6501 kg). Harvest or transfer all fish before year close so the pond is empty for renovation.",
+        "Feed/medicine still in pond warehouse: Empty sacks (1770.00 sack), Grower Feed (Nourish Company) (281.00 sack). Use, transfer, or adjust stock before close."
+      ]
+    },
+    {
+      "code": "P04",
+      "ready": false,
+      "fish": 55739,
+      "blockers": [
+        "55,739 live fish remain (5686.5467 kg). Harvest or transfer all fish before year close so the pond is empty for renovation.",
+        "Biological inventory (1581) balance 1457265.77 remains for this pond. Record harvest sales or bio-asset relief so the pond is financially empty.",
+        "Feed/medicine still in pond warehouse: Empty sacks (975.67 sack), Grower Feed (Nourish Company) (124.00 sack). Use, transfer, or adjust stock before close."
+      ]
+    }
+  ],
+  "book_vs_eff_gaps": [
+    {
+      "pond": "Mynuddin Pond",
+      "heads": 52874,
+      "book_kg": "31440.9308",
+      "eff_kg": "55636.8649",
+      "gap": "24195.9341"
+    },
+    {
+      "pond": "Ashari - 1 Pond",
+      "heads": 112739,
+      "book_kg": "27148.4226",
+      "eff_kg": "19284.3442",
+      "gap": "7864.0784"
+    },
+    {
+      "pond": "Ashari - 2 Pond",
+      "heads": 244880,
+      "book_kg": "178913.6501",
+      "eff_kg": "97799.5168",
+      "gap": "81114.1333"
+    },
+    {
+      "pond": "Digonto Pond",
+      "heads": 55739,
+      "book_kg": "5686.5467",
+      "eff_kg": "7474.0982",
+      "gap": "1787.5515"
+    }
+  ],
+  "ashari2_stock": [
+    {
+      "cycle": 22,
+      "species": "common_carp",
+      "heads": 4924,
+      "book": "9848.0000",
+      "eff": "9848.0000"
+    },
+    {
+      "cycle": 22,
+      "species": "grass_carp",
+      "heads": 360,
+      "book": "1080.0000",
+      "eff": "1080.0000"
+    },
+    {
+      "cycle": 22,
+      "species": "kalibaush",
+      "heads": 312,
+      "book": "686.4000",
+      "eff": "686.4000"
+    },
+    {
+      "cycle": 22,
+      "species": "other",
+      "heads": 1352,
+      "book": "194.0000",
+      "eff": "1081.6000"
+    },
+    {
+      "cycle": 22,
+      "species": "rui",
+      "heads": 10868,
+      "book": "14128.4000",
+      "eff": "14128.4000"
+    },
+    {
+      "cycle": 22,
+      "species": "silver_carp",
+      "heads": 1904,
+      "book": "4188.8000",
+      "eff": "4188.8000"
+    },
+    {
+      "cycle": 22,
+      "species": "tilapia",
+      "heads": 21319,
+      "book": "34110.4000",
+      "eff": "34110.4000"
+    },
+    {
+      "cycle": 114,
+      "species": "other",
+      "heads": 9633,
+      "book": "8594.0000",
+      "eff": "7706.4000"
+    },
+    {
+      "cycle": 125,
+      "species": "tilapia",
+      "heads": 194208,
+      "book": "106083.6501",
+      "eff": "24969.5168"
+    }
+  ],
+  "open_cycles": [
+    {
+      "id": 126,
+      "code": "C11",
+      "pond": "P02",
+      "active": true,
+      "start": "2026-06-06",
+      "species": "tilapia"
+    },
+    {
+      "id": 80,
+      "code": "C02",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-12-06",
+      "species": "tilapia"
+    },
+    {
+      "id": 124,
+      "code": "C10",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-09-29",
+      "species": "other"
+    },
+    {
+      "id": 122,
+      "code": "C04",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-09-28",
+      "species": "bighead_carp"
+    },
+    {
+      "id": 123,
+      "code": "C09",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-09-19",
+      "species": "grass_carp"
+    },
+    {
+      "id": 92,
+      "code": "C08",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-09-05",
+      "species": "kalibaush"
+    },
+    {
+      "id": 91,
+      "code": "C07",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-09-03",
+      "species": "common_carp"
+    },
+    {
+      "id": 107,
+      "code": "C06",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-08-23",
+      "species": "rui"
+    },
+    {
+      "id": 109,
+      "code": "C05",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-08-16",
+      "species": "silver_carp"
+    },
+    {
+      "id": 2,
+      "code": "C01",
+      "pond": "P02",
+      "active": true,
+      "start": "2025-07-14",
+      "species": "tilapia"
+    },
+    {
+      "id": 127,
+      "code": "C04",
+      "pond": "P01",
+      "active": true,
+      "start": "2026-06-06",
+      "species": "tilapia"
+    },
+    {
+      "id": 26,
+      "code": "C02",
+      "pond": "P01",
+      "active": true,
+      "start": "2025-08-11",
+      "species": "tilapia"
+    },
+    {
+      "id": 120,
+      "code": "C03",
+      "pond": "P01",
+      "active": true,
+      "start": "2025-08-05",
+      "species": "other"
+    },
+    {
+      "id": 23,
+      "code": "C01",
+      "pond": "P01",
+      "active": true,
+      "start": "2025-05-22",
+      "species": "tilapia"
+    },
+    {
+      "id": 125,
+      "code": "C03",
+      "pond": "P03",
+      "active": true,
+      "start": "2026-06-06",
+      "species": "tilapia"
+    },
+    {
+      "id": 114,
+      "code": "C02",
+      "pond": "P03",
+      "active": true,
+      "start": "2025-08-05",
+      "species": "other"
+    },
+    {
+      "id": 22,
+      "code": "C01",
+      "pond": "P03",
+      "active": true,
+      "start": "2025-03-10",
+      "species": "tilapia"
+    },
+    {
+      "id": 128,
+      "code": "C03",
+      "pond": "P04",
+      "active": true,
+      "start": "2026-07-04",
+      "species": "tilapia"
+    },
+    {
+      "id": 97,
+      "code": "C01",
+      "pond": "P05",
+      "active": true,
+      "start": "2025-04-23",
+      "species": "tilapia"
+    },
+    {
+      "id": 81,
+      "code": "C02",
+      "pond": "P06",
+      "active": true,
+      "start": "2025-12-16",
+      "species": "common_carp"
+    },
+    {
+      "id": 79,
+      "code": "C01",
+      "pond": "P06",
+      "active": true,
+      "start": "2025-10-07",
+      "species": "tilapia"
+    },
+    {
+      "id": 119,
+      "code": "C01",
+      "pond": "P07",
+      "active": true,
+      "start": "2026-01-15",
+      "species": "tilapia"
+    },
+    {
+      "id": 121,
+      "code": "C01",
+      "pond": "P08",
+      "active": true,
+      "start": "2026-02-20",
+      "species": "tilapia"
+    }
+  ]
+}

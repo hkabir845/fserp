@@ -1,0 +1,40 @@
+ c == "mortality":
+        return "biological_writeoff"
+    if c == "other":
+        return "miscellaneous"
+    return "ancillary"
+
+
+def cost_bucket_to_pl_expense_category(bucket: str) -> str:
+    """Map journal-line aquaculture_cost_bucket to a P&L expense_category code."""
+    b = (bucket or "").strip() or "ancillary"
+    _MAP: dict[str, str] = {
+        "fry_stocking": "fry_stocking",
+        "pond_preparation": "pond_preparation",
+        "feed": "feed_purchase",
+        "medicine": "medicine_purchase",
+        "labor": "worker_salary",
+        "electricity": "electricity",
+        "equipment": "equipment",
+        "repair_maintenance": "repair_maintenance",
+        "lease": "lease",
+        "transportation": "transportation",
+        "fisherman": "fisherman",
+        "day_labor": "day_labor",
+        "shop_supplies": "shop_supplies",
+        "miscellaneous": "vendor_bill_pond",
+        "ancillary": "vendor_bill_pond",
+        "fish_transfer_in": "fish_transfer_cost_in",
+        "fish_transfer_out": "fish_transfer_cost_out",
+        "biological_writeoff": "biological_write_offs",
+    }
+    return _MAP.get(b, "vendor_bill_pond")
+
+
+def item_shop_issue_cost_bucket(item) -> str:
+    """
+    Bucket for inventoried shop goods sold to a pond (invoice COGS), aligned with pond P&L feed/medicine lines.
+    """
+    if not item:
+        return "shop_supplies"
+    pc = (getattr(item, "p

@@ -15,6 +15,8 @@ import re
 from datetime import date
 from decimal import Decimal
 
+from django.db.models import Q
+
 from api.models import (
     AquacultureExpense,
     AquacultureFeedingAdvice,
@@ -60,12 +62,15 @@ def compute_pond_warehouse_consumption_rows(
     elif k in ("medicine", "medicine_consumed", "med"):
         cats = {"medicine_consumed"}
 
+    category_q = Q(expense_category__in=cats)
+    if "feed_consumed" in cats:
+        # Shop issues are feed given to the pond. Stock purchases are not.
+        category_q = category_q | Q(expense_category="feed_purchase", source_station_id__isnull=False)
     qs = (
         AquacultureExpense.objects.filter(
             company_id=cid,
-            expense_category__in=cats,
             pond_id__isnull=False,
-        )
+        ).filter(category_q)
         .select_related("pond", "production_cycle", "source_station")
         .prefetch_related("inventory_lines__item")
     )
@@ -164,7 +169,7 @@ def compute_pond_warehouse_consumption_rows(
             {
                 "id": x.id,
                 "entry_date": x.expense_date.isoformat(),
-                "kind": "feed" if cat == "feed_consumed" else "medicine",
+                "kind": "feed" if cat in ("feed_consumed", "feed_purchase") else "medicine",
                 "kind_label": CONSUMPTION_KIND_LABELS.get(cat, cat),
                 "pond_id": x.pond_id,
                 "pond_name": pond_names.get(x.pond_id, ""),

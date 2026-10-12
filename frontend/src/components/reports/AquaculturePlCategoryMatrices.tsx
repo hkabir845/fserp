@@ -656,7 +656,6 @@ export function resolveAquaculturePlFigures(
     Number(totals.fry_fingerling_cost ?? 0) +
     Number(totals.lease_cost ?? 0) +
     Number(totals.salaries_and_payroll_cost ?? 0) +
-    Number(totals.pond_care_products_cost ?? 0) +
     Number(totals.equipment_cost ?? 0) +
     Number(totals.other_operating_expenses ?? 0)
   if (componentTotal > expenses + 0.02) {

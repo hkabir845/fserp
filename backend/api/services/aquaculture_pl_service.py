@@ -491,15 +491,19 @@ def compute_aquaculture_pl_summary_dict(
         tp = int(xr["to_pond_id"])
         tc = xr["to_production_cycle_id"]
         tc_key: int | None = int(tc) if tc is not None else None
-        transfer_in_by_pond[tp] += amount
-        trans_cycle_in[(tp, tc_key)] += amount
         from_id = int(xr["transfer__from_pond_id"])
         income_code = _internal_fish_sale_income_type(role_by_from_pond.get(from_id, ""))
-        # An invoiced mirror is already in pond revenue. Do not book the sale twice on the pond,
-        # but still eliminate it from company income (matches GL 4245 elimination).
-        if mirrored is not None and mirrored.get("invoice_id"):
-            ipt_invoiced_sale_by_pond[from_id][income_code] += amount
-            continue
+        # Buyer cost is taken only after the line is a fish sale. Do not also credit
+        # fish_transfer_cost_out: the selling pond's margin is the sale itself, and a
+        # cost-out line would relieve that cost a second time.
+        if mirrored is not None:
+            transfer_in_by_pond[tp] += amount
+            trans_cycle_in[(tp, tc_key)] += amount
+            # An invoiced mirror is already in pond revenue. Do not book the sale twice
+            # on the pond, but still eliminate it from company income (GL 4245).
+            if mirrored.get("invoice_id"):
+                ipt_invoiced_sale_by_pond[from_id][income_code] += amount
+                continue
         internal_sale_by_pond[from_id][income_code] += amount
 
     def _rev_q(pond_id: int):
@@ -608,7 +612,7 @@ def compute_aquaculture_pl_summary_dict(
         prior_expense_by: dict[str, Decimal] = {}
         if cycle_filter_id is None:
             prior_income, prior_expense, prior_income_by, prior_expense_by = pl_opening_totals_for_pond(
-                cid, pond.id
+                cid, pond.id, period_start=start, period_end=end
             )
         feed_cost = _pond_category_expense_sum(
             cid, pond.id, "feed_consumed", start, end, cycle_filter_id
@@ -664,6 +668,12 @@ def compute_aquaculture_pl_summary_dict(
         fry_cost = _fry_fingerling_cost_for_pond(
             cid, pond.id, start, end, cycle_filter_id, t_in
         )
+        # Nursing expense total omits transfer-in (the sale is the profit-centre
+        # treatment). Keep fry on the same basis so the fry line is not larger than total cost.
+        if nursing_pond:
+            fry_cost = _money_q(fry_cost - t_in)
+            if fry_cost < 0:
+                fry_cost = Decimal("0")
         lease_cost = _lease_cost_for_pond(
             cid, pond.id, start, end, cycle_filter_id, exp_landlord_lease
         )
@@ -733,6 +743,9 @@ def compute_aquaculture_pl_summary_dict(
         income_total = _pond_income_total(pond_income)
         expense_total = _pond_expense_matrix_total(pond_exp, nursing_pond=nursing_pond)
         net_profit = _money_q(income_total - expense_total)
+        # pond_care_products sits inside other_consumption. Subtracting it again
+        # made the residual negative, and clamping that residual to zero stopped
+        # the category lines from adding up to total cost.
         other_opex = _money_q(
             expense_total
             - feed_consumption_total
@@ -741,11 +754,8 @@ def compute_aquaculture_pl_summary_dict(
             - fry_cost
             - lease_cost
             - salaries_payroll_cost
-            - pond_care_cost
             - equipment_cost
         )
-        if other_opex < 0:
-            other_opex = Decimal("0")
 
         rows.append(
             {
@@ -859,6 +869,10 @@ def compute_aquaculture_pl_summary_dict(
     total_profit = _money_q(company_income_total - company_expense_total)
     total_income = company_income_total
     total_exp = company_expense_total
+    # Headline revenue uses the same eliminated company basis as expenses and profit,
+    # so Total revenue − Total costs = Net profit. Pond rows keep their own figures.
+    total_rev_fish, total_rev_empty, total_rev_other = _income_breakdown(dict(company_income_dec))
+    total_rev = company_income_total
 
     # Always expose the full income/expense catalog as matrix columns (zeros where no activity).
     show_full_catalog = True
@@ -941,12 +955,14 @@ def compute_aquaculture_pl_summary_dict(
                     or Decimal("0")
                 )
                 cexp_aq = _money_q(
-                    AquacultureExpense.objects.filter(
-                        company_id=cid,
-                        pond_id=pond.id,
-                        production_cycle_id=c.id,
-                        expense_date__gte=start,
-                        expense_date__lte=end,
+                    aquaculture_expenses_for_pl_direct_sum(
+                        AquacultureExpense.objects.filter(
+                            company_id=cid,
+                            pond_id=pond.id,
+                            production_cycle_id=c.id,
+                            expense_date__gte=start,
+                            expense_date__lte=end,
+                        )
                     ).aggregate(t=Sum("amount"))["t"]
                     or Decimal("0")
                 )
@@ -995,12 +1011,14 @@ def compute_aquaculture_pl_summary_dict(
                 or Decimal("0")
             )
             uexp_aq = _money_q(
-                AquacultureExpense.objects.filter(
-                    company_id=cid,
-                    pond_id=pond.id,
-                    production_cycle__isnull=True,
-                    expense_date__gte=start,
-                    expense_date__lte=end,
+                aquaculture_expenses_for_pl_direct_sum(
+                    AquacultureExpense.objects.filter(
+                        company_id=cid,
+                        pond_id=pond.id,
+                        production_cycle__isnull=True,
+                        expense_date__gte=start,
+                        expense_date__lte=end,
+                    )
                 ).aggregate(t=Sum("amount"))["t"]
                 or Decimal("0")
             )

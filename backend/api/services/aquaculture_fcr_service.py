@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from api.models import (
     AquacultureBiomassSample,
@@ -89,20 +89,33 @@ def sum_feed_kg_for_period(
     *,
     pond_id: int | None = None,
     production_cycle_id: int | None = None,
+    fish_species: str | None = None,
+    untagged_pond_only: bool = False,
 ) -> Decimal:
-    """Direct pond feed (purchased + consumed) with feed_weight_kg in the inclusive date window."""
+    """Feed kilograms actually issued to fish.
+
+    Counts pond-warehouse ``feed_consumed`` and shop issues (``feed_purchase`` with a
+    source station). A stock purchase that only carries a weight is not counted again;
+    that weight is consumed later as ``feed_consumed``.
+    """
     qs = AquacultureExpense.objects.filter(
         company_id=company_id,
-        expense_category__in=["feed_purchase", "feed_consumed"],
         expense_date__gte=start,
         expense_date__lte=end,
         feed_weight_kg__isnull=False,
         feed_weight_kg__gt=0,
+    ).filter(
+        Q(expense_category="feed_consumed")
+        | Q(expense_category="feed_purchase", source_station_id__isnull=False)
     )
-    if pond_id is not None:
+    if untagged_pond_only:
+        qs = qs.filter(pond_id__isnull=True)
+    elif pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)
+    if fish_species:
+        qs = qs.filter(production_cycle__fish_species=fish_species)
     agg = qs.aggregate(total=Sum("feed_weight_kg"))
     tagged = _q4(_d(agg.get("total")))
     if production_cycle_id is None:
@@ -653,6 +666,7 @@ def sum_harvest_kg_for_period(
     production_cycle_id: int | None = None,
     after_date: date | None = None,
     include_after_date: bool = False,
+    fish_species: str | None = None,
 ) -> Decimal:
     qs = AquacultureFishSale.objects.filter(
         company_id=company_id,
@@ -664,8 +678,10 @@ def sum_harvest_kg_for_period(
         qs = qs.filter(pond_id=pond_id)
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)
+    if fish_species:
+        qs = qs.filter(fish_species=fish_species)
     total = Decimal("0")
-    for s in qs.only("weight_kg", "income_type"):
+    for s in qs.only("weight_kg", "income_type", "fish_species"):
         if income_type_is_non_biological_for_company(company_id, getattr(s, "income_type", None) or ""):
             continue
         if getattr(s, "income_type", None) == "fish_harvest_sale":
@@ -682,6 +698,7 @@ def _sum_stock_ledger_adjustments_kg(
     production_cycle_id: int | None = None,
     after_date: date | None = None,
     include_after_date: bool = False,
+    fish_species: str | None = None,
 ) -> tuple[Decimal, Decimal]:
     """
     Returns (outflow_kg, inflow_kg) from fish stock ledger.
@@ -704,9 +721,11 @@ def _sum_stock_ledger_adjustments_kg(
         qs = qs.filter(pond_id=pond_id)
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)
+    if fish_species:
+        qs = qs.filter(fish_species=fish_species)
     outflow = Decimal("0")
     inflow = Decimal("0")
-    for row in qs.only("entry_kind", "weight_kg_delta", "memo"):
+    for row in qs.only("entry_kind", "weight_kg_delta", "memo", "fish_species"):
         if is_book_revaluation_ledger_row(row):
             continue
         dw = _d(row.weight_kg_delta)
@@ -729,6 +748,7 @@ def _sum_transfer_kg(
     production_cycle_id: int | None = None,
     after_date: date | None = None,
     include_after_date: bool = False,
+    fish_species: str | None = None,
 ) -> tuple[Decimal, Decimal]:
     """Returns (transfer_out_kg, transfer_in_kg) for the pond/cycle scope."""
     window = _in_reporting_window(
@@ -752,6 +772,9 @@ def _sum_transfer_kg(
     if production_cycle_id is not None:
         out_qs = out_qs.filter(transfer__from_production_cycle_id=production_cycle_id)
         in_qs = in_qs.filter(to_production_cycle_id=production_cycle_id)
+    if fish_species:
+        out_qs = out_qs.filter(transfer__fish_species=fish_species)
+        in_qs = in_qs.filter(transfer__fish_species=fish_species)
     out_agg = out_qs.aggregate(total=Sum("weight_kg"))
     in_agg = in_qs.aggregate(total=Sum("weight_kg"))
     return _q4(_d(out_agg.get("total"))), _q4(_d(in_agg.get("total")))
@@ -765,6 +788,7 @@ def _sum_stocking_in_kg(
     pond_id: int | None = None,
     production_cycle_id: int | None = None,
     after_date: date | None = None,
+    fish_species: str | None = None,
 ) -> Decimal:
     """Fry/stocking expenses that carry feed_weight_kg as stocked biomass."""
     qs = AquacultureExpense.objects.filter(
@@ -778,6 +802,8 @@ def _sum_stocking_in_kg(
         qs = qs.filter(pond_id=pond_id)
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)
+    if fish_species:
+        qs = qs.filter(production_cycle__fish_species=fish_species)
     agg = qs.aggregate(total=Sum("feed_weight_kg"))
     return _q4(_d(agg.get("total")))
 
@@ -792,8 +818,88 @@ def compute_fcr_for_scope(
     fish_species: str | None = None,
 ) -> dict:
     """FCR metrics for one pond (or company-wide when pond_id is None)."""
+    if pond_id is None:
+        # Farm total is the sum of each pond's own production gain. Summing inventory
+        # change and then adding every harvest again double-counts an opening-day sale
+        # that a pond already excluded.
+        ponds = AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by("sort_order", "id")
+        feed_kg = Decimal("0")
+        harvest_kg = Decimal("0")
+        ledger_out_kg = Decimal("0")
+        ledger_in_kg = Decimal("0")
+        transfer_out_kg = Decimal("0")
+        transfer_in_kg = Decimal("0")
+        stocking_in_kg = Decimal("0")
+        production_gain_kg = Decimal("0")
+        net_sample_change_kg = Decimal("0")
+        n_ponds = 0
+        for p in ponds:
+            row = compute_fcr_for_scope(
+                company_id,
+                start,
+                end,
+                pond_id=p.id,
+                production_cycle_id=production_cycle_id,
+                fish_species=fish_species,
+            )
+            n_ponds += 1
+            feed_kg += _d(row.get("feed_kg"))
+            harvest_kg += _d(row.get("harvest_kg"))
+            ledger_out_kg += _d(row.get("mortality_loss_kg"))
+            ledger_in_kg += _d(row.get("manual_biomass_in_kg"))
+            transfer_out_kg += _d(row.get("transfer_out_kg"))
+            transfer_in_kg += _d(row.get("transfer_in_kg"))
+            stocking_in_kg += _d(row.get("stocking_in_kg"))
+            production_gain_kg += _d(row.get("biomass_gain_kg"))
+            net_sample_change_kg += _d(row.get("biomass_net_change_kg"))
+        if not fish_species:
+            feed_kg += sum_feed_kg_for_period(
+                company_id,
+                start,
+                end,
+                production_cycle_id=production_cycle_id,
+                untagged_pond_only=True,
+            )
+        feed_kg = _q4(feed_kg)
+        harvest_kg = _q4(harvest_kg)
+        production_gain_kg = _q4(production_gain_kg)
+        fcr_biomass = str(_q2(feed_kg / production_gain_kg)) if production_gain_kg > 0 and feed_kg > 0 else None
+        fcr_harvest = str(_q2(feed_kg / harvest_kg)) if harvest_kg > 0 and feed_kg > 0 else None
+        gain_note = f"Sum of per-pond production gains ({n_ponds} pond(s))."
+        if fish_species:
+            gain_note += " Feed and stocking use only expenses on a cycle of this species."
+        return {
+            "feed_kg": str(feed_kg),
+            "harvest_kg": str(harvest_kg),
+            "mortality_loss_kg": str(_q4(ledger_out_kg)),
+            "manual_biomass_in_kg": str(_q4(ledger_in_kg)),
+            "transfer_out_kg": str(_q4(transfer_out_kg)),
+            "transfer_in_kg": str(_q4(transfer_in_kg)),
+            "stocking_in_kg": str(_q4(stocking_in_kg)),
+            "biomass_first_kg": None,
+            "biomass_last_kg": None,
+            "biomass_net_change_kg": str(_q4(net_sample_change_kg)),
+            "biomass_gain_kg": str(production_gain_kg),
+            "biomass_production_kg": str(production_gain_kg),
+            "biomass_gain_note": gain_note,
+            "fcr_biomass": fcr_biomass,
+            "fcr_harvest": fcr_harvest,
+            "fcr_biomass_label": (
+                "Feed kg ÷ production biomass gain "
+                "(sampling ± harvest/mortality/transfers/stocking/adjustments)"
+                if fcr_biomass
+                else None
+            ),
+            "fcr_harvest_label": "Feed kg ÷ harvest sale kg" if fcr_harvest else None,
+        }
+
     feed_kg = sum_feed_kg_for_period(
-        company_id, start, end, pond_id=pond_id, production_cycle_id=production_cycle_id
+        company_id,
+        start,
+        end,
+        pond_id=pond_id,
+        production_cycle_id=production_cycle_id,
+        fish_species=fish_species,
     )
 
     first_bio = Decimal("0")
@@ -825,18 +931,6 @@ def compute_fcr_for_scope(
             )
             if first_bio != 0 or last_bio != 0:
                 gain_kg = _q4(last_bio - first_bio)
-    else:
-        ponds = AquaculturePond.objects.filter(company_id=company_id, is_active=True).order_by("sort_order", "id")
-        gains: list[Decimal] = []
-        for p in ponds:
-            first, last, _, _ = biomass_gain_from_samples_for_pond(
-                company_id, p.id, start, end, production_cycle_id=production_cycle_id, fish_species=fish_species
-            )
-            if first != 0 or last != 0:
-                gains.append(last - first)
-        if gains:
-            gain_kg = _q4(sum(gains, Decimal("0")))
-            gain_note = f"Sum of per-pond live-crop present-weight changes ({len(gains)} pond(s))."
 
     # Harvest / mortality / transfer-out: include opening day when opening is a
     # pre-harvest standing sample (Ashari-2 11 Aug sale must count in 11→17 Sep).
@@ -849,6 +943,7 @@ def compute_fcr_for_scope(
         production_cycle_id=production_cycle_id,
         after_date=events_after,
         include_after_date=include_opening_day_exits,
+        fish_species=fish_species,
     )
     ledger_out_kg, ledger_in_kg = _sum_stock_ledger_adjustments_kg(
         company_id,
@@ -861,6 +956,7 @@ def compute_fcr_for_scope(
         # via a second pass below for in only — keep include for out+in together then
         # zero the false inflows on opening day is hard. Split:
         include_after_date=include_opening_day_exits,
+        fish_species=fish_species,
     )
     if include_opening_day_exits and events_after is not None:
         # Recompute inflows with opening day excluded (stocking that built the crop).
@@ -872,6 +968,7 @@ def compute_fcr_for_scope(
             production_cycle_id=production_cycle_id,
             after_date=events_after,
             include_after_date=False,
+            fish_species=fish_species,
         )
     transfer_out_kg, transfer_in_kg = _sum_transfer_kg(
         company_id,
@@ -881,6 +978,7 @@ def compute_fcr_for_scope(
         production_cycle_id=production_cycle_id,
         after_date=events_after,
         include_after_date=include_opening_day_exits,
+        fish_species=fish_species,
     )
     if include_opening_day_exits and events_after is not None:
         _tout_ignored, transfer_in_kg = _sum_transfer_kg(
@@ -891,6 +989,7 @@ def compute_fcr_for_scope(
             production_cycle_id=production_cycle_id,
             after_date=events_after,
             include_after_date=False,
+            fish_species=fish_species,
         )
     stocking_in_kg = _sum_stocking_in_kg(
         company_id,
@@ -899,6 +998,7 @@ def compute_fcr_for_scope(
         pond_id=pond_id,
         production_cycle_id=production_cycle_id,
         after_date=events_after,
+        fish_species=fish_species,
     )
 
     # Inventory change = close − open. Production gain adds harvest/deaths/transfers

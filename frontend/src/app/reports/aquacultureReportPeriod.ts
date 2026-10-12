@@ -29,7 +29,11 @@ export function defaultAquacultureReportRange(
     endYear -= 1
     anniversary = new Date(endYear, month - 1, day)
   }
-  return fiscalPeriodForEndDate(fiscalYearStart, anniversary)
+  // Completed crop year ends the day before the next fiscal start, so 1 July
+  // is not inside both "Crop year" and "Season to date".
+  const completedEnd = new Date(anniversary)
+  completedEnd.setDate(completedEnd.getDate() - 1)
+  return fiscalPeriodForEndDate(fiscalYearStart, completedEnd)
 }
 
 /** Current in-progress crop year: fiscal start through today. */

@@ -125,6 +125,33 @@ def test_pl_summary_includes_prior_pl_openings(company_tenant):
     assert Decimal(row["revenue"]) == Decimal("500.00")
     assert Decimal(row["operating_expenses"]) == Decimal("200.00")
     assert Decimal(row["profit"]) == Decimal("300.00")
+    totals = payload["totals"]
+    assert Decimal(totals["revenue"]) - Decimal(totals["operating_expenses"]) == Decimal(totals["profit"])
+
+
+@pytest.mark.django_db
+def test_pl_summary_omits_openings_outside_the_report_window(company_tenant):
+    set_company_cutover_date(company_tenant.id, date(2026, 5, 22))
+    pond = AquaculturePond.objects.create(company=company_tenant, name="Later", code="PL2", is_active=True)
+    sync_pond_pl_openings(
+        company_tenant.id,
+        pond.id,
+        income=[{"category_code": "fish_harvest_sale", "amount": "500", "as_of_date": "2026-05-22"}],
+        expense=[{"category_code": "feed_purchase", "amount": "200", "as_of_date": "2026-05-22"}],
+    )
+    payload = compute_aquaculture_pl_summary_dict(
+        company_tenant.id,
+        date(2026, 6, 1),
+        date(2026, 6, 7),
+        pond.id,
+        None,
+        None,
+        False,
+    )
+    row = next(r for r in payload["ponds"] if r["pond_id"] == pond.id)
+    assert Decimal(row["prior_pl_opening_income"]) == Decimal("0.00")
+    assert Decimal(row["prior_pl_opening_expense"]) == Decimal("0.00")
+    assert Decimal(row["revenue"]) == Decimal("0.00")
 
 
 @pytest.mark.django_db

@@ -1022,7 +1022,87 @@ def pond_warehouse_stock_rows(company_id: int, pond_id: int) -> list[dict]:
     return out
 
 
-def pond_warehouse_stock_matrix(company_id: int, *, pond_id: int | None = None) -> list[dict]:
+def pond_warehouse_qty_change_after(
+    company_id: int,
+    as_of: date,
+    *,
+    pond_id: int | None = None,
+) -> dict[tuple[int, int], Decimal]:
+    """Net ItemPondStock change with a document date after ``as_of``, keyed by (pond_id, item_id).
+
+    Historical on-hand is current quantity minus this change. Rows with no dated movement
+    stay at the current quantity.
+    """
+    from api.models import BillLine
+
+    delta: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+
+    def add(pid: int | None, iid: int | None, qty: Decimal) -> None:
+        if pid is None or iid is None or qty == 0:
+            return
+        if pond_id is not None and int(pid) != int(pond_id):
+            return
+        delta[(int(pid), int(iid))] += qty
+
+    receipts = PondWarehouseStockReceiptLine.objects.filter(
+        receipt__company_id=company_id,
+        receipt__transfer_date__gt=as_of,
+    )
+    if pond_id is not None:
+        receipts = receipts.filter(receipt__pond_id=pond_id)
+    for row in receipts.values("receipt__pond_id", "item_id", "quantity"):
+        add(row["receipt__pond_id"], row["item_id"], Decimal(str(row["quantity"] or 0)))
+
+    returns = PondWarehouseStockReturnLine.objects.filter(
+        stock_return__company_id=company_id,
+        stock_return__transfer_date__gt=as_of,
+    )
+    if pond_id is not None:
+        returns = returns.filter(stock_return__pond_id=pond_id)
+    for row in returns.values("stock_return__pond_id", "item_id", "quantity"):
+        add(row["stock_return__pond_id"], row["item_id"], -Decimal(str(row["quantity"] or 0)))
+
+    moves = PondWarehouseInterPondTransferLine.objects.filter(
+        transfer__company_id=company_id,
+        transfer__transfer_date__gt=as_of,
+    )
+    for row in moves.values("transfer__from_pond_id", "transfer__to_pond_id", "item_id", "quantity"):
+        qty = Decimal(str(row["quantity"] or 0))
+        add(row["transfer__from_pond_id"], row["item_id"], -qty)
+        add(row["transfer__to_pond_id"], row["item_id"], qty)
+
+    consumed = AquacultureExpenseInventoryLine.objects.filter(
+        expense__company_id=company_id,
+        expense__expense_date__gt=as_of,
+        expense__pond_id__isnull=False,
+        expense__expense_category__in=POND_WAREHOUSE_CONSUMPTION_CATEGORIES,
+    )
+    if pond_id is not None:
+        consumed = consumed.filter(expense__pond_id=pond_id)
+    for row in consumed.values("expense__pond_id", "item_id", "quantity"):
+        add(row["expense__pond_id"], row["item_id"], -Decimal(str(row["quantity"] or 0)))
+
+    bills = BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__bill_date__gt=as_of,
+        bill__stock_receipt_applied=True,
+        aquaculture_pond_id__isnull=False,
+        item_id__isnull=False,
+    ).exclude(item__pos_category__iexact="fish")
+    if pond_id is not None:
+        bills = bills.filter(aquaculture_pond_id=pond_id)
+    for row in bills.values("aquaculture_pond_id", "item_id", "quantity"):
+        add(row["aquaculture_pond_id"], row["item_id"], Decimal(str(row["quantity"] or 0)))
+
+    return dict(delta)
+
+
+def pond_warehouse_stock_matrix(
+    company_id: int,
+    *,
+    pond_id: int | None = None,
+    as_of: date | None = None,
+) -> list[dict]:
     """On-hand pond-warehouse quantities across ponds (same shape as single-pond rows, plus pond fields)."""
     qs = ItemPondStock.objects.filter(company_id=company_id).select_related(
         "pond",
@@ -1031,10 +1111,13 @@ def pond_warehouse_stock_matrix(company_id: int, *, pond_id: int | None = None) 
     )
     if pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
+    later = pond_warehouse_qty_change_after(company_id, as_of, pond_id=pond_id) if as_of is not None else {}
     qs = qs.order_by("pond__name", "item__name", "item_id")
     out: list[dict] = []
     for r in qs:
         q = r.quantity if r.quantity is not None else Decimal("0")
+        if later:
+            q = q - later.get((r.pond_id, r.item_id), Decimal("0"))
         if q <= 0:
             continue
         pond = r.pond

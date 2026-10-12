@@ -154,6 +154,7 @@ def compute_fish_stock_position_rows(
     fish_species_filter: str | None = None,
     include_inactive_ponds: bool = False,
     entries_after_date: date | None = None,
+    as_of_date: date | None = None,
 ) -> list[dict]:
     """
     Per-pond running totals: transfers in/out, posted vendor fry (pond-tagged fish lines),
@@ -185,6 +186,8 @@ def compute_fish_stock_position_rows(
     )
     if entries_after_date is not None:
         lines_in = lines_in.filter(transfer__transfer_date__gt=entries_after_date)
+    if as_of_date is not None:
+        lines_in = lines_in.filter(transfer__transfer_date__lte=as_of_date)
     for ln in lines_in:
         tp = ln.to_pond_id
         if pond_id is not None and tp != pond_id:
@@ -202,6 +205,8 @@ def compute_fish_stock_position_rows(
     lines_out = AquacultureFishPondTransferLine.objects.filter(transfer__company_id=cid).select_related("transfer")
     if entries_after_date is not None:
         lines_out = lines_out.filter(transfer__transfer_date__gt=entries_after_date)
+    if as_of_date is not None:
+        lines_out = lines_out.filter(transfer__transfer_date__lte=as_of_date)
     for ln in lines_out:
         fp = ln.transfer.from_pond_id
         if pond_id is not None and fp != pond_id:
@@ -223,6 +228,8 @@ def compute_fish_stock_position_rows(
         sale_q = sale_q.filter(Q(production_cycle_id=cy_id) | Q(production_cycle_id__isnull=True))
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
+    if as_of_date is not None:
+        sale_q = sale_q.filter(sale_date__lte=as_of_date)
     # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
     # A cleared link (transfer deleted) must not turn those rows into a second harvest.
     sale_q = sale_q.filter(
@@ -268,6 +275,8 @@ def compute_fish_stock_position_rows(
         ledger_q = ledger_q.filter(production_cycle_id=cy_id)
     if entries_after_date is not None:
         ledger_q = ledger_q.filter(entry_date__gt=entries_after_date)
+    if as_of_date is not None:
+        ledger_q = ledger_q.filter(entry_date__lte=as_of_date)
 
     ledger_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     mortality_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
@@ -311,6 +320,8 @@ def compute_fish_stock_position_rows(
         bl_q = bl_q.filter(aquaculture_production_cycle_id=cy_id)
     if entries_after_date is not None:
         bl_q = bl_q.filter(bill__bill_date__gt=entries_after_date)
+    if as_of_date is not None:
+        bl_q = bl_q.filter(bill__bill_date__lte=as_of_date)
     for ln in bl_q:
         it = ln.item
         if not it or not _bill_line_matches_species_filter(ln, it, species_filter_code):
@@ -338,6 +349,8 @@ def compute_fish_stock_position_rows(
             qs = qs.filter(fish_species=species_filter_code)
         if entries_after_date is not None:
             qs = qs.filter(sample_date__gt=entries_after_date)
+        if as_of_date is not None:
+            qs = qs.filter(sample_date__lte=as_of_date)
         # Incoming lot rows (purchase / transfer-in) measure the batch that arrived, not
         # the standing crop. Prefer a seine or harvest-sale sample for size.
         standing = qs.filter(
@@ -429,6 +442,7 @@ def compute_fish_stock_position_rows(
             production_cycle_id=cy_id,
             include_inactive_ponds=include_inactive_ponds,
             entries_after_date=entries_after_date,
+            as_of_date=as_of_date,
         )
     return out_rows
 
@@ -441,6 +455,7 @@ def _apply_all_species_combined_biomass(
     production_cycle_id: int | None,
     include_inactive_ponds: bool,
     entries_after_date: date | None,
+    as_of_date: date | None = None,
 ) -> list[dict]:
     """
     Replace pond-wide avg × all-heads with the sum of each species' own sample × heads.
@@ -456,6 +471,7 @@ def _apply_all_species_combined_biomass(
         production_cycle_id=production_cycle_id,
         include_inactive_ponds=include_inactive_ponds,
         entries_after_date=entries_after_date,
+        as_of_date=as_of_date,
     )
     by_pond: dict[int, list[dict]] = defaultdict(list)
     for bucket in breakdown:
@@ -465,7 +481,7 @@ def _apply_all_species_combined_biomass(
         by_pond[int(pid)].append(bucket)
 
     lang = company_language(company_id)
-    as_of = date.today()
+    as_of = as_of_date or date.today()
     out: list[dict] = []
     for row in rows:
         pid = int(row["pond_id"])

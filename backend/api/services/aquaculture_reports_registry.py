@@ -490,7 +490,7 @@ def _report_pond_warehouse_stock(
     pond_filter_id, perr = _pond_filter(company_id, request.GET.get("pond_id"))
     if perr:
         return perr
-    matrix = pond_warehouse_stock_matrix(company_id, pond_id=pond_filter_id)
+    matrix = pond_warehouse_stock_matrix(company_id, pond_id=pond_filter_id, as_of=as_of)
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
     grand_qty = Decimal("0")
@@ -587,6 +587,7 @@ def _report_fish_stock_position(
         pond_id=pond_filter_id,
         production_cycle_id=cycle_filter_id,
         include_inactive_ponds=False,
+        as_of_date=as_of,
     )
     groups: list[dict[str, Any]] = []
     total_kg = Decimal("0")
@@ -664,6 +665,53 @@ def _report_fish_stock_position(
     }
 
 
+def _station_stock_change_after(company_id: int, as_of: date) -> dict[tuple[int, int], Decimal]:
+    """Net shop-bin change after ``as_of``, keyed by (station_id, item_id)."""
+    from api.models import PondWarehouseStockReceiptLine, PondWarehouseStockReturnLine
+
+    delta: dict[tuple[int, int], Decimal] = defaultdict(lambda: Decimal("0"))
+
+    def add(sid, iid, qty: Decimal) -> None:
+        if sid is None or iid is None or qty == 0:
+            return
+        delta[(int(sid), int(iid))] += qty
+
+    for row in InvoiceLine.objects.filter(
+        invoice__company_id=company_id,
+        invoice__invoice_date__gt=as_of,
+        invoice__stock_relieved=True,
+        stock_relieved_quantity__gt=0,
+        stock_relieved_station_id__isnull=False,
+    ).values("stock_relieved_station_id", "item_id", "stock_relieved_quantity"):
+        add(row["stock_relieved_station_id"], row["item_id"], -Decimal(str(row["stock_relieved_quantity"] or 0)))
+
+    for row in BillLine.objects.filter(
+        bill__company_id=company_id,
+        bill__bill_date__gt=as_of,
+        bill__stock_receipt_applied=True,
+        aquaculture_pond_id__isnull=True,
+        item_id__isnull=False,
+    ).exclude(item__pos_category__iexact="fish").values(
+        "receipt_station_id", "bill__receipt_station_id", "item_id", "quantity"
+    ):
+        sid = row["receipt_station_id"] or row["bill__receipt_station_id"]
+        add(sid, row["item_id"], Decimal(str(row["quantity"] or 0)))
+
+    for row in PondWarehouseStockReceiptLine.objects.filter(
+        receipt__company_id=company_id,
+        receipt__transfer_date__gt=as_of,
+    ).values("receipt__from_station_id", "item_id", "quantity"):
+        add(row["receipt__from_station_id"], row["item_id"], -Decimal(str(row["quantity"] or 0)))
+
+    for row in PondWarehouseStockReturnLine.objects.filter(
+        stock_return__company_id=company_id,
+        stock_return__transfer_date__gt=as_of,
+    ).values("stock_return__to_station_id", "item_id", "quantity"):
+        add(row["stock_return__to_station_id"], row["item_id"], Decimal(str(row["quantity"] or 0)))
+
+    return dict(delta)
+
+
 def _report_shop_station_stock(
     company_id: int, as_of: date, request: HttpRequest
 ) -> dict[str, Any] | JsonResponse:
@@ -686,8 +734,10 @@ def _report_shop_station_stock(
     station_names: dict[int, str] = {}
     grand_val = Decimal("0")
     grand_lines = 0
+    later_station = _station_stock_change_after(company_id, as_of)
     for row in qs:
         q = row.quantity if row.quantity is not None else Decimal("0")
+        q = q - later_station.get((int(row.station_id), int(row.item_id)), Decimal("0"))
         if q <= 0:
             continue
         it = row.item
@@ -774,7 +824,9 @@ def _biological_fish_inventory_value(
 ) -> tuple[Decimal, dict[str, Any]]:
     from api.services.aquaculture_transfer_cost import lookup_transfer_cost_per_kg
 
-    rows = compute_fish_stock_position_rows(company_id, pond_id=pond_id, include_inactive_ponds=False)
+    rows = compute_fish_stock_position_rows(
+        company_id, pond_id=pond_id, include_inactive_ponds=False, as_of_date=as_of
+    )
     if not rows:
         return Decimal("0"), {"implied_net_weight_kg": "0", "implied_net_fish_count": 0}
     row = rows[0]
@@ -846,7 +898,7 @@ def _report_pond_total_inventory(
     if pond_filter_id is not None:
         ponds = ponds.filter(pk=pond_filter_id)
 
-    matrix = pond_warehouse_stock_matrix(company_id, pond_id=pond_filter_id)
+    matrix = pond_warehouse_stock_matrix(company_id, pond_id=pond_filter_id, as_of=as_of)
     warehouse_by_pond: dict[int, list[dict]] = defaultdict(list)
     for row in matrix:
         item_id = int(row["item_id"])
@@ -1107,6 +1159,7 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
             company_id=company_id,
             sale_date__gte=start,
             sale_date__lte=end,
+            invoice_id__isnull=False,
         )
         .select_related("pond", "production_cycle", "invoice")
         .order_by("pond_id", "sale_date", "id")
@@ -1175,11 +1228,22 @@ def _report_fish_sales(company_id: int, start: date, end: date, request: HttpReq
             }
         )
 
+    uninvoiced_excluded = AquacultureFishSale.objects.filter(
+        company_id=company_id,
+        sale_date__gte=start,
+        sale_date__lte=end,
+        invoice_id__isnull=True,
+    )
+    if pond_filter_id is not None:
+        uninvoiced_excluded = uninvoiced_excluded.filter(pond_id=pond_filter_id)
+    if cycle_filter_id is not None:
+        uninvoiced_excluded = uninvoiced_excluded.filter(production_cycle_id=cycle_filter_id)
     summary = {
         "total_amount_bdt": float(grand_amt),
         "total_weight_kg": float(grand_wt),
         "line_count": grand_lines,
         "pond_group_count": len(groups),
+        "uninvoiced_excluded_count": uninvoiced_excluded.count(),
     }
     return {
         "period": _period_block(start, end),
@@ -1205,26 +1269,34 @@ def _report_pos_pond_shop_sales(
     if pond_filter_id is not None:
         pond_q = pond_q.filter(pk=pond_filter_id)
     ponds = list(pond_q.only("id", "name", "pos_customer_id"))
-    cust_to_pond: dict[int, AquaculturePond] = {}
+    ponds_by_customer: dict[int, list[AquaculturePond]] = defaultdict(list)
     for p in ponds:
         cid_cust = getattr(p, "pos_customer_id", None)
         if cid_cust:
-            cust_to_pond[int(cid_cust)] = p
-    if not cust_to_pond:
+            ponds_by_customer[int(cid_cust)].append(p)
+    if not ponds_by_customer:
         return {
             "groups": [],
             "totals": {"total_amount": "0.00", "line_count": 0},
             "summary": {"total_amount_bdt": 0.0, "line_count": 0, "pond_group_count": 0},
         }
 
+    fish_sale_invoice_ids = set(
+        AquacultureFishSale.objects.filter(
+            company_id=company_id,
+            invoice_id__isnull=False,
+        ).values_list("invoice_id", flat=True)
+    )
     inv_qs = (
         Invoice.objects.filter(
             company_id=company_id,
             invoice_date__gte=start,
             invoice_date__lte=end,
-            customer_id__in=list(cust_to_pond.keys()),
+            customer_id__in=list(ponds_by_customer.keys()),
         )
         .exclude(status="draft")
+        .exclude(id__in=fish_sale_invoice_ids)
+        .exclude(internal_fish_transfer_line_id__isnull=False)
         .select_related("station", "customer")
     )
     inv_ids = list(inv_qs.values_list("id", flat=True))
@@ -1234,8 +1306,8 @@ def _report_pos_pond_shop_sales(
         .order_by("invoice_id", "id")
     )
 
-    by_pond: dict[int, list[dict]] = defaultdict(list)
-    pond_names: dict[int, str] = {p.id: (p.name or "").strip() for p in ponds}
+    by_pond: dict[int | None, list[dict]] = defaultdict(list)
+    pond_names: dict[int | None, str] = {p.id: (p.name or "").strip() for p in ponds}
 
     grand_amt = Decimal("0")
     grand_n = 0
@@ -1244,10 +1316,16 @@ def _report_pos_pond_shop_sales(
             continue
         inv = line.invoice
         cust_id = inv.customer_id
-        pond = cust_to_pond.get(cust_id)
-        if not pond:
+        linked = ponds_by_customer.get(int(cust_id)) if cust_id else None
+        if not linked:
             continue
-        pid = pond.id
+        if len(linked) == 1:
+            pid: int | None = linked[0].id
+        else:
+            pid = None
+            pond_names[None] = "Shared POS customer (" + ", ".join(
+                (p.name or "").strip() or f"Pond #{p.id}" for p in linked
+            ) + ")"
         it = line.item
         amt = line.amount or Decimal("0")
         grand_amt += amt
@@ -1274,7 +1352,7 @@ def _report_pos_pond_shop_sales(
         )
 
     groups: list[dict[str, Any]] = []
-    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
+    for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), -1 if x is None else x)):
         plines = by_pond[pid]
         sub = _money_q(sum((_decimal(l["amount"]) for l in plines), Decimal("0")))
         groups.append(
@@ -1605,7 +1683,7 @@ def _report_feed_medicine_consumption(
         date_from=start,
         date_to=end,
         kind=kind_norm,
-        limit=10000,
+        limit=0,
     )
 
     soft_note: str | None = None
@@ -1938,8 +2016,18 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
     for pid in sorted(by_pond.keys(), key=lambda x: (pond_names.get(x, ""), x)):
         lines = by_pond[pid]
         total_samples += len(lines)
-        wt_sum = Decimal("0")
+        # Standing crop, not the sum of every sample in the period.
+        latest_by_species: dict[str, dict] = {}
         for ln in lines:
+            sp = str(ln.get("fish_species") or "")
+            prev = latest_by_species.get(sp)
+            if prev is None or (ln.get("sample_date") or "", ln.get("id") or 0) > (
+                prev.get("sample_date") or "",
+                prev.get("id") or 0,
+            ):
+                latest_by_species[sp] = ln
+        wt_sum = Decimal("0")
+        for ln in latest_by_species.values():
             if ln.get("estimated_total_weight_kg"):
                 wt_sum += _decimal(str(ln["estimated_total_weight_kg"]))
         groups.append(
@@ -1949,6 +2037,7 @@ def _report_sampling(company_id: int, start: date, end: date, request: HttpReque
                 "lines": lines,
                 "subtotal_samples": len(lines),
                 "subtotal_estimated_weight_kg": str(_money_q(wt_sum)) if wt_sum != 0 else "0",
+                "subtotal_weight_basis": "latest_sample_per_species",
             }
         )
 
@@ -1980,6 +2069,7 @@ def _report_fish_stock_breakdown(
         pond_id=pond_filter_id,
         production_cycle_id=cycle_filter_id,
         include_inactive_ponds=False,
+        as_of_date=as_of,
     )
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
@@ -2073,7 +2163,7 @@ def _report_fish_biomass_movements(
         production_cycle_id=cycle_filter_id,
         date_from=start,
         date_to=end,
-        limit=5000,
+        limit=0,
     )
     by_pond: dict[int, list[dict]] = defaultdict(list)
     pond_names: dict[int, str] = {}
@@ -2150,7 +2240,7 @@ def _report_biological_asset_ledger(
             pond_id=pid,
             as_of_date=as_of,
             production_cycle=cycle,
-            limit=500,
+            limit=0,
         )
         return {
             "pond_id": pid,
@@ -2350,10 +2440,16 @@ def _fcr_data_coverage(
         hints.append(
             f"{feed_rows} feed expense(s) in range, but none carry a feed weight (kg), so feed kg stays 0."
         )
-    if samples_in < 2:
+    if samples_in < 1:
         hints.append(
-            f"Biomass gain needs at least two samplings inside the range ({samples_in} found)"
+            "No sampling in this date range. Biomass gain uses a standing sample in the range, "
+            "or the first and last sample when the pond has no live crop"
             + (f" — latest sampling is {last_sample.isoformat()}." if last_sample else " — no sampling recorded at all.")
+        )
+    elif samples_in == 1:
+        hints.append(
+            "One sampling in this date range. That is enough when it is a standing sample of the live crop. "
+            "Two samples are required only when there is no live standing weight."
         )
     if sales_in == 0 and last_sale:
         hints.append(f"No harvest sale in this date range — latest harvest sale is {last_sale.isoformat()}.")
@@ -2397,6 +2493,7 @@ def _report_fcr_biomass(company_id: int, start: date, end: date, request: HttpRe
         production_cycle_id=cycle_filter_id,
         fish_species_filter=species_raw,
         include_inactive_ponds=False,
+        as_of_date=end,
     )
     load_rows: list[dict[str, Any]] = []
     for r in stock_rows:

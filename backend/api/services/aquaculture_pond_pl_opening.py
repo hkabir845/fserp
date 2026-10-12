@@ -93,19 +93,46 @@ def pl_opening_rows_for_pond(company_id: int, pond_id: int) -> dict:
     }
 
 
-def pl_opening_totals_for_pond(company_id: int, pond_id: int) -> tuple[Decimal, Decimal, dict[str, Decimal], dict[str, Decimal]]:
-    """Return (income_total, expense_total, income_by_code, expense_by_code) for pond analytics."""
+def pl_opening_totals_for_pond(
+    company_id: int,
+    pond_id: int,
+    *,
+    period_start: date | None = None,
+    period_end: date | None = None,
+) -> tuple[Decimal, Decimal, dict[str, Decimal], dict[str, Decimal]]:
+    """Return (income_total, expense_total, income_by_code, expense_by_code) for pond analytics.
+
+    When ``period_start`` and ``period_end`` are set, only openings whose ``as_of_date``
+    falls inside that window are included. A "today" or "7 days" P&L must not repeat
+    the full brought-forward balance from an earlier cutover.
+    """
     rows = pl_opening_rows_for_pond(company_id, pond_id)
     income_by: dict[str, Decimal] = {}
     expense_by: dict[str, Decimal] = {}
     income_total = Decimal("0")
     expense_total = Decimal("0")
+
+    def _in_window(as_of_raw: str | None) -> bool:
+        if period_start is None or period_end is None:
+            return True
+        if not as_of_raw:
+            return False
+        try:
+            as_of = date.fromisoformat(str(as_of_raw)[:10])
+        except ValueError:
+            return False
+        return period_start <= as_of <= period_end
+
     for r in rows["income"]:
+        if not _in_window(r.get("as_of_date")):
+            continue
         amt = _q(Decimal(r["amount"]))
         if amt != 0:
             income_by[r["category_code"]] = amt
             income_total += amt
     for r in rows["expense"]:
+        if not _in_window(r.get("as_of_date")):
+            continue
         amt = _q(Decimal(r["amount"]))
         if amt != 0:
             expense_by[r["category_code"]] = amt

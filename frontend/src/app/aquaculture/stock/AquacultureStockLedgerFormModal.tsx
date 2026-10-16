@@ -548,25 +548,13 @@ export function AquacultureStockLedgerFormModal({
     })()
   }, [open, form.pond_id])
 
-  useEffect(() => {
-    if (!open || glLinked || weightTouched) return
-    const loss = form.entry_kind === 'loss'
-    const countStr = loss ? form.fish_removed : form.adj_fish_count
-    const kg = kgFromFishCountAndPerKg(countStr, form.fish_per_kg, !loss)
-    if (!kg && countStr.trim() !== '') return
-    setForm((f) => {
-      if (loss) return f.kg_removed === kg ? f : { ...f, kg_removed: kg }
-      return f.adj_weight_kg === kg ? f : { ...f, adj_weight_kg: kg }
-    })
-  }, [
-    open,
-    glLinked,
-    weightTouched,
-    form.entry_kind,
-    form.fish_removed,
-    form.adj_fish_count,
-    form.fish_per_kg,
-  ])
+  const sampleFishPerKg = String(lastSample?.fish_per_kg ?? '').trim()
+  const shownFishPerKg = form.fish_per_kg.trim() || (fishPerKgTouched ? '' : sampleFishPerKg)
+  const lossEntry = form.entry_kind === 'loss'
+  const activeCount = lossEntry ? form.fish_removed : form.adj_fish_count
+  const autoWeightKg = kgFromFishCountAndPerKg(activeCount, shownFishPerKg, !lossEntry)
+  const storedWeightKg = lossEntry ? form.kg_removed : form.adj_weight_kg
+  const shownWeightKg = weightTouched ? storedWeightKg : autoWeightKg
 
   const applyLastSampleQuantities = () => {
     if (!lastSample) return
@@ -576,13 +564,10 @@ export function AquacultureStockLedgerFormModal({
 
   const weightKgForBook = useMemo(() => {
     if (glLinked || bookPostingLocked) return null
-    if (form.entry_kind === 'loss') {
-      const kg = Number(String(form.kg_removed).replace(/,/g, ''))
-      return Number.isFinite(kg) && kg > 0 ? kg : null
-    }
-    const kg = Number(String(form.adj_weight_kg).replace(/,/g, ''))
-    return Number.isFinite(kg) && kg !== 0 ? Math.abs(kg) : null
-  }, [form.entry_kind, form.kg_removed, form.adj_weight_kg, glLinked, bookPostingLocked])
+    const kg = Number(String(shownWeightKg).replace(/,/g, ''))
+    if (!Number.isFinite(kg) || kg === 0) return null
+    return Math.abs(kg)
+  }, [shownWeightKg, glLinked, bookPostingLocked])
 
   const suggestedBookValue = useMemo(() => {
     if (!bioCost?.cost_per_kg || weightKgForBook == null) return null
@@ -617,18 +602,17 @@ export function AquacultureStockLedgerFormModal({
 
   const preview = useMemo(() => {
     if (glLinked) return null
+    const kg = Number(String(shownWeightKg).replace(/,/g, ''))
     if (form.entry_kind === 'loss') {
       const heads = parseInt(form.fish_removed, 10)
-      const kg = Number(String(form.kg_removed).replace(/,/g, ''))
       if (!Number.isFinite(heads) || heads <= 0 || !Number.isFinite(kg) || kg <= 0) return null
       return { fish: -heads, kg: -Math.abs(kg) }
     }
-    if (form.adj_fish_count.trim() === '' || form.adj_weight_kg.trim() === '') return null
+    if (form.adj_fish_count.trim() === '') return null
     const fish = parseInt(form.adj_fish_count, 10)
-    const kg = Number(String(form.adj_weight_kg).replace(/,/g, ''))
     if (!Number.isFinite(fish) || fish === 0 || !Number.isFinite(kg) || kg === 0) return null
     return { fish, kg }
-  }, [form, glLinked])
+  }, [form, glLinked, shownWeightKg])
 
   const buildBody = (): Record<string, unknown> | null => {
     const pond_id = parseInt(form.pond_id, 10)
@@ -645,7 +629,7 @@ export function AquacultureStockLedgerFormModal({
         return null
       }
       fish_count_delta = -Math.abs(hr)
-      const kg = Number(String(form.kg_removed).replace(/,/g, ''))
+      const kg = Number(String(shownWeightKg).replace(/,/g, ''))
       if (!Number.isFinite(kg) || kg <= 0) {
         toast.error(t('stockEnterWeightRemoved'))
         return null
@@ -661,11 +645,11 @@ export function AquacultureStockLedgerFormModal({
         toast.error(t('stockFishCountNonZero'))
         return null
       }
-      if (form.adj_weight_kg.trim() === '') {
+      if (shownWeightKg.trim() === '') {
         toast.error(t('stockWeightRequired'))
         return null
       }
-      weight_kg_delta = Number(String(form.adj_weight_kg).replace(/,/g, ''))
+      weight_kg_delta = Number(String(shownWeightKg).replace(/,/g, ''))
       if (!Number.isFinite(weight_kg_delta) || weight_kg_delta === 0) {
         toast.error(t('stockWeightNonZero'))
         return null
@@ -1001,9 +985,9 @@ export function AquacultureStockLedgerFormModal({
                   <QuantityFromSampleFields
                     lastSample={lastSample}
                     lastSampleLoading={lastSampleLoading}
-                    fishPerKg={form.fish_per_kg}
+                    fishPerKg={shownFishPerKg}
                     fishCount={form.fish_removed}
-                    weightKg={form.kg_removed}
+                    weightKg={shownWeightKg}
                     onFishPerKgChange={(v) => {
                       setFishPerKgTouched(true)
                       setWeightTouched(false)
@@ -1028,9 +1012,9 @@ export function AquacultureStockLedgerFormModal({
                 <QuantityFromSampleFields
                   lastSample={lastSample}
                   lastSampleLoading={lastSampleLoading}
-                  fishPerKg={form.fish_per_kg}
+                  fishPerKg={shownFishPerKg}
                   fishCount={form.adj_fish_count}
-                  weightKg={form.adj_weight_kg}
+                  weightKg={shownWeightKg}
                   onFishPerKgChange={(v) => {
                     setFishPerKgTouched(true)
                     setWeightTouched(false)

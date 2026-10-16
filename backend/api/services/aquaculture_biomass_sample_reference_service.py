@@ -1,4 +1,4 @@
-"""Look up prior biomass samples to suggest stock-ledger fish count / weight."""
+"""Look up the latest biomass sample so a stock-ledger entry can take fish per kg from it."""
 from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal

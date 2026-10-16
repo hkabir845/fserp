@@ -35,10 +35,10 @@ const strings = {
   stockLoadingLastSample: { en: 'Loading last biomass sample…', bn: 'সর্বশেষ বায়োমাস নমুনা লোড হচ্ছে…' },
   stockLastSample: { en: 'Last sample', bn: 'সর্বশেষ নমুনা' },
   stockFish: { en: 'fish', bn: 'মাছ' },
-  stockReapplySample: { en: 'Re-apply from last sample', bn: 'সর্বশেষ নমুনা থেকে পুনরায় প্রয়োগ' },
+  stockReapplySample: { en: 'Re-apply fish per kg from last sample', bn: 'সর্বশেষ নমুনা থেকে প্রতি kg-এ মাছ পুনরায় প্রয়োগ' },
   stockNoSampleHint: {
-    en: 'No biomass sample for this pond, batch, and species — enter fish count and total weight.',
-    bn: 'এই পুকুর, ব্যাচ ও প্রজাতির জন্য বায়োমাস নমুনা নেই — মাছের সংখ্যা ও মোট ওজন দিন।',
+    en: 'No biomass sample for this pond, batch, and species — enter fish per kg, or type total weight.',
+    bn: 'এই পুকুর, ব্যাচ ও প্রজাতির জন্য বায়োমাস নমুনা নেই — প্রতি kg-এ মাছ দিন, অথবা মোট ওজন লিখুন।',
   },
   stockFishCountHeads: { en: 'Fish count (heads)', bn: 'মাছের সংখ্যা (টি)' },
   stockFishCountDelta: { en: 'Δ Fish count', bn: 'Δ মাছের সংখ্যা' },
@@ -49,13 +49,19 @@ const strings = {
   },
   stockTotalWeightKg: { en: 'Total weight (kg)', bn: 'মোট ওজন (kg)' },
   stockWeightDeltaKg: { en: 'Δ Total weight (kg)', bn: 'Δ মোট ওজন (kg)' },
-  stockTotalBiomassHint: { en: 'Total biomass for this entry', bn: 'এই এন্ট্রির মোট বায়োমাস' },
-  stockWeightSignHint: { en: 'Sign follows fish count Δ', bn: 'চিহ্ন মাছের সংখ্যা Δ অনুযায়ী' },
+  stockTotalBiomassHint: {
+    en: 'Calculated from heads ÷ fish per kg',
+    bn: 'মাছের সংখ্যা ÷ প্রতি kg-এ মাছ থেকে হিসাব',
+  },
+  stockWeightSignHint: {
+    en: 'Calculated from count ÷ fish per kg; sign follows the count',
+    bn: 'সংখ্যা ÷ প্রতি kg-এ মাছ থেকে হিসাব; চিহ্ন সংখ্যা অনুযায়ী',
+  },
   stockFishPerKg: { en: 'Fish per kg', bn: 'প্রতি kg-এ মাছ' },
-  stockFishPerKgAutoPh: { en: 'Auto from count ÷ weight', bn: 'সংখ্যা ÷ ওজন থেকে স্বয়ংক্রিয়' },
+  stockFishPerKgAutoPh: { en: 'From last sample', bn: 'সর্বশেষ নমুনা থেকে' },
   stockFishPerKgHint: {
-    en: 'Fills automatically; editable override',
-    bn: 'স্বয়ংক্রিয় পূরণ; প্রয়োজনে ম্যানুয়াল পরিবর্তন',
+    en: 'From the last sampling record; editable',
+    bn: 'সর্বশেষ নমুনা রেকর্ড থেকে; প্রয়োজনে পরিবর্তন',
   },
   stockSelectPond: { en: 'Select a pond', bn: 'একটি পুকুর নির্বাচন করুন' },
   stockEnterFishRemoved: {

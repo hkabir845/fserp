@@ -134,9 +134,8 @@ function kgFromFishCountAndPerKg(countStr: string, fishPerKgStr: string, signed 
   const fpk = Number(String(fishPerKgStr).replace(/,/g, ''))
   if (!Number.isFinite(c) || c === 0 || !Number.isFinite(fpk) || fpk <= 0) return ''
   const kg = Math.abs(c) / fpk
-  const rounded = Math.round(kg * 10000) / 10000
-  const s = String(rounded)
-  if (signed && c < 0) return `-${s.replace(/^-/, '')}`
+  const s = (Math.round(kg * 10000) / 10000).toFixed(4)
+  if (signed && c < 0) return `-${s}`
   return s
 }
 
@@ -164,7 +163,7 @@ function QuantityFromSampleFields({
   weightLabel,
   weightHint,
   fishCountPlaceholder = 'e.g. 250',
-  weightPlaceholder = 'e.g. 4.5',
+  weightPlaceholder = 'Auto',
   t,
 }: {
   lastSample: LastSampleReference | null
@@ -234,6 +233,19 @@ function QuantityFromSampleFields({
         </label>
         <label className="block">
           <span className={labelCls}>
+            {t('stockFishPerKg')} <span className="text-destructive">*</span>
+          </span>
+          <input
+            className={`${inputCls} mt-1.5`}
+            inputMode="decimal"
+            placeholder={t('stockFishPerKgAutoPh')}
+            value={fishPerKg}
+            onChange={(e) => onFishPerKgChange(e.target.value)}
+          />
+          <span className="mt-1 block text-xs text-muted-foreground">{t('stockFishPerKgHint')}</span>
+        </label>
+        <label className="block">
+          <span className={labelCls}>
             {weightLabel} <span className="text-destructive">*</span>
           </span>
           <input
@@ -246,19 +258,6 @@ function QuantityFromSampleFields({
           <span className="mt-1 block text-xs text-muted-foreground">
             {weightHint ?? t('stockTotalBiomassHint')}
           </span>
-        </label>
-        <label className="block">
-          <span className={labelCls}>
-            {t('stockFishPerKg')} <span className="text-destructive">*</span>
-          </span>
-          <input
-            className={`${inputCls} mt-1.5`}
-            inputMode="decimal"
-            placeholder={t('stockFishPerKgAutoPh')}
-            value={fishPerKg}
-            onChange={(e) => onFishPerKgChange(e.target.value)}
-          />
-          <span className="mt-1 block text-xs text-muted-foreground">{t('stockFishPerKgHint')}</span>
         </label>
       </div>
     </div>
@@ -359,15 +358,11 @@ export function AquacultureStockLedgerFormModal({
   const [lastSampleLoading, setLastSampleLoading] = useState(false)
   const [bookValueTouched, setBookValueTouched] = useState(false)
   const [fishPerKgTouched, setFishPerKgTouched] = useState(false)
+  const [weightTouched, setWeightTouched] = useState(false)
   const [debouncedSpeciesOther, setDebouncedSpeciesOther] = useState('')
   const prevOpenRef = useRef(false)
-  const quantitiesDirtyRef = useRef(false)
   const prefScopeRef = useRef('')
   const prevPrefillScopeRef = useRef('')
-
-  const markQuantitiesDirty = useCallback(() => {
-    quantitiesDirtyRef.current = true
-  }, [])
 
   useEffect(() => {
     if (!open) {
@@ -385,7 +380,7 @@ export function AquacultureStockLedgerFormModal({
       )
       setBookValueTouched(false)
       setFishPerKgTouched(false)
-      quantitiesDirtyRef.current = false
+      setWeightTouched(editing != null)
       prefScopeRef.current = ''
       prevPrefillScopeRef.current = ''
       setBioCost(null)
@@ -404,11 +399,13 @@ export function AquacultureStockLedgerFormModal({
   useEffect(() => {
     if (!open) return
     if (prevPrefillScopeRef.current === prefillScope) return
+    const scopeChanged = prevPrefillScopeRef.current !== ''
     prevPrefillScopeRef.current = prefillScope
-    quantitiesDirtyRef.current = false
+    if (!scopeChanged) return
     prefScopeRef.current = ''
     setBookValueTouched(false)
     setFishPerKgTouched(false)
+    setWeightTouched(false)
   }, [open, prefillScope])
 
   useEffect(() => {
@@ -417,12 +414,13 @@ export function AquacultureStockLedgerFormModal({
   }, [open, form.entry_kind])
 
   useEffect(() => {
-    if (!open || glLinked || bookPostingLocked || !form.pond_id || !form.fish_species) {
+    if (!open || glLinked || !form.pond_id || !form.fish_species) {
       setLastSample(null)
       setLastSampleLoading(false)
       return
     }
     const ac = new AbortController()
+    setLastSample(null)
     setLastSampleLoading(true)
     void (async () => {
       try {
@@ -453,7 +451,6 @@ export function AquacultureStockLedgerFormModal({
   }, [
     open,
     glLinked,
-    bookPostingLocked,
     form.pond_id,
     form.production_cycle_id,
     form.fish_species,
@@ -500,53 +497,27 @@ export function AquacultureStockLedgerFormModal({
     form.entry_date,
   ])
 
-  const applySamplePrefill = useCallback((ref: LastSampleReference, entryKind: string) => {
-    const count =
-      ref.estimated_fish_count != null && ref.estimated_fish_count > 0
-        ? String(ref.estimated_fish_count)
-        : ''
-    const kg = ref.estimated_total_weight_kg?.trim() || ''
-    const kgResolved =
-      kg ||
-      (entryKind === 'loss'
-        ? kgFromFishCountAndPerKg(count, ref.fish_per_kg, false)
-        : kgFromFishCountAndPerKg(count, ref.fish_per_kg, true))
-    const countN = parseInt(count, 10)
-    const kgN = Number(String(kgResolved).replace(/,/g, ''))
-    const derivedFpk = deriveFishPerKg(Math.abs(countN), Math.abs(kgN)) || ref.fish_per_kg
+  const applySampleFishPerKg = useCallback((ref: LastSampleReference) => {
+    const fpk = String(ref.fish_per_kg ?? '').trim()
+    if (!fpk) return
     setFishPerKgTouched(false)
-    setForm((f) => {
-      if (entryKind === 'loss') {
-        return {
-          ...f,
-          fish_removed: count || f.fish_removed,
-          kg_removed: kgResolved || f.kg_removed,
-          fish_per_kg: derivedFpk,
-        }
-      }
-      return {
-        ...f,
-        adj_fish_count: count || f.adj_fish_count,
-        adj_weight_kg: kgResolved || f.adj_weight_kg,
-        fish_per_kg: derivedFpk,
-      }
-    })
+    setWeightTouched(false)
+    setForm((f) => (f.fish_per_kg === fpk ? f : { ...f, fish_per_kg: fpk }))
   }, [])
 
   useEffect(() => {
-    if (!open || glLinked || bookPostingLocked || !lastSample) return
-    if (quantitiesDirtyRef.current) return
+    if (!open || glLinked || bookPostingLocked || !lastSample || fishPerKgTouched) return
     if (prefScopeRef.current === prefillScope) return
     prefScopeRef.current = prefillScope
-    applySamplePrefill(lastSample, form.entry_kind)
+    applySampleFishPerKg(lastSample)
   }, [
     open,
     glLinked,
     bookPostingLocked,
     lastSample,
     prefillScope,
-    form.entry_kind,
-    applySamplePrefill,
+    fishPerKgTouched,
+    applySampleFishPerKg,
   ])
 
   useEffect(() => {
@@ -567,66 +538,29 @@ export function AquacultureStockLedgerFormModal({
   }, [open, form.pond_id])
 
   useEffect(() => {
-    if (glLinked || bookPostingLocked || fishPerKgTouched) return
-    if (form.entry_kind === 'loss') {
-      const count = parseInt(form.fish_removed, 10)
-      const kg = Number(String(form.kg_removed).replace(/,/g, ''))
-      const fpk = deriveFishPerKg(count, kg)
-      if (!fpk) return
-      setForm((f) => (f.fish_per_kg === fpk ? f : { ...f, fish_per_kg: fpk }))
-      return
-    }
-    const count = parseInt(form.adj_fish_count, 10)
-    const kg = Number(String(form.adj_weight_kg).replace(/,/g, ''))
-    const fpk = deriveFishPerKg(Math.abs(count), Math.abs(kg))
-    if (!fpk) return
-    setForm((f) => (f.fish_per_kg === fpk ? f : { ...f, fish_per_kg: fpk }))
+    if (!open || glLinked || weightTouched) return
+    const loss = form.entry_kind === 'loss'
+    const countStr = loss ? form.fish_removed : form.adj_fish_count
+    const kg = kgFromFishCountAndPerKg(countStr, form.fish_per_kg, !loss)
+    if (!kg && countStr.trim() !== '') return
+    setForm((f) => {
+      if (loss) return f.kg_removed === kg ? f : { ...f, kg_removed: kg }
+      return f.adj_weight_kg === kg ? f : { ...f, adj_weight_kg: kg }
+    })
   }, [
+    open,
+    glLinked,
+    weightTouched,
     form.entry_kind,
     form.fish_removed,
-    form.kg_removed,
     form.adj_fish_count,
-    form.adj_weight_kg,
-    glLinked,
-    bookPostingLocked,
-    fishPerKgTouched,
+    form.fish_per_kg,
   ])
 
   const applyLastSampleQuantities = () => {
     if (!lastSample) return
-    quantitiesDirtyRef.current = false
     prefScopeRef.current = prefillScope
-    const count =
-      lastSample.estimated_fish_count != null && lastSample.estimated_fish_count > 0
-        ? String(lastSample.estimated_fish_count)
-        : ''
-    const kg = lastSample.estimated_total_weight_kg?.trim() || ''
-    const kgResolved =
-      kg ||
-      (form.entry_kind === 'loss'
-        ? kgFromFishCountAndPerKg(count, lastSample.fish_per_kg, false)
-        : kgFromFishCountAndPerKg(count, lastSample.fish_per_kg, true))
-    const countN = parseInt(count, 10)
-    const kgN = Number(String(kgResolved).replace(/,/g, ''))
-    const derivedFpk =
-      deriveFishPerKg(Math.abs(countN), Math.abs(kgN)) || lastSample.fish_per_kg
-    setFishPerKgTouched(false)
-    setForm((f) => {
-      if (f.entry_kind === 'loss') {
-        return {
-          ...f,
-          fish_removed: count,
-          kg_removed: kgResolved,
-          fish_per_kg: derivedFpk,
-        }
-      }
-      return {
-        ...f,
-        adj_fish_count: count,
-        adj_weight_kg: kgResolved,
-        fish_per_kg: derivedFpk,
-      }
-    })
+    applySampleFishPerKg(lastSample)
   }
 
   const weightKgForBook = useMemo(() => {
@@ -1060,16 +994,16 @@ export function AquacultureStockLedgerFormModal({
                     fishCount={form.fish_removed}
                     weightKg={form.kg_removed}
                     onFishPerKgChange={(v) => {
-                      markQuantitiesDirty()
                       setFishPerKgTouched(true)
+                      setWeightTouched(false)
                       setForm((f) => ({ ...f, fish_per_kg: v }))
                     }}
                     onFishCountChange={(v) => {
-                      markQuantitiesDirty()
+                      setWeightTouched(false)
                       setForm((f) => ({ ...f, fish_removed: v }))
                     }}
                     onWeightKgChange={(v) => {
-                      markQuantitiesDirty()
+                      setWeightTouched(true)
                       setForm((f) => ({ ...f, kg_removed: v }))
                     }}
                     onReapplySample={applyLastSampleQuantities}
@@ -1087,16 +1021,16 @@ export function AquacultureStockLedgerFormModal({
                   fishCount={form.adj_fish_count}
                   weightKg={form.adj_weight_kg}
                   onFishPerKgChange={(v) => {
-                    markQuantitiesDirty()
                     setFishPerKgTouched(true)
+                    setWeightTouched(false)
                     setForm((f) => ({ ...f, fish_per_kg: v }))
                   }}
                   onFishCountChange={(v) => {
-                    markQuantitiesDirty()
+                    setWeightTouched(false)
                     setForm((f) => ({ ...f, adj_fish_count: v }))
                   }}
                   onWeightKgChange={(v) => {
-                    markQuantitiesDirty()
+                    setWeightTouched(true)
                     setForm((f) => ({ ...f, adj_weight_kg: v }))
                   }}
                   onReapplySample={applyLastSampleQuantities}

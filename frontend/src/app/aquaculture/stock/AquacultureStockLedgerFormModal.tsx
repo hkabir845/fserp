@@ -139,6 +139,18 @@ function kgFromFishCountAndPerKg(countStr: string, fishPerKgStr: string, signed 
   return s
 }
 
+/** Heads and fish-per-kg drive total weight. A manual weight edit is left as-is until the next recalc. */
+function formWithAutoWeight(prev: FormState, patch: Partial<FormState>): FormState {
+  const next: FormState = { ...prev, ...patch }
+  const loss = next.entry_kind === 'loss'
+  const countStr = loss ? next.fish_removed : next.adj_fish_count
+  const kg = kgFromFishCountAndPerKg(countStr, next.fish_per_kg, !loss)
+  if (!kg && countStr.trim() !== '') return next
+  if (loss) next.kg_removed = kg
+  else next.adj_weight_kg = kg
+  return next
+}
+
 function ledgerPrefillScopeKey(
   pondId: string,
   cycleId: string,
@@ -185,9 +197,7 @@ function QuantityFromSampleFields({
 }) {
   return (
     <div className="mt-4 space-y-3">
-      {lastSampleLoading ? (
-        <p className="text-xs text-muted-foreground">{t('stockLoadingLastSample')}</p>
-      ) : lastSample ? (
+      {lastSample ? (
         <div className="flex flex-wrap items-start gap-2 rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2.5 text-xs text-violet-950">
           <Beaker className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" aria-hidden />
           <div className="min-w-0 flex-1">
@@ -214,6 +224,8 @@ function QuantityFromSampleFields({
             </button>
           </div>
         </div>
+      ) : lastSampleLoading ? (
+        <p className="text-xs text-muted-foreground">{t('stockLoadingLastSample')}</p>
       ) : (
         <p className="text-xs text-muted-foreground">{t('stockNoSampleHint')}</p>
       )}
@@ -233,19 +245,6 @@ function QuantityFromSampleFields({
         </label>
         <label className="block">
           <span className={labelCls}>
-            {t('stockFishPerKg')} <span className="text-destructive">*</span>
-          </span>
-          <input
-            className={`${inputCls} mt-1.5`}
-            inputMode="decimal"
-            placeholder={t('stockFishPerKgAutoPh')}
-            value={fishPerKg}
-            onChange={(e) => onFishPerKgChange(e.target.value)}
-          />
-          <span className="mt-1 block text-xs text-muted-foreground">{t('stockFishPerKgHint')}</span>
-        </label>
-        <label className="block">
-          <span className={labelCls}>
             {weightLabel} <span className="text-destructive">*</span>
           </span>
           <input
@@ -258,6 +257,19 @@ function QuantityFromSampleFields({
           <span className="mt-1 block text-xs text-muted-foreground">
             {weightHint ?? t('stockTotalBiomassHint')}
           </span>
+        </label>
+        <label className="block">
+          <span className={labelCls}>
+            {t('stockFishPerKg')} <span className="text-destructive">*</span>
+          </span>
+          <input
+            className={`${inputCls} mt-1.5`}
+            inputMode="decimal"
+            placeholder={t('stockFishPerKgAutoPh')}
+            value={fishPerKg}
+            onChange={(e) => onFishPerKgChange(e.target.value)}
+          />
+          <span className="mt-1 block text-xs text-muted-foreground">{t('stockFishPerKgHint')}</span>
         </label>
       </div>
     </div>
@@ -420,7 +432,6 @@ export function AquacultureStockLedgerFormModal({
       return
     }
     const ac = new AbortController()
-    setLastSample(null)
     setLastSampleLoading(true)
     void (async () => {
       try {
@@ -502,7 +513,7 @@ export function AquacultureStockLedgerFormModal({
     if (!fpk) return
     setFishPerKgTouched(false)
     setWeightTouched(false)
-    setForm((f) => (f.fish_per_kg === fpk ? f : { ...f, fish_per_kg: fpk }))
+    setForm((f) => formWithAutoWeight(f, { fish_per_kg: fpk }))
   }, [])
 
   useEffect(() => {
@@ -996,11 +1007,11 @@ export function AquacultureStockLedgerFormModal({
                     onFishPerKgChange={(v) => {
                       setFishPerKgTouched(true)
                       setWeightTouched(false)
-                      setForm((f) => ({ ...f, fish_per_kg: v }))
+                      setForm((f) => formWithAutoWeight(f, { fish_per_kg: v }))
                     }}
                     onFishCountChange={(v) => {
                       setWeightTouched(false)
-                      setForm((f) => ({ ...f, fish_removed: v }))
+                      setForm((f) => formWithAutoWeight(f, { fish_removed: v }))
                     }}
                     onWeightKgChange={(v) => {
                       setWeightTouched(true)
@@ -1023,11 +1034,11 @@ export function AquacultureStockLedgerFormModal({
                   onFishPerKgChange={(v) => {
                     setFishPerKgTouched(true)
                     setWeightTouched(false)
-                    setForm((f) => ({ ...f, fish_per_kg: v }))
+                    setForm((f) => formWithAutoWeight(f, { fish_per_kg: v }))
                   }}
                   onFishCountChange={(v) => {
                     setWeightTouched(false)
-                    setForm((f) => ({ ...f, adj_fish_count: v }))
+                    setForm((f) => formWithAutoWeight(f, { adj_fish_count: v }))
                   }}
                   onWeightKgChange={(v) => {
                     setWeightTouched(true)

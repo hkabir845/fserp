@@ -35,6 +35,13 @@ export const REPORT_CATALOG_LABELS: Record<string, Loc> = {
       bn: 'পোস্ট করা GL থেকে আয় (বিক্রি সহ), COGS (বিক্রির খরচ) ও ব্যয় — সাইট: একটি স্টেশন/পুকুর অথবা কোম্পানি-ব্যাপী সব',
     },
   },
+  'income-expense-statement': {
+    title: { en: 'Income & Expense Statement', bn: 'আয় ও ব্যয় বিবরণী' },
+    description: {
+      en: 'One sheet of income and expense for All or one entity, with total income, total expense, and balance. Date defaults to today; use Custom for another day or range.',
+      bn: 'সব অথবা একটি সত্তার আয় ও ব্যয় এক শীটে — শেষে মোট আয়, মোট ব্যয় ও ব্যালেন্স। তারিখ আজকে; অন্য দিন বা সময়ের জন্য Custom।',
+    },
+  },
   'customer-balances': {
     title: { en: 'Customer Balances', bn: 'গ্রাহক ব্যালেন্স' },
     description: {

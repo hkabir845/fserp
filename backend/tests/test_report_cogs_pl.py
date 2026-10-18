@@ -76,6 +76,73 @@ def test_expense_detail_api_excludes_cogs_accounts(
     assert "cost of goods" in note.lower() or "cogs" in note.lower()
 
 
+def test_income_expense_statement_sheet_totals_and_scopes(
+    api_client, company_tenant_with_gl, auth_admin_headers
+):
+    """One sheet: income, expenses (including cost of sales), and balance. All or one entity."""
+    from api.models import AquaculturePond
+
+    company = company_tenant_with_gl
+    cash = ChartOfAccount.objects.get(company_id=company.id, account_code="1010")
+    income = ChartOfAccount.objects.get(company_id=company.id, account_code="4100")
+    expense = ChartOfAccount.objects.get(company_id=company.id, account_code="6900")
+    cogs = ChartOfAccount.objects.get(company_id=company.id, account_code="5100")
+
+    def _post(number: str, debit_acct, credit_acct, amount: str):
+        je = JournalEntry.objects.create(
+            company_id=company.id,
+            entry_number=number,
+            entry_date=date(2026, 4, 2),
+            description="income expense sheet",
+            is_posted=True,
+            posted_at=timezone.now(),
+        )
+        JournalEntryLine.objects.create(
+            journal_entry=je, account=debit_acct, debit=Decimal(amount), credit=Decimal("0")
+        )
+        JournalEntryLine.objects.create(
+            journal_entry=je, account=credit_acct, debit=Decimal("0"), credit=Decimal(amount)
+        )
+
+    _post("API-IE-INC", cash, income, "200.00")
+    _post("API-IE-EXP", expense, cash, "50.00")
+    _post("API-IE-COGS", cogs, cash, "30.00")
+
+    r = api_client.get(
+        "/api/reports/income-expense-statement/",
+        {"start_date": "2026-04-02", "end_date": "2026-04-02"},
+        **auth_admin_headers,
+    )
+    assert r.status_code == 200, r.content.decode()
+    data = json.loads(r.content)
+    assert data["report_id"] == "income-expense-statement"
+    assert data["scope"] == "all"
+    assert data["scope_label"] == "All"
+    assert Decimal(data["total_income"]) == Decimal("200.00")
+    assert Decimal(data["total_expense"]) == Decimal("80.00")
+    assert Decimal(data["balance"]) == Decimal("120.00")
+    sections = {row["section"] for row in data["lines"]}
+    assert sections == {"income", "expense"}
+    codes = {row["account_code"] for row in data["lines"]}
+    assert {"4100", "6900", "5100"} <= codes
+
+    pond = AquaculturePond.objects.create(
+        company_id=company.id, name="Sheet Pond", is_active=True
+    )
+    scoped = api_client.get(
+        "/api/reports/income-expense-statement/",
+        {"start_date": "2026-04-02", "end_date": "2026-04-02", "pond_id": pond.id},
+        **auth_admin_headers,
+    )
+    assert scoped.status_code == 200, scoped.content.decode()
+    pond_data = json.loads(scoped.content)
+    assert pond_data["scope"] == "entity"
+    assert pond_data["scope_label"] == "Sheet Pond"
+    assert Decimal(pond_data["total_income"]) == Decimal("0.00")
+    assert Decimal(pond_data["total_expense"]) == Decimal("0.00")
+    assert Decimal(pond_data["balance"]) == Decimal("0.00")
+
+
 def test_income_detail_api_includes_income_excludes_cogs_and_expense(
     api_client, company_tenant_with_gl, auth_admin_headers
 ):

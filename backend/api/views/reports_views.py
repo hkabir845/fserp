@@ -16,6 +16,7 @@ from api.services.reporting import (
     report_daily_summary,
     report_expense_detail,
     report_income_detail,
+    report_income_expense_statement,
     report_fuel_sales,
     report_financial_analytics,
     report_income_statement,
@@ -78,6 +79,7 @@ _REPORT_HANDLERS = {
     "cash-flow": report_cash_flow,
     "expense-detail": report_expense_detail,
     "income-detail": report_income_detail,
+    "income-expense-statement": report_income_expense_statement,
     "entities-pl-summary": report_entities_pl_summary,
     "entities-balance-sheet-summary": report_entities_balance_sheet_summary,
     "entities-trial-balance-summary": report_entities_trial_balance_summary,
@@ -167,6 +169,7 @@ GL_STATION_AWARE_REPORTS = frozenset(
         "cash-flow",
         "expense-detail",
         "income-detail",
+        "income-expense-statement",
     }
 )
 
@@ -177,6 +180,7 @@ GL_POND_AWARE_REPORTS = frozenset(
         "balance-sheet",
         "expense-detail",
         "income-detail",
+        "income-expense-statement",
         "cash-flow",
     }
 )

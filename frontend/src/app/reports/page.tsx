@@ -96,6 +96,11 @@ import {
 } from '@/components/reports/AquaculturePlCategoryMatrices'
 import { IncomeStatementPlPanel } from '@/components/reports/IncomeStatementPlPanel'
 import {
+  buildIncomeExpenseStatementCsv,
+  buildIncomeExpenseStatementPrintHtml,
+  IncomeExpenseStatementSheet,
+} from '@/components/reports/IncomeExpenseStatementSheet'
+import {
   accountsTotalRow,
   agingBucketTotalRow,
   contactsTotalRow,
@@ -186,6 +191,7 @@ type ReportType =
   | 'vat-return'
   | 'balance-sheet'
   | 'income-statement'
+  | 'income-expense-statement'
   | 'customer-balances'
   | 'vendor-balances'
   | 'party-balances'
@@ -328,6 +334,14 @@ const reports: ReportCard[] = [
     description:
       'Income (including sales), COGS (cost on sales), and expenses from posted GL — Site scope: one station/pond or All for company-wide',
     icon: TrendingUp,
+    category: 'financial'
+  },
+  {
+    id: 'income-expense-statement',
+    title: 'Income & Expense Statement',
+    description:
+      'One sheet of income and expense for All or one entity, with total income, total expense, and balance. Date defaults to today; use Custom for another day or range.',
+    icon: Scale,
     category: 'financial'
   },
   {
@@ -910,6 +924,7 @@ const MIX_FUEL_AQUACULTURE_REPORT_IDS: readonly ReportType[] = [
   'vat-return',
   'balance-sheet',
   'income-statement',
+  'income-expense-statement',
   'customer-balances',
   'vendor-balances',
   'party-balances',
@@ -975,6 +990,7 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
   'trial-balance',
   'balance-sheet',
   'income-statement',
+  'income-expense-statement',
   'cash-flow',
   'expense-detail',
   'income-detail',
@@ -1015,6 +1031,7 @@ const REPORTS_STATION_SCOPED = new Set<ReportType>([
 const REPORTS_GL_POND_SCOPED = new Set<ReportType>([
   'trial-balance',
   'income-statement',
+  'income-expense-statement',
   'balance-sheet',
   'expense-detail',
   'income-detail',
@@ -1034,6 +1051,7 @@ const REPORTS_GL_STATION_SCOPED = new Set<ReportType>([
   'trial-balance',
   'balance-sheet',
   'income-statement',
+  'income-expense-statement',
   'cash-flow',
   'expense-detail',
   'income-detail',
@@ -1049,6 +1067,7 @@ const REPORTS_WITH_PERIOD = new Set<ReportType>([
   'vat-return',
   'balance-sheet',
   'income-statement',
+  'income-expense-statement',
   'liabilities-detail',
   'loan-receivable-gl',
   'loan-payable-gl',
@@ -3202,6 +3221,8 @@ function ReportsPageContent() {
       contentHTML += '</tbody></table>'
     } else if (selectedReport === 'daily-summary' && reportData) {
       contentHTML += buildDailySummaryPrintHtml(reportData as Record<string, unknown>)
+    } else if (selectedReport === 'income-expense-statement' && reportData) {
+      contentHTML += buildIncomeExpenseStatementPrintHtml(reportData as Record<string, unknown>)
     } else if (selectedReport === 'fuel-sales' && reportData) {
       contentHTML += '<h2>Fuel sales (invoice fuel lines)</h2><table><tbody>'
       contentHTML += `<tr><td><strong>Fuel line count</strong></td><td>${reportData.total_sales ?? 0}</td></tr>`
@@ -3739,6 +3760,8 @@ function ReportsPageContent() {
         dump('lent', reportData.lent || [])
       } else if (selectedReport === 'daily-summary') {
         csvContent += buildDailySummaryCsv(reportData as Record<string, unknown>)
+      } else if (selectedReport === 'income-expense-statement') {
+        csvContent += buildIncomeExpenseStatementCsv(reportData as Record<string, unknown>)
       } else if (selectedReport === 'fuel-sales') {
         csvContent += 'Metric,Value\n'
         csvContent += `Fuel line count,${reportData.total_sales ?? 0}\n`
@@ -6391,6 +6414,27 @@ function renderReportTable(
             </p>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (reportType === 'income-expense-statement' && data) {
+    const period = data?.period || {}
+    return (
+      <div className="space-y-6">
+        {hasPeriod &&
+          pf(
+            period,
+            dateRange,
+            reportType,
+            handleReportDateChange,
+            'Defaults to today. Choose another preset, or Custom, to use a different day or range. Site scope: All or one entity.',
+          )}
+        <IncomeExpenseStatementSheet
+          data={data as Record<string, unknown>}
+          drillScope={reportDrillScope()}
+          Money={Money}
+        />
       </div>
     )
   }

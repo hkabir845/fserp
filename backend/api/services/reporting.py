@@ -1963,6 +1963,220 @@ def report_income_statement(
     return out_is
 
 
+def _income_expense_sheet_line(
+    section: str,
+    *,
+    particulars: str,
+    amount: Decimal,
+    entity_name: str = "",
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    account_id: int | None = None,
+    account_code: str = "",
+) -> dict[str, Any]:
+    amt = _f(amount)
+    zero = "0.00"
+    return {
+        "section": section,
+        "entity_name": entity_name,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "account_id": account_id,
+        "account_code": account_code,
+        "account_name": particulars,
+        "particulars": particulars,
+        "income": amt if section == "income" else zero,
+        "expense": amt if section == "expense" else zero,
+        "balance": amt,
+    }
+
+
+def _sheet_lines_from_pl_accounts(
+    accounts: list[dict[str, Any]], section: str, *, mark_cost_of_sales: bool = False
+) -> list[dict[str, Any]]:
+    lines: list[dict[str, Any]] = []
+    for row in accounts:
+        amt = _d(row.get("balance"))
+        if amt == 0:
+            continue
+        name = str(row.get("account_name") or "").strip() or "—"
+        if mark_cost_of_sales and "cost of sales" not in name.lower() and "cogs" not in name.lower():
+            name = f"{name} (cost of sales)"
+        eid = row.get("entity_id")
+        lines.append(
+            _income_expense_sheet_line(
+                section,
+                particulars=name,
+                amount=amt,
+                entity_name=str(row.get("entity_name") or "").strip(),
+                entity_type=row.get("entity_type"),
+                entity_id=int(eid) if eid is not None else None,
+                account_id=row.get("account_id"),
+                account_code=str(row.get("account_code") or ""),
+            )
+        )
+    return lines
+
+
+def _pond_register_sheet_lines(
+    mgmt: dict[str, Any], *, pond_id: int, pond_name: str
+) -> tuple[list[dict[str, Any]], Decimal, Decimal]:
+    """Non-zero aquaculture register categories for one pond (its own income and costs)."""
+    lines: list[dict[str, Any]] = []
+    for row in mgmt.get("income_by_category") or []:
+        if not isinstance(row, dict):
+            continue
+        amt = _d(row.get("amount"))
+        if amt == 0:
+            continue
+        label = str(row.get("label") or row.get("category") or "").strip() or "Income"
+        lines.append(
+            _income_expense_sheet_line(
+                "income",
+                particulars=label,
+                amount=amt,
+                entity_name=pond_name,
+                entity_type="pond",
+                entity_id=pond_id,
+                account_code=str(row.get("category") or ""),
+            )
+        )
+    for row in mgmt.get("expenses_by_category") or []:
+        if not isinstance(row, dict):
+            continue
+        amt = _d(row.get("amount"))
+        if amt == 0:
+            continue
+        label = str(row.get("label") or row.get("category") or "").strip() or "Expense"
+        lines.append(
+            _income_expense_sheet_line(
+                "expense",
+                particulars=label,
+                amount=amt,
+                entity_name=pond_name,
+                entity_type="pond",
+                entity_id=pond_id,
+                account_code=str(row.get("category") or ""),
+            )
+        )
+    totals = mgmt.get("totals") if isinstance(mgmt.get("totals"), dict) else {}
+    income = _d((totals or {}).get("total_income"))
+    expense = _d((totals or {}).get("total_costs_and_expenses"))
+    if income == 0 and expense == 0:
+        income = sum((_d(r["income"]) for r in lines), Decimal("0"))
+        expense = sum((_d(r["expense"]) for r in lines), Decimal("0"))
+    return lines, income, expense
+
+
+def report_income_expense_statement(
+    company_id: int,
+    start: date,
+    end: date,
+    station_id: int | None = None,
+    pond_id: int | None = None,
+    *,
+    unscoped_dims: bool = False,
+) -> dict[str, Any]:
+    """
+    One income-and-expense sheet for All entities or one entity.
+
+    Company-wide uses the management P&L (posted GL plus aquaculture register, with
+    inter-pond trade removed). A station or head office uses that entity's posted GL.
+    A pond uses its aquaculture register (sales and costs), which is that pond's statement.
+    """
+    company_wide = pond_id is None and station_id is None and not unscoped_dims
+    pl = report_income_statement(
+        company_id,
+        start,
+        end,
+        station_id,
+        pond_id,
+        unscoped_dims=unscoped_dims,
+        basis="management" if company_wide else "posted",
+    )
+    scope_entity = _pl_scope_entity_meta(
+        company_id,
+        station_id=station_id,
+        pond_id=pond_id,
+        pond_name=pl.get("filter_pond_name"),
+        unscoped_dims=unscoped_dims,
+    )
+    if company_wide:
+        scope = "all"
+        scope_label = "All"
+    else:
+        scope = "entity"
+        scope_label = (
+            str((scope_entity or {}).get("entity_name") or "").strip() or "Entity"
+        )
+
+    use_pond_register = False
+    if pond_id is not None:
+        mgmt = pl.get("aquaculture_management")
+        if isinstance(mgmt, dict):
+            totals = mgmt.get("totals") if isinstance(mgmt.get("totals"), dict) else {}
+            use_pond_register = (
+                _d((totals or {}).get("total_income")) != 0
+                or _d((totals or {}).get("total_costs_and_expenses")) != 0
+            )
+            if use_pond_register:
+                lines, total_income, total_expense = _pond_register_sheet_lines(
+                    mgmt, pond_id=pond_id, pond_name=scope_label
+                )
+    if not use_pond_register:
+        income_accounts = (pl.get("income") or {}).get("accounts") or []
+        cogs_accounts = (pl.get("cost_of_goods_sold") or {}).get("accounts") or []
+        expense_accounts = (pl.get("expenses") or {}).get("accounts") or []
+        lines = _sheet_lines_from_pl_accounts(income_accounts, "income")
+        expense_lines = _sheet_lines_from_pl_accounts(
+            cogs_accounts, "expense", mark_cost_of_sales=True
+        ) + _sheet_lines_from_pl_accounts(expense_accounts, "expense")
+        expense_lines.sort(
+            key=lambda r: (
+                str(r.get("entity_name") or ""),
+                str(r.get("account_code") or ""),
+                str(r.get("particulars") or ""),
+            )
+        )
+        lines.extend(expense_lines)
+        total_income = _d((pl.get("income") or {}).get("total"))
+        total_expense = _d(pl.get("total_expenses"))
+        if total_expense == 0:
+            total_expense = _d((pl.get("cost_of_goods_sold") or {}).get("total")) + _d(
+                (pl.get("expenses") or {}).get("total")
+            )
+
+    balance = total_income - total_expense
+    note = (
+        "Income and expense on one sheet for the selected dates. "
+        "Balance = total income − total expense. "
+        "All is every entity; choose one station, shop hub, or pond to limit the sheet. "
+        "Defaults to today when no other dates are chosen. "
+        "On All, sales between ponds are left out. A single pond keeps its own sales and costs."
+    )
+    out: dict[str, Any] = {
+        "report_id": "income-expense-statement",
+        "period": pl.get("period")
+        or {"start_date": start.isoformat(), "end_date": end.isoformat()},
+        "scope": scope,
+        "scope_label": scope_label,
+        "lines": lines,
+        "total_income": _f(total_income),
+        "total_expense": _f(total_expense),
+        "balance": _f(balance),
+        "accounting_note": note,
+    }
+    if pond_id is not None:
+        out["filter_pond_id"] = pond_id
+        if pl.get("filter_pond_name"):
+            out["filter_pond_name"] = pl["filter_pond_name"]
+    elif station_id is not None:
+        out["filter_station_id"] = station_id
+    elif unscoped_dims:
+        out["filter_head_office"] = True
+    return out
+
+
 def _invoices_for_subledger_scope(
     company_id: int, station_id: int | None = None, pond_id: int | None = None
 ):

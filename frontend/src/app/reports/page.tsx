@@ -3276,20 +3276,21 @@ function ReportsPageContent() {
         selectedReport,
         reportData as Record<string, unknown>,
       )
-      contentHTML += extraPrint ?? buildGenericPrintHtml(reportData as Record<string, unknown>) ?? '<p>Report data not available for printing in this format.</p>'
+      contentHTML += extraPrint || buildGenericPrintHtml(reportData as Record<string, unknown>)
     } else if (String(selectedReport).startsWith('aquaculture-')) {
       const aqPrint = buildAquaculturePrintHtml(
         selectedReport,
         reportData as Record<string, unknown>,
       )
-      contentHTML +=
-        aqPrint ??
-        buildGenericPrintHtml(reportData as Record<string, unknown>) ??
-        '<p>Report data not available for printing in this format.</p>'
+      contentHTML += aqPrint || buildGenericPrintHtml(reportData as Record<string, unknown>)
     } else {
       contentHTML +=
         buildGenericPrintHtml(reportData as Record<string, unknown>) ??
-        '<p>Report data not available for printing in this format.</p>'
+        '<p>No activity in this period.</p>'
+    }
+
+    if (!contentHTML.trim()) {
+      contentHTML = buildGenericPrintHtml(reportData as Record<string, unknown>)
     }
 
     const periodLine =
@@ -4195,10 +4196,10 @@ function ReportsPageContent() {
                     <button
                       onClick={printReport}
                       className="flex items-center space-x-2 px-3 py-2 bg-success text-white rounded-lg hover:bg-success/90 transition-colors text-sm sm:px-4"
-                      title="Print Report"
+                      title="Print, or choose Save as PDF in the print dialog"
                     >
                       <Printer className="h-4 w-4" />
-                      <span>Print</span>
+                      <span>Print / PDF</span>
                     </button>
                     <button
                       onClick={() => downloadReport('json')}

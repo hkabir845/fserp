@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useCompany } from '@/contexts/CompanyContext'
 import api from '@/lib/api'
 import { formatCurrency, formatPercentage } from '@/utils/formatting'
+import { escapeHtml, printDocument } from '@/utils/printDocument'
 import { formatDate, formatDateOnly, toDateInputValue } from '@/utils/date'
 import { CompanyDateInput } from '@/components/CompanyDateInput'
 import {
@@ -550,6 +551,115 @@ export function FinancialAnalyticsPanel({
     aquacultureSummary,
   ])
 
+  const printAnalytics = useCallback(() => {
+    const metricCell = (key: string, val: unknown) => {
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        if (/count|pct|percent|ratio|days|qty|quantity|number/i.test(key)) return String(val)
+        if (/amount|income|expense|profit|sales|revenue|cost|cogs|cash|purchase/i.test(key)) {
+          return formatCurrency(val)
+        }
+        return String(val)
+      }
+      return String(val ?? '')
+    }
+    const table = (title: string, headers: string[], body: string[][]) => {
+      if (!body.length) return ''
+      let html = `<h2>${escapeHtml(title)}</h2><table><thead><tr>`
+      headers.forEach((h) => {
+        html += `<th>${escapeHtml(h)}</th>`
+      })
+      html += '</tr></thead><tbody>'
+      body.forEach((cells) => {
+        html += '<tr>'
+        cells.forEach((c) => {
+          html += `<td>${escapeHtml(c)}</td>`
+        })
+        html += '</tr>'
+      })
+      html += '</tbody></table>'
+      return html
+    }
+    let html = `<p><strong>Period:</strong> ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</p>`
+    html += `<p>${escapeHtml(glSiteBanner.headline)} — ${escapeHtml(glSiteBanner.detail)}</p>`
+    if (kpi) {
+      html += table(
+        'KPIs',
+        ['Metric', 'Value'],
+        Object.entries(kpi).flatMap(([key, val]) =>
+          val != null && typeof val === 'object' ? [] : [[key.replace(/_/g, ' '), metricCell(key, val)]],
+        ),
+      )
+    }
+    if (profitMix) {
+      html += `<p><strong>Revenue base:</strong> ${escapeHtml(formatCurrency(profitMix.revenue_base))}</p>`
+      html += table(
+        'Profit mix',
+        ['Component', 'Amount', 'Pct of revenue'],
+        (profitMix.components ?? []).map((c) => [
+          c.label,
+          formatCurrency(c.amount),
+          String(c.pct_of_revenue),
+        ]),
+      )
+    }
+    if (byStation.length) {
+      html += table(
+        'By station',
+        ['Station', 'Document sales', 'P&L income', 'COGS', 'P&L expenses', 'Gross profit', 'Net income'],
+        byStation.map((row) => [
+          row.entity_name,
+          formatCurrency(row.document_sales),
+          formatCurrency(row.pl_income),
+          formatCurrency(row.pl_cogs),
+          formatCurrency(row.pl_expenses),
+          formatCurrency(row.gross_profit),
+          formatCurrency(row.net_income),
+        ]),
+      )
+    }
+    if (byPond.length) {
+      html += table(
+        'By pond',
+        ['Pond', 'Pond sales', 'Mgmt revenue', 'Mgmt profit', 'P&L income', 'COGS', 'P&L expenses', 'Gross profit', 'Net income'],
+        byPond.map((row) => [
+          row.entity_name,
+          formatCurrency(row.document_sales),
+          formatCurrency(row.management_revenue_bdt ?? 0),
+          formatCurrency(row.management_profit_bdt ?? 0),
+          formatCurrency(row.pl_income),
+          formatCurrency(row.pl_cogs),
+          formatCurrency(row.pl_expenses),
+          formatCurrency(row.gross_profit),
+          formatCurrency(row.net_income),
+        ]),
+      )
+    }
+    html += table(
+      'Time series',
+      ['Label', 'Start', 'End', 'Sales', 'Purchases', 'P&L income', 'COGS', 'Expenses', 'Gross profit', 'Net income'],
+      timeseries.map((row) => [
+        row.label,
+        row.start_date,
+        row.end_date,
+        formatCurrency(row.total_sales),
+        formatCurrency(row.total_purchases),
+        formatCurrency(row.pl_income),
+        formatCurrency(row.pl_cogs),
+        formatCurrency(row.pl_expenses),
+        formatCurrency(row.gross_profit),
+        formatCurrency(row.net_income),
+      ]),
+    )
+    if (note) html += `<p>${escapeHtml(note)}</p>`
+    const ok = printDocument({
+      title: 'Analytics & KPIs',
+      bodyHtml: `<h1>Analytics &amp; KPIs</h1>${html || '<p>No analytics loaded yet.</p>'}`,
+    })
+    if (!ok && typeof window !== 'undefined') {
+      window.alert('Printing was blocked. Allow pop-ups for this site and try again.')
+    }
+  }, [startDate, endDate, kpi, profitMix, timeseries, note, glSiteBanner, byStation, byPond])
+
   const downloadAnalyticsCsv = useCallback(() => {
     const lines: string[] = []
     lines.push('Financial Analytics')
@@ -718,12 +828,12 @@ export function FinancialAnalyticsPanel({
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => window.print()}
+                      onClick={printAnalytics}
                       className="flex items-center space-x-2 rounded-lg bg-success px-4 py-2 text-white transition-colors hover:bg-success/90"
-                      title="Print"
+                      title="Print, or choose Save as PDF in the print dialog"
                     >
                       <Printer className="h-4 w-4" />
-                      <span>Print</span>
+                      <span>Print / PDF</span>
                     </button>
                     <button
                       type="button"

@@ -797,43 +797,107 @@ export function buildAquaculturePrintHtml(
   return buildGenericPrintHtml(data)
 }
 
-/** Auto-table print HTML for any report JSON with array sections (fallback). */
-export function buildGenericPrintHtml(data: Record<string, unknown>): string | null {
-  let html = ''
-  for (const [key, val] of Object.entries(data)) {
-    if (GENERIC_EXPORT_SKIP_KEYS.has(key) || !Array.isArray(val) || val.length === 0) continue
-    const first = val[0]
-    if (!first || typeof first !== 'object' || Array.isArray(first)) continue
-    const rows = val as Record<string, unknown>[]
-    const cols = scalarColumns(rows[0])
-    if (cols.length < 1) continue
-    html += htmlTable(
-      key.replace(/_/g, ' '),
-      cols.map((c) => c.replace(/_/g, ' ')),
-      rows.map((row) => cols.map((c) => String(row[c] ?? ''))),
-    )
+const PRINT_WALK_SKIP = new Set([
+  'period',
+  'summary',
+  'report_id',
+  'accounting_note',
+  'filters',
+  '_drill',
+  '_analytics',
+  '_aquaculturePlManagement',
+])
+
+function printLabel(key: string): string {
+  return key.replace(/_/g, ' ')
+}
+
+function printCell(value: unknown): string {
+  if (value == null || value === '') return ''
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? escapeHtml(String(value)) : ''
   }
-  for (const [key, val] of Object.entries(data)) {
-    if (GENERIC_EXPORT_SKIP_KEYS.has(key) || val == null || Array.isArray(val)) continue
-    if (typeof val !== 'object') continue
-    const obj = val as Record<string, unknown>
-    const accounts = obj.accounts
-    if (Array.isArray(accounts) && accounts.length > 0 && typeof accounts[0] === 'object') {
-      const rows = accounts as Record<string, unknown>[]
-      const cols = scalarColumns(rows[0])
-      if (cols.length >= 1) {
-        html += htmlTable(
-          key.replace(/_/g, ' '),
-          cols.map((c) => `${c.replace(/_/g, ' ')} (right)`),
-          rows.map((row) => cols.map((c) => fmtMoney(row[c]))),
-        )
-        if (obj.total != null) {
-          html += `<p><strong>Total:</strong> ${fmtMoney(obj.total)}</p>`
-        }
+  return escapeHtml(String(value))
+}
+
+function isPrintScalar(value: unknown): boolean {
+  return value == null || typeof value !== 'object'
+}
+
+/** Tables plus nested sections, so a report with no dedicated layout still prints. */
+function renderPrintNode(key: string, value: unknown, depth: number): string {
+  if (depth > 4 || value == null || PRINT_WALK_SKIP.has(key) || key.startsWith('_')) return ''
+  if (Array.isArray(value)) {
+    if (!value.length) return ''
+    if (isPrintScalar(value[0])) {
+      return `<p><strong>${escapeHtml(printLabel(key))}:</strong> ${escapeHtml(value.map((v) => String(v ?? '')).join(', '))}</p>`
+    }
+    const rows = (value as Record<string, unknown>[]).slice(0, 800)
+    const cols: string[] = []
+    const seen = new Set<string>()
+    for (const row of rows.slice(0, 30)) {
+      if (!row || typeof row !== 'object') continue
+      for (const col of Object.keys(row)) {
+        if (seen.has(col) || col.startsWith('_') || !isPrintScalar(row[col])) continue
+        seen.add(col)
+        cols.push(col)
       }
     }
+    let html = ''
+    if (cols.length) {
+      html += htmlTable(
+        escapeHtml(printLabel(key)),
+        cols.map((c) => escapeHtml(printLabel(c))),
+        rows.map((row) => cols.map((c) => printCell(row?.[c]))),
+      )
+    }
+    rows.forEach((row, index) => {
+      if (!row || typeof row !== 'object') return
+      const who = String(row.pond_name || row.entity_name || row.name || row.station_name || `${index + 1}`)
+      for (const [nestedKey, nestedVal] of Object.entries(row)) {
+        if (isPrintScalar(nestedVal) || nestedKey.startsWith('_')) continue
+        html += renderPrintNode(`${who} — ${printLabel(nestedKey)}`, nestedVal, depth + 1)
+      }
+    })
+    return html
   }
-  return html.trim() ? html : null
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    const scalars: [string, unknown][] = []
+    let nested = ''
+    for (const [childKey, childVal] of Object.entries(obj)) {
+      if (childKey.startsWith('_') || PRINT_WALK_SKIP.has(childKey)) continue
+      if (isPrintScalar(childVal)) scalars.push([childKey, childVal])
+      else nested += renderPrintNode(childKey, childVal, depth + 1)
+    }
+    let html = ''
+    if (scalars.length) {
+      html += htmlTable(
+        escapeHtml(printLabel(key) || 'Summary'),
+        ['Item', 'Value'],
+        scalars.map(([childKey, childVal]) => [escapeHtml(printLabel(childKey)), printCell(childVal)]),
+      )
+    }
+    return html + nested
+  }
+  return `<p><strong>${escapeHtml(printLabel(key))}:</strong> ${printCell(value)}</p>`
+}
+
+/**
+ * Print HTML for any report payload.
+ * Always returns a document body so Print / Save as PDF is never an empty sheet.
+ */
+export function buildGenericPrintHtml(data: Record<string, unknown>): string {
+  let html = ''
+  if (typeof data.accounting_note === 'string' && data.accounting_note.trim()) {
+    html += `<p>${escapeHtml(data.accounting_note)}</p>`
+  }
+  for (const [key, val] of Object.entries(data)) {
+    if (PRINT_WALK_SKIP.has(key) || key.startsWith('_')) continue
+    html += renderPrintNode(key, val, 0)
+  }
+  return html.trim() ? html : '<p>No activity in this period.</p>'
 }
 
 /** CSV export for aquaculture management P&L panel (ponds tab + optional fuel site tab). */
@@ -1301,8 +1365,21 @@ export function buildExtraFinancialPrintHtml(
     return html
   }
 
-  if (reportId === 'stations-financial-summary' || reportId === 'ponds-pl-summary') {
+  if (
+    reportId === 'stations-financial-summary' ||
+    reportId === 'fuel-stations-pl-summary' ||
+    reportId === 'shop-hubs-pl-summary' ||
+    reportId === 'ponds-pl-summary'
+  ) {
     const isPond = reportId === 'ponds-pl-summary'
+    const title =
+      reportId === 'fuel-stations-pl-summary'
+        ? 'Fuel station P&L'
+        : reportId === 'shop-hubs-pl-summary'
+          ? 'Shop hub P&L'
+          : isPond
+            ? 'Pond P&L'
+            : 'Station P&L'
     const rows = ((isPond ? data.ponds : data.stations) as Record<string, unknown>[] | undefined ?? []).map(
       (r) => [
         String(isPond ? r.pond_name : r.station_name ?? ''),
@@ -1313,18 +1390,25 @@ export function buildExtraFinancialPrintHtml(
         fmtMoney(r.net_income),
       ],
     )
-    return htmlTable(
-      isPond ? 'Pond P&L' : 'Station P&L',
-      [
-        isPond ? 'Pond' : 'Station',
-        'Income (right)',
-        'COGS (right)',
-        'Expenses (right)',
-        'Gross (right)',
-        'Net (right)',
-      ],
-      rows,
-    )
+    let html = htmlTable(title, [
+      isPond ? 'Pond' : 'Station',
+      'Income (right)',
+      'COGS (right)',
+      'Expenses (right)',
+      'Gross (right)',
+      'Net (right)',
+    ], rows)
+    const company = data.company_total as Record<string, unknown> | undefined
+    if (company && typeof company === 'object') {
+      html += htmlTable('Company total', ['Income (right)', 'COGS (right)', 'Expenses (right)', 'Gross (right)', 'Net (right)'], [[
+        fmtMoney(company.income),
+        fmtMoney(company.cost_of_goods_sold),
+        fmtMoney(company.expenses),
+        fmtMoney(company.gross_profit),
+        fmtMoney(company.net_income),
+      ]])
+    }
+    return html || null
   }
 
   const entityIds = [
@@ -1379,6 +1463,23 @@ export function buildExtraFinancialPrintHtml(
         )
       html += appendBs('Balance sheet — stations', sections.byStation)
       if (sections.byPond.length) html += appendBs('Balance sheet — ponds', sections.byPond)
+    }
+    if (reportId === 'entities-trial-balance-summary') {
+      const appendTb = (title: string, rows: Record<string, unknown>[]) => {
+        if (!rows.length) return
+        html += htmlTable(
+          title,
+          ['Entity', 'Debit (right)', 'Credit (right)', 'Balanced'],
+          rows.map((r) => [
+            String(r.entity_name ?? ''),
+            fmtMoney(r.trial_balance_debit),
+            fmtMoney(r.trial_balance_credit),
+            r.trial_balance_balanced ? 'Yes' : 'No',
+          ]),
+        )
+      }
+      appendTb('Trial balance — stations', sections.byStation)
+      appendTb('Trial balance — ponds', sections.byPond)
     }
     return html || null
   }

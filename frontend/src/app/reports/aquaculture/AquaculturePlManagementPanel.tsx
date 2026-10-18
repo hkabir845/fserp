@@ -745,10 +745,10 @@ export function AquaculturePlManagementPanel({
               type="button"
               onClick={printPlManagement}
               className="inline-flex items-center gap-2 rounded-lg bg-success px-4 py-2 text-sm font-medium text-white hover:bg-success/90"
-              title="Print report"
+              title="Print, or choose Save as PDF in the print dialog"
             >
               <Printer className="h-4 w-4" />
-              Print
+              Print / PDF
             </button>
             <button
               type="button"

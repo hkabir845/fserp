@@ -393,6 +393,9 @@ def report_by_id(request, report_id: str):
         return JsonResponse(report_item_velocity_analysis(cid, start, end, category, item_ids, st_id))
 
     if report_id == "inventory-sku-valuation":
+        valuation_basis = (request.GET.get("valuation_basis") or "live").strip().lower()
+        if valuation_basis not in ("live", "historical"):
+            return JsonResponse({"detail": "valuation_basis must be live or historical."}, status=400)
         category, item_ids, err = _parse_item_scope_query(request, cid)
         if err:
             return err
@@ -400,7 +403,7 @@ def report_by_id(request, report_id: str):
         if st_err:
             return st_err
         return JsonResponse(
-            report_inventory_sku_valuation(cid, start, end, st_id, category, item_ids)
+            report_inventory_sku_valuation(cid, start, end, st_id, category, item_ids, valuation_basis=valuation_basis)
         )
 
     if report_id in AQUACULTURE_REPORT_IDS:

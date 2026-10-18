@@ -1567,6 +1567,7 @@ function ReportsPageContent() {
   const [selectedReport, setSelectedReport] = useState<ReportType | null>(null)
   const [reportData, setReportData] = useState<any>(null)
   const [incomeStatementBasis, setIncomeStatementBasis] = useState<'management' | 'posted'>('management')
+  const [inventoryValuationBasis, setInventoryValuationBasis] = useState<'live' | 'historical'>('live')
   const [loading, setLoading] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
   /** false until `user` is read in an effect — keeps report list in sync with SSR (no localStorage on server). */
@@ -2303,6 +2304,7 @@ function ReportsPageContent() {
       /** Mill dealer terms: specific feed/medicine vendor id, or omit for all. */
       millVendorId?: string
       incomeStatementBasis?: 'management' | 'posted'
+      inventoryValuationBasis?: 'live' | 'historical'
     }
   ) => {
     setLoading(true)
@@ -2353,6 +2355,9 @@ function ReportsPageContent() {
     }
 
     const params: Record<string, string> = {}
+    if (reportId === 'inventory-sku-valuation') {
+      params.valuation_basis = opts?.inventoryValuationBasis ?? inventoryValuationBasis
+    }
     if (reportId === 'income-statement') {
       params.basis = opts?.incomeStatementBasis ?? incomeStatementBasis
     }
@@ -2608,6 +2613,7 @@ function ReportsPageContent() {
     pondLockedBySiteScope,
     millDealerVendorId,
     incomeStatementBasis,
+    inventoryValuationBasis,
   ])
 
   const openEntityPlDetail = useCallback(
@@ -3113,6 +3119,14 @@ function ReportsPageContent() {
       contentHTML += `<tfoot><tr><td colspan="3" style="text-align:right"><strong>Totals</strong></td><td style="text-align:right"><strong>${tc.toLocaleString()}</strong></td><td style="text-align:right"><strong>${ts.toLocaleString()}</strong></td><td colspan="2"></td></tr></tfoot></tbody></table>`
     } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
       const rows: any[] = reportData.rows || []
+      contentHTML += `<p><strong>Valuation:</strong> ${escapeHtml(String(reportData.valuation_basis || 'live'))} as of ${escapeHtml(String(reportData.valuation_as_of_date || ''))}</p>`
+      if (reportData.history_is_complete === false) {
+        contentHTML += '<p><strong>Incomplete history: reconcile the following items before closing the books.</strong></p><ul>'
+        rows.filter((r) => r.history_warnings?.length).forEach((r) => {
+          contentHTML += `<li>${escapeHtml(String(r.name))}: ${escapeHtml(r.history_warnings.join(' '))}</li>`
+        })
+        contentHTML += '</ul>'
+      }
       contentHTML += '<h2>SKU details</h2><table><thead><tr><th>SKU</th><th>Item</th><th>Category</th><th>Unit</th><th style="text-align:right">On hand</th><th style="text-align:right">Cost value</th><th style="text-align:right">List value</th><th style="text-align:right">Period qty</th><th style="text-align:right">Period rev</th><th style="text-align:right">Units/day</th><th style="text-align:right">Days cover</th><th>Status</th></tr></thead><tbody>'
       rows.forEach((r: any) => {
         const dc = r.days_of_cover == null ? '—' : String(r.days_of_cover)
@@ -3496,8 +3510,9 @@ function ReportsPageContent() {
           csvContent += `${escapeCsv(tank.tank_name)},${escapeCsv(tank.station_name)},${escapeCsv(tank.product_name)},${tank.capacity || 0},${tank.current_stock || 0},${formatAmountPlain(Number(tank.fill_percentage || 0), 2)},${tank.needs_refill ? 'Yes' : 'No'}\n`
         })
       } else if (selectedReport === 'inventory-sku-valuation' && reportData.rows) {
+        csvContent += `Valuation basis,${escapeCsv(reportData.valuation_basis || 'live')}\nValuation date,${escapeCsv(reportData.valuation_as_of_date || '')}\n`
         csvContent +=
-          'SKU,Name,Reporting category,Unit,On hand,Unit cost,Cost value,List value,Period qty,Period rev,Units per day,Days cover,Status\n'
+          'SKU,Name,Reporting category,Unit,On hand,Unit cost,Cost value,List value,Period qty,Period rev,Units per day,Days cover,Status,Historical warnings\n'
         const rows: any[] = reportData.rows || []
         rows.forEach((r: any) => {
           csvContent += [
@@ -3514,6 +3529,7 @@ function ReportsPageContent() {
             r.velocity_per_day ?? '',
             r.days_of_cover == null ? '' : r.days_of_cover,
             escapeCsv(r.stock_status),
+            escapeCsv((r.history_warnings || []).join(' ')),
           ].join(',')
           csvContent += '\n'
         })
@@ -4220,6 +4236,20 @@ function ReportsPageContent() {
                   </div>
                     </div>
 
+                    {selectedReport === 'inventory-sku-valuation' && (
+                      <label className="mb-4 block max-w-md text-sm font-medium">
+                        Inventory valuation date
+                        <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+                          value={inventoryValuationBasis} onChange={(event) => {
+                            const basis = event.target.value as 'live' | 'historical'
+                            setInventoryValuationBasis(basis)
+                            void fetchReport('inventory-sku-valuation', { inventoryValuationBasis: basis })
+                          }}>
+                          <option value="live">Current stock and cost</option>
+                          <option value="historical">Historical stock at period end</option>
+                        </select>
+                      </label>
+                    )}
                     {selectedReport === 'income-statement' && !reportStationId && (
                       <div className="mb-4 max-w-md">
                         <label htmlFor="income-statement-basis" className="mb-1 block text-sm font-medium">
@@ -7031,13 +7061,24 @@ function renderReportTable(
           dateRange,
           reportType,
           handleReportDateChange,
-          'Period sales and velocity use invoice lines in this date range. On-hand values are current (as of now).',
+          data.valuation_basis === 'historical'
+            ? `Stock is reconstructed at ${data.valuation_as_of_date}. Period sales use the date range below.`
+            : 'Period sales and velocity use invoice lines in this date range. On-hand values are current (as of now).',
         )}
 
         {renderItemScopeFilterPanel(reportType, itemScope, {
           panelTitle: 'Filters: category and item',
           applyHint: 'Optional — narrow SKUs before applying. Date range is set above.',
         })}
+
+        {data.history_is_complete === false && (
+          <div role="alert" className="rounded-lg border border-amber-500 bg-amber-50 p-3 text-sm text-amber-950">
+            Some items have incomplete historical records. Review the item warnings and reconcile before closing the books.
+            <ul className="mt-2 list-disc pl-5">{rows.filter((r) => r.history_warnings?.length).map((r) => (
+              <li key={r.item_id}>{r.name}: {r.history_warnings.join(' ')}</li>
+            ))}</ul>
+          </div>
+        )}
 
         {itemScope ? (
           <p className="text-xs text-muted-foreground">
@@ -7132,10 +7173,10 @@ function renderReportTable(
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
-                      {formatNumber(r.quantity_on_hand, 2)}
+                      {formatNumber(r.quantity_on_hand, data.valuation_basis === 'historical' ? 4 : 2)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right text-foreground/85">
-                      {Money(r.unit_cost, r, "unit_cost")}
+                      {data.valuation_basis === 'historical' ? formatNumber(r.unit_cost, 6) : Money(r.unit_cost, r, 'unit_cost')}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-medium text-foreground">
                       {Money(r.extended_cost_value, r, "extended_cost_value")}
@@ -7341,7 +7382,7 @@ function renderReportTable(
                         <span className="text-xs text-muted-foreground/70">No</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, 2)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.quantity_on_hand, data.valuation_basis === 'historical' ? 4 : 2)}</td>
                     <td className="px-3 py-2 text-right">{Money(r.extended_cost_value, r, "extended_cost_value")}</td>
                     <td className="px-3 py-2 text-right">{Money(r.extended_list_value, r, "extended_list_value")}</td>
                   </tr>

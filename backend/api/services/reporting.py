@@ -7321,13 +7321,17 @@ def report_inventory_sku_valuation(
     station_id: int | None = None,
     category: str | None = None,
     item_ids: list[int] | None = None,
+    *,
+    valuation_basis: str = "live",
 ) -> dict[str, Any]:
     """
     Per-SKU: on-hand, cost & list extension, period sales, velocity, days of cover.
     Uses Item.cost (fallback per gl_posting) and invoice lines in [start, end] for the selected company.
     When ``station_id`` is set, on-hand and period sales are for that site (invoice.station / shop bins / tanks).
     """
-    valuation_date = timezone.localdate()
+    if valuation_basis not in ("live", "historical"):
+        raise ValueError("valuation_basis must be live or historical")
+    valuation_date = end if valuation_basis == "historical" else timezone.localdate()
     period_days = (end - start).days + 1
     if period_days < 1:
         period_days = 1
@@ -7371,6 +7375,10 @@ def report_inventory_sku_valuation(
     tot_period_rev = Decimal("0")
 
     scope_items = _item_scope_queryset(company_id, category, item_ids)
+    history = {}
+    if valuation_basis == "historical":
+        from api.services.inventory_history import historical_inventory_positions
+        history = historical_inventory_positions(company_id, scope_items, end, station_id)
 
     for item in scope_items:
         if not item_tracks_physical_stock(item):
@@ -7379,16 +7387,18 @@ def report_inventory_sku_valuation(
         # Biological inventory is already reported separately from account 1581.
         if (item.pos_category or "").strip().lower() == "fish":
             continue
-        if station_id is not None:
+        if valuation_basis == "historical":
+            qoh = history[item.id]["quantity"]
+        elif station_id is not None:
             qoh = _item_qoh_at_station(company_id, item, station_id)
         else:
             qoh = _d(getattr(item, "quantity_on_hand", None) or 0)
-        if qoh < 0:
+        if qoh < 0 and valuation_basis != "historical":
             qoh = Decimal("0")
-        uc = item_inventory_unit_cost(item)
+        uc = history[item.id]["unit_cost"] if valuation_basis == "historical" else item_inventory_unit_cost(item)
         list_p = _d(getattr(item, "unit_price", None) or 0)
-        ext_cost = qoh * uc
-        ext_list = qoh * list_p
+        ext_cost = (qoh * uc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        ext_list = (qoh * list_p).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         agg = line_agg.get(int(item.id)) or {"q": Decimal("0"), "a": Decimal("0")}
         pq = agg["q"]
         pa = agg["a"]
@@ -7428,8 +7438,8 @@ def report_inventory_sku_valuation(
                 "reporting_category": (getattr(item, "category", None) or "").strip() or "General",
                 "item_type": (getattr(item, "item_type", None) or "") or "",
                 "unit": (item.unit or "")[:24],
-                "quantity_on_hand": _f(qoh),
-                "unit_cost": _f(uc),
+                "quantity_on_hand": format(qoh, ".4f") if valuation_basis == "historical" else _f(qoh),
+                "unit_cost": format(uc, ".6f") if valuation_basis == "historical" else _f(uc),
                 "extended_cost_value": _f(ext_cost),
                 "list_price": _f(list_p),
                 "extended_list_value": _f(ext_list),
@@ -7440,6 +7450,8 @@ def report_inventory_sku_valuation(
                 "days_of_cover": None if doc is None else round(doc, 1),
                 "gross_margin_pct": None if margin_pct is None else round(margin_pct, 2),
                 "stock_status": stock_status,
+                "history_warnings": history.get(item.id, {}).get("warnings", []),
+                "history_is_complete": history.get(item.id, {}).get("is_complete", True),
             }
         )
 
@@ -7452,6 +7464,7 @@ def report_inventory_sku_valuation(
     out_val: dict[str, Any] = {
         "report_id": "inventory-sku-valuation",
         "valuation_as_of_date": valuation_date.isoformat(),
+        "valuation_basis": valuation_basis,
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "filters": {
             "category": category or "",
@@ -7459,7 +7472,7 @@ def report_inventory_sku_valuation(
         },
         "summary": {
             "line_count": len(rows_out),
-            "total_qty_on_hand": _f(tot_qoh),
+            "total_qty_on_hand": format(tot_qoh, ".4f") if valuation_basis == "historical" else _f(tot_qoh),
             "total_cost_value": _f(tot_cost),
             "total_list_value": _f(tot_list),
             "total_period_quantity_sold": _f(tot_period_qty),
@@ -7476,6 +7489,19 @@ def report_inventory_sku_valuation(
             "N/A when there is no period movement."
         ),
     }
+    if valuation_basis == "historical":
+        out_val["history_is_complete"] = all(r["history_is_complete"] for r in rows_out)
+        out_val["accounting_note"] = (
+            "Historical inventory at the selected end date, reconstructed from applied receipts, "
+            "physical sales, posted adjustments/transfers, consumption, returns, and empty-sack issues. "
+            "A dated opening is used only when it matches the register at that date. "
+            "A tank dip is the measured volume only when later documents reconcile to current stock. "
+            "Historical receipt values include header discounts and landed costs. Sales and returns use original posted cost evidence; "
+            "where that evidence is unavailable, reconstructed moving-average cost is flagged as estimated. "
+            "Today's catalog cost is not copied into the quantity. Missing history is flagged per item; "
+            "incomplete rows require reconciliation before using this report for closing the books. "
+            "List prices are current reference prices, not historical selling prices."
+        )
     if station_id is None and not category and not item_ids:
         # Only a full, company-wide valuation is comparable with the GL inventory accounts.
         # Quantities and costs above are live, even when period sales are historical.
@@ -7483,11 +7509,11 @@ def report_inventory_sku_valuation(
         recon = _inventory_gl_reconciliation(company_id, valuation_date, tot_cost)
         out_val["gl_reconciliation"] = recon
         out_val["accounting_note"] += (
-            " Priced live stock %s vs GL inventory accounts %s as of %s "
+            " Priced stock %s vs GL inventory accounts %s as of %s "
             "(live fish held separately at %s)"
             % (recon["valuation_total"], recon["gl_stock_inventory"], recon["as_of_date"], recon["gl_biological_inventory"])
         )
-        if recon["difference"]:
+        if _d(recon["difference"]) != 0:
             out_val["accounting_note"] += (
                 "; difference %s. Investigate quantity or cost-basis drift: the GL holds "
                 "posted receipts less COGS, while this report prices on-hand at AVCO."

@@ -80,9 +80,12 @@ def _reversed_lines(journal: JournalEntry | None, fraction: Decimal) -> list[tup
     return [row for row in swapped if row[1] > 0 or row[2] > 0]
 
 
-def _restore_stock(company_id: int, invoice: Invoice, fraction: Decimal) -> bool:
+def _restore_stock(company_id: int, invoice: Invoice, fraction: Decimal, *, evidence=None) -> bool:
+    from api.services.inventory_cost_evidence import invoice_stock_costs
     restored = False
-    for line in InvoiceLine.objects.filter(invoice_id=invoice.id).select_related("item"):
+    lines = list(InvoiceLine.objects.filter(invoice_id=invoice.id).select_related("item"))
+    costs = invoice_stock_costs(company_id, lines)
+    for line in lines:
         original = line.stock_relieved_quantity or Decimal("0")
         if original <= 0 or line.item_id is None:
             continue
@@ -100,6 +103,13 @@ def _restore_stock(company_id: int, invoice: Invoice, fraction: Decimal) -> bool
                 quantity_on_hand=F("quantity_on_hand") + qty
             )
         restored = True
+        if evidence is not None:
+            value = _money(costs[line.id] * fraction) if line.id in costs else None
+            evidence.append({
+                "invoice_line_id": line.id, "item_id": line.item_id,
+                "quantity": str(qty), "station_id": line.stock_relieved_station_id,
+                "cost_amount": str(value) if value is not None else None,
+            })
     return restored
 
 
@@ -186,9 +196,11 @@ def post_credit_note(
         )
     if credited_cash > 0 and credited_ar <= 0:
         note.refunded_amount = credit_amt
-    restored = _restore_stock(company_id, invoice, fraction)
+    evidence = []
+    restored = _restore_stock(company_id, invoice, fraction, evidence=evidence)
     note.stock_restored = restored
-    note.save(update_fields=["journal_entry", "refunded_amount", "stock_restored"])
+    note.stock_movement_evidence = evidence
+    note.save(update_fields=["journal_entry", "refunded_amount", "stock_restored", "stock_movement_evidence"])
     return note
 
 

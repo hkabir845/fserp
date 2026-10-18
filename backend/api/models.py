@@ -1897,6 +1897,10 @@ class InvoiceLine(models.Model):
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=1)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    stock_cost_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        help_text="Exact COGS posted for this line; historical stock/return cost evidence.",
+    )
     stock_relieved_quantity = models.DecimalField(
         max_digits=14,
         decimal_places=4,
@@ -4666,6 +4670,7 @@ class CreditNote(models.Model):
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     refunded_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     stock_restored = models.BooleanField(default=False)
+    stock_movement_evidence = models.JSONField(default=list, blank=True)
     journal_entry = models.ForeignKey(
         JournalEntry,
         null=True,

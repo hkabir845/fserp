@@ -1,5 +1,11 @@
 # Report and accounting review — 18 October 2026
 
+**Final BDT scope:** historical inventory and report fixes are implemented; the
+foreign-currency additions have been removed as requested. See
+[BDT historical inventory](HISTORICAL_INVENTORY_BDT.md) for the current behavior,
+local migration/backfill and outstanding source-data reconciliation. The sections
+below record earlier review stages; this final scope supersedes their feature boundaries.
+
 ## Scope
 
 Local PostgreSQL-backed automated checks and source review of reporting, posting,
@@ -48,9 +54,25 @@ provide the separate evidence for numerical correctness.
 - Production acceptance still needs representative tenant reconciliations, browser
   verification of filters/drills/printed exports, and jurisdiction-specific sign-off.
 - Harvest recognition is now the same in standing stock, FCR, and cost per kg:
-  a harvest counts only when it has a sales invoice and is not an inter-pond
+  a harvest counts only when it has a non-draft, non-void sales invoice and is not an inter-pond
   transfer mirror. A harvest record without an invoice stays in standing stock
   and is excluded from harvest kilograms and production gain.
+
+## Follow-up: report defects only
+
+The existing checkout already contained the shared harvest-recognition fix. Follow-up
+verification found one remaining lifecycle gap: merely linking an invoice also counted
+draft and void invoices as completed harvests. The shared rule now excludes both, so
+physical stock, same-day opening heads, FCR harvest weight, and cost-per-kg denominators
+agree. FCR coverage also explains exclusions caused by draft or void invoices.
+
+Seven new lifecycle regressions cover no invoice, draft, void, sent, paid, partial, and
+overdue invoices across all four consumers and the report's coverage metadata. The focused
+regression run passed **51 tests**. A separate endpoint/core accounting run passed
+**105 tests**, for **156 backend checks passed** in this follow-up. Frontend tests,
+TypeScript validation, Django system checks, and diff whitespace checks also passed.
+Historical inventory valuation and multi-currency accounting are outside this
+follow-up, as requested. Changes have not been deployed by this review.
 
 ## Reproduce
 

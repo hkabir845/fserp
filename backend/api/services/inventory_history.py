@@ -13,7 +13,7 @@ from django.utils import timezone
 from api.models import (
     AquacultureExpense, AquacultureExpenseInventoryLine, AquacultureFishSale,
     BillLine, CreditNote, InventoryAdjustmentLine,
-    InventoryTransferLine, InvoiceLine, TankDip,
+    InventoryTransferLine, InvoiceLine, Tank, TankDip,
     PondWarehouseStockReceiptLine, PondWarehouseStockReturnLine,
 )
 from api.services.aquaculture_empty_sack_service import EMPTY_SACK_INCOME_TYPE, EMPTY_SACK_ITEM_NUMBER
@@ -34,10 +34,8 @@ def historical_inventory_positions(company_id, items, as_of, station_id=None):
     warnings = defaultdict(set)
     dips = []
 
-    horizon = max(as_of, timezone.localdate())
-
     def relevant(day, iid):
-        return iid in ids and day <= horizon
+        return iid in ids and day <= as_of
 
     def add(day, created, pk, iid, qty, value=None, site=None, destination=None, cost=None, kind="move"):
         if relevant(day, iid):
@@ -202,43 +200,26 @@ def historical_inventory_positions(company_id, items, as_of, station_id=None):
             events = [event for event in events if not (event[3] == iid and event[_KIND] == "move" and event[0] < day)]
         elif prior:
             events = [event for event in events if event is not opening]
+            warnings[iid].add("Dated opening conflicts with the earlier stock register and is excluded; reconcile its quantity and cost.")
 
-    # A stick reading is the physical volume only when later documents bring that
-    # volume to today's on-hand. Otherwise the dip remains a variance on the register.
-    # Today's quantity is the check, never a replacement value.
-    latest_dip = {}
-    for dip in dips:
-        current = latest_dip.get(dip.tank_id)
-        if current is None or (dip.dip_date, dip.id) >= (current.dip_date, current.id):
-            latest_dip[dip.tank_id] = dip
-    dips_by_item = defaultdict(list)
-    for dip in latest_dip.values():
-        dips_by_item[dip.tank.product_id].append(dip)
-    verified_dips = {}
-    today = timezone.localdate()
-    for iid, item_dips in dips_by_item.items():
-        if len(item_dips) != 1:
-            continue
-        dip = item_dips[0]
-        projected = dip.volume + sum(
-            (event[4] for event in events
-             if event[3] == iid and event[7] is None and event[_KIND] != "dip" and dip.dip_date < event[0] <= today),
-            ZERO,
-        )
-        if projected == (by_id[iid].quantity_on_hand or ZERO):
-            verified_dips[iid] = dip
-    for iid, dip in verified_dips.items():
-        events = [event for event in events if not (event[3] == iid and event[0] <= dip.dip_date)]
-        events.append((dip.dip_date, "9999-dip", dip.id, iid, dip.volume, None, dip.tank.station_id, None, None, "dip"))
+    # For a single-tank product the measured closing volume is direct evidence.
+    # Never choose a historical method by comparing with today's mutable stock.
+    tank_counts = defaultdict(int)
+    for iid in Tank.objects.filter(company_id=company_id, product_id__in=ids).values_list("product_id", flat=True):
+        tank_counts[iid] += 1
     for dip in dips:
         iid = dip.tank.product_id
-        if iid in verified_dips:
-            continue
         opening_day = next((event[0] for event in events if event[3] == iid and event[_KIND] == "opening"), None)
         if opening_day is not None and dip.dip_date < opening_day:
             continue
-        events.append((dip.dip_date, str(dip.created_at or ""), dip.id, iid,
-            dip.volume - dip.book_stock_before, None, dip.tank.station_id, None, None, "move"))
+        if tank_counts[iid] == 1:
+            # Existing reports define dips as end-of-day measurements. Keep earlier
+            # events for cost reconstruction instead of discarding their cost basis.
+            events.append((dip.dip_date, "9999-dip", dip.id, iid,
+                dip.volume, None, dip.tank.station_id, None, None, "dip"))
+        else:
+            events.append((dip.dip_date, str(dip.created_at or ""), dip.id, iid,
+                dip.volume - dip.book_stock_before, None, dip.tank.station_id, None, None, "move"))
 
     positions = {iid: {"quantity": ZERO, "value": ZERO, "unit_cost": ZERO} for iid in ids}
     sites = defaultdict(lambda: ZERO)
@@ -248,8 +229,9 @@ def historical_inventory_positions(company_id, items, as_of, station_id=None):
         p = positions[iid]
         if kind == "dip":
             p["quantity"] = delta
-            p["value"] = ZERO
-            p["unit_cost"] = ZERO
+            p["value"] = delta * p["unit_cost"]
+            if delta > 0 and p["unit_cost"] <= 0:
+                warnings[iid].add("Measured tank stock has no historical cost basis; reconcile original receipt costs.")
             sites[(iid, site)] = delta
             continue
         if destination is not None:

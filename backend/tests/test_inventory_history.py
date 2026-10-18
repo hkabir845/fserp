@@ -138,6 +138,8 @@ def test_conflicting_opening_does_not_replace_the_receipt_register(company_tenan
     assert Decimal(january["summary"]["total_qty_on_hand"]) == 50
     assert Decimal(february["summary"]["total_qty_on_hand"]) == 50
     assert Decimal(february["summary"]["total_cost_value"]) == 500
+    assert february["history_is_complete"] is False
+    assert any("opening conflicts" in message for message in february["rows"][0]["history_warnings"])
 
 
 def test_opening_without_earlier_receipts_remains_the_balance(company_tenant):
@@ -185,6 +187,58 @@ def test_tank_dip_measured_volume_replaces_earlier_history(company_tenant):
     assert result["quantity"] == 300
     assert result["value"] == 300
     assert all("negative inventory" not in message for message in result["warnings"])
+
+
+def test_dip_preserves_cost_and_does_not_depend_on_current_quantity(company_tenant):
+    from api.models import Tank, TankDip
+    from api.services.inventory_history import historical_inventory_positions
+    cid = company_tenant.id
+    station = Station.objects.create(company_id=cid, station_name="Stable dip")
+    item = Item.objects.create(company_id=cid, name="Stable fuel", pos_category="fuel",
+        opening_stock_quantity=100, opening_stock_unit_cost=10,
+        opening_balance_date=date(2026, 1, 1), quantity_on_hand=80, cost=999)
+    tank = Tank.objects.create(company_id=cid, station=station, product=item,
+        tank_name="Stable tank", capacity=1000, current_stock=80)
+    TankDip.objects.create(company_id=cid, tank=tank, dip_date=date(2026, 1, 2),
+        volume=80, book_stock_before=100)
+    before = historical_inventory_positions(cid, [item], date(2026, 1, 31))[item.id]
+    item.quantity_on_hand = 700
+    item.cost = 2000
+    after = historical_inventory_positions(cid, [item], date(2026, 1, 31))[item.id]
+    assert before == after
+    assert before["quantity"] == 80
+    assert before["value"] == 800
+
+
+def test_positive_dip_without_cost_is_incomplete(company_tenant):
+    from api.models import Tank, TankDip
+    from api.services.inventory_history import historical_inventory_positions
+    cid = company_tenant.id
+    station = Station.objects.create(company_id=cid, station_name="Unknown dip cost")
+    item = Item.objects.create(company_id=cid, name="Unknown fuel", pos_category="fuel", cost=500)
+    tank = Tank.objects.create(company_id=cid, station=station, product=item,
+        tank_name="Unknown tank", capacity=1000)
+    TankDip.objects.create(company_id=cid, tank=tank, dip_date=date(2026, 1, 2), volume=80, book_stock_before=0)
+    result = historical_inventory_positions(cid, [item], date(2026, 1, 31))[item.id]
+    assert result["quantity"] == 80
+    assert result["value"] == 0
+    assert result["is_complete"] is False
+    assert any("no historical cost basis" in message for message in result["warnings"])
+
+
+def test_dip_in_one_of_two_tanks_does_not_replace_company_stock(company_tenant):
+    from api.models import Tank, TankDip
+    from api.services.inventory_history import historical_inventory_positions
+    cid = company_tenant.id
+    station = Station.objects.create(company_id=cid, station_name="Two tanks")
+    item = Item.objects.create(company_id=cid, name="Shared fuel", pos_category="fuel",
+        opening_stock_quantity=200, opening_stock_unit_cost=10, opening_balance_date=date(2026, 1, 1))
+    first = Tank.objects.create(company_id=cid, station=station, product=item, tank_name="First", capacity=1000)
+    Tank.objects.create(company_id=cid, station=station, product=item, tank_name="Second", capacity=1000)
+    TankDip.objects.create(company_id=cid, tank=first, dip_date=date(2026, 1, 2), volume=80, book_stock_before=100)
+    result = historical_inventory_positions(cid, [item], date(2026, 1, 31))[item.id]
+    assert result["quantity"] == 180
+    assert result["value"] == 1800
 
 
 def test_empty_sack_creation_and_sale_reconstruct_quantity(company_tenant):

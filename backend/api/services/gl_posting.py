@@ -1272,6 +1272,7 @@ def _create_posted_entry(
         return je
 
 
+@transaction.atomic
 def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     """
     Dr COGS / Cr inventory at average cost (item.cost x qty) for perpetual-inventory items.
@@ -1301,6 +1302,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     # Split by COGS account, inventory account, entity, and cost bucket.
     buckets: dict[tuple[int, int, str, Optional[int], Optional[int]], Decimal] = {}
     total_cogs = Decimal("0")
+    posted_costs = {}
     for line in lines_qs:
         it = line.item
         if not it:
@@ -1318,6 +1320,7 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
         cogs_acc = _cogs_account_for_item(company_id, it)
         if not inv_acc or not cogs_acc:
             continue
+        posted_costs[line.id] = amt
         bkt = item_shop_issue_cost_bucket(it)
         line_st = _invoice_line_gl_station(company_id, line, inv)
         line_pond = getattr(line, "aquaculture_pond_id", None)
@@ -1355,21 +1358,17 @@ def post_invoice_cogs_journal(company_id: int, inv: Invoice) -> bool:
     if debit != credit:
         return False
 
-    return (
-        _create_posted_entry(
-            company_id,
-            inv.invoice_date,
-            entry_number,
-            _gl_invoice_journal_description(inv, "COGS"),
-            lines,
-            # Same selling site as AUTO-INV-{id}-SALE. A station-tagged sale whose COGS journal
-            # header is untagged shows the site earning revenue at no cost when journals are
-            # filtered by site. Per-line stations above still override the header.
-            gl_station_id=_gl_station_id(company_id, inv.station_id),
-            aquaculture_line_costing=aq_costing,
-        )
-        is not None
+    entry = _create_posted_entry(
+        company_id, inv.invoice_date, entry_number,
+        _gl_invoice_journal_description(inv, "COGS"), lines,
+        gl_station_id=_gl_station_id(company_id, inv.station_id),
+        aquaculture_line_costing=aq_costing,
     )
+    if entry is None:
+        return False
+    for line_id, amount in posted_costs.items():
+        InvoiceLine.objects.filter(pk=line_id, invoice_id=inv.id).update(stock_cost_amount=amount)
+    return True
 
 
 def delete_invoice_cogs_journal(company_id: int, invoice_id: int) -> int:
@@ -2775,7 +2774,7 @@ def _capitalize_landed_cost(debit_rows: list, cap: Decimal) -> bool:
     return True
 
 
-def _bill_line_receipt_value(bill: Bill, line: BillLine) -> Decimal:
+def _bill_line_receipt_value(bill: Bill, line: BillLine, *, siblings=None) -> Decimal:
     """Inventory receipt value that matches the GL debit after header tax/discount.
 
     Tax is pulled into 1170 and does not scale line costs. A header discount that makes
@@ -2785,7 +2784,8 @@ def _bill_line_receipt_value(bill: Bill, line: BillLine) -> Decimal:
     amt = line.amount if line.amount is not None else Decimal("0")
     if amt <= 0:
         return Decimal("0")
-    siblings = list(BillLine.objects.filter(bill_id=bill.id).select_related("item"))
+    if siblings is None:
+        siblings = list(BillLine.objects.filter(bill_id=bill.id).select_related("item"))
     line_sum = Decimal("0")
     for ln in siblings:
         a = ln.amount if ln.amount is not None else Decimal("0")

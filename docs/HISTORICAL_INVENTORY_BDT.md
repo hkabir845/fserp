@@ -12,9 +12,14 @@ the API accepts `valuation_basis=historical`.
 Historical stock uses dated openings, applied purchase receipts, physical sales
 relief, posted adjustments, transfers, tank dips, consumption and customer returns.
 A dated opening replaces earlier movements only when it equals the stock register
-at that date. A conflicting opening is left unused, so the receipts and issues
-remain the quantity. A tank dip is the measured volume at the end of that day;
-later receipts and sales move the balance from there. Empty feed sacks follow
+at that date. A conflicting opening is left unused with an explicit reconciliation
+warning, so the receipts and issues remain the quantity. For a single-tank product,
+a tank dip is the measured volume at the end of that day; it retains the historical
+unit cost and later receipts and sales move the balance from there. Products stored
+in multiple tanks use each dip's recorded variance, so one reading cannot replace
+the combined company quantity. Today's stock never selects the historical method.
+A positive measured balance without historical cost is flagged as incomplete.
+Empty feed sacks follow
 the sacks opened on feed issues and the sacks sold.
 Purchase discounts, landed costs and recoverable input tax follow GL receipt rules.
 Sales retain their posted COGS; returns retain the original quantities and costs.
@@ -58,3 +63,11 @@ Final local verification on 18 October 2026: the broad backend selection passed
 458 tests (`backend/logs/bdt-report-final.xml`); the additional current-stock
 diagnostic regression passed separately. Frontend tests, TypeScript, production
 build, Django system checks, migration drift and whitespace checks passed.
+
+Subsequent recheck found and corrected silent conflicting openings, dip cost being
+reset to zero, and dip method selection depending on mutable current stock. Earlier
+negative-stock history remains disclosed even when a later measurement establishes
+a positive balance. The refreshed local reconciliation CSV contains 9 company 1
+items and 8 company 2 items; these warnings include conflicting evidence as well as
+closing-quantity differences. The recheck changed report calculations, not source
+transactions or GL balances.

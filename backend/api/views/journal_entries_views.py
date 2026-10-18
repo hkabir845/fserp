@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q, Sum
+from django.db import transaction
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -18,7 +19,7 @@ from api.services.reference_code import next_sequential_code, save_with_sequenti
 from api.views.common import parse_json_body, require_company_id, require_permission
 from django.utils import timezone as django_timezone
 
-from api.models import AquaculturePond, JournalEntry, JournalEntryLine, ChartOfAccount, Station
+from api.models import AquaculturePond, Company, JournalEntry, JournalEntryLine, ChartOfAccount, Station
 from api.services.accounting_period_lock import period_lock_error
 from api.services.aquaculture_pond_display import pond_operational_display_name
 from api.services.journal_entity_display import journal_entry_site_label, journal_line_site_label
@@ -53,9 +54,9 @@ def _line_to_json(line):
         "debit_account_id": line.account_id if line.debit and line.debit != 0 else None,
         "credit_account_id": line.account_id if line.credit and line.credit != 0 else None,
         "debit_account_name": acc.account_name if acc else "",
-        "credit_account_name": "",
+        "credit_account_name": acc.account_name if acc else "",
         "debit_account_code": acc.account_code if acc else "",
-        "credit_account_code": "",
+        "credit_account_code": acc.account_code if acc else "",
         "amount": str(line.debit or line.credit or 0),
         "debit": str(line.debit or 0),
         "credit": str(line.credit or 0),
@@ -385,19 +386,76 @@ def _journal_entries_list(request):
     return JsonResponse([_entry_to_json(e) for e in qs], safe=False)
 
 
+def _prepare_manual_lines(company_id, rows, entry_station_id):
+    """Validate every book-currency line before touching a draft."""
+    if not isinstance(rows, list):
+        raise ValueError("lines must be a list.")
+    base = Company.objects.get(pk=company_id).currency
+    prepared = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Each journal line must be an object.")
+        if str(row.get("currency") or base).strip().upper() != base.upper():
+            raise ValueError("Foreign-currency entry is not enabled. Enter amounts in the company book currency.")
+        try:
+            amount = Decimal(str(row.get("amount", 0)))
+            rate = Decimal(str(row.get("exchange_rate", 1)))
+            if not amount.is_finite() or amount < 0 or amount >= Decimal("1e12"):
+                raise ValueError()
+            if amount != amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP):
+                raise ValueError()
+            if not rate.is_finite() or rate != 1:
+                raise ValueError()
+        except (ValueError, ArithmeticError):
+            raise ValueError("Use finite nonnegative book-currency amounts with at most two decimal places and no exchange rate.")
+        if not amount:
+            continue
+        pond_id, error = _manual_line_pond_id(company_id, row)
+        if error:
+            raise ValueError(error)
+        category_id, error = _coerce_optional_tenant_reporting_category_id(company_id, row.get("tenant_reporting_category_id"))
+        if error:
+            raise ValueError(error)
+        selected = [(side, row.get(f"{side}_account_id")) for side in ("debit", "credit") if row.get(f"{side}_account_id")]
+        if not selected:
+            raise ValueError("Select an account for each nonzero line.")
+        for side, account_id in selected:
+            try:
+                valid = ChartOfAccount.objects.filter(pk=account_id, company_id=company_id, is_active=True).exists()
+            except (ValueError, TypeError):
+                valid = False
+            if not valid:
+                raise ValueError("Unknown or inactive journal account for this company.")
+            prepared.append(dict(
+                account_id=account_id, debit=amount if side == "debit" else 0,
+                credit=amount if side == "credit" else 0,
+                description=str(row.get("description") or "")[:300],
+                station_id=_manual_line_station_id(company_id, row, entry_station_id),
+                aquaculture_pond_id=pond_id, tenant_reporting_category_id=category_id,
+            ))
+    return prepared
+
+
 @csrf_exempt
 @auth_required
 @require_company_id
 @require_permission("app.page.journal_entries")
+@transaction.atomic
 def journal_entry_create(request):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
     body, err = parse_json_body(request)
     if err:
         return err
-    entry_date = _parse_date(body.get("entry_date")) or date.today()
+    entry_date = _parse_date(body.get("entry_date")) if body.get("entry_date") else django_timezone.localdate()
+    if entry_date is None:
+        return JsonResponse({"detail": "entry_date must be YYYY-MM-DD."}, status=400)
     desc = (body.get("description") or "").strip()
     st_id = _coerce_optional_station_id(request.company_id, body.get("station_id"))
+    try:
+        prepared = _prepare_manual_lines(request.company_id, body.get("lines") or [], st_id)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
     uid = getattr(getattr(request, "api_user", None), "id", None)
     e = JournalEntry(
         company_id=request.company_id,
@@ -416,44 +474,7 @@ def journal_entry_create(request):
         field="entry_number",
         prefix="JE",
     )
-    lines = body.get("lines") or []
-    for i, row in enumerate(lines):
-        debit_acc = row.get("debit_account_id")
-        credit_acc = row.get("credit_account_id")
-        amount = _decimal(row.get("amount"))
-        if not amount:
-            continue
-        lsid = _manual_line_station_id(request.company_id, row, st_id)
-        pond_id, pond_err = _manual_line_pond_id(request.company_id, row)
-        if pond_err:
-            return JsonResponse({"detail": pond_err}, status=400)
-        trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
-            request.company_id, row.get("tenant_reporting_category_id")
-        )
-        if trc_err:
-            return JsonResponse({"detail": trc_err}, status=400)
-        if debit_acc and ChartOfAccount.objects.filter(id=debit_acc, company_id=request.company_id).exists():
-            JournalEntryLine.objects.create(
-                journal_entry=e,
-                account_id=debit_acc,
-                debit=amount,
-                credit=0,
-                description=row.get("description") or "",
-                station_id=lsid,
-                aquaculture_pond_id=pond_id,
-                tenant_reporting_category_id=trc_id,
-            )
-        if credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
-            JournalEntryLine.objects.create(
-                journal_entry=e,
-                account_id=credit_acc,
-                debit=0,
-                credit=amount,
-                description=row.get("description") or "",
-                station_id=lsid,
-                aquaculture_pond_id=pond_id,
-                tenant_reporting_category_id=trc_id,
-            )
+    JournalEntryLine.objects.bulk_create([JournalEntryLine(journal_entry=e, **row) for row in prepared])
     e.refresh_from_db()
     return JsonResponse(_entry_to_json(e), status=201)
 
@@ -462,6 +483,7 @@ def journal_entry_create(request):
 @auth_required
 @require_company_id
 @require_permission("app.page.journal_entries")
+@transaction.atomic
 def journal_entry_detail(request, entry_id: int):
     e = (
         JournalEntry.objects.filter(id=entry_id, company_id=request.company_id)
@@ -488,51 +510,26 @@ def journal_entry_detail(request, entry_id: int):
                 {"detail": "Cannot edit a posted journal entry. Unpost it first."},
                 status=400,
             )
-        e.entry_date = _parse_date(body.get("entry_date")) or e.entry_date
+        pending_station = (_coerce_optional_station_id(request.company_id, body.get("station_id"))
+                           if "station_id" in body else e.station_id)
+        lines = body.get("lines")
+        try:
+            prepared = _prepare_manual_lines(request.company_id, lines, pending_station) if lines is not None else None
+        except ValueError as exc:
+            return JsonResponse({"detail": str(exc)}, status=400)
+        new_date = _parse_date(body.get("entry_date")) if body.get("entry_date") else e.entry_date
+        if new_date is None:
+            return JsonResponse({"detail": "entry_date must be YYYY-MM-DD."}, status=400)
+        e.entry_date = new_date
         e.description = (body.get("description") or "").strip() or e.description
         if "station_id" in body:
             e.station_id = _coerce_optional_station_id(
                 request.company_id, body.get("station_id")
             )
         e.save()
-        lines = body.get("lines")
-        if lines is not None:
+        if prepared is not None:
             e.lines.all().delete()
-            for row in lines:
-                debit_acc = row.get("debit_account_id")
-                credit_acc = row.get("credit_account_id")
-                amount = _decimal(row.get("amount"))
-                lsid = _manual_line_station_id(request.company_id, row, e.station_id)
-                pond_id, pond_err = _manual_line_pond_id(request.company_id, row)
-                if pond_err:
-                    return JsonResponse({"detail": pond_err}, status=400)
-                trc_id, trc_err = _coerce_optional_tenant_reporting_category_id(
-                    request.company_id, row.get("tenant_reporting_category_id")
-                )
-                if trc_err:
-                    return JsonResponse({"detail": trc_err}, status=400)
-                if amount and debit_acc and ChartOfAccount.objects.filter(id=debit_acc, company_id=request.company_id).exists():
-                    JournalEntryLine.objects.create(
-                        journal_entry=e,
-                        account_id=debit_acc,
-                        debit=amount,
-                        credit=0,
-                        description=row.get("description") or "",
-                        station_id=lsid,
-                        aquaculture_pond_id=pond_id,
-                        tenant_reporting_category_id=trc_id,
-                    )
-                if amount and credit_acc and ChartOfAccount.objects.filter(id=credit_acc, company_id=request.company_id).exists():
-                    JournalEntryLine.objects.create(
-                        journal_entry=e,
-                        account_id=credit_acc,
-                        debit=0,
-                        credit=amount,
-                        description=row.get("description") or "",
-                        station_id=lsid,
-                        aquaculture_pond_id=pond_id,
-                        tenant_reporting_category_id=trc_id,
-                    )
+            JournalEntryLine.objects.bulk_create([JournalEntryLine(journal_entry=e, **row) for row in prepared])
         e.refresh_from_db()
         return JsonResponse(_entry_to_json(e))
     if request.method == "DELETE":
@@ -552,9 +549,11 @@ def journal_entry_detail(request, entry_id: int):
 @auth_required
 @require_company_id
 @require_permission("app.page.journal_entries")
+@transaction.atomic
 def journal_entry_post(request, entry_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
+    Company.objects.select_for_update().get(pk=request.company_id)
     e = JournalEntry.objects.filter(id=entry_id, company_id=request.company_id).first()
     if not e:
         return JsonResponse({"detail": "Journal entry not found"}, status=404)
@@ -624,9 +623,11 @@ def journal_entry_post(request, entry_id: int):
 @auth_required
 @require_company_id
 @require_permission("app.page.journal_entries")
+@transaction.atomic
 def journal_entry_unpost(request, entry_id: int):
     if request.method != "POST":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
+    Company.objects.select_for_update().get(pk=request.company_id)
     e = JournalEntry.objects.filter(id=entry_id, company_id=request.company_id).first()
     if not e:
         return JsonResponse({"detail": "Journal entry not found"}, status=404)

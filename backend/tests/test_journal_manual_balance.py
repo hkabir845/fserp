@@ -8,6 +8,19 @@ import pytest
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("extra", [{"currency": "USD"}, {"exchange_rate": "120"}, {"amount": "NaN"}, {"amount": "-1"}])
+def test_bdt_journal_rejects_unsupported_or_invalid_amounts_without_partial_draft(api_client, company_tenant_with_gl, auth_admin_headers, extra):
+    from api.models import ChartOfAccount, JournalEntry
+    account = ChartOfAccount.objects.get(company=company_tenant_with_gl, account_code="1010")
+    before = JournalEntry.objects.count()
+    response = api_client.post("/api/journal-entries/", data=json.dumps({"lines": [
+        {"debit_account_id": account.id, "amount": "10", **extra},
+    ]}), content_type="application/json", **auth_admin_headers)
+    assert response.status_code == 400, response.content
+    assert JournalEntry.objects.count() == before
+
+
+@pytest.mark.django_db
 def test_journal_post_rejects_unbalanced(api_client, company_tenant, auth_admin_headers):
     from api.models import ChartOfAccount, JournalEntry, JournalEntryLine
 

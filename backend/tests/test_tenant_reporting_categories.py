@@ -189,7 +189,12 @@ def test_tenant_label_cannot_roll_up_to_payroll(api_client, company_tenant, auth
 def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_admin_headers):
     Company.objects.filter(pk=company_tenant.id).update(aquaculture_enabled=True, aquaculture_licensed=True)
     pond = AquaculturePond.objects.create(company_id=company_tenant.id, name="P1", is_active=True)
-    from api.models import AquacultureFishStockLedger
+    from api.models import AquacultureFishStockLedger, AquacultureProductionCycle
+
+    cycle = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id, pond=pond, name="Custom income crop",
+        code="C01", start_date=date(2026, 5, 1), fish_species="tilapia",
+    )
 
     AquacultureFishStockLedger.objects.create(
         company_id=company_tenant.id,
@@ -200,6 +205,7 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
         fish_count_delta=100,
         weight_kg_delta=Decimal("20"),
         memo="Opening stock for custom income sale test",
+        production_cycle=cycle,
     )
 
     inc = api_client.post(
@@ -208,7 +214,7 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
             {
                 "application": "aquaculture",
                 "kind": "income",
-                "label": "Pond tour fees",
+                "label": "Special harvest income",
                 "maps_to_code": "other_income",
             }
         ),
@@ -225,6 +231,7 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
             {
                 "pond_id": pond.id,
                 "income_type": income_code,
+                "production_cycle_id": cycle.id,
                 "fish_species": "tilapia",
                 "sale_date": "2026-05-02",
                 "weight_kg": "10",
@@ -235,7 +242,7 @@ def test_tenant_aquaculture_income_type_sale(api_client, company_tenant, auth_ad
         content_type="application/json",
         **auth_admin_headers,
     )
-    assert r.status_code == 201
+    assert r.status_code == 201, r.content.decode()
     sale = AquacultureFishSale.objects.get(pk=json.loads(r.content.decode())["id"])
     assert sale.income_type == income_code
 

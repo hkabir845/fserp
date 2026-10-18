@@ -166,11 +166,19 @@ def test_api_rejects_harvest_sale_over_stock(api_client, company_tenant, auth_ac
         pond_role="grow_out",
         is_active=True,
     )
+    cycle = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        name="Guard cycle",
+        start_date=date(2026, 5, 1),
+        is_active=True,
+    )
     r = api_client.post(
         "/api/aquaculture/sales/",
         data=json.dumps(
             {
                 "pond_id": pond.id,
+                "production_cycle_id": cycle.id,
                 "sale_date": "2026-05-15",
                 "income_type": "fish_harvest_sale",
                 "fish_species": "tilapia",
@@ -199,6 +207,13 @@ def test_api_allows_harvest_sale_within_stock(api_client, company_tenant, auth_a
         pond_role="grow_out",
         is_active=True,
     )
+    cycle = AquacultureProductionCycle.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        name="OK cycle",
+        start_date=date(2026, 5, 1),
+        is_active=True,
+    )
     vendor = Vendor.objects.create(company_id=company_tenant.id, company_name="Fry Co")
     fish_item = Item.objects.create(
         company_id=company_tenant.id,
@@ -223,6 +238,7 @@ def test_api_allows_harvest_sale_within_stock(api_client, company_tenant, auth_a
         quantity=Decimal("1"),
         amount=Decimal("10000"),
         aquaculture_pond=pond,
+        aquaculture_production_cycle=cycle,
         aquaculture_fish_count=20000,
         aquaculture_fish_weight_kg=Decimal("200"),
     )
@@ -231,6 +247,7 @@ def test_api_allows_harvest_sale_within_stock(api_client, company_tenant, auth_a
         data=json.dumps(
             {
                 "pond_id": pond.id,
+                "production_cycle_id": cycle.id,
                 "sale_date": "2026-05-15",
                 "income_type": "fish_harvest_sale",
                 "fish_species": "tilapia",

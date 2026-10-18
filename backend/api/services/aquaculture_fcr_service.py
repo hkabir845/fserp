@@ -24,6 +24,7 @@ from api.models import (
     AquaculturePond,
 )
 from api.services.aquaculture_biomass_book_revaluation_service import is_book_revaluation_ledger_row
+from api.services.aquaculture_harvest_recognition import recognized_pond_sales
 from api.services.aquaculture_partial_harvest import (
     effective_biomass_kg_from_position_row,
     position_row_has_usable_standing_sample,
@@ -152,12 +153,18 @@ def _same_day_harvest_fish_count(
     production_cycle_id: int | None = None,
     fish_species: str | None = None,
 ) -> int:
-    """Fish sold as harvest on ``day`` (for rebuilding pre-harvest heads)."""
-    qs = AquacultureFishSale.objects.filter(
-        company_id=company_id,
-        pond_id=pond_id,
-        sale_date=day,
-        income_type="fish_harvest_sale",
+    """Invoiced harvest fish sold on ``day`` (for rebuilding pre-harvest heads).
+
+    Draft sales are still in the live stock snapshot, so adding them again would
+    double-count opening heads.
+    """
+    qs = recognized_pond_sales(
+        AquacultureFishSale.objects.filter(
+            company_id=company_id,
+            pond_id=pond_id,
+            sale_date=day,
+            income_type="fish_harvest_sale",
+        )
     )
     if production_cycle_id is not None:
         qs = qs.filter(production_cycle_id=production_cycle_id)
@@ -668,11 +675,13 @@ def sum_harvest_kg_for_period(
     include_after_date: bool = False,
     fish_species: str | None = None,
 ) -> Decimal:
-    qs = AquacultureFishSale.objects.filter(
-        company_id=company_id,
-        **_in_reporting_window(
-            "sale_date", start, end, after_date, include_after_date=include_after_date
-        ),
+    qs = recognized_pond_sales(
+        AquacultureFishSale.objects.filter(
+            company_id=company_id,
+            **_in_reporting_window(
+                "sale_date", start, end, after_date, include_after_date=include_after_date
+            ),
+        )
     )
     if pond_id is not None:
         qs = qs.filter(pond_id=pond_id)
@@ -890,7 +899,7 @@ def compute_fcr_for_scope(
                 if fcr_biomass
                 else None
             ),
-            "fcr_harvest_label": "Feed kg ÷ harvest sale kg" if fcr_harvest else None,
+            "fcr_harvest_label": "Feed kg ÷ invoiced harvest sale kg" if fcr_harvest else None,
         }
 
     feed_kg = sum_feed_kg_for_period(
@@ -1048,7 +1057,7 @@ def compute_fcr_for_scope(
             if fcr_biomass
             else None
         ),
-        "fcr_harvest_label": "Feed kg ÷ harvest sale kg" if fcr_harvest else None,
+        "fcr_harvest_label": "Feed kg ÷ invoiced harvest sale kg" if fcr_harvest else None,
     }
 
 
@@ -1124,6 +1133,7 @@ def fcr_period_summary_block(
             "AUTO-AQ-BIOMASS-REVAL book rewrites are not growth. "
             "FCR (biomass) = feed kg ÷ production, where production = that inventory "
             "change + harvest + mortality/losses + transfer-out − transfer-in − stocking "
-            "− real manual inbound. FCR (harvest) = same feed kg ÷ harvest sale kg."
+            "− real manual inbound. FCR (harvest) = same feed kg ÷ invoiced harvest sale kg. "
+            "A harvest record without a sales invoice stays in standing stock and is not harvested production."
         ),
     }

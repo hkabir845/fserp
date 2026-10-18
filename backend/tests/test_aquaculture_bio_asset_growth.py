@@ -74,9 +74,18 @@ def test_growth_report_intervals(company_tenant):
         company_id=company_tenant.id,
         pond=pond,
         expense_date=date(2026, 4, 15),
-        expense_category="feed_purchase",
+        expense_category="feed_consumed",
         amount=Decimal("500"),
         feed_weight_kg=Decimal("400"),
+    )
+    # Purchasing warehouse stock must not inflate feed actually issued to fish.
+    AquacultureExpense.objects.create(
+        company_id=company_tenant.id,
+        pond=pond,
+        expense_date=date(2026, 4, 15),
+        expense_category="feed_purchase",
+        amount=Decimal("1000"),
+        feed_weight_kg=Decimal("800"),
     )
 
     report = build_fish_growth_report(
@@ -90,4 +99,32 @@ def test_growth_report_intervals(company_tenant):
     interval = report["intervals"][0]
     assert interval["biomass_gain_kg"] == "1000.00"
     assert interval["adg_g_per_fish_per_day"] is not None
-    assert Decimal(interval["feed_kg"]) > 0
+    assert Decimal(interval["feed_kg"]) == Decimal("400")
+    assert Decimal(interval["interval_fcr"]) == Decimal("0.40")
+
+
+def test_growth_intervals_use_latest_sample_per_day(monkeypatch):
+    from types import SimpleNamespace
+    from api.services import aquaculture_growth_service as growth
+
+    monkeypatch.setattr(growth, "sum_feed_kg_for_period", lambda *a, **kw: Decimal("100"))
+
+    def sample(pk, day, mean):
+        return SimpleNamespace(
+            id=pk, sample_date=day, pond_id=1, production_cycle_id=None,
+            fish_species="tilapia", fish_species_other="",
+            estimated_fish_count=100, estimated_total_weight_kg=Decimal(mean) * 100,
+            avg_weight_kg=Decimal(mean), extrapolated_biomass_kg=Decimal(mean) * 100,
+        )
+
+    opening = sample(1, date(2026, 4, 1), "1")
+    correction = sample(2, date(2026, 4, 1), "2")
+    closing = sample(3, date(2026, 4, 11), "3")
+    assert growth._interval_rows_for_samples([opening, correction], 1) == []
+    rows = growth._interval_rows_for_samples([closing, correction, opening], 1)
+    assert len(rows) == 1
+    assert rows[0]["from_sample_id"] == correction.id
+    assert rows[0]["days"] == 10
+    assert rows[0]["biomass_gain_kg"] == "100.00"
+    assert rows[0]["adg_g_per_fish_per_day"] == "100.00"
+    assert rows[0]["interval_fcr"] == "1.00"

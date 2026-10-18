@@ -12,6 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Q, Sum
 
 from api.models import AquacultureExpense, AquacultureFishSale, BillLine, JournalEntry, JournalEntryLine
+from api.services.aquaculture_harvest_recognition import recognized_pond_sales
 
 
 # Journal lines from posted vendor bills: debit accounts in these types count toward pond operating P&L.
@@ -692,14 +693,15 @@ def harvest_weight_denominator_kg(
 
     basis_code: harvest_sale | bio_sales | none
     """
-    # Mirrored inter-pond transfer sales are not harvest production — including them
-    # inflates kg and understates ৳/kg. Match stock / FCR / elimination exclusions.
-    base = AquacultureFishSale.objects.filter(
-        company_id=company_id,
-        pond_id=pond_id,
-        sale_date__gte=start,
-        sale_date__lte=end,
-        source_fish_pond_transfer_line_id__isnull=True,
+    # Same recognition rule as standing stock and FCR: invoiced sales that are not
+    # inter-pond mirrors. Draft harvests stay in the pond and are not a denominator.
+    base = recognized_pond_sales(
+        AquacultureFishSale.objects.filter(
+            company_id=company_id,
+            pond_id=pond_id,
+            sale_date__gte=start,
+            sale_date__lte=end,
+        )
     )
     if cycle_filter_id is not None:
         base = base.filter(production_cycle_id=cycle_filter_id)
@@ -951,11 +953,12 @@ def build_pond_cost_per_kg_block(
         basis_note = "No sale kg in scope; per kg uses fish still in the pond."
     elif basis == "harvest_sale":
         basis_note = (
-            "Per kg uses kg from fish harvest sales (income_type=fish_harvest_sale) in this period and scope."
+            "Per kg uses invoiced fish harvest sales (income_type=fish_harvest_sale) in this period and scope. "
+            "Harvest records without a sales invoice stay in standing stock."
         )
     elif basis == "bio_sales":
         basis_note = (
-            "No fish_harvest_sale kg in scope; per kg uses biological sale kg "
+            "No invoiced fish_harvest_sale kg in scope; per kg uses invoiced biological sale kg "
             "(fish_harvest_sale + fingerling_sale + processing_value_add)."
         )
     else:

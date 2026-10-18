@@ -26,6 +26,19 @@ START = date(2026, 1, 1)
 END = date(2026, 1, 31)
 
 
+def _link_harvest_invoice(sale):
+    """Stock positions count completed sales with their linked sales invoice."""
+    from api.models import Customer, Invoice
+
+    customer = Customer.objects.create(company_id=sale.company_id, display_name="Harvest buyer")
+    sale.invoice = Invoice.objects.create(
+        company_id=sale.company_id, customer=customer,
+        invoice_number=f"FCR-HARVEST-{sale.id}", invoice_date=sale.sale_date,
+        status="sent", subtotal=sale.total_amount, total=sale.total_amount,
+    )
+    sale.save(update_fields=["invoice"])
+
+
 def test_fcr_adds_mortality_and_subtracts_stocking(company_tenant_with_gl):
     company = company_tenant_with_gl
     cid = company.id
@@ -367,6 +380,8 @@ def test_digonto_gain_is_sample_after_harvest_not_stale_carp(company_tenant_with
         fish_count=7397,
         total_amount=Decimal("82190"),
     )
+    _link_harvest_invoice(h1)
+    _link_harvest_invoice(h2)
     AquacultureBiomassSample.objects.create(
         company_id=cid,
         pond=pond,
@@ -412,7 +427,8 @@ def test_digonto_gain_is_sample_after_harvest_not_stale_carp(company_tenant_with
     first = Decimal(out["biomass_first_kg"])
     last = Decimal(out["biomass_last_kg"])
     gain = Decimal(out["biomass_gain_kg"])
-    assert first == Decimal("8555.8803")
+    # Rebuild from the unrounded seine mean (1 kg / 9 fish) and live heads.
+    assert first == (Decimal("77003") / Decimal("9")).quantize(Decimal("0.0001"))
     assert last == Decimal("7860.6826")
     assert Decimal(out["harvest_kg"]) == Decimal("2042.3000")
     assert Decimal(out["biomass_net_change_kg"]) == last - first
@@ -543,6 +559,7 @@ def test_fcr_opening_ignores_stale_sample_head_count_on_harvest_day(company_tena
         fish_count=1639,
         total_amount=Decimal("159100"),
     )
+    _link_harvest_invoice(sale)
     # Auto harvest sample (excluded from standing) — mirrors production.
     AquacultureBiomassSample.objects.create(
         company_id=cid,

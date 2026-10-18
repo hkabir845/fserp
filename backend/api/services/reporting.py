@@ -7304,6 +7304,7 @@ def _inventory_gl_reconciliation(company_id: int, as_of: date, valuation_total: 
     # comparison and reported on their own line.
     comparable_gl = gl_total - bio_balance
     return {
+        "as_of_date": as_of.isoformat(),
         "accounts": accounts,
         "gl_inventory_total": _f(gl_total - unrealized),
         "gl_biological_inventory": _f(bio_net),
@@ -7326,6 +7327,7 @@ def report_inventory_sku_valuation(
     Uses Item.cost (fallback per gl_posting) and invoice lines in [start, end] for the selected company.
     When ``station_id`` is set, on-hand and period sales are for that site (invoice.station / shop bins / tanks).
     """
+    valuation_date = timezone.localdate()
     period_days = (end - start).days + 1
     if period_days < 1:
         period_days = 1
@@ -7449,6 +7451,7 @@ def report_inventory_sku_valuation(
 
     out_val: dict[str, Any] = {
         "report_id": "inventory-sku-valuation",
+        "valuation_as_of_date": valuation_date.isoformat(),
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "filters": {
             "category": category or "",
@@ -7475,11 +7478,14 @@ def report_inventory_sku_valuation(
     }
     if station_id is None and not category and not item_ids:
         # Only a full, company-wide valuation is comparable with the GL inventory accounts.
-        recon = _inventory_gl_reconciliation(company_id, end, tot_cost)
+        # Quantities and costs above are live, even when period sales are historical.
+        # Compare them with today's GL, not the sales-window closing balance.
+        recon = _inventory_gl_reconciliation(company_id, valuation_date, tot_cost)
         out_val["gl_reconciliation"] = recon
         out_val["accounting_note"] += (
-            " Priced stock %s vs GL inventory accounts %s (live fish held separately at %s)"
-            % (recon["valuation_total"], recon["gl_stock_inventory"], recon["gl_biological_inventory"])
+            " Priced live stock %s vs GL inventory accounts %s as of %s "
+            "(live fish held separately at %s)"
+            % (recon["valuation_total"], recon["gl_stock_inventory"], recon["as_of_date"], recon["gl_biological_inventory"])
         )
         if recon["difference"]:
             out_val["accounting_note"] += (

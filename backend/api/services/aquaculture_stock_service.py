@@ -23,6 +23,7 @@ from api.services.aquaculture_constants import fish_species_display_label, norma
 from api.services.aquaculture_i18n import company_language
 from api.services.tenant_reporting_categories import income_type_is_non_biological_for_company
 from api.services.aquaculture_biomass_sample_reference_service import last_biomass_sample_reference_for_ledger
+from api.services.aquaculture_harvest_recognition import recognized_pond_sales
 from api.services.aquaculture_partial_harvest import (
     biomass_sample_fields_ok_for_pond_mass,
     effective_biomass_kg_from_position_row,
@@ -230,14 +231,9 @@ def compute_fish_stock_position_rows(
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
     if as_of_date is not None:
         sale_q = sale_q.filter(sale_date__lte=as_of_date)
-    # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
-    # A cleared link (transfer deleted) must not turn those rows into a second harvest.
-    sale_q = sale_q.filter(
-        source_fish_pond_transfer_line_id__isnull=True,
-        invoice_id__isnull=False,
-    ).exclude(
-        memo__startswith="Inter-pond sale (from transfer"
-    )
+    # Recognized sales only: invoiced, and not an inter-pond mirror (including a
+    # cleared transfer link whose memo still marks the mirror).
+    sale_q = recognized_pond_sales(sale_q)
 
     sale_by_pond: dict[int, tuple[Decimal, int]] = defaultdict(lambda: (Decimal("0"), 0))
     cycle_cache: dict = {}
@@ -710,14 +706,8 @@ def compute_fish_stock_position_breakdown_rows(
         sale_q = sale_q.filter(sale_date__lte=as_of_date)
     if entries_after_date is not None:
         sale_q = sale_q.filter(sale_date__gt=entries_after_date)
-    # Mirrored inter-pond sales keep stock on the transfer row — do not subtract twice.
-    # The memo survives after delete clears source_fish_pond_transfer_line (SET_NULL).
-    sale_q = sale_q.filter(
-        source_fish_pond_transfer_line_id__isnull=True,
-        invoice_id__isnull=False,
-    ).exclude(
-        memo__startswith="Inter-pond sale (from transfer"
-    )
+    # Same recognition rule as the pond rollup: invoiced sales that are not mirrors.
+    sale_q = recognized_pond_sales(sale_q)
     cycle_cache: dict = {}
     for s in sale_q.only(
         "pond_id", "production_cycle_id", "weight_kg", "fish_count", "income_type", "fish_species", "sale_date"

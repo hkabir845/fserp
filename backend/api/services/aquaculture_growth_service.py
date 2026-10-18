@@ -71,7 +71,13 @@ def _interval_rows_for_samples(samples: list[AquacultureBiomassSample], company_
 
     rows: list[dict[str, Any]] = []
     for key in sorted(by_key.keys(), key=lambda k: (k[0] is None, k[0] or 0, k[1])):
-        ordered = sorted(by_key[key], key=lambda s: (s.sample_date, s.id))
+        # Multiple observations on one date do not represent elapsed growth.
+        # Use the latest observation for each day before forming intervals.
+        daily_samples = {
+            s.sample_date: s
+            for s in sorted(by_key[key], key=lambda s: (s.sample_date, s.id))
+        }
+        ordered = list(daily_samples.values())
         for i in range(1, len(ordered)):
             prev = ordered[i - 1]
             cur = ordered[i]
@@ -238,6 +244,7 @@ def build_fish_growth_report(
         "load_by_pond": load_rows,
         "methodology": (
             "Growth intervals are measured between consecutive biomass samples in the period. "
+            "For each cycle and species, the latest recorded sample on each date is used. "
             "ADG (g/fish/day) = (later mean weight − earlier mean weight) × 1000 ÷ days. "
             "Interval FCR = feed recorded between sample dates ÷ biomass gain. "
             "Period FCR and load use the same methods as the FCR & pond load report."

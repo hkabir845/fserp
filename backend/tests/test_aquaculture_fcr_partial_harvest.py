@@ -11,6 +11,8 @@ from api.models import (
     AquacultureExpense,
     AquacultureFishSale,
     AquaculturePond,
+    Customer,
+    Invoice,
 )
 from api.services.aquaculture_fcr_service import (
     biomass_gain_from_samples_for_pond,
@@ -319,6 +321,20 @@ def test_fcr_from_feed_and_sampling(company_tenant):
     assert fcr["fcr_biomass"] == "1.25"
 
 
+def _link_harvest_invoice(sale):
+    customer = Customer.objects.create(company_id=sale.company_id, display_name=f"Harvest buyer {sale.id}")
+    sale.invoice = Invoice.objects.create(
+        company_id=sale.company_id,
+        customer=customer,
+        invoice_number=f"HARVEST-{sale.id}",
+        invoice_date=sale.sale_date,
+        status="sent",
+        subtotal=sale.total_amount,
+        total=sale.total_amount,
+    )
+    sale.save(update_fields=["invoice"])
+
+
 @pytest.mark.django_db
 def test_fcr_counts_partial_harvest_as_biomass_output(company_tenant):
     cid = company_tenant.id
@@ -343,7 +359,7 @@ def test_fcr_counts_partial_harvest_as_biomass_output(company_tenant):
         sample_date=date(2026, 4, 30),
         estimated_total_weight_kg=Decimal("220"),
     )
-    AquacultureFishSale.objects.create(
+    sale = AquacultureFishSale.objects.create(
         company_id=cid,
         pond=pond,
         income_type="fish_harvest_sale",
@@ -351,6 +367,7 @@ def test_fcr_counts_partial_harvest_as_biomass_output(company_tenant):
         weight_kg=Decimal("80"),
         total_amount=Decimal("16000"),
     )
+    _link_harvest_invoice(sale)
 
     fcr = compute_fcr_for_scope(cid, date(2026, 4, 1), date(2026, 4, 30), pond_id=pond.id)
 
@@ -358,6 +375,72 @@ def test_fcr_counts_partial_harvest_as_biomass_output(company_tenant):
     assert fcr["biomass_gain_kg"] == "100.0000"
     assert fcr["biomass_production_kg"] == "100.0000"
     assert fcr["fcr_biomass"] == "1.20"
+
+
+@pytest.mark.django_db
+def test_uninvoiced_harvest_stays_in_stock_and_out_of_fcr(company_tenant):
+    cid = company_tenant.id
+    pond = AquaculturePond.objects.create(company_id=cid, name="Draft Harvest", is_active=True)
+    AquacultureExpense.objects.create(
+        company_id=cid,
+        pond=pond,
+        expense_category="feed_consumed",
+        expense_date=date(2026, 4, 10),
+        amount=Decimal("1000"),
+        feed_weight_kg=Decimal("120"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        sample_date=date(2026, 4, 1),
+        estimated_total_weight_kg=Decimal("200"),
+    )
+    AquacultureBiomassSample.objects.create(
+        company_id=cid,
+        pond=pond,
+        sample_date=date(2026, 4, 30),
+        estimated_total_weight_kg=Decimal("220"),
+    )
+    booked = AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        income_type="fish_harvest_sale",
+        sale_date=date(2026, 4, 20),
+        weight_kg=Decimal("80"),
+        fish_count=400,
+        total_amount=Decimal("16000"),
+    )
+    _link_harvest_invoice(booked)
+    AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        income_type="fish_harvest_sale",
+        sale_date=date(2026, 4, 21),
+        weight_kg=Decimal("40"),
+        fish_count=200,
+        total_amount=Decimal("8000"),
+    )
+    cleared_mirror = AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        income_type="fish_harvest_sale",
+        sale_date=date(2026, 4, 22),
+        weight_kg=Decimal("15"),
+        fish_count=70,
+        total_amount=Decimal("3000"),
+        memo="Inter-pond sale (from transfer #9)",
+    )
+    _link_harvest_invoice(cleared_mirror)
+
+    fcr = compute_fcr_for_scope(cid, date(2026, 4, 1), date(2026, 4, 30), pond_id=pond.id)
+    assert fcr["harvest_kg"] == "80.0000"
+    assert fcr["biomass_gain_kg"] == "100.0000"
+    assert fcr["fcr_biomass"] == "1.20"
+
+    rows = compute_fish_stock_position_rows(cid, pond_id=pond.id)
+    assert len(rows) == 1
+    assert Decimal(rows[0]["sale_weight_kg"]) == Decimal("80")
+    assert rows[0]["sale_fish_count"] == 400
 
 
 @pytest.mark.django_db

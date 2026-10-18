@@ -35,6 +35,10 @@ from api.services.aquaculture_constants import (
     fish_species_display_label,
 )
 from api.services.aquaculture_fcr_service import fcr_period_summary_block
+from api.services.aquaculture_harvest_recognition import (
+    INTER_POND_MIRROR_SALE_MEMO_PREFIX,
+    recognized_pond_sales,
+)
 from api.services.aquaculture_biological_asset_service import (
     compute_biological_asset_ledger_rows,
     compute_biological_asset_portfolio,
@@ -2410,21 +2414,32 @@ def _fcr_data_coverage(
         company_id=company_id, expense_category__in=["feed_purchase", "feed_consumed"]
     )
     sample_qs = AquacultureBiomassSample.objects.filter(company_id=company_id)
-    sale_qs = AquacultureFishSale.objects.filter(company_id=company_id, income_type="fish_harvest_sale")
+    sale_qs = recognized_pond_sales(
+        AquacultureFishSale.objects.filter(company_id=company_id, income_type="fish_harvest_sale")
+    )
+    draft_qs = AquacultureFishSale.objects.filter(
+        company_id=company_id,
+        income_type="fish_harvest_sale",
+        invoice_id__isnull=True,
+        source_fish_pond_transfer_line_id__isnull=True,
+    ).exclude(memo__startswith=INTER_POND_MIRROR_SALE_MEMO_PREFIX)
     if pond_id is not None:
         feed_qs = feed_qs.filter(pond_id=pond_id)
         sample_qs = sample_qs.filter(pond_id=pond_id)
         sale_qs = sale_qs.filter(pond_id=pond_id)
+        draft_qs = draft_qs.filter(pond_id=pond_id)
     if production_cycle_id is not None:
         feed_qs = feed_qs.filter(production_cycle_id=production_cycle_id)
         sample_qs = sample_qs.filter(production_cycle_id=production_cycle_id)
         sale_qs = sale_qs.filter(production_cycle_id=production_cycle_id)
+        draft_qs = draft_qs.filter(production_cycle_id=production_cycle_id)
 
     feed_in = feed_qs.filter(expense_date__gte=start, expense_date__lte=end)
     feed_with_kg = feed_in.filter(feed_weight_kg__isnull=False, feed_weight_kg__gt=0).count()
     feed_rows = feed_in.count()
     samples_in = sample_qs.filter(sample_date__gte=start, sample_date__lte=end).count()
     sales_in = sale_qs.filter(sale_date__gte=start, sale_date__lte=end).count()
+    drafts_in = draft_qs.filter(sale_date__gte=start, sale_date__lte=end).count()
 
     last_feed = feed_qs.order_by("-expense_date").values_list("expense_date", flat=True).first()
     last_sample = sample_qs.order_by("-sample_date").values_list("sample_date", flat=True).first()
@@ -2452,13 +2467,19 @@ def _fcr_data_coverage(
             "Two samples are required only when there is no live standing weight."
         )
     if sales_in == 0 and last_sale:
-        hints.append(f"No harvest sale in this date range — latest harvest sale is {last_sale.isoformat()}.")
+        hints.append(f"No invoiced harvest sale in this date range — latest invoiced harvest is {last_sale.isoformat()}.")
+    if drafts_in:
+        hints.append(
+            f"{drafts_in} harvest record(s) in this date range have no sales invoice. "
+            "They stay in standing stock and are not counted as harvest kg."
+        )
 
     return {
         "feed_rows_in_period": feed_rows,
         "feed_rows_with_weight_in_period": feed_with_kg,
         "sample_rows_in_period": samples_in,
         "harvest_sale_rows_in_period": sales_in,
+        "uninvoiced_harvest_rows_in_period": drafts_in,
         "latest_feed_date": last_feed.isoformat() if last_feed else None,
         "latest_sample_date": last_sample.isoformat() if last_sample else None,
         "latest_harvest_sale_date": last_sale.isoformat() if last_sale else None,

@@ -49,6 +49,7 @@ import {
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { getCurrencySymbol, formatNumber } from '@/utils/currency'
 import { formatDateOnly, localDateISO } from '@/utils/date'
+import { isRecognizedHarvestSale } from '@/app/aquaculture/sales/aquacultureSaleShared'
 
 type PeriodPreset = 'this_month' | 'last_month' | 'ytd' | 'last_90' | 'custom'
 
@@ -188,6 +189,10 @@ interface SaleRow {
   income_type?: string
   income_type_label?: string
   fish_species_label?: string
+  invoice_id?: number | null
+  source_fish_pond_transfer_line_id?: number | null
+  from_inter_pond_transfer?: boolean
+  memo?: string
 }
 
 interface ExpenseRow extends AquacultureExpenseRegisterRow {}
@@ -335,7 +340,7 @@ export default function AquacultureOverviewPage() {
   const harvestKg = useMemo(
     () =>
       salesInPeriod
-        .filter((s) => !s.income_type || s.income_type === 'fish_harvest_sale')
+        .filter((s) => isRecognizedHarvestSale(s))
         .reduce((a, s) => a + parseNum(s.weight_kg), 0),
     [salesInPeriod],
   )
@@ -576,7 +581,7 @@ export default function AquacultureOverviewPage() {
         <KpiCard
           title="Harvest weight (est.)"
           value={`${formatNumber(harvestKg, 2)} kg`}
-          sub={totalSaleKg !== harvestKg ? `All sale weight: ${formatNumber(totalSaleKg, 2)} kg` : 'Fish harvest sale lines'}
+          sub={totalSaleKg !== harvestKg ? `All sale weight: ${formatNumber(totalSaleKg, 2)} kg` : 'Invoiced harvest sales'}
           icon={Fish}
           accent="neutral"
         />
@@ -608,9 +613,9 @@ export default function AquacultureOverviewPage() {
           sub={
             fcrHarvest == null
               ? harvestKg <= 0
-                ? 'Need harvest sale weight in period'
+                ? 'Need an invoiced harvest in the period'
                 : 'No feed kg on expenses'
-              : 'Lower is better; uses harvest-line weight only'
+              : 'Invoiced harvest sales only; drafts stay in standing stock'
           }
           icon={Gauge}
           accent="neutral"

@@ -722,8 +722,8 @@ def test_inter_pond_transfer_moves_biology_without_changing_the_company_total(
     api_client, aquaculture
 ):
     """
-    Moving fish between ponds is an internal reclass: the source pond's 1581 falls, the
-    destination's rises, and the company's biological asset is unchanged.
+    An internal trade relieves seller cost and capitalizes the buyer's agreed price.
+    Consolidation separately eliminates any unrealized internal margin.
     """
     from api.models import AquacultureFishPondTransfer, AquacultureFishPondTransferLine
     from api.services.aquaculture_fish_transfer_gl_service import (
@@ -747,6 +747,7 @@ def test_inter_pond_transfer_moves_biology_without_changing_the_company_total(
         weight_kg=Decimal("40.0000"),
         fish_count=4000,
         cost_amount=Decimal("25000.00"),
+        sale_amount=Decimal("25800.00"),
     )
     result = sync_aquaculture_fish_pond_transfer_gl(cid, transfer)
     assert result["posted"] is True, result

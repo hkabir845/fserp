@@ -69,7 +69,8 @@ def test_harvest_weight_denominator_excludes_mirrored_transfer_sales(company_ten
         fish_count=1000,
         sale_amount=Decimal("50000"),
     )
-    AquacultureFishSale.objects.create(
+    buyer = Customer.objects.create(company_id=cid, display_name="External harvest buyer")
+    booked = AquacultureFishSale.objects.create(
         company_id=cid,
         pond=pond,
         sale_date=date(2026, 6, 10),
@@ -79,7 +80,27 @@ def test_harvest_weight_denominator_excludes_mirrored_transfer_sales(company_ten
         fish_count=200,
         fish_species="tilapia",
     )
+    booked.invoice = Invoice.objects.create(
+        company_id=cid,
+        customer=buyer,
+        invoice_number="HARVEST-EXT-100",
+        invoice_date=booked.sale_date,
+        status="sent",
+        subtotal=booked.total_amount,
+        total=booked.total_amount,
+    )
+    booked.save(update_fields=["invoice"])
     AquacultureFishSale.objects.create(
+        company_id=cid,
+        pond=pond,
+        sale_date=date(2026, 6, 12),
+        income_type="fish_harvest_sale",
+        weight_kg=Decimal("30"),
+        total_amount=Decimal("6000"),
+        fish_count=60,
+        fish_species="tilapia",
+    )
+    mirror = AquacultureFishSale.objects.create(
         company_id=cid,
         pond=pond,
         sale_date=date(2026, 6, 11),
@@ -90,6 +111,16 @@ def test_harvest_weight_denominator_excludes_mirrored_transfer_sales(company_ten
         fish_species="tilapia",
         source_fish_pond_transfer_line=line,
     )
+    mirror.invoice = Invoice.objects.create(
+        company_id=cid,
+        customer=buyer,
+        invoice_number="HARVEST-MIRROR-500",
+        invoice_date=mirror.sale_date,
+        status="sent",
+        subtotal=mirror.total_amount,
+        total=mirror.total_amount,
+    )
+    mirror.save(update_fields=["invoice"])
     harvest_kg, _bio, basis = harvest_weight_denominator_kg(
         company_id=cid,
         pond_id=pond.id,

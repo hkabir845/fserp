@@ -31,6 +31,7 @@ import {
 import { extractErrorMessage } from '@/utils/errorHandler'
 import { aquacultureArchivePlReportHref } from '@/lib/aquacultureDataBankArchive'
 import { formatDateOnly, localDateISO } from '@/utils/date'
+import { isRecognizedHarvestSale } from '@/app/aquaculture/sales/aquacultureSaleShared'
 import { formatNumber, getCurrencySymbol } from '@/utils/currency'
 import { PartialHarvestAdvicePanel } from '@/app/aquaculture/PartialHarvestAdvicePanel'
 import { bookBiomassKg, displayBiomassKg } from '@/app/aquaculture/aquacultureFishMetrics'
@@ -227,6 +228,10 @@ interface SaleRow {
   income_type?: string
   income_type_label?: string
   fish_species_label?: string
+  invoice_id?: number | null
+  source_fish_pond_transfer_line_id?: number | null
+  from_inter_pond_transfer?: boolean
+  memo?: string
 }
 
 interface ExpenseRow extends AquacultureExpenseRegisterRow {}
@@ -610,7 +615,7 @@ export default function PondDetailViewPage() {
   const harvestKg = useMemo(
     () =>
       salesInPeriod
-        .filter((s) => !s.income_type || s.income_type === 'fish_harvest_sale')
+        .filter((s) => isRecognizedHarvestSale(s))
         .reduce((a, s) => a + parseNum(s.weight_kg), 0),
     [salesInPeriod],
   )
@@ -940,8 +945,7 @@ export default function PondDetailViewPage() {
                 {fcrHarvest != null ? formatNumber(fcrHarvest, 2) : '—'}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Feed kg on lines in period ÷ harvest sale kg (<code className="rounded bg-muted px-1">fish_harvest_sale</code>
-                ).
+                Feed kg on lines in period ÷ invoiced harvest sale kg. A harvest without a sales invoice stays in standing stock.
               </p>
             </div>
             <div className="rounded-xl border border-border bg-white p-4 shadow-sm">

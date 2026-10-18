@@ -75,6 +75,31 @@ export type SaleHeaderDraft = {
   memo: string
 }
 
+/** Survives after a deleted transfer clears the source line (SET_NULL). */
+export const INTER_POND_MIRROR_SALE_MEMO_PREFIX = 'Inter-pond sale (from transfer'
+
+export type HarvestRecognitionSale = {
+  income_type?: string | null
+  invoice_id?: number | null
+  source_fish_pond_transfer_line_id?: number | null
+  from_inter_pond_transfer?: boolean
+  memo?: string | null
+}
+
+/**
+ * Harvest kilograms that have left the pond.
+ * Matches standing stock: a sales invoice books the harvest. Drafts stay in stock.
+ * Inter-pond mirrors are stocked on the transfer line, not as a second harvest.
+ */
+export function isRecognizedHarvestSale(sale: HarvestRecognitionSale): boolean {
+  const income = (sale.income_type || 'fish_harvest_sale').trim()
+  if (income !== 'fish_harvest_sale') return false
+  if (sale.invoice_id == null) return false
+  if (sale.from_inter_pond_transfer || sale.source_fish_pond_transfer_line_id != null) return false
+  if ((sale.memo || '').startsWith(INTER_POND_MIRROR_SALE_MEMO_PREFIX)) return false
+  return true
+}
+
 const NON_BIOLOGICAL_INCOME_TYPES = new Set([
   'empty_feed_sack_sale',
   'used_material_sale',

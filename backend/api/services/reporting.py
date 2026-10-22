@@ -2080,8 +2080,8 @@ def report_income_expense_statement(
     """
     One income-and-expense sheet for All entities or one entity.
 
-    Company-wide uses the management P&L (posted GL plus aquaculture register, with
-    inter-pond trade removed). A station or head office uses that entity's posted GL.
+    Company-wide combines non-pond posted GL with aquaculture register income and
+    costs, with inter-pond trade removed. Station/head office uses that entity's GL.
     A pond uses its aquaculture register (sales and costs), which is that pond's statement.
     """
     company_wide = pond_id is None and station_id is None and not unscoped_dims
@@ -2092,8 +2092,14 @@ def report_income_expense_statement(
         station_id,
         pond_id,
         unscoped_dims=unscoped_dims,
-        basis="management" if company_wide else "posted",
+        basis="posted",
     )
+    if company_wide:
+        # This sheet follows the same register cost basis as an individual pond.
+        # The accrual P&L retains its separate capitalization policy.
+        _fold_aquaculture_register_into_pl_sections(
+            pl, company_id, start, end, register_cost_basis=True
+        )
     scope_entity = _pl_scope_entity_meta(
         company_id,
         station_id=station_id,
@@ -2146,13 +2152,23 @@ def report_income_expense_statement(
                 (pl.get("expenses") or {}).get("total")
             )
 
+    # Keep each entity contiguous for every consumer, including print/export.
+    lines.sort(key=lambda r: (
+        str(r.get("entity_name") or ""),
+        str(r.get("entity_type") or ""),
+        r.get("entity_id") or 0,
+        0 if r.get("section") == "income" else 1,
+        str(r.get("account_code") or ""),
+    ))
     balance = total_income - total_expense
     note = (
         "Income and expense on one sheet for the selected dates. "
         "Balance = total income − total expense. "
         "All is every entity; choose one station, shop hub, or pond to limit the sheet. "
         "Defaults to today when no other dates are chosen. "
-        "On All, sales between ponds are left out. A single pond keeps its own sales and costs."
+        "Aquaculture uses register income and costs, including production inputs, on both All "
+        "and individual pond sheets. On All, internal pond sales and transfer costs are left out. "
+        "A single pond keeps its own sales and costs."
     )
     out: dict[str, Any] = {
         "report_id": "income-expense-statement",
@@ -4848,12 +4864,15 @@ def _fold_aquaculture_register_into_pl_sections(
     *,
     include_income: bool = True,
     include_expenses: bool = True,
+    register_cost_basis: bool = False,
 ) -> None:
     """
     Combine register detail with GL without counting the same pond cost twice.
 
     Capitalized inputs remain in biological inventory until harvest COGS is posted.
     Period-cost categories replace their overlapping GL rows in this management view.
+    The income/expense sheet opts into register_cost_basis to show full pond costs
+    consistently with its individual pond scope, replacing pond GL and harvest COGS.
     """
     from api.services.aquaculture_constants import (
         EXPENSE_CATEGORY_LABELS,
@@ -4902,13 +4921,24 @@ def _fold_aquaculture_register_into_pl_sections(
         mgmt = _aquaculture_management_snapshot(company_id, start, end)
         out["aquaculture_management"] = mgmt
 
-    capitalize = company_capitalizes_pond_production(company_id)
+    capitalize = not register_cost_basis and company_capitalizes_pond_production(company_id)
     # Inputs the company capitalized into biological inventory (1581). They are an asset until
     # the fish are sold, so they are not period expenses; they reach the P&L as harvest COGS.
     _capitalized_cats = (
         capitalized_register_expense_categories(company_id) if capitalize else frozenset()
     )
     changed = False
+
+    if register_cost_basis:
+        # Replace pond GL (including harvest COGS) with full register costs once.
+        # Station/head-office GL remains attached to its original entity.
+        for key in ("income", "cost_of_goods_sold", "expenses"):
+            block = out.get(key) or {}
+            accounts = block.get("accounts") or []
+            kept = [a for a in accounts if a.get("entity_type") != "pond"]
+            block["accounts"] = kept
+            block["total"] = _f(sum((_d(a.get("balance")) for a in kept), Decimal("0")))
+        changed = True
 
     def _strip_gl_codes(block: dict[str, Any], codes: frozenset[str]) -> Decimal:
         nonlocal changed
@@ -4917,7 +4947,7 @@ def _fold_aquaculture_register_into_pl_sections(
         removed = Decimal("0")
         for a in accounts:
             code = str(a.get("account_code") or "").strip()
-            if code in codes:
+            if code in codes and not register_cost_basis:
                 changed = True
                 removed += _d(a.get("balance"))
                 continue

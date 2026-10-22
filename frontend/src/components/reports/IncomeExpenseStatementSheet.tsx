@@ -38,6 +38,22 @@ function lineLabel(row: IncomeExpenseSheetLine): string {
   return (row.particulars || row.account_name || '').trim() || '—'
 }
 
+function entityKey(row: IncomeExpenseSheetLine): string {
+  return row.entity_type
+    ? `${row.entity_type}:${row.entity_id ?? ''}`
+    : (row.entity_name || '').trim() || 'Unassigned'
+}
+
+function groupEntityLines(lines: IncomeExpenseSheetLine[]) {
+  const groups = new Map<string, { key: string; entity: string; rows: IncomeExpenseSheetLine[] }>()
+  for (const row of lines) {
+    const key = entityKey(row)
+    if (!groups.has(key)) groups.set(key, { key, entity: (row.entity_name || '').trim() || 'Unassigned', rows: [] })
+    groups.get(key)!.rows.push(row)
+  }
+  return [...groups.values()]
+}
+
 function csvEscape(v: unknown): string {
   const s = String(v ?? '')
   if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
@@ -79,15 +95,15 @@ export function buildIncomeExpenseStatementPrintHtml(data: Record<string, unknow
   if (!lines.length) {
     html += `<tr><td colspan="${showEntity ? 4 : 3}">No income or expense in this period.</td></tr>`
   } else {
-    let lastEntity = ''
-    for (const row of lines) {
+    let lastEntity: string | null = null
+    for (const row of (showEntity ? groupEntityLines(lines).flatMap(g => g.rows) : lines)) {
       const entity = (row.entity_name || '').trim() || 'Unassigned'
-      if (showEntity && entity !== lastEntity) {
-        lastEntity = entity
-        html += `<tr><td colspan="4"><strong>${escapeHtml(entity)}</strong></td></tr>`
+      if (showEntity && entityKey(row) !== lastEntity) {
+        lastEntity = entityKey(row)
+        html += `<tr style="break-after:avoid"><td colspan="4"><strong>${escapeHtml(entity)}</strong></td></tr>`
       }
       html += '<tr>'
-      if (showEntity) html += '<td></td>'
+      if (showEntity) html += `<td>${escapeHtml(entity)}</td>`
       const code = row.account_code ? `${row.account_code} — ` : ''
       html += `<td>${escapeHtml(code + lineLabel(row))}</td>`
       html += `<td style="text-align:right">${money(row.income) ? escapeHtml(formatCurrency(money(row.income))) : ''}</td>`
@@ -134,22 +150,7 @@ export function IncomeExpenseStatementSheet({
   const expenseDrill = accountsTotalRow(expenseRows as Record<string, unknown>[], 'Total expense')
   const balanceDrill = accountsTotalRow(lines as Record<string, unknown>[], 'Balance')
 
-  const groups: { entity: string; rows: IncomeExpenseSheetLine[] }[] = []
-  if (showEntity) {
-    const order: string[] = []
-    const map = new Map<string, IncomeExpenseSheetLine[]>()
-    for (const row of lines) {
-      const key = (row.entity_name || '').trim() || 'Unassigned'
-      if (!map.has(key)) {
-        map.set(key, [])
-        order.push(key)
-      }
-      map.get(key)!.push(row)
-    }
-    for (const entity of order) groups.push({ entity, rows: map.get(entity)! })
-  } else {
-    groups.push({ entity: '', rows: lines })
-  }
+  const groups = showEntity ? groupEntityLines(lines) : [{ key: 'sheet', entity: '', rows: lines }]
 
   const colSpan = showEntity ? 4 : 3
 
@@ -196,7 +197,7 @@ export function IncomeExpenseStatementSheet({
               </tr>
             ) : (
               groups.map((group) => (
-                <Fragment key={group.entity || 'sheet'}>
+                <Fragment key={group.key}>
                   {showEntity ? (
                     <tr className="bg-muted/50">
                       <td
@@ -214,13 +215,18 @@ export function IncomeExpenseStatementSheet({
                         account_code: row.account_code,
                         account_name: lineLabel(row),
                       },
-                      drillScope,
+                      showEntity ? {
+                        ...drillScope,
+                        stationId: row.entity_type === 'station' ? row.entity_id : null,
+                        pondId: row.entity_type === 'pond' ? row.entity_id : null,
+                        headOffice: row.entity_type === 'unscoped',
+                      } : drillScope,
                     )
                     const incomeAmt = money(row.income)
                     const expenseAmt = money(row.expense)
                     return (
                       <tr key={`${group.entity}-${row.account_code}-${idx}`} className="hover:bg-muted/30">
-                        {showEntity ? <td className="px-4 py-2.5 text-muted-foreground" /> : null}
+                        {showEntity ? <td className="px-4 py-2.5 text-muted-foreground">{group.entity}</td> : null}
                         <td className="px-4 py-2.5">
                           <p className="font-medium text-foreground">{lineLabel(row)}</p>
                           {row.account_code ? (

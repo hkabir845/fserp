@@ -47,6 +47,7 @@ from api.models import (
     JournalEntryLine,
     Meter,
     Payment,
+    PaymentBillAllocation,
     PaymentInvoiceAllocation,
     PayrollRun,
     PayrollRunPondAllocation,
@@ -2549,6 +2550,51 @@ def reverse_payment_made_posting(company_id: int, p: Payment) -> tuple[bool, str
     return True, ""
 
 
+def _vendor_payment_journal_lines(company_id: int, payment: Payment, ap, cash_bank):
+    """Relieve each bill's payable at its Charge-to entity, including partial payments."""
+    groups: dict[tuple, Decimal] = {}
+    allocated = Decimal("0")
+    for allocation in PaymentBillAllocation.objects.filter(
+        payment_id=payment.id, payment__company_id=company_id,
+        bill__company_id=company_id, bill__vendor_id=payment.vendor_id,
+    ).select_related("bill").order_by("id"):
+        if allocation.amount <= 0:
+            continue
+        allocated += allocation.amount
+        built = _build_bill_journal_lines(company_id, allocation.bill)
+        if not built:
+            raise GlPostingError("Cannot resolve Charge to for an allocated vendor bill")
+        bill_lines, metadata = built
+        credits = [(raw, meta) for raw, meta in zip(bill_lines, metadata) if _unpack_gl_line(raw)[2] > 0]
+        weight_total = sum((_unpack_gl_line(raw)[2] for raw, _ in credits), Decimal("0"))
+        remaining = allocation.amount
+        for index, (raw, meta) in enumerate(credits):
+            _account, _debit, weight, _memo, station, _explicit = _unpack_gl_line(raw)
+            amount = remaining if index == len(credits) - 1 else min(
+                remaining, (allocation.amount * weight / weight_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            )
+            remaining -= amount
+            key = (station, (meta or {}).get("pond_id"), (meta or {}).get("production_cycle_id"))
+            groups[key] = groups.get(key, Decimal("0")) + amount
+    if allocated > payment.amount:
+        raise GlPostingError("Bill allocations exceed the vendor payment amount")
+    if allocated < payment.amount:
+        key = (_gl_station_id(company_id, payment.station_id), None, None)
+        groups[key] = groups.get(key, Decimal("0")) + payment.amount - allocated
+    lines, metadata = [], []
+    for (station, pond, cycle), amount in groups.items():
+        if amount <= 0:
+            continue
+        meta = {"pond_id": pond, "production_cycle_id": cycle} if pond else None
+        memo = payment.reference or f"PAY-{payment.id}"
+        lines.extend([(ap, amount, Decimal("0"), memo, station),
+                      (cash_bank, Decimal("0"), amount, memo, station)])
+        metadata.extend([meta, meta])
+    keys = set(groups)
+    header = next(iter(keys))[0] if len(keys) == 1 else None
+    return lines, metadata, header
+
+
 def post_payment_made_journal(company_id: int, p: Payment) -> bool:
     """
     Dr AP, Cr Bank. AUTO-PAY-{id}-MADE. Raises GlPostingError if a new post cannot be created;
@@ -2586,11 +2632,7 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
             "G/L: No credit (bank/cash) line for this payment. Ensure 1010/1030, card clearing, or a "
             "register linked to the chart, is available for vendor payments."
         )
-    lines = [
-        (ap, p.amount, Decimal("0"), p.reference or f"PAY-{p.id}"),
-        (cash_bank, Decimal("0"), p.amount, p.reference or f"PAY-{p.id}"),
-    ]
-    pst = _gl_station_id(company_id, p.station_id)
+    lines, metadata, pst = _vendor_payment_journal_lines(company_id, p, ap, cash_bank)
     je = _create_posted_entry(
         company_id,
         p.payment_date,
@@ -2598,6 +2640,7 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
         f"Payment made #{p.id}",
         lines,
         gl_station_id=pst,
+        aquaculture_line_costing=metadata,
     )
     if not je:
         raise GlPostingError(
@@ -2985,16 +3028,31 @@ def try_apply_bill_stock_receipt(
 
 
 def _bill_line_receipt_station_id(line: BillLine, bill: Bill) -> Optional[int]:
-    """Per-line station override, else bill header station."""
-    lid = getattr(line, "receipt_station_id", None)
-    if lid:
-        return int(lid)
-    bid = getattr(bill, "receipt_station_id", None)
-    return int(bid) if bid else None
+    """Physical receipt location, independent of the accounting Charge-to entity."""
+    station = getattr(line, "receipt_station_id", None) or getattr(bill, "receipt_station_id", None)
+    return int(station) if station else None
+
+
+def _bill_line_charge_station_id(line: BillLine, bill: Bill) -> Optional[int]:
+    """Accounting site follows Charge to; receipt/vendor defaults are legacy fallbacks."""
+    from api.services.bill_list_allocations import bill_line_entity_scope_key
+    key = bill_line_entity_scope_key(line, bill)
+    return int(key) if key.isdigit() else None
+
+
+def _bill_journal_header_station_id(company_id: int, bill: Bill) -> Optional[int]:
+    from api.services.bill_list_allocations import bill_line_entity_scope_key
+    keys = {bill_line_entity_scope_key(line, bill) for line in bill.lines.all()}
+    if len(keys) == 1:
+        key = next(iter(keys))
+        return _gl_station_id(company_id, int(key)) if key.isdigit() else None
+    return None
 
 
 def _bill_line_fuel_station_meta(company_id: int, line: BillLine) -> Optional[dict]:
     """Maps optional bill line fuel-station category to journal reporting tags."""
+    if getattr(line, "charge_to_head_office", False):
+        return {"head_office": True}
     if getattr(line, "aquaculture_pond_id", None):
         return None
     trc_id = getattr(line, "tenant_reporting_category_id", None)
@@ -3107,10 +3165,12 @@ def _bill_remainder_gl_tags(
     Tag tax/rounding remainder debits so entity P&L validation passes when the bill
     is effectively single-entity (one pond or one station across cost lines).
     """
-    hdr_st = _gl_station_id(company_id, bill.receipt_station_id)
+    hdr_st = _bill_journal_header_station_id(company_id, bill)
+    if debit_rows and all(row[3] and row[3].get("head_office") for row in debit_rows):
+        return {"head_office": True}, None
     metas = [row[3] for row in debit_rows if len(row) > 3 and row[3]]
     pond_ids = {int(m["pond_id"]) for m in metas if m.get("pond_id")}
-    if len(pond_ids) == 1:
+    if len(pond_ids) == 1 and all(row[3] and row[3].get("pond_id") in pond_ids for row in debit_rows):
         pid = next(iter(pond_ids))
         meta: dict[str, Any] = {"pond_id": pid}
         cycle_ids = {
@@ -3123,7 +3183,7 @@ def _bill_remainder_gl_tags(
         return meta, None
 
     line_stations = {row[4] for row in debit_rows if len(row) > 4 and row[4] is not None}
-    if len(line_stations) == 1:
+    if len(line_stations) == 1 and all(len(row) > 4 and row[4] in line_stations for row in debit_rows):
         return None, next(iter(line_stations))
     return None, hdr_st
 
@@ -3173,7 +3233,7 @@ def _build_bill_journal_lines(
         meta = _bill_line_aquaculture_meta(company_id, line) or _bill_line_fuel_station_meta(
             company_id, line
         )
-        line_st = _gl_station_id(company_id, _bill_line_receipt_station_id(line, bill))
+        line_st = _gl_station_id(company_id, _bill_line_charge_station_id(line, bill))
         desc_base = (line.description or "").strip()
         memo = (
             f"{bill.bill_number} — {desc_base}"[:300] if desc_base else (bill.bill_number or "")[:300]
@@ -3214,6 +3274,24 @@ def _build_bill_journal_lines(
     sum_lines = sum(am for row in debit_rows if (am := row[1]) > 0)
     if sum_lines < total:
         rem_meta, rem_st = _bill_remainder_gl_tags(debit_rows, company_id, bill)
+        # Header VAT/charges follow the same entity proportions as the source lines.
+        # Keep a fixed basis so allocating VAT does not change the split of freight.
+        allocation_basis = [row for row in debit_rows if row[1] > 0]
+
+        def append_remainder(account, amount):
+            if not allocation_basis:
+                debit_rows.append((account, amount, memo_ap, rem_meta, rem_st))
+                return
+            remaining = amount
+            basis_total = sum(row[1] for row in allocation_basis)
+            for index, row in enumerate(allocation_basis):
+                portion = remaining if index == len(allocation_basis) - 1 else min(
+                    remaining, (amount * row[1] / basis_total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                )
+                remaining -= portion
+                if portion > 0:
+                    debit_rows.append((account, portion, memo_ap, row[3], row[4]))
+
         rem = (total - sum_lines).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         tax = (bill.tax_total or Decimal("0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         vat_amt = min(tax, rem) if tax > 0 else Decimal("0")
@@ -3223,14 +3301,14 @@ def _build_bill_journal_lines(
             if not vat_acc:
                 logger.warning("bill %s: VAT input account %s missing", bill.id, CODE_VAT_INPUT)
                 return None
-            debit_rows.append((vat_acc, vat_amt, memo_ap, rem_meta, rem_st))
+            append_remainder(vat_acc, vat_amt)
         if other > 0:
             cap, leftover = _landed_cost_split(bill, other)
             if cap > 0:
                 if not _capitalize_landed_cost(debit_rows, cap):
                     leftover = (leftover + cap).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             if leftover > 0:
-                debit_rows.append((exp, leftover, memo_ap, rem_meta, rem_st))
+                append_remainder(exp, leftover)
         sum_lines = total
     elif sum_lines > total:
         positive_rows = [row for row in debit_rows if row[1] > 0]
@@ -3278,30 +3356,21 @@ def _build_bill_journal_lines(
         je_lines.append((acc, amt, Decimal("0"), desc, line_st))
         aq_costing.append(meta)
 
-    # Pond-as-entity completeness: when every costed debit line of this bill belongs to the SAME
-    # pond, tag the A/P credit to that pond too, so the pond balance sheet carries the matching
-    # liability (otherwise the pond shows the asset/expense but not the payable). Mixed-pond or
-    # partially-tagged bills leave A/P untagged (company-level liability).
-    ap_meta: Optional[dict] = None
-    pond_ids_on_debits = {
-        int(m["pond_id"]) for m in aq_costing if m and m.get("pond_id")
-    }
-    if len(pond_ids_on_debits) == 1 and aq_costing:
-        only_pid = next(iter(pond_ids_on_debits))
-        all_debits_same_pond = all(
-            m and int(m.get("pond_id") or 0) == only_pid for m in aq_costing
-        )
-        if all_debits_same_pond:
-            ap_meta = {"pond_id": only_pid}
-            cycle_ids = {
-                int(m["production_cycle_id"])
-                for m in aq_costing
-                if m and m.get("pond_id") == only_pid and m.get("production_cycle_id")
-            }
-            if len(cycle_ids) == 1:
-                ap_meta["production_cycle_id"] = next(iter(cycle_ids))
-    je_lines.append((ap, Decimal("0"), total, memo_ap))
-    aq_costing.append(ap_meta)
+    # Carry the same ownership to A/P, including bills shared across entities.
+    payable_groups: dict[tuple, Decimal] = {}
+    for _acc, amt, _desc, meta, station in debit_rows:
+        if amt <= 0:
+            continue
+        pond = (meta or {}).get("pond_id")
+        cycle = (meta or {}).get("production_cycle_id") if pond else None
+        key = (None if pond else station, pond, cycle)
+        payable_groups[key] = payable_groups.get(key, Decimal("0")) + amt
+    for (station, pond, cycle), amount in payable_groups.items():
+        meta = {"pond_id": pond} if pond else None
+        if meta and cycle:
+            meta["production_cycle_id"] = cycle
+        je_lines.append((ap, Decimal("0"), amount, memo_ap, station))
+        aq_costing.append(meta)
 
     td = sum(_unpack_gl_line(x)[1] for x in je_lines)
     tc = sum(_unpack_gl_line(x)[2] for x in je_lines)
@@ -3620,7 +3689,7 @@ def post_bill_journal(
             "or bill lines could not be balanced. Sync the chart of accounts or fix bill lines."
         )
     lines, aq_cost = built
-    bst = _gl_station_id(company_id, bill.receipt_station_id)
+    bst = _bill_journal_header_station_id(company_id, bill)
     je = _create_posted_entry(
         company_id,
         bill.bill_date,
@@ -3672,65 +3741,114 @@ def _resync_aquaculture_fingerling_transfers_for_posted_bill(company_id: int, bi
         )
 
 
-def resync_posted_bill_journal_from_lines(company_id: int, bill_id: int) -> bool:
-    """
-    Refresh an existing AUTO-BILL journal after bill line reporting metadata or expense accounts change.
-    Updates debit lines in order; leaves amounts and the A/P credit line unchanged.
-    """
-    from api.models import Bill, JournalEntry, JournalEntryLine
-
-    bill = Bill.objects.filter(pk=bill_id, company_id=company_id).first()
+@transaction.atomic
+def resync_posted_bill_journal_from_lines(company_id: int, bill_id: int, *, preserve_accounts: bool = False) -> bool:
+    """Refresh all accounting dimensions from Charge to without changing the journal total."""
+    bill = Bill.objects.select_for_update().filter(pk=bill_id, company_id=company_id).first()
     if not bill or not bill_eligible_for_posting(bill):
         return False
-    entry_number = f"AUTO-BILL-{bill.id}"
-    je = JournalEntry.objects.filter(company_id=company_id, entry_number=entry_number).first()
+    je = JournalEntry.objects.select_for_update().filter(
+        company_id=company_id, entry_number=f"AUTO-BILL-{bill.id}"
+    ).first()
     if not je:
         return False
-    if je.entry_date != bill.bill_date:
-        JournalEntry.objects.filter(pk=je.pk).update(entry_date=bill.bill_date)
-        je.entry_date = bill.bill_date
     built = _build_bill_journal_lines(company_id, bill)
     if not built:
         return False
-    lines, aq_cost = built
-    debit_specs: list[tuple] = []
-    meta_specs: list[Optional[dict]] = []
-    for raw, meta in zip(lines, aq_cost):
-        acc, debit, credit, desc, st_opt, explicit = _unpack_gl_line(raw)
-        if debit <= 0:
-            continue
-        debit_specs.append((acc, debit, desc, st_opt, explicit))
-        meta_specs.append(meta)
+    lines, metadata = built
+    result = _resync_posted_entry_dimensions(company_id, je, lines, metadata,
+                                             _bill_journal_header_station_id(company_id, bill),
+                                             je.entry_date if preserve_accounts else bill.bill_date,
+                                             preserve_accounts=preserve_accounts)
+    for payment in Payment.objects.filter(company_id=company_id, bill_allocations__bill_id=bill.id).distinct():
+        resync_vendor_payment_charge_to(company_id, payment)
+    return result
 
-    existing = list(
-        JournalEntryLine.objects.filter(journal_entry_id=je.id, debit__gt=0).order_by("id")
-    )
-    if len(existing) != len(debit_specs):
-        logger.warning(
-            "skip resync bill %s journal: line count mismatch (%s vs %s)",
-            bill.id,
-            len(existing),
-            len(debit_specs),
+
+@transaction.atomic
+def resync_vendor_payment_charge_to(company_id: int, payment: Payment) -> bool:
+    entry = JournalEntry.objects.select_for_update().filter(
+        company_id=company_id, entry_number=f"AUTO-PAY-{payment.id}-MADE", is_posted=True,
+    ).first()
+    if entry is None:
+        return False
+    credits = list(entry.lines.filter(credit__gt=0).select_related("account"))
+    if not credits or len({line.account_id for line in credits}) != 1:
+        raise GlPostingError("Vendor payment has multiple funding accounts; refusing automatic entity resync")
+    debits = list(entry.lines.filter(debit__gt=0).select_related("account"))
+    if not debits or len({line.account_id for line in debits}) != 1:
+        raise GlPostingError("Vendor payment has multiple payable accounts; refusing automatic entity resync")
+    ap = debits[0].account
+    lines, metadata, header = _vendor_payment_journal_lines(company_id, payment, ap, credits[0].account)
+    result = _resync_posted_entry_dimensions(company_id, entry, lines, metadata, header, payment.payment_date)
+    Payment.objects.filter(pk=payment.pk, company_id=company_id).update(station_id=header)
+    return result
+
+
+def _resync_posted_entry_dimensions(company_id, je, lines, metadata, header_station, entry_date, *, preserve_accounts=False):
+    existing = list(je.lines.select_for_update().order_by("id"))
+    old_debit = sum((line.debit for line in existing), Decimal("0"))
+    old_credit = sum((line.credit for line in existing), Decimal("0"))
+    new_debit = sum((_unpack_gl_line(line)[1] for line in lines), Decimal("0"))
+    new_credit = sum((_unpack_gl_line(line)[2] for line in lines), Decimal("0"))
+    if old_debit != old_credit or old_debit != new_debit or old_credit != new_credit:
+        raise GlPostingError("Journal totals differ; use the material document edit workflow before resyncing entities.")
+    if preserve_accounts:
+        old_debits = [line for line in existing if line.debit > 0]
+        new_debits = [(raw, meta) for raw, meta in zip(lines, metadata) if _unpack_gl_line(raw)[1] > 0]
+        credits = [(raw, meta) for raw, meta in zip(lines, metadata) if _unpack_gl_line(raw)[2] > 0]
+        credit_accounts = {line.account_id for line in existing if line.credit > 0}
+        if len(credit_accounts) != 1:
+            raise GlPostingError("Multiple payable accounts require manual review before entity repair")
+        old_credit_account = next(line.account for line in existing if line.credit > 0)
+        same_shape = len(old_debits) == len(new_debits) and all(
+            old.debit == _unpack_gl_line(raw)[1] for old, (raw, _meta) in zip(old_debits, new_debits)
         )
-        if not existing or not debit_specs:
-            return False
-        # Partial refresh: update the overlapping debit lines in order.
-        existing = existing[: len(debit_specs)]
-
-    for jl, (acc, _amt, desc, st_opt, explicit), meta in zip(existing, debit_specs, meta_specs):
-        hdr = _gl_station_id(company_id, bill.receipt_station_id)
-        if explicit:
-            line_st = _gl_station_id(company_id, st_opt) if st_opt is not None else None
+        dimensions = {(_unpack_gl_line(raw)[4], (meta or {}).get("pond_id"),
+                       (meta or {}).get("production_cycle_id")) for raw, meta in new_debits}
+        debit_accounts = {line.account_id for line in old_debits}
+        preserved, preserved_meta = [], []
+        if same_shape or len(debit_accounts) == 1:
+            for index, (raw, meta) in enumerate(new_debits):
+                _account, debit, credit, description, station, _explicit = _unpack_gl_line(raw)
+                account = old_debits[index].account if same_shape else old_debits[0].account
+                preserved.append((account, debit, credit, description, station))
+                preserved_meta.append(meta)
+        elif len(dimensions) == 1:
+            # A single charged entity is unambiguous even on old grouped journals.
+            station, pond, cycle = next(iter(dimensions))
+            buckets = {(meta or {}).get("cost_bucket") for _raw, meta in new_debits}
+            for old in old_debits:
+                meta = {"pond_id": pond, "production_cycle_id": cycle} if pond else None
+                if meta:
+                    meta["cost_bucket"] = next(iter(buckets)) if len(buckets) == 1 else old.aquaculture_cost_bucket
+                preserved.append((old.account, old.debit, old.credit, old.description, station))
+                preserved_meta.append(meta)
         else:
-            line_st = hdr
-        aq_kw = _journal_line_bill_meta_kwargs(company_id, meta)
-        updates: dict[str, Any] = {
-            "account_id": acc.id,
-            "description": desc[:300],
-            "station_id": line_st,
-            **aq_kw,
+            raise GlPostingError("Mixed-entity debit amounts do not match source lines; review this bill before entity repair")
+        for raw, meta in credits:
+            _account, debit, credit, description, station, _explicit = _unpack_gl_line(raw)
+            preserved.append((old_credit_account, debit, credit, description, station))
+            preserved_meta.append(meta)
+        lines, metadata = preserved, preserved_meta
+    for index, (raw, meta) in enumerate(zip(lines, metadata)):
+        account, debit, credit, description, station, explicit = _unpack_gl_line(raw)
+        values = {
+            "account_id": account.id, "debit": debit, "credit": credit,
+            "description": description[:300],
+            "station_id": station if explicit else header_station,
+            "aquaculture_pond_id": None, "aquaculture_production_cycle_id": None,
+            "aquaculture_cost_bucket": "", "tenant_reporting_category_id": None,
+            "fuel_station_expense_rollup": "",
+            **_journal_line_bill_meta_kwargs(company_id, meta),
         }
-        JournalEntryLine.objects.filter(pk=jl.pk).update(**updates)
+        if index < len(existing):
+            JournalEntryLine.objects.filter(pk=existing[index].pk).update(**values)
+        else:
+            JournalEntryLine.objects.create(journal_entry=je, **values)
+    for obsolete in existing[len(lines):]:
+        obsolete.delete()
+    JournalEntry.objects.filter(pk=je.pk).update(station_id=header_station, entry_date=entry_date)
     return True
 
 

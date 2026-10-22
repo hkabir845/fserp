@@ -45,4 +45,20 @@ for (const [kind, validate, payload] of [
   const sum = payload(line)[`${kind}_shares`].reduce((total, row) => total + Math.round(Number(row.amount) * 100), 0)
   assert.equal(sum, 10000)
 }
-console.log('Financial rounding and allocation regression checks passed.')
+const entity = load('lib/billLineEntity')
+const sites = [{ id: 2, operates_fuel_retail: true }, { id: 3, operates_fuel_retail: false }]
+for (const key of ['ho', '2', '3', 'p:11']) {
+  const selected = entity.applyBillLineEntityKey({
+    aquaculture_pond_id: 9, aquaculture_production_cycle_id: 90,
+    aquaculture_cost_bucket: 'feed', aquaculture_expense_category: 'feed_purchase',
+    aquaculture_cost_mode: 'shared_equal', shared_equal_pond_ids: [9, 10],
+    station_cost_mode: 'shared_equal', shared_equal_station_ids: [2, 3],
+  }, key, sites)
+  assert.equal(entity.billLineEntityKey(selected), key)
+  assert.equal(selected.aquaculture_cost_mode, 'direct', key)
+  assert.equal(selected.station_cost_mode, 'direct', key)
+  assert.equal(selected.shared_equal_pond_ids.length, 0, key)
+  assert.equal(selected.shared_equal_station_ids.length, 0, key)
+  if (key === 'ho' || key === '2') assert.equal(selected.aquaculture_cost_bucket, '', key)
+}
+console.log('Financial rounding, Charge-to selection and allocation regression checks passed.')

@@ -81,6 +81,7 @@ from api.services.aquaculture_bill_defaults import (
     validate_and_apply_shared_pond_bill_line_category,
 )
 from api.services.bill_list_allocations import (
+    bill_line_entity_scope_key,
     bill_filtered_line_amount,
     list_scope_matches_allocation,
     summarize_bill_entity_allocations,
@@ -263,7 +264,16 @@ def _parse_bill_lines_from_body(
         line_sid, sid_err = parse_optional_line_receipt_station_id(company_id, row)
         if sid_err:
             return [], JsonResponse({"detail": sid_err}, status=400)
+        office = row.get("charge_to_head_office", False)
+        if not isinstance(office, bool):
+            return [], JsonResponse({"detail": "charge_to_head_office must be a boolean"}, status=400)
+        if office and (line_sid or aq_kw.get("aquaculture_pond_id")
+                       or row.get("fuel_station_expense_category")
+                       or bill_line_cost_mode(row) not in ("", "direct")
+                       or station_bill_line_cost_mode(row) not in ("", "direct")):
+            return [], JsonResponse({"detail": "Head Office Charge to cannot be combined with another entity or shared split"}, status=400)
         pl = {
+            "charge_to_head_office": office,
             "item_id": item_id,
             "tank_id": tank_id,
             "description": row.get("description") or "",
@@ -284,7 +294,7 @@ def _parse_bill_lines_from_body(
         if price_err:
             return [], price_err
         bucket = str(row.get("aquaculture_cost_bucket") or "").strip()[:40]
-        if bucket:
+        if bucket and not office:
             pl["aquaculture_cost_bucket"] = bucket
         pmode = bill_line_cost_mode(row)
         smode = station_bill_line_cost_mode(row)
@@ -312,6 +322,7 @@ def _parse_bill_lines_from_body(
 
 def _create_bill_line(bill: Bill, pl: dict) -> BillLine:
     return BillLine.objects.create(
+        charge_to_head_office=pl.get("charge_to_head_office", False),
         bill=bill,
         item_id=pl["item_id"],
         tank_id=pl["tank_id"],
@@ -664,6 +675,8 @@ def _bill_line_to_json(b: Bill, l: BillLine) -> dict:
             getattr(l, "fuel_station_expense_category", None) or ""
         )[:64],
         "line_receipt_station_id": getattr(l, "receipt_station_id", None),
+        "charge_to_head_office": l.charge_to_head_office,
+        "charge_to_entity_key": bill_line_entity_scope_key(l, b),
         "receipt_station_id": getattr(l, "receipt_station_id", None),
         "fuel_station_expense_category_label": _fuel_station_category_label(
             b.company_id,

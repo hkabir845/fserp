@@ -19,6 +19,7 @@ export type BillLineEntityFields = {
   aquaculture_production_cycle_id?: number | '' | null
   line_receipt_station_id?: number | '' | null
   aquaculture_expense_category?: string
+  aquaculture_cost_bucket?: string
   fuel_station_expense_category?: string
   aquaculture_cost_mode?: string
   station_cost_mode?: string
@@ -110,6 +111,9 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
         station_cost_mode: 'direct',
         shared_equal_station_ids: [],
         station_shares: [],
+        aquaculture_cost_mode: 'direct',
+        shared_equal_pond_ids: [],
+        pond_shares: [],
       }
     }
     return {
@@ -118,9 +122,13 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
       aquaculture_pond_id: '',
       aquaculture_production_cycle_id: '',
       aquaculture_expense_category: '',
+      aquaculture_cost_bucket: '',
       aquaculture_cost_mode: 'direct',
       shared_equal_pond_ids: [],
       pond_shares: [],
+      station_cost_mode: 'direct',
+      shared_equal_station_ids: [],
+      station_shares: [],
     }
   }
   return {
@@ -129,6 +137,7 @@ export function applyBillLineEntityKey<T extends BillLineEntityFields>(
     aquaculture_production_cycle_id: '',
     line_receipt_station_id: '',
     aquaculture_expense_category: '',
+    aquaculture_cost_bucket: '',
     fuel_station_expense_category: '',
     aquaculture_cost_mode: 'direct',
     station_cost_mode: 'direct',

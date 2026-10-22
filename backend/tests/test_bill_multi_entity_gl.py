@@ -95,7 +95,7 @@ def test_single_pond_bill_tags_debits_and_ap(api_client, company_tenant_with_gl,
 
 
 @pytest.mark.django_db
-def test_multi_pond_bill_tags_each_debit_ap_unscoped(
+def test_multi_pond_bill_tags_each_debit_and_payable(
     api_client, company_tenant_with_gl, auth_admin_headers
 ):
     Company.objects.filter(pk=company_tenant_with_gl.id).update(
@@ -141,9 +141,12 @@ def test_multi_pond_bill_tags_each_debit_ap_unscoped(
     debits = list(_debit_lines(bill.id))
     assert len(debits) == 2
     assert {ln.aquaculture_pond_id for ln in debits} == {p1.id, p2.id}
-    ap = _credit_ap_line(bill.id)
-    assert ap is not None
-    assert ap.aquaculture_pond_id is None
+    payable = JournalEntryLine.objects.filter(
+        journal_entry__entry_number=f"AUTO-BILL-{bill.id}", credit__gt=0,
+    )
+    assert set(payable.values_list("aquaculture_pond_id", "credit")) == {
+        (p1.id, Decimal("200")), (p2.id, Decimal("300")),
+    }
 
 
 @pytest.mark.django_db
@@ -208,9 +211,12 @@ def test_mixed_pond_and_station_bill_entity_tags(api_client, company_tenant_with
     assert pond_debit.debit == Decimal("100.00")
     assert st_debit.debit == Decimal("50.00")
     assert st_debit.station_id == station.id
-    ap = _credit_ap_line(bill.id)
-    assert ap is not None
-    assert ap.aquaculture_pond_id is None
+    payable = JournalEntryLine.objects.filter(
+        journal_entry__entry_number=f"AUTO-BILL-{bill.id}", credit__gt=0,
+    )
+    assert set(payable.values_list("station_id", "aquaculture_pond_id", "credit")) == {
+        (None, pond.id, Decimal("100")), (station.id, None, Decimal("50")),
+    }
 
 
 @pytest.mark.django_db

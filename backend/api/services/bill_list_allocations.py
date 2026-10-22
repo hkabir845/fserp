@@ -1,8 +1,9 @@
 """Per-entity line amounts on vendor bills — for list scoped totals and drill-down."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
+from django.db.models import Q
 
 from api.services.aquaculture_pond_display import bill_line_pond_display_name
 
@@ -16,6 +17,8 @@ def _line_amount(line) -> Decimal:
 
 def bill_line_entity_scope_key(line, bill) -> str:
     """Aligns with frontend billLineEntityKey (pond, line station, tank station, header shop, ho)."""
+    if getattr(line, "charge_to_head_office", False):
+        return "ho"
     pid = getattr(line, "aquaculture_pond_id", None)
     if pid:
         return f"p:{int(pid)}"
@@ -33,6 +36,52 @@ def bill_line_entity_scope_key(line, bill) -> str:
     return "ho"
 
 
+def bill_line_scope_q(*, station_id=None, pond_id=None, head_office=False):
+    """SQL equivalent of the effective Charge-to key, for BillLine querysets."""
+    legacy = Q(charge_to_head_office=False, aquaculture_pond_id__isnull=True)
+    if pond_id is not None:
+        return Q(charge_to_head_office=False, aquaculture_pond_id=pond_id)
+    if station_id is not None:
+        return legacy & (
+            Q(receipt_station_id=station_id)
+            | Q(receipt_station_id__isnull=True, tank__station_id=station_id)
+            | Q(receipt_station_id__isnull=True, tank_id__isnull=True,
+                bill__receipt_station_id=station_id)
+        )
+    if head_office:
+        return Q(charge_to_head_office=True) | (legacy & Q(
+            receipt_station_id__isnull=True, tank_id__isnull=True,
+            bill__receipt_station_id__isnull=True,
+        ))
+    return Q()
+
+
+def bill_charge_to_amount(bill, amount, *, station_id=None, pond_id=None, head_office=False, station_ids=None):
+    """Allocate a bill total/open balance by source line Charge to, with exact penny totals."""
+    if station_id is None and pond_id is None and not head_office and station_ids is None:
+        return amount
+    lines = [line for line in bill.lines.all() if _line_amount(line) > 0]
+    basis = sum((_line_amount(line) for line in lines), Decimal("0"))
+    if not basis:
+        return Decimal("0")
+    remaining, result = amount, Decimal("0")
+    group_keys = {str(sid) for sid in station_ids} if station_ids is not None else None
+    for index, line in enumerate(lines):
+        portion = remaining if index == len(lines) - 1 else min(
+            remaining, (amount * _line_amount(line) / basis).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
+        remaining -= portion
+        key = bill_line_entity_scope_key(line, bill)
+        matches = key == f"p:{pond_id}" if pond_id is not None else (
+            key == str(station_id) if station_id is not None else (
+                key == "ho" if head_office else key in group_keys
+            )
+        )
+        if matches:
+            result += portion
+    return result
+
+
 def bill_line_matches_list_scope(
     line,
     bill,
@@ -42,25 +91,13 @@ def bill_line_matches_list_scope(
     head_office: bool,
 ) -> bool:
     """Mirror api.services.bill_list_filters.apply_bill_list_entity_scope at line level."""
+    key = bill_line_entity_scope_key(line, bill)
     if pond_id:
-        return getattr(line, "aquaculture_pond_id", None) == pond_id
+        return key == f"p:{pond_id}"
     if station_id:
-        if getattr(line, "receipt_station_id", None) == station_id:
-            return True
-        tank = getattr(line, "tank", None)
-        if getattr(line, "tank_id", None) and tank is not None:
-            return getattr(tank, "station_id", None) == station_id
-        return False
+        return key == str(station_id)
     if head_office:
-        if getattr(line, "aquaculture_pond_id", None):
-            return False
-        if getattr(line, "receipt_station_id", None):
-            return False
-        if getattr(line, "tank_id", None):
-            return False
-        if (getattr(line, "fuel_station_expense_category", None) or "").strip():
-            return False
-        return True
+        return key == "ho"
     return True
 
 

@@ -180,6 +180,7 @@ interface BillLineItem {
   shared_equal_station_ids?: number[]
   station_shares?: { station_id: number | ''; amount: number | string }[]
   line_receipt_station_id?: number | '' | null
+  charge_to_entity_key?: string
 }
 
 interface AquaculturePondOption {
@@ -1749,6 +1750,9 @@ function serializeBillLineForApi(
     aquaculture_expense_category: (line.aquaculture_expense_category || '').trim() || null,
     fuel_station_expense_category: (line.fuel_station_expense_category || '').trim() || null,
     line_receipt_station_id: lineReceiptStationId,
+    charge_to_head_office: billLineEntityKey(line) === 'ho'
+      && !['shared_equal', 'shared_manual'].includes(line.aquaculture_cost_mode || '')
+      && !['shared_equal', 'shared_manual'].includes(line.station_cost_mode || ''),
     ...pondSharePayload(line),
     ...stationSharePayload(line),
   }
@@ -3666,10 +3670,9 @@ export default function BillsPage() {
               (line as BillLineItem & { fuel_station_expense_category?: string })
                 .fuel_station_expense_category || '',
             line_receipt_station_id:
-              (line as BillLineItem & { line_receipt_station_id?: number }).line_receipt_station_id !=
-              null
-                ? Number((line as BillLineItem & { line_receipt_station_id?: number }).line_receipt_station_id)
-                : '',
+              line.charge_to_entity_key
+                ? (/^\d+$/.test(line.charge_to_entity_key) ? Number(line.charge_to_entity_key) : '')
+                : line.line_receipt_station_id ?? '',
             station_cost_mode: 'direct',
             // Seed from this bill's heads÷kg (e.g. 8.67), never a stale Item catalog 3000.
             fish_pcs_per_kg_override: (() => {

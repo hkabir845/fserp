@@ -5,11 +5,8 @@ General ledger remains company cash vs AR/AP; station supports multi-site report
 """
 from __future__ import annotations
 
-from django.db.models import Prefetch
-
 from api.models import (
     Bill,
-    BillLine,
     Customer,
     Invoice,
     InvoiceLine,
@@ -28,25 +25,6 @@ def _active_station(company_id: int, station_id: int | None) -> int | None:
     if Station.objects.filter(pk=station_id, company_id=company_id, is_active=True).exists():
         return int(station_id)
     return None
-
-
-def _stations_for_bill(b: Bill) -> set[int]:
-    s: set[int] = set()
-    if b.receipt_station_id:
-        s.add(int(b.receipt_station_id))
-    for line in b.lines.all():
-        if line.tank_id and getattr(line, "tank", None) and line.tank.station_id:
-            s.add(int(line.tank.station_id))
-    return s
-
-
-def _primary_for_bill(b: Bill) -> int | None:
-    sb = _stations_for_bill(b)
-    if not sb:
-        return None
-    if len(sb) == 1:
-        return sb.pop()
-    return None  # >1: ambiguous (shop + different tank site)
 
 
 def resolve_payment_station_id(company_id: int, p: Payment) -> int | None:
@@ -88,32 +66,15 @@ def resolve_payment_station_id(company_id: int, p: Payment) -> int | None:
             .values_list("bill_id", flat=True)
         )
         if b_ids:
-            bills = list(
-                Bill.objects.filter(company_id=company_id, id__in=b_ids)
-                .prefetch_related(
-                    Prefetch("lines", queryset=BillLine.objects.select_related("tank"))
-                )
-            )
-            by_site: set[int] = set()
-            ambig = False
-            for b in bills:
-                st = _primary_for_bill(b)
-                if st is None and _stations_for_bill(b):
-                    ambig = True
-                    break
-                if st is not None:
-                    by_site.add(int(st))
-            if ambig:
-                return None
-            if not by_site:
-                v0 = (
-                    Vendor.objects.filter(pk=p.vendor_id, company_id=company_id)
-                    .only("default_station_id", "default_aquaculture_pond_id")
-                    .first()
-                )
-                return receipt_station_id_for_vendor(company_id, v0)
-            if len(by_site) == 1:
-                return by_site.pop()
+            from api.services.bill_list_allocations import bill_line_entity_scope_key
+            keys = {
+                bill_line_entity_scope_key(line, bill)
+                for bill in Bill.objects.filter(company_id=company_id, pk__in=b_ids).prefetch_related("lines__tank")
+                for line in bill.lines.all()
+            }
+            if len(keys) == 1:
+                key = next(iter(keys))
+                return int(key) if key.isdigit() else None
             return None
         v = (
             Vendor.objects.filter(pk=p.vendor_id, company_id=company_id)
@@ -146,21 +107,21 @@ def payment_site_display_label(company_id: int, p: Payment) -> str:
             .values_list("bill_id", flat=True)
         )
         if b_ids:
-            pond_ids = set(
-                BillLine.objects.filter(
-                    bill_id__in=b_ids,
-                    bill__company_id=company_id,
-                )
-                .exclude(aquaculture_pond_id__isnull=True)
-                .values_list("aquaculture_pond_id", flat=True)
-            )
-            if len(pond_ids) == 1:
-                pond = AquaculturePond.objects.filter(
-                    pk=pond_ids.pop(), company_id=company_id
-                ).first()
-                label = pond_site_label(pond)
-                if label:
-                    return label
+            from api.services.bill_list_allocations import summarize_bill_entity_allocations
+            labels = []
+            for bill in Bill.objects.filter(company_id=company_id, pk__in=b_ids).prefetch_related(
+                "lines__aquaculture_pond", "lines__receipt_station", "lines__tank__station"
+            ):
+                for row in summarize_bill_entity_allocations(bill):
+                    key = row["entity_scope_key"]
+                    if key.startswith("p:"):
+                        pond = AquaculturePond.objects.filter(pk=int(key[2:]), company_id=company_id).first()
+                        label = pond_site_label(pond)
+                    else:
+                        label = row["entity_label"]
+                    if label and label not in labels:
+                        labels.append(label)
+            return ", ".join(labels)
 
     if p.payment_type == Payment.PAYMENT_TYPE_RECEIVED:
         inv_ids = list(

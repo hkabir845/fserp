@@ -2069,6 +2069,10 @@ class Bill(models.Model):
 
 
 class BillLine(models.Model):
+    charge_to_head_office = models.BooleanField(
+        default=False,
+        help_text="Explicit Head Office charge; overrides receipt location and vendor defaults.",
+    )
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE, related_name="lines")
     item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.SET_NULL, related_name="bill_lines")
     tank = models.ForeignKey(

@@ -48,6 +48,7 @@ class Command(BaseCommand):
                 self._clear(obj, field, changes)
             for line in lines:
                 self._clear(line, "receipt_station_id", changes)
+                self._set(line, "charge_to_head_office", True, changes)
             for line in journal_lines:
                 self._clear(line, "station_id", changes)
 

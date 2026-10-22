@@ -84,6 +84,8 @@ def validate_parsed_lines_for_bill_purpose(
         return None
 
     for i, pl in enumerate(parsed_lines, start=1):
+        if purpose == "office" and not pl.get("aquaculture_pond_id") and not pl.get("receipt_station_id"):
+            pl["charge_to_head_office"] = True
         if _line_has_pond_tag(pl):
             if purpose == "station":
                 return f"Line {i}: station bills cannot tag a pond."

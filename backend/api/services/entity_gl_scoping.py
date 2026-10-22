@@ -142,7 +142,7 @@ def validate_bill_entity_tags_for_gl(company_id: int, bill: Bill) -> None:
             continue
         if not pl_line_needs_entity_dimension(acc):
             continue
-        if meta and meta.get("pond_id"):
+        if meta and (meta.get("pond_id") or meta.get("head_office")):
             continue
         line_st = st_opt if explicit else None
         if line_st:

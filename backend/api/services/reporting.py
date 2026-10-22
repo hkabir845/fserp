@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
-from django.db.models import Count, Q, Sum, Value
+from django.db.models import Count, Exists, OuterRef, Q, Sum, Value
 from django.db.models.functions import Coalesce, Trim
 from django.utils import timezone
 
@@ -38,6 +38,8 @@ from api.models import (
     TankDip,
     Vendor,
 )
+from api.services.bill_list_filters import apply_bill_list_entity_scope
+from api.services.bill_list_allocations import bill_charge_to_amount, bill_line_scope_q
 from api.services.gl_posting import (
     CODE_AP,
     CODE_AR,
@@ -89,9 +91,7 @@ def _bill_lines_in_period(
 
 
 def _filter_bill_lines_for_station(qs, station_id: int):
-    return qs.filter(
-        Q(bill__receipt_station_id=station_id) | Q(receipt_station_id=station_id)
-    )
+    return qs.filter(bill_line_scope_q(station_id=station_id))
 from api.services.item_catalog import item_tracks_physical_stock
 from api.services.station_stock import get_station_stock, item_uses_station_bins, tanks_exist_for_item
 from api.services.internal_trade_elimination import (
@@ -1601,9 +1601,8 @@ def _sum_bill_totals(
         bill_date__lte=end,
     )
     if station_id is not None:
-        qs = qs.filter(
-            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
-        ).distinct()
+        qs = apply_bill_list_entity_scope(qs, station_id=station_id, pond_id=None, head_office=False)
+        return _sum_charged_bill_totals(qs, station_id)
     r = qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))
     return _d(r["t"])
 
@@ -1638,11 +1637,15 @@ def _sum_bill_totals_non_draft(
         bill_date__lte=end,
     ).exclude(status="draft")
     if station_id is not None:
-        qs = qs.filter(
-            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
-        ).distinct()
+        qs = apply_bill_list_entity_scope(qs, station_id=station_id, pond_id=None, head_office=False)
+        return _sum_charged_bill_totals(qs, station_id)
     r = qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))
     return _d(r["t"])
+
+
+def _sum_charged_bill_totals(qs, station_id):
+    return sum((bill_charge_to_amount(bill, bill.total or Decimal("0"), station_id=station_id)
+                for bill in qs.prefetch_related("lines__tank")), Decimal("0"))
 
 
 def _count_invoices_non_draft(
@@ -2215,9 +2218,7 @@ def _bills_for_subledger_scope(
     if pond_id is not None:
         qs = qs.filter(lines__aquaculture_pond_id=pond_id).distinct()
     elif station_id is not None:
-        qs = qs.filter(
-            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
-        ).distinct()
+        qs = apply_bill_list_entity_scope(qs, station_id=station_id, pond_id=None, head_office=False)
     return qs
 
 
@@ -2235,7 +2236,7 @@ def _vendor_open_balance_at_station(
 ) -> Decimal:
     total = Decimal("0")
     for bill in _bills_for_subledger_scope(company_id, station_id).filter(vendor_id=vendor_id):
-        total += bill_open_amount(bill, company_id)
+        total += bill_charge_to_amount(bill, bill_open_amount(bill, company_id), station_id=station_id)
     return total
 
 
@@ -2347,7 +2348,7 @@ def report_vendor_balances(
             for bill in Bill.objects.filter(pk__in=bill_ids).exclude(
                 status__in=("draft", "paid", "void")
             ):
-                bal += bill_open_amount(bill, company_id)
+                bal += bill_charge_to_amount(bill, bill_open_amount(bill, company_id), pond_id=pond_id)
         elif station_id is not None:
             bal = _vendor_open_balance_at_station(company_id, v.id, station_id)
         else:
@@ -2381,13 +2382,13 @@ def report_vendor_balances(
     )
     if pond_id is not None:
         note += (
-            " Pond filter: balance is open bill exposure with at least one line tagged to this pond "
-            "(BillLine.aquaculture_pond_id); company-wide vendor opening balances without bills are excluded."
+            " Pond filter: balance is the open bill share charged to this pond; "
+            "company-wide vendor opening balances without bills are excluded."
         )
     elif station_id is not None:
         note += (
-            " Site filter: balance is open bill exposure received at this station "
-            "(bill or line receipt_station_id); company-wide vendor opening balances without bills are excluded."
+            " Site filter: balance is the open bill share charged to this station; "
+            "company-wide vendor opening balances without bills are excluded."
         )
     out: dict[str, Any] = {
         "report_id": "vendor-balances",
@@ -3009,6 +3010,7 @@ def report_ap_aging(
             if open_amt <= 0:
                 continue
             due = bill.due_date or bill.bill_date
+            open_amt = bill_charge_to_amount(bill, open_amt, station_id=station_id, pond_id=pond_id)
             days_past = (as_of - due).days
             bucket = _aging_bucket_key(days_past)
             buckets[bucket] += open_amt
@@ -3045,9 +3047,9 @@ def report_ap_aging(
         "Days past due = end date minus due date (or bill date when due date is blank)."
     )
     if pond_id is not None:
-        note += " Pond filter: only bills with at least one line tagged to this pond are included."
+        note += " Pond filter: amounts include only the open bill share charged to this pond."
     elif station_id is not None:
-        note += " Site filter: only bills received at this station (header or line receipt_station_id)."
+        note += " Site filter: amounts include only the open bill share charged to this station."
     ap_recon = _subledger_gl_reconciliation(
         company_id,
         as_of,
@@ -4947,7 +4949,7 @@ def _fold_aquaculture_register_into_pl_sections(
         removed = Decimal("0")
         for a in accounts:
             code = str(a.get("account_code") or "").strip()
-            if code in codes and not register_cost_basis:
+            if code in codes and not register_cost_basis and a.get("entity_type") == "pond":
                 changed = True
                 removed += _d(a.get("balance"))
                 continue
@@ -6962,15 +6964,14 @@ def _apply_invoice_station_scope(qs, station_ids: list[int] | None, station_id: 
 
 def _apply_bill_station_scope(qs, station_ids: list[int] | None, station_id: int | None):
     if station_id is not None:
-        return qs.filter(
-            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
-        ).distinct()
+        return apply_bill_list_entity_scope(qs, station_id=station_id, pond_id=None, head_office=False)
     if station_ids is not None:
         if not station_ids:
             return qs.none()
-        return qs.filter(
-            Q(receipt_station_id__in=station_ids) | Q(lines__receipt_station_id__in=station_ids)
-        ).distinct()
+        predicate = Q(pk__in=[])
+        for sid in station_ids:
+            predicate |= bill_line_scope_q(station_id=sid)
+        return qs.filter(Exists(BillLine.objects.filter(bill_id=OuterRef("pk")).filter(predicate)))
     return qs
 
 
@@ -7203,7 +7204,8 @@ def report_purchase_report(
         if total <= 0:
             continue
         paid = _bill_paid_through(company_id, bill.id, end)
-        cash_amt = min(total, paid)
+        cash_amt = bill_charge_to_amount(bill, min(total, paid), station_id=station_id, station_ids=station_ids)
+        total = bill_charge_to_amount(bill, total, station_id=station_id, station_ids=station_ids)
         credit_amt = max(Decimal("0"), total - cash_amt)
 
         if cash_amt > 0:
@@ -7280,7 +7282,7 @@ def report_purchase_report(
             "Partially paid bills may appear in both sections. Draft and void bills are excluded."
             + shop_note
             + " Use the business line filter for Fuel Station vs Aquaculture (Premium Agro). "
-            "Bills match when the bill header or any line receipt station is in scope."
+            "Amounts follow each line's Charge-to entity; mixed bills contribute only the selected share."
         ),
     }
     _attach_summary_document_drills(
@@ -8510,11 +8512,12 @@ def report_financial_analytics(
         bill_date__lte=end,
     ).exclude(status="draft")
     if station_id is not None:
-        bills_qs = bills_qs.filter(
-            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
-        ).distinct()
+        bills_qs = apply_bill_list_entity_scope(bills_qs, station_id=station_id, pond_id=None, head_office=False)
     bills_count_period = bills_qs.count()
-    bills_total_period = _d(bills_qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))["t"])
+    bills_total_period = (
+        _sum_charged_bill_totals(bills_qs, station_id) if station_id is not None else
+        _d(bills_qs.aggregate(t=Coalesce(Sum("total"), Decimal("0")))["t"])
+    )
 
     pay_recv = (
         Payment.objects.filter(
@@ -8866,14 +8869,12 @@ def report_drill_bill_documents(
         .order_by("bill_date", "id")
     )
     if station_id is not None:
-        qs = qs.filter(
-            Q(receipt_station_id=station_id) | Q(lines__receipt_station_id=station_id)
-        ).distinct()
+        qs = apply_bill_list_entity_scope(qs, station_id=station_id, pond_id=None, head_office=False)
     vendor = Vendor.objects.filter(pk=vendor_id, company_id=company_id).first()
     documents: list[dict[str, Any]] = []
     total = Decimal("0")
     for bill in qs:
-        amt = bill.total or Decimal("0")
+        amt = bill_charge_to_amount(bill, bill.total or Decimal("0"), station_id=station_id)
         total += amt
         documents.append(
             {

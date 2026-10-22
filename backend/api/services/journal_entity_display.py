@@ -63,6 +63,13 @@ def journal_line_site_label(line: JournalEntryLine) -> str:
     lst = getattr(line, "station", None)
     if lst and (lst.station_name or "").strip():
         return (lst.station_name or "").strip()
+    entry = getattr(line, "journal_entry", None)
+    if entry is not None:
+        header = getattr(entry, "station", None)
+        if header and (header.station_name or "").strip():
+            return header.station_name.strip()
+        if (entry.entry_number or "").startswith("AUTO-BILL-") or _PAY_MADE.match(entry.entry_number or ""):
+            return "Head office"
     return ""
 
 
@@ -137,6 +144,20 @@ def _payment_pond_labels_from_allocations(company_id: int, entry: JournalEntry) 
 def journal_entry_site_label(entry: JournalEntry, lines: Iterable[JournalEntryLine]) -> str:
     """Site column for a journal entry list row; pond tags on lines win over header station."""
     line_list = list(lines)
+    if (entry.entry_number or "").startswith("AUTO-BILL-"):
+        labels = list(dict.fromkeys(
+            journal_line_site_label(line) for line in line_list if line.debit > 0
+        ))
+        return ", ".join(label for label in labels if label)
+    payment_match = _PAY_MADE.match(entry.entry_number or "")
+    if payment_match:
+        from api.models import Payment
+        from api.services.payment_station import payment_site_display_label
+        payment = Payment.objects.filter(pk=int(payment_match.group(1)), company_id=entry.company_id).first()
+        if payment:
+            label = payment_site_display_label(entry.company_id, payment)
+            if label:
+                return label
     pond_labels = _collect_pond_labels(line_list)
     if pond_labels:
         return _format_pond_labels(pond_labels)

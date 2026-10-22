@@ -2001,6 +2001,7 @@ function ReportsPageContent() {
   }, [])
 
   const showPondsInSiteScope = showAquacultureReports && aquaculturePonds.length > 0
+  const showHeadOfficeInSiteScope = selectedReport == null || REPORTS_GL_STATION_SCOPED.has(selectedReport)
 
   const effectiveAquaculturePondId = useMemo(
     () => resolveEffectiveAquaculturePondId(reportStationId, aquaculturePondId),
@@ -2297,7 +2298,7 @@ function ReportsPageContent() {
       salesPurchaseDateRange?: { startDate: string; endDate: string }
       /** Override the period date range for this fetch (non sales/purchase reports). */
       dateRangeOverride?: { startDate: string; endDate: string }
-      /** Override Site scope for this fetch (station id or p:{pondId}). */
+      /** Override Site scope for this fetch (ho, station id or p:{pondId}). */
       siteScopeKey?: string
       /** Loans borrow/lent report: exclude company-wide loans when a site is selected. */
       strictSiteOnly?: boolean
@@ -2313,6 +2314,13 @@ function ReportsPageContent() {
     scrollReportPanelIntoView()
     const segmentForFetch = opts?.businessSegment ?? businessSegment
     const spRangeForFetch = opts?.salesPurchaseDateRange ?? salesPurchaseDateRange
+    let siteScopeKeyForFetch = (opts?.siteScopeKey ?? reportStationId).trim()
+    if (parseReportSiteScopeKey(siteScopeKeyForFetch).kind === 'head_office' && !REPORTS_GL_STATION_SCOPED.has(reportId)) {
+      // Keep the displayed scope consistent with requests for reports that
+      // cannot filter Head Office, including the embedded analytics panels.
+      siteScopeKeyForFetch = ''
+      persistReportStation('')
+    }
 
     reportFetchAbortRef.current?.abort()
     const ac = new AbortController()
@@ -2386,7 +2394,7 @@ function ReportsPageContent() {
     }
 
     if (String(reportId).startsWith('aquaculture-')) {
-      const aqScopeKey = (opts?.siteScopeKey ?? reportStationId).trim()
+      const aqScopeKey = siteScopeKeyForFetch
       const pondFilter = resolveEffectiveAquaculturePondId(aqScopeKey, aquaculturePondId)
       if (pondFilter) {
         params.pond_id = pondFilter
@@ -2462,7 +2470,7 @@ function ReportsPageContent() {
         params.business_segment = segmentForFetch
       }
     } else if (REPORTS_STATION_SCOPED.has(reportId)) {
-      const scopeKey = (opts?.siteScopeKey ?? reportStationId).trim()
+      const scopeKey = siteScopeKeyForFetch
       applySiteScopeToReportParams(scopeKey, params, {
         pond: REPORTS_GL_POND_SCOPED.has(reportId) || REPORTS_SUBLEDGER_POND_SCOPED.has(reportId),
         station: true,
@@ -2593,6 +2601,7 @@ function ReportsPageContent() {
     itemScopeCategory,
     itemScopeItemIds,
     reportStationId,
+    persistReportStation,
     aquaculturePondId,
     aquacultureFeedItemId,
     aquacultureMedicineItemId,
@@ -2744,7 +2753,7 @@ function ReportsPageContent() {
     ) {
       setFilterCategory(cat)
     }
-    const linkKey = `${reportParam}|${cat ?? ''}`
+    const linkKey = searchParams.toString()
     if (deepLinkReportKeyRef.current === linkKey) return
     const segParam = searchParams.get('business_segment')
     if (segParam) {
@@ -2752,8 +2761,9 @@ function ReportsPageContent() {
     }
     const archiveStart = (searchParams.get('start_date') || '').trim().slice(0, 10)
     const archiveEnd = (searchParams.get('end_date') || '').trim().slice(0, 10)
+    let archiveRange: { startDate: string; endDate: string } | undefined
     if (/^\d{4}-\d{2}-\d{2}$/.test(archiveStart) && /^\d{4}-\d{2}-\d{2}$/.test(archiveEnd)) {
-      const archiveRange = { startDate: archiveStart, endDate: archiveEnd }
+      archiveRange = { startDate: archiveStart, endDate: archiveEnd }
       if (isAquaculturePeriodReport(reportParam)) {
         setAquacultureDateRange(archiveRange)
       } else {
@@ -2766,6 +2776,11 @@ function ReportsPageContent() {
     }
     const archivePond = (searchParams.get('pond_id') || '').trim()
     if (/^\d+$/.test(archivePond)) setAquaculturePondId(archivePond)
+    const linkedScope = searchParams.get('site_scope')
+    const archiveScope = linkedScope === 'all' ? '' : linkedScope?.trim()
+    const validArchiveScope = archiveScope != null && isPersistedReportSiteScopeKey(archiveScope)
+      ? archiveScope : undefined
+    if (validArchiveScope !== undefined) persistReportStation(validArchiveScope)
 
     const isKnownReport =
       reportParam === 'analytics-kpi' ||
@@ -2773,9 +2788,12 @@ function ReportsPageContent() {
       isApiBackedReportId(reportParam)
     if (isKnownReport) {
       deepLinkReportKeyRef.current = linkKey
-      void fetchReport(reportParam as ReportType)
+      void fetchReport(reportParam as ReportType, {
+        dateRangeOverride: archiveRange,
+        siteScopeKey: validArchiveScope,
+      })
     }
-  }, [searchParams, reportRbacHydrated, fetchReport])
+  }, [searchParams, reportRbacHydrated, fetchReport, persistReportStation])
 
   const applyReportSiteScopeChange = useCallback(
     (v: string) => {
@@ -3958,7 +3976,7 @@ function ReportsPageContent() {
           {userRole != null &&
             userRole !== 'operator' &&
             userRole !== 'pump_attendant' &&
-            (reportStationList.length > 0 || showPondsInSiteScope) &&
+            (reportStationList.length > 0 || showPondsInSiteScope || showHeadOfficeInSiteScope) &&
             !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
             !(selectedReport && reportData) && (
               <div className="flex flex-col gap-2 rounded-lg border border-border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -3970,7 +3988,7 @@ function ReportsPageContent() {
                       <p className="text-muted-foreground">Limited to your assigned site.</p>
                     ) : (
                       <p className="text-muted-foreground">
-                        Filter by one <strong>fuel station</strong>, <strong>shop hub (no fuel)</strong>, or{' '}
+                        Filter by {showHeadOfficeInSiteScope ? <><strong>Head Office</strong>, </> : null}one <strong>fuel station</strong>, <strong>shop hub (no fuel)</strong>, or{' '}
                         <strong>pond</strong>. <strong>All</strong> = company-wide totals plus per-entity breakdowns.
                       </p>
                     )}
@@ -3988,6 +4006,7 @@ function ReportsPageContent() {
                         onChange={applyReportSiteScopeChange}
                         stations={reportStationList}
                         ponds={aquaculturePonds}
+                        showHeadOffice={showHeadOfficeInSiteScope}
                         className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30 sm:min-w-[16rem] sm:w-auto"
                       />
                     </div>
@@ -4274,12 +4293,12 @@ function ReportsPageContent() {
                     {userRole != null &&
                     userRole !== 'operator' &&
                     userRole !== 'pump_attendant' &&
-                    (((reportStationList.length > 0 || showPondsInSiteScope) &&
+                    (((reportStationList.length > 0 || showPondsInSiteScope || showHeadOfficeInSiteScope) &&
                       !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
                       !userHasHomeStation) ||
                       selectedReport === 'mill-dealer-terms') ? (
                       <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
-                        {(reportStationList.length > 0 || showPondsInSiteScope) &&
+                        {(reportStationList.length > 0 || showPondsInSiteScope || showHeadOfficeInSiteScope) &&
                         !(selectedReport && BUSINESS_LINE_REPORT_IDS.has(selectedReport)) &&
                         !userHasHomeStation ? (
                           <div className="min-w-0 flex-1 sm:min-w-[14rem] sm:max-w-xs">
@@ -4295,6 +4314,7 @@ function ReportsPageContent() {
                               onChange={applyReportSiteScopeChange}
                               stations={reportStationList}
                               ponds={aquaculturePonds}
+                              showHeadOffice={showHeadOfficeInSiteScope}
                               className="w-full min-w-0 rounded-md border border-border bg-white px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
                             />
                           </div>

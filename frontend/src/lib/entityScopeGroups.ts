@@ -27,6 +27,11 @@ function pondRoleHint(role: string | undefined): string {
   return ''
 }
 
+export function headOfficeEntityLabel(companyName?: string): string {
+  const company = companyName?.trim()
+  return company ? `Head Office (${company})` : 'Head Office'
+}
+
 export function partitionActiveBusinessEntities(
   stations: EntityScopeStation[],
   ponds: EntityScopePond[],
@@ -92,15 +97,13 @@ export function buildStandardEntityScopeGroups(opts: {
     activePonds,
   )
 
-  const headOfficeLabel = companyName?.trim()
-    ? `Head office (${companyName.trim()})`
-    : 'Head office / general'
+  const headOfficeLabel = headOfficeEntityLabel(companyName)
 
   const out: GroupedComboboxGroup[] = []
 
   if (showHeadOffice) {
     out.push({
-      label: 'Head office',
+      label: 'Head Office',
       options: [
         {
           value: formatHeadOfficeScopeKey(),

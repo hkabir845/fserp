@@ -8,6 +8,7 @@ import {
   type BillReceiptLocationStation,
 } from '@/lib/billReceiptLocation'
 import { formatHeadOfficeScopeKey } from '@/app/reports/reportSiteScope'
+import { headOfficeEntityLabel } from '@/lib/entityScopeGroups'
 
 type LineWithEntity = {
   aquaculture_pond_id?: number | '' | null
@@ -32,7 +33,7 @@ export function BillLinesEntitySummary({
     }
     return [...keys].map((key) => {
       if (key === formatHeadOfficeScopeKey()) {
-        return (companyName || '').trim() || 'Head office'
+        return headOfficeEntityLabel(companyName)
       }
       return receiptLocationDisplayLabel(key, stations, ponds) || key
     })

@@ -12,6 +12,7 @@ export function ReportSiteScopeSelect({
   ponds,
   className,
   id,
+  showHeadOffice = false,
 }: {
   value: string
   onChange: (key: string) => void
@@ -19,6 +20,7 @@ export function ReportSiteScopeSelect({
   ponds: EntityScopePond[]
   className?: string
   id?: string
+  showHeadOffice?: boolean
 }) {
   const groups = useMemo(
     () =>
@@ -26,9 +28,9 @@ export function ReportSiteScopeSelect({
         stations,
         ponds,
         value,
-        showHeadOffice: false,
+        showHeadOffice,
       }),
-    [stations, ponds, value],
+    [stations, ponds, value, showHeadOffice],
   )
 
   return (
@@ -39,7 +41,7 @@ export function ReportSiteScopeSelect({
       groups={groups}
       emptyOption={{ value: '', label: 'All' }}
       className={className}
-      placeholder="Search station, shop hub, or pond…"
+      placeholder={showHeadOffice ? 'Search Head Office, station, shop hub, or pond…' : 'Search station, shop hub, or pond…'}
     />
   )
 }

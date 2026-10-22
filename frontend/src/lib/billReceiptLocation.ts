@@ -161,6 +161,7 @@ export function receiptLocationDisplayLabel(
   const key = (locationKey || '').trim()
   if (!key) return ''
   const scope = parseReportSiteScopeKey(key)
+  if (scope.kind === 'head_office') return 'Head Office'
   if (scope.kind === 'pond') {
     const pond = ponds.find((p) => p.id === scope.id)
     return pond?.name?.trim() || `Pond #${scope.id}`

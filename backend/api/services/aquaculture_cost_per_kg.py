@@ -506,6 +506,10 @@ def posted_unallocated_vendor_bill_bucket_additions(
             continue
         if not _bill_eligible_for_pl(line.bill):
             continue
+        # Shop purchases remain inventory. Their cost reaches the receiving pond
+        # through consumption / sale COGS, not a second unallocated purchase cost.
+        if not bill_line_counts_in_pond_pl_operating(company_id, line):
+            continue
         amt = line.amount if line.amount is not None else Decimal("0")
         if amt <= 0:
             continue

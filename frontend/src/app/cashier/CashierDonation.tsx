@@ -43,6 +43,7 @@ function formatAxiosDetail(error: unknown): string {
 
 export type CashierDonationProps = {
   currencySymbol: string
+  stationId: number | null
   /** Active bank / cash registers (exclude equity-only in parent). */
   bankAccounts: BankLine[]
   onRecorded: () => void | Promise<void>
@@ -51,7 +52,7 @@ export type CashierDonationProps = {
 /**
  * Dr chart 6910 Donation &amp; Social Support, Cr 1010 / selected register (same as POS sales).
  */
-export function CashierDonation({ currencySymbol, bankAccounts, onRecorded }: CashierDonationProps) {
+export function CashierDonation({ currencySymbol, stationId, bankAccounts, onRecorded }: CashierDonationProps) {
   const toast = useToast()
   const [amount, setAmount] = useState("")
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().split("T")[0])
@@ -99,6 +100,7 @@ export function CashierDonation({ currencySymbol, bankAccounts, onRecorded }: Ca
         amount: String(n),
         entry_date: entryDate,
         memo: memo.trim() || "POS — donation & social support",
+        station_id: stationId,
       }
       if (bankId !== "") {
         payload.bank_account_id = bankId

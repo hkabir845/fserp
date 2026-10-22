@@ -1880,6 +1880,7 @@ export default function CashierPOSPage() {
             <div className={`mx-auto w-full max-w-3xl ${scopeUi.shell}`}>
               <CashierDonation
                 currencySymbol={currencySymbol}
+                stationId={posStationId}
                 bankAccounts={bankRegisters}
                 onRecorded={() => loadInitialData({ silent: true })}
               />

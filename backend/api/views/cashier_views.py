@@ -937,6 +937,29 @@ def cashier_cash_donation(request):
     else:
         sid = None
 
+    # Donation mode must retain the selected POS site even without an open shift.
+    raw_station = body.get("station_id")
+    if raw_station not in (None, ""):
+        try:
+            selected_station = int(raw_station)
+        except (TypeError, ValueError):
+            return _cashier_pos_error("Invalid station_id")
+        if not Station.objects.filter(
+            pk=selected_station, company_id=company_id, is_active=True
+        ).exists():
+            return _cashier_pos_error("Unknown or inactive station_id")
+        if gl_station_id is not None and gl_station_id != selected_station:
+            return _cashier_pos_error("Selected station does not match the shift station")
+        gl_station_id = selected_station
+    if gl_station_id is None:
+        # Older clients do not send a site. Only infer an unambiguous fuel site.
+        sites = list(Station.objects.filter(
+            company_id=company_id, is_active=True, operates_fuel_retail=True
+        ).values_list("id", flat=True)[:2])
+        if len(sites) != 1:
+            return _cashier_pos_error("Select a station for this donation")
+        gl_station_id = sites[0]
+
     je, msg = post_pos_cash_donation_journal(
         company_id,
         amount=amount,

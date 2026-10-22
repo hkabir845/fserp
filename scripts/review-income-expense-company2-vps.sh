@@ -31,6 +31,14 @@ if [[ "$APPLY" == 1 ]]; then
     --head-office-bill-number BILL-876 \
     --head-office-bill-number BILL-882 \
     --donation-station-id 2 --apply > "$LOG_DIR/reviewed-bills.json"
+  if [[ "$THROUGH" > "2026-10-18" ]]; then
+    # User-confirmed Head Office expenses: BILL-1065 (200), BILL-1068 (100 + 100).
+    # Exact line ids, date and amounts prevent a description-based reassignment.
+    "$PYTHON" manage.py repair_head_office_bill_lines \
+      --company-id 2 --on-date 2026-10-19 \
+      --line 1984:200 --line 1987:100 --line 1988:100 \
+      --apply > "$LOG_DIR/confirmed-head-office-lines.json"
+  fi
   "$PYTHON" manage.py sync_bill_charge_to_entities \
     --company-id 2 --through "$THROUGH" --apply > "$LOG_DIR/sync.json"
   "$PYTHON" manage.py audit_income_expense_entities --company-id 2 > "$LOG_DIR/after.json"

@@ -77,3 +77,20 @@ Use `--company-id 2 --summary` for compact company output, or `--start-date` / `
 Two historical exceptions in the downloaded copy need original records rather than an automatic reassignment: payment 84 (500, reference VND-10) and its journal are dated 0205-03-24; journal AUTO-POND-PL-OB-10 contains 9,517,865 of prior pond expense, but pond 10 and its source opening rows no longer exist. Its description mentions Ashari - 1 Pond, which now has another id; the audit flags this orphan instead of guessing that the opening should be moved or removed. Both remain unchanged by the repair script. Current VPS results may differ from this older snapshot.
 
 Final local follow-up: all bill, invoice, and vendor-payment entity checks passed after the reviewed repairs. The orphaned opening and suspect year remain flagged. All eight report reconciliation checks passed, and 60 targeted backend tests passed.
+
+## Confirmed Head Office expenses on 19 October 2026
+
+The user identified three additional expense lines as Head Office: 200 on BILL-1065 (line 1984, Meals and Entertainment Cost), and 100 + 100 on BILL-1068 (lines 1987 and 1988, Repairs & Maintenance). The current public VPS stored all three with `charge_to_head_office=False`, blank line station and an Adib bill header, so they inherited Adib. The earlier memo-based review did not find them because their descriptions do not mention Head Office. The two paid bills have linked vendor payments 958 and 959.
+
+The reusable command requires the reviewed company, exact bill date, line ids and expected amounts. It sets explicit Head Office ownership and resynchronizes the bill and linked payment dimensions, preserving physical receipt location and each journal's account debit/credit totals, date and posting state. It rejects inventory and pond lines, missing posted bill journals and changed source amounts/dates. It previews by default, rolls back on failure, and is idempotent.
+
+```bash
+cd ~/fserp/fserp/backend
+venv/bin/python manage.py repair_head_office_bill_lines \
+  --company-id 2 --on-date 2026-10-19 \
+  --line 1984:200 --line 1987:100 --line 1988:100
+```
+
+After the normal database backup, add `--apply` to apply this reviewed correction. The company-2 review wrapper also includes it when the cutoff is 19 October 2026 or later. Head Office expense for 19 October should become 400 (Meals 200, Repairs 200), while Adib expense decreases by 400 and the company total remains unchanged. The report groups the two repair lines into one account row; the bill retains both 100 source lines.
+
+Validated against the current public VPS snapshot in the isolated local database: Head Office increased from 0 to 400; Adib decreased from 122,354.82 to 121,954.82; company expense remained 304,224.82. Both bill journals and both linked payment journals moved to the intended entity. Every journal's account amounts, date and posting status remained unchanged, a second apply made no changes, and all exact-day entity/report checks passed. All 23 targeted tests passed, including paid/mixed bills, partial line selection, dry-run/idempotence, and rejection of incorrect company/date/amount, inventory, missing journal and duplicate line specifications. These corrections were applied locally; the VPS still requires the repair command after pulling this update.

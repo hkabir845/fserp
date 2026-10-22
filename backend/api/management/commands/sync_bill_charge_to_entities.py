@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from api.models import Bill, JournalEntry, Payment, PaymentBillAllocation
-from api.services.gl_posting import resync_posted_bill_journal_from_lines
+from api.services.gl_posting import resync_posted_bill_journal_from_lines, resync_vendor_payment_charge_to
 from api.exceptions import GlPostingError
 
 
@@ -46,9 +46,35 @@ class Command(BaseCommand):
             if before != after:
                 changes.append({"bill_id": bill.id, "bill_number": bill.bill_number,
                                 "before": before, "after": after})
+        payment_changes, skipped_payments = [], []
+        if not options["bill_id"]:
+            # On-account vendor payments have no bill to trigger the linked-payment
+            # path. Their saved payment site still has to agree with their journal.
+            for payment in Payment.objects.filter(
+                company_id=options["company_id"], payment_type="made", amount__gt=0,
+                payment_date__lte=options["through"], bill_allocations__isnull=True,
+            ).order_by("id"):
+                entry = JournalEntry.objects.filter(
+                    company_id=payment.company_id, entry_number=f"AUTO-PAY-{payment.id}-MADE", is_posted=True,
+                ).first()
+                if entry is None:
+                    continue
+                before = self._snapshot(entry)
+                try:
+                    resync_vendor_payment_charge_to(payment.company_id, payment)
+                except GlPostingError as exc:
+                    skipped_payments.append({"payment_id": payment.id, "reason": str(exc)})
+                    continue
+                entry.refresh_from_db()
+                after = self._snapshot(entry)
+                if before != after:
+                    payment_changes.append({"payment_id": payment.id, "before": before, "after": after})
         self.stdout.write(json.dumps({"mode": "apply" if options["apply"] else "dry-run",
                                       "changed_bill_count": len(changes), "changes": changes,
-                                      "skipped_bill_count": len(skipped), "skipped_bills": skipped}, indent=2))
+                                      "skipped_bill_count": len(skipped), "skipped_bills": skipped,
+                                      "changed_on_account_payment_count": len(payment_changes),
+                                      "on_account_payment_changes": payment_changes,
+                                      "skipped_on_account_payments": skipped_payments}, indent=2))
         if not options["apply"]:
             transaction.set_rollback(True)
 

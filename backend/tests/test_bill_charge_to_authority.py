@@ -177,6 +177,38 @@ def test_historical_sync_reports_incompatible_line_amounts(api_client, company_t
 
 
 @pytest.mark.django_db
+def test_historical_grouped_debits_allow_independent_payable_repair(api_client, company_tenant_with_gl, auth_admin_headers):
+    from api.models import JournalEntryLine
+    company = company_tenant_with_gl
+    station = Station.objects.create(company=company, station_name='Adib')
+    vendor = Vendor.objects.create(company=company, display_name='Vendor', default_station=station)
+    bill = post(api_client, auth_admin_headers, vendor, [
+        cost('Office power', 40, charge_to_head_office=True),
+        cost('Station power', 60, line_receipt_station_id=station.id),
+    ])
+    entry = JournalEntry.objects.get(company=company, entry_number=f'AUTO-BILL-{bill.id}')
+    office = entry.lines.get(debit=40)
+    legacy_account = ChartOfAccount.objects.create(company=company, account_code='6997',
+                                                    account_name='Legacy grouped expense', account_type='expense')
+    entry.lines.filter(pk=office.pk).update(debit=25)
+    JournalEntryLine.objects.create(journal_entry=entry, account=legacy_account, debit=15)
+    credit_account = entry.lines.filter(credit__gt=0).first().account
+    entry.lines.filter(credit__gt=0).delete()
+    JournalEntryLine.objects.create(journal_entry=entry, account=credit_account, credit=100, station=station)
+    before = list(entry.lines.filter(debit__gt=0).order_by('id').values_list('account_id', 'debit', 'station_id'))
+    out = io.StringIO()
+    call_command('sync_bill_charge_to_entities', company_id=company.id, through=DAY,
+                 bill_id=[bill.id], apply=True, stdout=out)
+    result = json.loads(out.getvalue())
+    assert result['changed_bill_count'] == 1
+    assert result['skipped_bill_count'] == 0
+    assert before == list(entry.lines.filter(debit__gt=0).order_by('id').values_list('account_id', 'debit', 'station_id'))
+    assert set(entry.lines.filter(credit__gt=0).values_list('station_id', 'credit')) == {
+        (None, Decimal('40')), (station.id, Decimal('60')),
+    }
+
+
+@pytest.mark.django_db
 def test_conflicting_office_choice_is_rejected(api_client, company_tenant_with_gl, auth_admin_headers):
     station = Station.objects.create(company=company_tenant_with_gl, station_name='Adib')
     vendor = Vendor.objects.create(company=company_tenant_with_gl, display_name='Vendor')
@@ -210,3 +242,26 @@ def test_shop_cost_bucket_does_not_override_charge_to_or_duplicate_cost(api_clie
     pl = report_income_statement(company.id, DAY, DAY)
     assert Decimal(pl['total_expenses']) == 150
     assert not any('unallocated' in row.get('entity_name', '').lower() for row in sheet['lines'])
+
+
+@pytest.mark.django_db
+def test_company_sync_repairs_on_account_payment_site(company_tenant_with_gl):
+    from api.models import Payment, JournalEntryLine
+    company = company_tenant_with_gl
+    station = Station.objects.create(company=company, station_name='Adib')
+    vendor = Vendor.objects.create(company=company, display_name='Vendor')
+    payment = Payment.objects.create(company=company, vendor=vendor, payment_type='made',
+                                     payment_date=DAY, amount=10, station=station)
+    entry = JournalEntry.objects.create(company=company, entry_number=f'AUTO-PAY-{payment.id}-MADE',
+                                        entry_date=DAY, is_posted=True)
+    payable = ChartOfAccount.objects.get(company=company, account_code='2000')
+    cash = ChartOfAccount.objects.get(company=company, account_code='1010')
+    JournalEntryLine.objects.create(journal_entry=entry, account=payable, debit=10)
+    JournalEntryLine.objects.create(journal_entry=entry, account=cash, credit=10)
+    out = io.StringIO()
+    call_command('sync_bill_charge_to_entities', company_id=company.id, through=DAY, apply=True, stdout=out)
+    assert json.loads(out.getvalue())['changed_on_account_payment_count'] == 1
+    assert set(entry.lines.values_list('station_id', flat=True)) == {station.id}
+    assert set(entry.lines.values_list('account_id', 'debit', 'credit')) == {
+        (payable.id, Decimal('10'), Decimal('0')), (cash.id, Decimal('0'), Decimal('10')),
+    }

@@ -3808,7 +3808,29 @@ def _resync_posted_entry_dimensions(company_id, je, lines, metadata, header_stat
                        (meta or {}).get("production_cycle_id")) for raw, meta in new_debits}
         debit_accounts = {line.account_id for line in old_debits}
         preserved, preserved_meta = [], []
-        if same_shape or len(debit_accounts) == 1:
+        old_entities, new_entities = defaultdict(Decimal), defaultdict(Decimal)
+        for old in old_debits:
+            pond = old.aquaculture_pond_id
+            station = None if pond else old.station_id or je.station_id
+            old_entities[(station, pond)] += old.debit
+        for raw, meta in new_debits:
+            pond = (meta or {}).get("pond_id")
+            station = None if pond else _unpack_gl_line(raw)[4]
+            new_entities[(station, pond)] += _unpack_gl_line(raw)[1]
+        if old_entities == new_entities:
+            # Legacy grouped debits may already be correct. Repair the payable
+            # independently instead of refusing because source line counts differ.
+            for old in old_debits:
+                station = None if old.aquaculture_pond_id else old.station_id or je.station_id
+                preserved.append((old.account, old.debit, old.credit, old.description, station))
+                preserved_meta.append({
+                    "pond_id": old.aquaculture_pond_id,
+                    "production_cycle_id": old.aquaculture_production_cycle_id,
+                    "cost_bucket": old.aquaculture_cost_bucket,
+                    "tenant_reporting_category_id": old.tenant_reporting_category_id,
+                    "fuel_station_expense_rollup": old.fuel_station_expense_rollup,
+                })
+        elif same_shape or len(debit_accounts) == 1:
             for index, (raw, meta) in enumerate(new_debits):
                 _account, debit, credit, description, station, _explicit = _unpack_gl_line(raw)
                 account = old_debits[index].account if same_shape else old_debits[0].account

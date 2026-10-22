@@ -49,3 +49,31 @@ python manage.py sync_bill_charge_to_entities \
 The historical command preserves each journal's account debit/credit totals and funding accounts while synchronizing the entity dimensions of bills and linked vendor payments. It reports incompatible mixed-entity line amounts or multiple payable/funding accounts in `skipped_bills`, leaving those bills unchanged for review. A second run should show zero changed bills. Inspect `skipped_bills` separately; zero changes does not mean that skipped records were repaired. Preview and apply logs stay on the server and are not committed.
 
 In the isolated September snapshot, the sync changed 728 bill records and reported 40 mixed-entity bills for separate reconciliation. Every journal's debit and credit totals by account were unchanged. A second apply changed zero bills, and the income/expense sheet had no duplicate bill costs under Unallocated. The current October VPS dataset must be checked independently. The follow-up verification passed 55 targeted backend tests, frontend TypeScript, lint and frontend regression tests, including Charge-to changes from shared splits.
+
+## All-date follow-up audit and repair
+
+The follow-up audit examined 16,515 posted journals in the downloaded copy across its full date range. The 40 previously skipped bills had correctly allocated expense debits but incorrect payable credits. The updated repair recognizes those matching entity totals and preserves the existing debit lines while repairing the payable. It also repairs on-account vendor payments using their saved payment site. In the local copy, 45 vendor payment journals required entity corrections; journal debit/credit totals by account remained unchanged.
+
+Three source bills explicitly describe Head Office: BILL-843 (transport 220), BILL-876 (electricity 4,611), and BILL-882 (internet 1,000). The follow-up includes all three, plus the previously reviewed unassigned POS donations.
+
+Deploy the latest code normally, then run the reviewed company-2 workflow:
+
+```bash
+cd ~/fserp/fserp
+bash scripts/review-income-expense-company2-vps.sh --apply
+```
+
+The script exports a database backup, applies the reviewed source corrections, syncs accounting tags through today in Asia/Dhaka, and audits all dates before and after. An optional `--through YYYY-MM-DD` limits the repair cutoff. Without `--apply`, it performs a read-only audit. Full logs are saved under ignored `backend/backups/entity-review-*/`. It supports either `backend/venv` or `backend/.venv`.
+
+For a standalone read-only audit across all companies and all dates:
+
+```bash
+cd backend
+python manage.py audit_income_expense_entities
+```
+
+Use `--company-id 2 --summary` for compact company output, or `--start-date` / `--end-date` to reproduce a particular report period. The audit checks bill and invoice entity tags, vendor payments, journal balance, Head Office description/tag conflicts, suspect dates, orphaned pond opening journals, and report totals for All vs individual non-pond scopes. It preserves the existing company inter-pond elimination policy.
+
+Two historical exceptions in the downloaded copy need original records rather than an automatic reassignment: payment 84 (500, reference VND-10) and its journal are dated 0205-03-24; journal AUTO-POND-PL-OB-10 contains 9,517,865 of prior pond expense, but pond 10 and its source opening rows no longer exist. Its description mentions Ashari - 1 Pond, which now has another id; the audit flags this orphan instead of guessing that the opening should be moved or removed. Both remain unchanged by the repair script. Current VPS results may differ from this older snapshot.
+
+Final local follow-up: all bill, invoice, and vendor-payment entity checks passed after the reviewed repairs. The orphaned opening and suspect year remain flagged. All eight report reconciliation checks passed, and 60 targeted backend tests passed.

@@ -205,7 +205,7 @@ def vendor_unbilled_payable(
         a += max(Decimal("0"), total - paid)
     cb = vendor.current_balance or Decimal("0")
     if exclude_payment is not None and (exclude_payment.amount or 0) > 0:
-        cb = cb + (exclude_payment.amount or Decimal("0"))
+        cb = cb + exclude_payment.settlement_amount
     u = cb - a
     ob = vendor.opening_balance or Decimal("0")
     if a == 0 and cb == 0 and ob > 0:
@@ -482,7 +482,7 @@ def apply_bill_allocations_for_payment(
             return False, f"allocation exceeds open balance for bill {bid}"
         cleaned.append((bill.id, d_amt))
         total_alloc += d_amt
-    if abs(total_alloc - p.amount) > Decimal("0.01"):
+    if abs(total_alloc - p.settlement_amount) > Decimal("0.01"):
         return False, "sum of bill allocations must equal payment amount"
     with transaction.atomic():
         PaymentBillAllocation.objects.filter(payment_id=p.id).delete()

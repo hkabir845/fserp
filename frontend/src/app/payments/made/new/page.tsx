@@ -15,6 +15,7 @@ import { getCurrencySymbol, formatNumber, roundToDecimals } from '@/utils/curren
 import { formatDateOnly, localDateISO } from '@/utils/date'
 import { AMOUNT_ALLOCATE_BLUE_CLASS, AMOUNT_EDITABLE_FULL_BLUE_CLASS } from '@/utils/amountFieldStyles'
 import { BankRegisterBalances, ContactArApBalances } from '@/components/ContactArApBalances'
+import PaymentDiscountFields, { emptyPaymentDiscounts, paymentDiscountTotal } from '../../PaymentDiscountFields'
 import type { VendorPurchaseTerms } from '@/lib/vendorSupplierCategory'
 import {
   formatBankAccountWithBalances,
@@ -119,6 +120,7 @@ function normalizeOutstandingBill(row: Record<string, unknown>): OutstandingBill
 }
 
 interface Vendor {
+  supplier_category?: string
   id: number
   vendor_number: string
   company_name?: string | null
@@ -156,6 +158,7 @@ function normalizeVendorsFromApi(data: unknown): Vendor[] {
       if (!Number.isFinite(id)) return []
       const v: Vendor = {
         id,
+        supplier_category: String(r.supplier_category ?? 'general'),
         vendor_number: String(r.vendor_number ?? ''),
         company_name: r.company_name != null ? String(r.company_name) : null,
         display_name: r.display_name != null ? String(r.display_name) : null,
@@ -246,6 +249,7 @@ function RecordPaymentMadeInner() {
   const [referenceNumber, setReferenceNumber] = useState('')
   const [memo, setMemo] = useState('')
   const [totalPaymentAmount, setTotalPaymentAmount] = useState(0)
+  const [discounts, setDiscounts] = useState(emptyPaymentDiscounts)
   const [allocations, setAllocations] = useState<PaymentAllocation[]>([])
   const [payFullBalanceBillIds, setPayFullBalanceBillIds] = useState<Set<number>>(() => new Set())
   const [submitting, setSubmitting] = useState(false)
@@ -381,6 +385,7 @@ function RecordPaymentMadeInner() {
       setSelectedBankAccountId(null)
       return
     }
+    setDiscounts(emptyPaymentDiscounts())
     setSelectedVendorId(id)
     setMemo(buildVendorPaymentMemo(v))
     setReferenceNumber((v.vendor_number || '').trim())
@@ -410,6 +415,10 @@ function RecordPaymentMadeInner() {
     selectedVendorId != null
       ? vendors.find((v) => Number(v.id) === Number(selectedVendorId)) ?? null
       : null
+
+  const discountsEligible = ['feed', 'medicine'].includes(selectedVendor?.supplier_category || '')
+  const discountTotal = discountsEligible ? paymentDiscountTotal(discounts) : 0
+  const netPaymentAmount = roundMoney(totalPaymentAmount - discountTotal)
 
   const handleAllocationChange = (billId: number, amount: number) => {
     const bill = outstandingBills.find(
@@ -584,10 +593,16 @@ function RecordPaymentMadeInner() {
       setSubmitting(false)
       return
     }
+    if (netPaymentAmount <= 0 || !Number.isFinite(netPaymentAmount) ||
+        (discountsEligible && discounts.feed_discount_type === 'percent' && Number(discounts.feed_discount_value) > 0 && Number(discounts.discount_mrp_base) <= 0)) {
+      setError('Discounts must leave a positive net payment. Percentage discounts require a positive MRP total.')
+      setSubmitting(false)
+      return
+    }
     const selectedBankAccount = bankAccounts.find((b) => b.id === selectedBankAccountId)
     if (selectedBankAccount) {
       const balance = Number(selectedBankAccount.current_balance) || 0
-      if (balance < totalPaymentAmount) {
+      if (balance < netPaymentAmount) {
         setError(`Insufficient balance. Available: ${currencySymbol}${formatNumber(balance)}`)
         setSubmitting(false)
         return
@@ -613,7 +628,8 @@ function RecordPaymentMadeInner() {
         vendor_id: selectedVendorId,
         payment_date: paymentDate,
         payment_method: paymentMethod,
-        amount: roundMoney(totalPaymentAmount),
+        amount: netPaymentAmount,
+        ...(discountsEligible ? discounts : {}),
         bank_account_id: selectedBankAccountId,
         reference_number: referenceNumber || null,
         memo: memo || null,
@@ -836,7 +852,7 @@ function RecordPaymentMadeInner() {
 
                 <div>
                   <label className="block text-sm font-medium text-foreground/85 mb-1">
-                    Payment Amount *
+                    Payment Amount (before discounts) *
                   </label>
                   <input
                     type="number"
@@ -849,6 +865,8 @@ function RecordPaymentMadeInner() {
                     required
                   />
                 </div>
+
+                {discountsEligible && <PaymentDiscountFields value={discounts} onChange={setDiscounts} gross={totalPaymentAmount} currency={currencySymbol} />}
 
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-foreground/85 mb-1">Memo</label>

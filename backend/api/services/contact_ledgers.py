@@ -484,6 +484,18 @@ def _build_vendor_ledger_rows(company_id: int, vendor: Vendor) -> list[_Row]:
             )
         )
 
+        for kind, amount, label in (
+            ("mill_discount", pay.feed_discount_amount, "Payment feed discount"),
+            ("mill_transport", pay.transport_discount_amount, "Payment transport discount"),
+        ):
+            if amount > 0:
+                rows.append(_Row(
+                    sort_date=pay.payment_date, seq=2, sort_id=pay.id,
+                    kind=kind, reference=pay.reference or f"PAY-{pay.id}",
+                    description=label, debit=Decimal("0"), credit=_d(amount),
+                    related_id=pay.id,
+                ))
+
     for cred in VendorCredit.objects.filter(
         company_id=company_id, vendor_id=vendor.id
     ).order_by("credit_date", "id"):

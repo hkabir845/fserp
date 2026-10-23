@@ -1,5 +1,6 @@
 'use client'
 
+import PaymentDiscountFields, { emptyPaymentDiscounts, paymentDiscountTotal, type PaymentDiscounts } from './PaymentDiscountFields'
 import { CompanyDateInput } from '@/components/CompanyDateInput'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -220,6 +221,11 @@ function roundTwo(n: number): number {
 
 export interface PaymentDetailPayload {
   id: number
+  settlement_amount?: string
+  feed_discount_type?: 'amount' | 'percent'
+  feed_discount_value?: string
+  discount_mrp_base?: string
+  transport_discount_amount?: string
   payment_number?: string
   payment_type: string
   payment_date: string
@@ -267,6 +273,8 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
   const [reference, setReference] = useState('')
   const [memo, setMemo] = useState('')
   const [amount, setAmount] = useState('')
+  const [discounts, setDiscounts] = useState<PaymentDiscounts>(emptyPaymentDiscounts)
+  const [discountsEligible, setDiscountsEligible] = useState(false)
   const [bankAccountId, setBankAccountId] = useState<string>('')
   const [receivedLines, setReceivedLines] = useState<OutstandingInvoice[]>([])
   const [receivedAlloc, setReceivedAlloc] = useState<Record<string, number>>({})
@@ -319,7 +327,9 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
         setPaymentMethod((p.payment_method || 'unspecified').toLowerCase())
         setReference(String(p.reference_number ?? p.reference ?? ''))
         setMemo(String(p.memo ?? ''))
-        setAmount(String(p.amount ?? ''))
+        setAmount(String(p.settlement_amount ?? p.amount ?? ''))
+        setDiscounts({ feed_discount_type: p.feed_discount_type || 'amount', feed_discount_value: p.feed_discount_value || '', discount_mrp_base: p.discount_mrp_base || '', transport_discount_amount: p.transport_discount_amount || '' })
+        setDiscountsEligible(false)
         setBankAccountId(p.bank_account_id != null ? String(p.bank_account_id) : '')
 
         if (p.payment_type === 'received' && p.customer_id) {
@@ -370,6 +380,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
           try {
             const vr = await api.get(`/vendors/${p.vendor_id}/`)
             if (cancelled) return
+            setDiscountsEligible(['feed', 'medicine'].includes(vr.data.supplier_category))
             const v = vr.data as Record<string, string | undefined>
             setContactSnapshot({
               kind: 'vendor',
@@ -518,7 +529,8 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
         payment_method: paymentMethod,
         reference_number: reference.trim(),
         memo: memo.trim(),
-        amount: numAmount,
+        amount: detail.payment_type === 'made' ? roundTwo(numAmount - paymentDiscountTotal(discounts)) : numAmount,
+        ...(detail.payment_type === 'made' ? discounts : {}),
         bank_account_id: bankAccountId === '' ? null : Number(bankAccountId),
       }
       if (detail.payment_type === 'received') {
@@ -698,7 +710,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Amount</label>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">{detail?.payment_type === 'made' ? 'Amount before discounts' : 'Amount'}</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -713,6 +725,7 @@ export default function EditPaymentModal({ open, paymentId, onClose, onSaved }: 
                     required
                   />
                 </div>
+                {detail?.payment_type === 'made' && discountsEligible && <PaymentDiscountFields value={discounts} onChange={setDiscounts} gross={paymentAmountNum} currency={currencySymbol} />}
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Bank register (optional)</label>
                   <select

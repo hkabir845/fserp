@@ -2203,6 +2203,16 @@ class BillLine(models.Model):
 
 
 class Payment(models.Model):
+    feed_discount_type = models.CharField(max_length=10, default="amount", blank=True)
+    feed_discount_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    discount_mrp_base = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    feed_discount_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    transport_discount_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    @property
+    def settlement_amount(self):
+        return self.amount + self.feed_discount_amount + self.transport_discount_amount
+
     PAYMENT_TYPE_RECEIVED = "received"
     PAYMENT_TYPE_MADE = "made"
     PAYMENT_TYPE_DEPOSIT = "deposit"

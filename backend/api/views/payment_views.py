@@ -16,6 +16,7 @@ from api.utils.transaction_filters import (
     apply_transaction_amount_range,
     apply_transaction_date_range,
 )
+from api.services.payment_discounts import parse_payment_discounts, FIELDS as DISCOUNT_FIELDS
 from api.exceptions import GlPostingError
 from api.views.common import parse_json_body, require_company_id, require_permission
 from api.models import (
@@ -99,6 +100,9 @@ def _payment_to_json(p):
         "payment_method": (getattr(p, "payment_method", None) or "unspecified").strip()
         or "unspecified",
     }
+    if p.payment_type == "made":
+        out.update({key: str(getattr(p, key)) for key in DISCOUNT_FIELDS})
+        out["settlement_amount"] = str(p.settlement_amount)
     if p.payment_type == "received":
         out["invoice_allocations"] = [
             {"invoice_id": a.invoice_id, "amount": str(a.amount)}
@@ -1084,10 +1088,15 @@ def payments_made_create(request):
         return err
     vendor_id = body.get("vendor_id")
     amount = _decimal(body.get("amount"))
-    if not vendor_id or not amount or amount <= 0:
+    if not vendor_id or not amount or not amount.is_finite() or amount <= 0:
         return JsonResponse({"detail": "vendor_id and positive amount required"}, status=400)
     if not Vendor.objects.filter(id=vendor_id, company_id=request.company_id).exists():
         return JsonResponse({"detail": "Vendor not found"}, status=400)
+    try:
+        discounts = parse_payment_discounts(body, Vendor.objects.get(id=vendor_id, company_id=request.company_id))
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+    settlement = amount + discounts["feed_discount_amount"] + discounts["transport_discount_amount"]
     bank_id = body.get("bank_account_id")
     if bank_id and not BankAccount.objects.filter(id=bank_id, company_id=request.company_id).exists():
         bank_id = None
@@ -1095,7 +1104,7 @@ def payments_made_create(request):
     if alloc_rows and not isinstance(alloc_rows, list):
         return JsonResponse({"detail": "bill_allocations must be a list"}, status=400)
     ok, msg, cleaned, on_acct = _validate_bill_allocations(
-        request.company_id, int(vendor_id), amount, alloc_rows
+        request.company_id, int(vendor_id), settlement, alloc_rows
     )
     if not ok:
         return JsonResponse({"detail": msg}, status=400)
@@ -1123,7 +1132,7 @@ def payments_made_create(request):
             ok, msg, cleaned, on_acct = _validate_bill_allocations(
                 request.company_id,
                 int(vendor_id),
-                amount,
+                settlement,
                 alloc_rows,
                 lock_bills=True,
             )
@@ -1146,7 +1155,7 @@ def payments_made_create(request):
                 ok, msg, cleaned, on_acct = _validate_bill_allocations(
                     request.company_id,
                     int(vendor_id),
-                    amount,
+                    settlement,
                     alloc_rows,
                     lock_bills=True,
                 )
@@ -1162,6 +1171,7 @@ def payments_made_create(request):
                 vendor_id=vendor_id,
                 bank_account_id=bank_id,
                 amount=amount,
+                **discounts,
                 payment_date=_parse_date(body.get("payment_date")) or date.today(),
                 payment_method=_normalize_payment_method(body),
                 reference=(body.get("reference_number") or body.get("reference") or ""),
@@ -1672,8 +1682,13 @@ def payment_detail_update_delete(request, payment_id: int):
                 )
             vendor_id = p.vendor_id
             amount = _decimal(body.get("amount"), p.amount)
-            if not vendor_id or amount <= 0:
+            if not vendor_id or not amount.is_finite() or amount <= 0:
                 return JsonResponse({"detail": "vendor_id and positive amount required"}, status=400)
+            try:
+                discounts = parse_payment_discounts(body, p.vendor, p)
+            except ValueError as exc:
+                return JsonResponse({"detail": str(exc)}, status=400)
+            settlement = amount + discounts["feed_discount_amount"] + discounts["transport_discount_amount"]
             if "bank_account_id" in body:
                 raw_b = body.get("bank_account_id")
                 if raw_b is None or raw_b == "":
@@ -1699,7 +1714,7 @@ def payment_detail_update_delete(request, payment_id: int):
             if alloc_rows and not isinstance(alloc_rows, list):
                 return JsonResponse({"detail": "bill_allocations must be a list"}, status=400)
             ok, msg, cleaned, on_acct = _validate_bill_allocations(
-                cid, int(vendor_id), amount, alloc_rows, exclude_payment_id=p.id
+                cid, int(vendor_id), settlement, alloc_rows, exclude_payment_id=p.id
             )
             if not ok:
                 return JsonResponse({"detail": msg}, status=400)
@@ -1710,19 +1725,19 @@ def payment_detail_update_delete(request, payment_id: int):
                     ok, msg, cleaned, on_acct = _validate_bill_allocations(
                         cid,
                         int(vendor_id),
-                        amount,
+                        settlement,
                         alloc_rows,
                         exclude_payment_id=p.id,
                         lock_bills=True,
                     )
                     if not ok:
                         raise _PaymentAllocationRejected(msg)
+                    if on_acct and on_acct > 0:
+                        _align_stored_ap_before_made_payment(cid, int(vendor_id))
                     ok, msg = reverse_payment_made_posting(cid, p)
                     if not ok:
                         raise _PaymentReversalRejected(msg)
                     p.refresh_from_db()
-                    if on_acct and on_acct > 0:
-                        _align_stored_ap_before_made_payment(cid, int(vendor_id))
                     p.payment_date = _parse_date(body.get("payment_date")) or p.payment_date
                     p.payment_method = _normalize_payment_method(body)
                     p.reference = (body.get("reference_number") or body.get("reference") or "").strip()[
@@ -1730,6 +1745,8 @@ def payment_detail_update_delete(request, payment_id: int):
                     ]
                     p.memo = (body.get("memo") or "")[:500]
                     p.bank_account_id = bank_id
+                    for key, value in discounts.items():
+                        setattr(p, key, value)
                     p.amount = amount
                     p.save()
                     PaymentBillAllocation.objects.filter(payment_id=p.id).delete()

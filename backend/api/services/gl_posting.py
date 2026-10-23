@@ -2544,7 +2544,7 @@ def reverse_payment_made_posting(company_id: int, p: Payment) -> tuple[bool, str
         je.delete()
     if p.vendor_id and (p.vendor_ap_decremented or had_je):
         Vendor.objects.filter(pk=p.vendor_id).update(
-            current_balance=F("current_balance") + (p.amount or Decimal("0"))
+            current_balance=F("current_balance") + p.settlement_amount
         )
         Payment.objects.filter(pk=p.pk).update(vendor_ap_decremented=False)
     return True, ""
@@ -2576,20 +2576,44 @@ def _vendor_payment_journal_lines(company_id: int, payment: Payment, ap, cash_ba
             remaining -= amount
             key = (station, (meta or {}).get("pond_id"), (meta or {}).get("production_cycle_id"))
             groups[key] = groups.get(key, Decimal("0")) + amount
-    if allocated > payment.amount:
+    if allocated > payment.settlement_amount:
         raise GlPostingError("Bill allocations exceed the vendor payment amount")
-    if allocated < payment.amount:
+    if allocated < payment.settlement_amount:
         key = (_gl_station_id(company_id, payment.station_id), None, None)
-        groups[key] = groups.get(key, Decimal("0")) + payment.amount - allocated
+        groups[key] = groups.get(key, Decimal("0")) + payment.settlement_amount - allocated
+    discount_accounts = []
+    for code, value, label in (("5130", payment.feed_discount_amount, "Feed discount"),
+                               ("5131", payment.transport_discount_amount, "Transport discount")):
+        if value:
+            account = _ensure_core_posting_account(company_id, code)
+            if not account:
+                raise GlPostingError(f"Missing account {code} for {label}")
+            discount_accounts.append((account, value, label))
+    remaining_discounts = [value for _, value, _ in discount_accounts]
     lines, metadata = [], []
+    remaining_groups = sum(groups.values(), Decimal("0"))
     for (station, pond, cycle), amount in groups.items():
         if amount <= 0:
             continue
         meta = {"pond_id": pond, "production_cycle_id": cycle} if pond else None
         memo = payment.reference or f"PAY-{payment.id}"
-        lines.extend([(ap, amount, Decimal("0"), memo, station),
-                      (cash_bank, Decimal("0"), amount, memo, station)])
-        metadata.extend([meta, meta])
+        lines.append((ap, amount, Decimal("0"), memo, station))
+        metadata.append(meta)
+        cash = amount
+        for index, (account, value, label) in enumerate(discount_accounts):
+            share = remaining_discounts[index] if amount == remaining_groups else min(
+                remaining_discounts[index], (amount * value / payment.settlement_amount).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP))
+            share = min(share, cash)
+            remaining_discounts[index] -= share
+            cash -= share
+            if share:
+                lines.append((account, Decimal("0"), share, label, station))
+                metadata.append(meta)
+        if cash:
+            lines.append((cash_bank, Decimal("0"), cash, memo, station))
+            metadata.append(meta)
+        remaining_groups -= amount
     keys = set(groups)
     header = next(iter(keys))[0] if len(keys) == 1 else None
     return lines, metadata, header
@@ -2615,7 +2639,7 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
                 and not lp.vendor_ap_decremented
             ):
                 Vendor.objects.filter(pk=lp.vendor_id).update(
-                    current_balance=F("current_balance") - lp.amount
+                    current_balance=F("current_balance") - lp.settlement_amount
                 )
                 Payment.objects.filter(pk=lp.pk).update(vendor_ap_decremented=True)
         return True
@@ -2655,7 +2679,7 @@ def post_payment_made_journal(company_id: int, p: Payment) -> bool:
             and not lp.vendor_ap_decremented
         ):
             Vendor.objects.filter(pk=lp.vendor_id).update(
-                current_balance=F("current_balance") - lp.amount
+                current_balance=F("current_balance") - lp.settlement_amount
             )
             Payment.objects.filter(pk=lp.pk).update(vendor_ap_decremented=True)
     return True

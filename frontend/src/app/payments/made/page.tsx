@@ -83,6 +83,8 @@ function normalizeOutstandingBill(row: Record<string, unknown>): OutstandingBill
 }
 
 interface VendorPayment {
+  feed_discount_amount?: string
+  transport_discount_amount?: string
   id: number
   payment_number: string
   payment_date: string
@@ -604,6 +606,12 @@ export default function PaymentMadePage() {
                             <td className="px-4 py-3 text-sm text-right font-medium text-foreground">
                               {currencySymbol}
                               {formatNumber(Number(payment.amount) || 0)}
+                              {(Number(payment.feed_discount_amount) > 0 || Number(payment.transport_discount_amount) > 0) && (
+                                <div className="mt-1 text-xs font-normal text-muted-foreground">
+                                  Feed discount: {currencySymbol}{formatNumber(Number(payment.feed_discount_amount) || 0)}<br />
+                                  Transport discount: {currencySymbol}{formatNumber(Number(payment.transport_discount_amount) || 0)}
+                                </div>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-sm text-muted-foreground max-w-[12rem] truncate" title={payment.memo || ''}>
                               {payment.memo || '-'}
